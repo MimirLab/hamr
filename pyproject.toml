@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hamr"
-version = "0.2.2"
+version = "0.2.3"
 description = "hamr: local audiobooks with recoverable jobs, character voices and source provenance"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -51,6 +51,9 @@ artifacts = [
     "/src/audiobook/cast_assets/*/voice.json",
     "/src/audiobook/cast_assets/*/reference.wav",
 ]
+
+[tool.hatch.build.targets.wheel.force-include]
+"docs/listen" = "audiobook/cast_previews"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

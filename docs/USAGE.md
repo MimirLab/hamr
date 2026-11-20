@@ -1,6 +1,6 @@
 # Using hamr
 
-Local audiobooks from EPUB, Markdown and PDF, with a built-in character cast, source review and recoverable Breeze rendering. The current release is **hamr 0.2.2**. Read [release notes](../RELEASE.md) for measured checks and remaining qualifications.
+Local audiobooks from EPUB, Markdown and PDF, with a built-in character cast, source review and recoverable Breeze rendering. The current release is **hamr 0.2.3**. Read [release notes](../RELEASE.md) for measured checks and remaining qualifications.
 
 Unsupported phonemes/languages and ambiguous source structure require review. QA preserves signs, precision, units and identifier values; publication approvals bind the comparison policy, plan and physical recordings.
 
@@ -66,7 +66,7 @@ A preview is stored beside the job snapshot and never placed in ready output. Th
 
 ## Built-in character cast
 
-All 45 reviewed character voices are included in the program. Listening samples play the stitched source references offline before model setup. Select a character for new books or use a per-book `cast:` voice ID.
+All 45 reviewed character voices are included in the program. Listening samples play the same approved introductions as the cast guide, offline before model setup. Select a character for new books or use a per-book `cast:` voice ID.
 
 ```sh
 hamr voice cast
@@ -78,7 +78,7 @@ hamr queue 'My book.epub' --voice cast:nigel-thornberry --output ~/Audiobooks
 
 `voice select` sets the narrator for new books. The `cast:` voice ID selects a preset for one new book or a scoped repair. Queued jobs pin their reference audio and transcript in app state for recovery across package updates.
 
-To add a character, put its ID, display name, description, and language in `src/audiobook/cast.json`. Add its 24 kHz mono PCM `reference.wav` and a `voice.json` with `transcript` and `reference_sha256` under `src/audiobook/cast_assets/CHARACTER/`. A reference can contain 2–30 seconds of speech. Set `"sample_kind": "reference"` to play that reference when browsing. Each character contributes only its final `reference.wav` and transcript/metadata file to the wheel. Browsing plays that same reference. Review candidates, rejected clips, generated auditions and source archives stay outside the installed program.
+To add a character, put its ID, display name, description, and language in `src/audiobook/cast.json`. Add its 24 kHz mono PCM `reference.wav` and a `voice.json` with `transcript` and `reference_sha256` under `src/audiobook/cast_assets/CHARACTER/`. A reference can contain 2–30 seconds of speech. Add the approved introduction under `docs/listen/CHARACTER.mp3` and its exact text, duration and SHA-256 to `docs/listen/manifest.json`. The wheel bundles that same audio for offline previews. The cast catalogue uses `"preview_kind": "introduction"`; voice conditioning continues to use the original reference and transcript. Review candidates, rejected clips and source archives stay outside the installed program.
 
 ## Unattended speech and verification
 

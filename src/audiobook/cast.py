@@ -8,12 +8,21 @@ from .core import Error, RATE, atomic, digest, filehash, key, loadjson, writejso
 
 CATALOG = Path(__file__).with_name('cast.json')
 ASSETS = Path(__file__).with_name('cast_assets')
+PREVIEWS = Path(__file__).with_name('cast_previews')
+# Editable checkouts use the same canonical files as the GitHub gallery.
+# Wheel builds include them under the package via force-include.
+if not PREVIEWS.is_dir() and (Path(__file__).parents[2] / 'pyproject.toml').is_file():
+    PREVIEWS = Path(__file__).parents[2] / 'docs/listen'
 PREFIX = 'cast:'
 MAX_AUDIO_BYTES = RATE * 2 * 60 + 4096
 
 
 def characters():
     return loadjson(CATALOG)['characters']
+
+
+def sample_kind(entry):
+    return loadjson(CATALOG).get('preview_kind', entry.get('sample_kind', 'audition'))
 
 
 def character(identifier):
@@ -29,13 +38,16 @@ def describe(entry):
     root = ASSETS / entry['id']
     has_metadata = (root / 'voice.json').is_file()
     has_reference = (root / 'reference.wav').is_file()
-    sample_kind = entry.get('sample_kind', 'audition')
-    sample_file = 'reference.wav' if sample_kind == 'reference' else 'sample.wav'
-    sample_available = has_metadata and (root / sample_file).is_file()
+    kind = sample_kind(entry)
+    if kind == 'introduction':
+        sample_available = (PREVIEWS / (entry['id'] + '.mp3')).is_file() and (PREVIEWS / 'manifest.json').is_file()
+    else:
+        sample_file = 'reference.wav' if kind == 'reference' else 'sample.wav'
+        sample_available = has_metadata and (root / sample_file).is_file()
     return {
         **entry,
         'voice': PREFIX + entry['id'],
-        'sample_kind': sample_kind,
+        'sample_kind': kind,
         'sample_available': sample_available,
         'available': has_metadata and has_reference,
     }
@@ -87,8 +99,31 @@ def audio(path, expected, minimum, maximum):
 
 def sample(identifier):
     entry = character(identifier)
+    kind = sample_kind(entry)
+    if kind == 'introduction':
+        try:
+            manifest = loadjson(PREVIEWS / 'manifest.json')
+            rows = [r for r in manifest['recordings'] if r['character'] == identifier]
+            if len(rows) != 1:
+                raise ValueError('Expected one introduction')
+            row = rows[0]
+            if (row['file'] != identifier + '.mp3' or not isinstance(row['text'], str) or not row['text'].strip()
+                    or type(row['seconds']) not in (int, float) or not 0 < row['seconds'] <= 60):
+                raise ValueError('Invalid introduction fields')
+            path = PREVIEWS / row['file']
+            with path.open('rb') as recording:
+                data = recording.read(MAX_AUDIO_BYTES + 1)
+            if len(data) > MAX_AUDIO_BYTES or digest(data) != row['sha256']:
+                raise Error('cast_asset_changed', f'The packaged introduction for {entry["name"]} failed its checksum.')
+        except FileNotFoundError as exc:
+            raise Error('cast_sample_missing', f'The installed introduction is missing: {exc.filename}',
+                        'Reinstall the current hamr release to restore the built-in listening samples.') from exc
+        except (ValueError, KeyError, TypeError) as exc:
+            raise Error('cast_sample_metadata', f'The introduction metadata for {entry["name"]} is invalid.',
+                        'Reinstall the current hamr release.') from exc
+        return {'schema_version': 1, 'character': identifier, 'name': entry['name'],
+                'sample': str(path), 'seconds': row['seconds'], 'sample_kind': kind, 'transcript': row['text']}
     root, metadata = assets(entry)
-    kind = entry.get('sample_kind', 'audition')
     if kind == 'reference':
         path = root / 'reference.wav'
         _, seconds = audio(path, metadata['reference_sha256'], 2, 30)

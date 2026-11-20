@@ -12,7 +12,7 @@ Every narrator has a little invitation. The listening links below play custom in
 
 ## Choose a voice
 
-The whole cast is already in the program. Browse it, hear the bundled voice reference, and choose your narrator:
+The whole cast is already in the program. Browse it, hear the same introduction as the gallery, and choose your narrator:
 
 ```sh
 hamr voice cast

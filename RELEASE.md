@@ -1,4 +1,4 @@
-# hamr 0.2.2
+# hamr 0.2.3
 
 `hamr setup --profile vulkan-f16` now dispatches directly to backend setup. It no longer tries to open a saved listening profile with that name. Missing saved listening profiles and missing files identify their paths.
 
@@ -8,13 +8,13 @@ Plain `hamr doctor` queries resident graphics hardware, Vulkan devices and avail
 
 hamr is the primary command and Python distribution. `audiobook` remains a compatibility command, and both `python -m hamr` and `python -m audiobook` work. New installations use hamr directories and `HAMR_HOME`; upgrades retain existing owned state and active legacy interpreter paths. The state schema remains 16.
 
-All 45 reviewed cast voices are included as one final reference WAV and one transcript/metadata file each. Browsing plays the same reference used for cloning. Extra recordings, source archives and review files stay outside the product.
+All 45 reviewed cast voices include their original conditioning reference/transcript and approved introduction. `hamr voice sample CHARACTER --play` now plays the same custom introduction as the cast guide, offline before model setup. The wheel bundles all 45 previews with a verified manifest; source checkout and installed playback use identical MP3 bytes. Changing previews preserves voice-conditioning identities and existing job pins. Candidate recordings, source archives and review files stay outside the product.
 
-The GitHub cast guide now includes **45 custom introductions**, reviewed by the user, with their exact lines and selection commands. The selected recordings total 500.4 seconds; public MP3 previews occupy approximately 6 MB. Every export matched the selected reviewed take's hash, retained its full duration and passed mpv decoding. The source archive includes these public documentation previews and a transcript/checksum manifest; the installed application retains the final cloning references.
+The GitHub cast guide now includes **45 custom introductions**, reviewed by the user, with their exact lines and selection commands. The selected recordings total 500.4 seconds; public MP3 previews occupy approximately 6 MB. Every export matched the selected reviewed take's hash, retained its full duration and passed mpv decoding. The source archive and application wheel include these public previews and their transcript/checksum manifest alongside the final cloning references.
 
 ## Release checks
 
-The product passed **624 regression tests**, including 40 focused profile/setup checks. Tiny pinned-asset fixtures exercise all nine CLI setup routes through acquisition, size/SHA-256 verification, extraction and activation after a simulated health check. These tests also check that memory, driver and generic startup failures preserve active settings; unsupported platforms and catalog-only engines stop before acquisition. Fixture health is not real speech qualification. Public introduction checks enforce the exact cast, hashes and manifest, reject extra/missing audio and keep documentation previews outside the installed wheel.
+The product passed **635 regression tests**, including 40 focused profile/setup checks. Tiny pinned-asset fixtures exercise all nine CLI setup routes through acquisition, size/SHA-256 verification, extraction and activation after a simulated health check. These tests also check that memory, driver and generic startup failures preserve active settings; unsupported platforms and catalog-only engines stop before acquisition. Fixture health is not real speech qualification. Public introduction checks enforce the exact cast, hashes and manifest, reject extra/missing audio and enforce that every declared introduction is included in the installed wheel.
 
 The real built-in inventory on a Radeon RX 6800 XT identified hardware Vulkan and approximately 15.4 GiB free VRAM, suggesting F16 with reasons. Neither vulkaninfo nor nvidia-smi was installed. No speech model was loaded for that probe. Linux GPU execution has prior real F16 long-narration/clone evidence and Q8 short-control evidence on this GPU; that does not establish every GPU vendor or quantized profile.
 
@@ -26,7 +26,7 @@ Detailed project receipts and book material remain private in the development wo
 
 ## Sharing and privacy
 
-Use the checked wheel or source archive produced by `uv build` and `python3 tools/check_release.py`. The source archive includes an explicit list of product files, with no Git history. Private books, transcripts of those books, job databases, browser review state, project evidence and diagnostics are excluded. The application wheel includes the final character reference recordings and exact transcripts deliberately supplied for the built-in cast. The source archive also contains the approved generated introductions under `docs/listen`.
+Use the checked wheel or source archive produced by `uv build` and `python3 tools/check_release.py`. The source archive includes an explicit list of product files, with no Git history. Private books, transcripts of those books, job databases, browser review state, project evidence and diagnostics are excluded. The application wheel includes the final character reference recordings, exact transcripts and approved generated introductions deliberately supplied for the built-in cast. The source archive keeps the canonical introduction files under `docs/listen`; the wheel maps those same files into its packaged previews.
 
 The public product repository has clean history. Do not push the separate research workspace/history. Product planning, rendering and recovery operate independently of development research services.
 

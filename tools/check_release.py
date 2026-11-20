@@ -69,23 +69,25 @@ def audit(path, version):
             r'|hamr/__(?:init|main)__\.py', runtime)
         allowed_metadata = wheel and name.startswith(metadata) and name.removeprefix(metadata) in (
             'METADATA', 'WHEEL', 'RECORD', 'entry_points.txt', 'licenses/LICENSE')
+        allowed_preview = wheel and re.fullmatch(r'audiobook/cast_previews/(?:manifest\.json|[a-z0-9-]+\.mp3)', name)
         allowed_source = not wheel and (name in ROOT_FILES or re.fullmatch(r'tests/[a-z0-9_]+\.py', name)
                                        or re.fullmatch(r'docs/listen/[a-z0-9-]+\.mp3', name)
                                        or name == 'fixtures/technical.md')
-        if not (allowed_runtime or allowed_metadata or allowed_source):
+        if not (allowed_runtime or allowed_metadata or allowed_source or allowed_preview):
             raise ReleaseError(f'Unexpected release file: {name}')
         if not name.endswith('/reference.wav'):
             for pattern in PRIVATE_TEXT:
                 if pattern.search(data):
                     raise ReleaseError(f'Private path or key pattern found in {name}')
     try:
-        cast = json.loads(files[package + 'audiobook/cast.json'])['characters']
+        cast_document = json.loads(files[package + 'audiobook/cast.json'])
+        cast = cast_document['characters']
     except (KeyError, ValueError, TypeError) as exc:
         raise ReleaseError('Missing or invalid character catalogue.') from exc
     expected = set()
     for entry in cast:
-        if entry.get('sample_kind') != 'reference':
-            raise ReleaseError('Public cast browsing must use the final reference.')
+        if entry.get('sample_kind') not in ('reference', 'introduction'):
+            raise ReleaseError('Public cast browsing must use an approved reference or introduction.')
         base = package + 'audiobook/cast_assets/' + entry['id'] + '/'
         expected.update((base + 'reference.wav', base + 'voice.json'))
         try:
@@ -100,11 +102,15 @@ def audit(path, version):
     actual = {name for name in files if '/cast_assets/' in name}
     if actual != expected:
         raise ReleaseError('Character files differ from final references and metadata.')
-    introductions = {name for name in files if name.startswith('docs/listen/')}
+    preview_prefix = 'audiobook/cast_previews/' if wheel else 'docs/listen/'
+    introductions = {name for name in files if name.startswith(preview_prefix)}
     introduction_count = 0
+    if not introductions and (cast_document.get('preview_kind') == 'introduction'
+                              or any(entry.get('sample_kind') == 'introduction' for entry in cast)):
+        raise ReleaseError('Missing public introductions for the installed cast.')
     if introductions:
         try:
-            manifest = json.loads(files['docs/listen/manifest.json'])
+            manifest = json.loads(files[preview_prefix + 'manifest.json'])
             if (set(manifest) != {'schema_version', 'kind', 'recordings'}
                     or manifest['schema_version'] != 1 or manifest['kind'] != 'hamr-generated-introductions'):
                 raise ValueError('Invalid introduction manifest')
@@ -112,14 +118,14 @@ def audit(path, version):
             if ({r['character'] for r in recordings} != {c['id'] for c in cast}
                     or len(recordings) != len(cast)):
                 raise ValueError('Introduction cast differs')
-            expected_introductions = {'docs/listen/manifest.json'}
+            expected_introductions = {preview_prefix + 'manifest.json'}
             for recording in recordings:
                 if (set(recording) != {'character', 'file', 'text', 'sha256', 'seconds'}
                         or recording['file'] != recording['character'] + '.mp3'
                         or not isinstance(recording['text'], str) or not recording['text'].strip()
                         or type(recording['seconds']) not in (int, float) or not 0 < recording['seconds'] <= 60):
                     raise ValueError('Invalid introduction fields')
-                name = 'docs/listen/' + recording['file']
+                name = preview_prefix + recording['file']
                 if hashlib.sha256(files[name]).hexdigest() != recording['sha256']:
                     raise ValueError('Introduction checksum differs')
                 expected_introductions.add(name)

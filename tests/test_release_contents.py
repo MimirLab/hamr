@@ -76,11 +76,11 @@ def source(tmp_path, files):
     return path
 
 
-def introduction_files():
+def introduction_files(prefix='docs/listen/'):
     data = b'synthetic public audio fixture'
     return {
-        'docs/listen/example.mp3': data,
-        'docs/listen/manifest.json': json.dumps({'schema_version': 1, 'kind': 'hamr-generated-introductions',
+        prefix + 'example.mp3': data,
+        prefix + 'manifest.json': json.dumps({'schema_version': 1, 'kind': 'hamr-generated-introductions',
             'recordings': [{'character': 'example', 'file': 'example.mp3', 'text': 'An invitation to read.',
                             'sha256': hashlib.sha256(data).hexdigest(), 'seconds': 5}]}).encode(),
     }
@@ -97,18 +97,33 @@ def test_source_archive_uses_same_boundary(tmp_path):
 
 
 @pytest.mark.parametrize('fault', ['no_manifest', 'changed_audio', 'unknown_character', 'extra_file', 'incomplete_cast'])
-def test_source_introductions_require_exact_public_cast_and_hashes(tmp_path, fault):
-    files = {**contents('src/'), **introduction_files()}
+@pytest.mark.parametrize('archive_kind', ['source', 'wheel'])
+def test_introductions_require_exact_public_cast_and_hashes(tmp_path, fault, archive_kind):
+    prefix = 'docs/listen/' if archive_kind == 'source' else 'audiobook/cast_previews/'
+    files = {**contents('src/' if archive_kind == 'source' else ''), **introduction_files(prefix)}
     if fault == 'no_manifest':
-        del files['docs/listen/manifest.json']
+        del files[prefix + 'manifest.json']
     elif fault == 'changed_audio':
-        files['docs/listen/example.mp3'] += b'changed'
+        files[prefix + 'example.mp3'] += b'changed'
     elif fault == 'extra_file':
-        files['docs/listen/extra.mp3'] = b'unapproved extra'
+        files[prefix + 'extra.mp3'] = b'unapproved extra'
     else:
-        manifest = json.loads(files['docs/listen/manifest.json'])
+        manifest = json.loads(files[prefix + 'manifest.json'])
         if fault == 'incomplete_cast': manifest['recordings'] = []
         else: manifest['recordings'][0]['character'] = 'unknown'
-        files['docs/listen/manifest.json'] = json.dumps(manifest).encode()
+        files[prefix + 'manifest.json'] = json.dumps(manifest).encode()
     with pytest.raises(ReleaseError, match='public introductions'):
-        audit(source(tmp_path, files), '0.2.1')
+        audit(source(tmp_path, files) if archive_kind == 'source' else wheel(tmp_path, files), '0.2.1')
+
+
+def test_wheel_includes_introductions_beside_original_conditioning_assets(tmp_path):
+    files = {**contents(), **introduction_files('audiobook/cast_previews/')}
+    catalog = json.loads(files['audiobook/cast.json'])
+    catalog['characters'][0]['sample_kind'] = 'introduction'
+    files['audiobook/cast.json'] = json.dumps(catalog).encode()
+    result = audit(wheel(tmp_path, files), '0.2.1')
+    assert result['public_introductions'] == 1 and result['character_files'] == 2
+    del files['audiobook/cast_previews/manifest.json']
+    del files['audiobook/cast_previews/example.mp3']
+    with pytest.raises(ReleaseError, match='Missing public introductions'):
+        audit(wheel(tmp_path, files), '0.2.1')

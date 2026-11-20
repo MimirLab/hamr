@@ -158,9 +158,13 @@ def cast_command(store, args):
         print('Character cast')
         for entry in result['characters']:
             status = ' · default for new books' if entry['voice'] == result['default_voice'] else ''
-            if entry['sample_kind'] == 'reference' and entry['sample_available']:
+            if entry['sample_kind'] == 'introduction' and entry['sample_available']:
+                status += ' · introduction available'
+            elif entry['sample_kind'] == 'reference' and entry['sample_available']:
                 status += ' · plays source reference'
-            elif not entry['available']:
+            elif not entry['sample_available']:
+                status += ' · preview unavailable'
+            if not entry['available']:
                 status += ' · audio unavailable in this build'
             print(f"{entry['name']} · {entry['id']}{status}")
             print(f"  {entry['description']}")

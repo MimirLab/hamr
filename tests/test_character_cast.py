@@ -136,3 +136,69 @@ def test_cast_cache_refuses_symlink(character_assets, tmp_path, capsys):
     result = call(home, capsys, 'voice', 'select', 'nigel-thornberry', '--json', expected=2)
     assert result['error']['code'] == 'unsafe_path'
     assert not list(outside.iterdir())
+
+
+@pytest.fixture
+def introduction_assets(character_assets, tmp_path, monkeypatch):
+    previews = tmp_path / 'packaged previews'
+    previews.mkdir()
+    path = previews / 'nigel-thornberry.mp3'
+    path.write_bytes(b'public introduction fixture, distinct from conditioning audio')
+    writejson(previews / 'manifest.json', {'recordings': [
+        {'character': 'nigel-thornberry', 'file': path.name, 'text': 'Come along on an extraordinary expedition!',
+         'sha256': filehash(path), 'seconds': 8.5},
+    ]})
+    monkeypatch.setattr(cast, 'PREVIEWS', previews)
+    catalog = loadjson(cast.CATALOG)
+    catalog['characters'][0]['sample_kind'] = 'introduction'
+    writejson(cast.CATALOG, catalog)
+    return path
+
+
+def test_preview_plays_introduction_and_queue_conditions_on_original_reference(introduction_assets, character_assets, tmp_path, monkeypatch, capsys):
+    home = tmp_path / 'state'
+    played = []
+    monkeypatch.setattr(core, 'run', lambda args: played.append(args))
+    sample = call(home, capsys, 'voice', 'sample', 'nigel-thornberry', '--play', '--json')
+    assert sample['sample_kind'] == 'introduction'
+    assert Path(sample['sample']) == introduction_assets
+    assert sample['transcript'] == 'Come along on an extraordinary expedition!'
+    assert played == [['mpv', '--no-video', str(introduction_assets)]]
+    library = call(home, capsys, 'voice', 'cast', '--json')
+    nigel = next(c for c in library['characters'] if c['id'] == 'nigel-thornberry')
+    assert nigel['sample_kind'] == 'introduction' and nigel['sample_available']
+    call(home, capsys, 'voice', 'select', 'nigel-thornberry', '--json')
+    source = tmp_path / 'book.md'; source.write_text('An ordinary paragraph for a new book.\n')
+    job = call(home, capsys, 'queue', str(source), '--json')
+    voice = Store(home).get(job['job'])['voice']
+    assert Path(voice['reference']).suffix == '.wav'
+    assert voice['reference_sha256'] == filehash(character_assets / 'nigel-thornberry/reference.wav')
+    assert voice['transcript'] == 'This is the reference narration.'
+    assert voice['seconds'] == 3
+
+
+@pytest.mark.parametrize('fault,code', [('missing', 'cast_sample_missing'), ('changed', 'cast_asset_changed'), ('traversal', 'cast_sample_metadata')])
+def test_invalid_introduction_fails_before_playback(introduction_assets, tmp_path, monkeypatch, capsys, fault, code):
+    if fault == 'missing': introduction_assets.unlink()
+    elif fault == 'changed': introduction_assets.write_bytes(b'changed')
+    else:
+        manifest = loadjson(cast.PREVIEWS / 'manifest.json')
+        manifest['recordings'][0]['file'] = '../../outside.mp3'
+        writejson(cast.PREVIEWS / 'manifest.json', manifest)
+    played = []
+    monkeypatch.setattr(core, 'run', lambda args: played.append(args))
+    result = call(tmp_path / 'state', capsys, 'voice', 'sample', 'nigel-thornberry', '--play', '--json', expected=2)
+    assert result['error']['code'] == code
+    assert played == []
+
+
+def test_enabling_introductions_preserves_existing_conditioning_identity(introduction_assets, tmp_path):
+    catalog = loadjson(cast.CATALOG)
+    catalog['characters'][0]['sample_kind'] = 'reference'
+    writejson(cast.CATALOG, catalog)
+    store = Store(tmp_path / 'state')
+    before = cast.resolve_voice(store, 'cast:nigel-thornberry')
+    catalog['preview_kind'] = 'introduction'
+    writejson(cast.CATALOG, catalog)
+    assert cast.sample('nigel-thornberry')['sample_kind'] == 'introduction'
+    assert cast.resolve_voice(store, 'cast:nigel-thornberry') == before
