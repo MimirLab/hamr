@@ -18,8 +18,69 @@ def emit(value,json_mode=False):
         if value.get('error'): print(value['error']['message']); print(value['error']['action'])
     else: print(dumps(value),end='')
 
+
+def print_profiles(rows):
+    print('Built-in model choices — downloaded when selected')
+    print(f'{"Profile":31} {"Download":>9}  {"VRAM estimate":>15}  Status')
+    for row in rows:
+        if not row['implemented']: continue
+        low,high=row['estimated_peak_vram_gib']
+        memory='CPU only' if high==0 else f'{low:g}–{high:g} GiB'
+        label='tested on RX 6800 XT' if row['testing_status']=='locally_tested' else 'implemented; experimental'
+        print(f'{row["id"]:31} {row["download_bytes"]/1024**3:6.2f} GiB  {memory:>15}  {label}')
+
+
+def print_doctor(result):
+    host=result['hardware']
+    print(f'hamr doctor · {host["system"]} {host["arch"]}')
+    for gpu in host['gpus']:
+        memory=gpu.get('available_vram_bytes')
+        detail=f'{memory/1024**3:.1f} GiB available budget/free memory' if memory is not None else 'shared or unknown memory'
+        print(f'GPU: {gpu["name"]} · {detail}')
+    print(f'Vulkan: {host["vulkan"]["status"]} · {host["vulkan"]["reason"]}')
+    if host['ram_available_bytes'] is not None:print(f'System RAM available: {host["ram_available_bytes"]/1024**3:.1f} GiB')
+    choice=result['recommended_profile']
+    if choice:
+        print(f'\nSuggested starting choice: {choice["profile"]} ({choice["confidence"]})')
+        row=next(r for r in result['profiles'] if r['id']==choice['profile'])
+        print('  '+(row['testing_evidence'] or 'Implemented, experimental: real local rendering qualification is pending.'))
+        for reason in choice['reasons']:print('  '+reason)
+        print('  '+choice['uncertainty'])
+        print('\n'+choice['command'])
+    else:
+        print('\nNo starting choice could be established:')
+        fallback=next((r for r in result['profiles'] if r['id']=='cpu-q4'),None)
+        for reason in fallback.get('reasons',[]) if fallback else []:print('  '+reason)
+    for note in result['uncertainties']:print('Note: '+note)
+    for issue in result['issues']:print('Issue: '+issue['action'])
+    print('\nRun hamr setup for a guided choice, or hamr profiles for all built-in variants.')
+
+
+def choose_backend(store, json_mode):
+    if json_mode or not sys.stdin.isatty():
+        raise Error('profile_required','Choose a backend profile before downloading.', 'Run hamr doctor, then hamr setup --profile PROFILE. Interactive hamr setup offers a guided choice.')
+    result=doctor(store);print_doctor(result)
+    rows=[r for r in result['profiles'] if r['implemented']]
+    print()
+    for i,row in enumerate(rows,1):
+        status=row['compatibility'].replace('_',' ')
+        testing='locally tested' if row['testing_status']=='locally_tested' else 'experimental'
+        print(f'{i:2d}. {row["id"]} · {row["download_bytes"]/1024**3:.2f} GiB download · {status} · {testing}')
+        print('    '+row['tradeoff'])
+    recommended=result['recommended_profile']
+    default=recommended['profile'] if recommended else None
+    while True:
+        try:answer=input(f'\nChoose a profile number or ID{f" [{default}]" if default else ""}, or q to cancel: ').strip()
+        except EOFError:answer='q'
+        if answer.lower() in ('q','quit'):
+            raise Error('setup_cancelled','Setup cancelled before acquiring any assets.','Run hamr setup when ready to choose a model.')
+        if not answer and default:return default
+        if answer.isdigit() and 1<=int(answer)<=len(rows):return rows[int(answer)-1]['id']
+        if any(r['id']==answer for r in rows):return answer
+        print('Please enter a listed number or profile ID, or q to cancel.')
+
 def add_source(p):
-    p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
+    p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile',dest='listening_profile',help='Saved listening defaults created with hamr profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
     p.add_argument('--chapters',help='Source chapter occurrences, e.g.5,2-3,2; original order is retained. Use all to reset.')
 
 def policy(a):
@@ -44,7 +105,7 @@ def parser():
         q=subs.add_parser(name,help=help); q.add_argument('--json',action='store_true',default=argparse.SUPPRESS); return q
     sub('doctor','Inspect host and dependencies without downloading')
     q=sub('profile','Save explicit reusable listening defaults'); q.add_argument('name'); q.add_argument('--mode',choices=['listen','study','procedure'],default='listen'); q.add_argument('--tables',choices=['speak','companion'],default='speak'); q.add_argument('--code',choices=['speak','companion']); q.add_argument('--references',choices=['speak','companion']); q.add_argument('--notes',choices=['after_paragraph','inline','companion']); q.add_argument('--pronounce',action='append',default=[]); q.add_argument('--section',action='append',default=[])
-    q=sub('setup','Acquire and health-check one pinned experimental backend'); q.add_argument('--profile',required=True); q.add_argument('--cache',type=Path)
+    q=sub('setup','Choose, download and health-check a model'); q.add_argument('--profile',dest='backend_profile',help='Speech backend ID from hamr profiles; omit for guided selection'); q.add_argument('--cache',type=Path)
     sub('profiles','Show pinned candidate catalog and implemented profiles')
     for name in ['plan','queue','open']:
         q=sub(name,{'plan':'Inspect and plan without model setup','queue':'Persist a headless job','open':'Review and start a document'}[name]); add_source(q)
@@ -137,15 +198,25 @@ def main(argv=None):
     signal.signal(signal.SIGTERM,interrupted); signal.signal(signal.SIGHUP,interrupted)
     try:
         s=Store(a.home)
-        if getattr(a,'profile',None):
+        if getattr(a,'listening_profile',None):
             import re
-            if not re.fullmatch('[A-Za-z0-9_-]{1,64}',a.profile): raise Error('profile_name','Invalid profile name.')
-            saved=loadjson(s.root/'profiles'/(a.profile+'.json')); a.saved_policy=saved['policy']; a.aliases=saved['aliases']
+            if not re.fullmatch('[A-Za-z0-9_-]{1,64}',a.listening_profile): raise Error('profile_name','Invalid listening profile name.')
+            path=s.root/'profiles'/(a.listening_profile+'.json')
+            if not path.is_file(): raise Error('listening_profile_missing',f'Saved listening profile not found: {path}',f'Create it with hamr profile {a.listening_profile}, or omit --profile. Backend profiles belong to hamr setup --profile.')
+            saved=loadjson(path); a.saved_policy=saved['policy']; a.aliases=saved['aliases']
         else: a.aliases={}
-        if a.command=='doctor': emit(doctor(s),jm)
+        if a.command=='doctor':
+            result=doctor(s)
+            emit(result,True) if jm else print_doctor(result)
         elif a.command=='profiles':
             from .backend import CATALOG
-            c=loadjson(CATALOG); emit({'schema_version':1,'profiles':c['profiles'],'implemented_runtime':'hoppou','automatic_selection':False},jm)
+            from .hardware import profile_catalog
+            c=loadjson(CATALOG);rows=profile_catalog(c)
+            if jm:emit({'schema_version':1,'profiles':rows,'implemented_runtime':'hoppou','automatic_selection':False},True)
+            else:
+                print_profiles(rows)
+                print('\nResearch catalog only (no setup adapter in this build):')
+                print(', '.join(r['id'] for r in rows if not r['implemented']))
         elif a.command=='profile':
             import re
             if not re.fullmatch('[A-Za-z0-9_-]{1,64}',a.name): raise Error('profile_name','Invalid profile name.')
@@ -156,7 +227,10 @@ def main(argv=None):
                 aliases[src]=dst
             value={'schema_version':1,'name':a.name,'policy':policy(a),'aliases':aliases}
             writejson(s.root/'profiles'/(a.name+'.json'),value); emit(value,True)
-        elif a.command=='setup': emit(setup(s,a.profile,a.cache),jm)
+        elif a.command=='setup':
+            selected=a.backend_profile or choose_backend(s,jm)
+            if not jm:print(f'Preparing {selected}; downloading only its pinned runtime/model assets as needed.',file=sys.stderr)
+            emit(setup(s,selected,a.cache),jm)
         elif a.command=='plan': emit(plan(cached_inspect(a.source,s.root/'extractions'),policy(a),a.aliases),True)
         elif a.command in ('queue','open'):
             pref=s.root/'preferences.json'; voice=a.voice or (loadjson(pref).get('voice') if pref.exists() else None)
@@ -262,6 +336,8 @@ def main(argv=None):
             emit({'schema_version':1,'status':'paused','action':'Run hamr status, then resume JOB.'},True); sys.stdout.flush()
         except OSError: discard_closed_output()
         return 130
+    except FileNotFoundError as e:
+        emit({'schema_version':1,'error':{'code':'local_io','message':f'File not found: {e.filename or str(e)}','action':'Check the named path and repeat the command.'}},True); return 2
     except (OSError,ValueError,KeyError) as e:
         emit({'schema_version':1,'error':{'code':'local_io','message':f'Local operation failed ({type(e).__name__}).','action':'Check app/output paths, permissions and free space. Run doctor and resume.'}},True); return 2
 

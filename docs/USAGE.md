@@ -1,6 +1,6 @@
 # Using hamr
 
-Local audiobooks from EPUB, Markdown and PDF, with a built-in character cast, source review and recoverable Breeze rendering. The current release is **hamr 0.2.1**. Read [release notes](../RELEASE.md) for measured checks and remaining qualifications.
+Local audiobooks from EPUB, Markdown and PDF, with a built-in character cast, source review and recoverable Breeze rendering. The current release is **hamr 0.2.2**. Read [release notes](../RELEASE.md) for measured checks and remaining qualifications.
 
 Unsupported phonemes/languages and ambiguous source structure require review. QA preserves signs, precision, units and identifier values; publication approvals bind the comparison policy, plan and physical recordings.
 
@@ -14,11 +14,24 @@ Python 3.12+ and FFmpeg/ffprobe are required for rendering; mpv is used for play
 uv sync --frozen --extra test
 uv build --wheel
 ./install.sh
-hamr doctor --json
-hamr setup --profile vulkan-f16
+hamr doctor
+hamr setup
 ```
 
-Setup explicitly downloads one catalog-pinned runtime/model, verifies size/SHA-256, retains model terms and performs real startup before activating settings. Other installed profiles and job pins survive a setup failure. Supported adapter profiles are Hoppou F16/Q8/Q6/Q4 Vulkan, Q8 with CPU text encoding, and Q4 CPU; **only tested combinations listed in RELEASE.md have execution evidence**. The catalog is research input, not a support list. Breeze model/output terms are separate from this application's MIT license: personal research/noncommercial use is the initial scope.
+Start with [Which profile should I choose?](../README.md#which-profile-should-i-choose) for the hardware, memory, download and testing table. The application includes every F16/Q8/Q6/Q4 choice for both CPU and Vulkan, plus Q8 with CPU text encoding. Large weights are downloaded only after selection. Native CUDA/MLX and other research catalog entries have no setup adapter. The shipped adapter requires Linux x86_64, AVX2 and the Vulkan loader library; GPU profiles also require a working vendor Vulkan driver.
+
+`hamr doctor` inventories the resident GPU/driver and available memory, then explains a suggested starting profile. Its built-in Vulkan probe creates no logical device and submits no GPU work. Optional `vulkaninfo` and `nvidia-smi` add diagnostics when installed. Unknown memory, shared integrated memory, multiple GPUs and failed probes are reported as uncertainty. Advice is based on planning estimates, not a speech benchmark or a promise that every allocation will fit. `hamr doctor --json` includes the observations, per-profile compatibility reasons, download sizes, testing status and recommendation; it does not activate a profile.
+
+Interactive `hamr setup` offers the recommendation and all implemented choices. Select by number or ID, or press Enter to accept the suggestion. Scripts and noninteractive shells must specify a profile, for example:
+
+```sh
+hamr setup --profile vulkan-q8
+hamr profiles --json
+```
+
+Setup downloads one catalog-pinned runtime/model, verifies size/SHA-256, retains model terms and performs real startup before activating settings. Other installed profiles and job pins survive a setup failure. Repeating the command resumes matching partial downloads; `--cache DIRECTORY` accepts matching, verified asset filenames already on disk. A memory error suggests smaller models/CPU offload; Vulkan startup errors identify the driver/loader check and startup log. CPU profiles need the loader library but not a working Vulkan GPU. **Only combinations listed in RELEASE.md have real rendering evidence**; the remaining implemented choices are experimental. Breeze model/output terms are separate from this application's MIT license: personal research/noncommercial use is the initial scope.
+
+Backend profiles (`hamr setup --profile vulkan-q8`) select model precision and execution hardware. Saved listening profiles (`hamr profile technical --mode study`, then `hamr plan book.epub --profile technical`) store document-reading preferences. They have separate command dispatch; a missing saved profile reports its exact path.
 
 Fresh installs store app state, config, cache and locks in `~/.local/share/hamr`, with the installed environment in `~/.local/share/hamr-app/venv`. Use `--home PATH` or `HAMR_HOME` for an isolated profile. Use a local filesystem supporting SQLite WAL. The CLI never downloads a model during ordinary planning, rendering or recovery. `setup` acquires model assets. Models and references are pinned to each job.
 

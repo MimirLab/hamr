@@ -22,7 +22,7 @@ PRIVATE_TEXT = (
 )
 ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock', 'install.sh',
               'PKG-INFO', '.gitignore', 'tools/check_release.py',
-              'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md',
+              'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md', 'docs/listen/manifest.json',
               'docs/art/hamr-storyforge.png', 'docs/art/hamr-listener.png'}
 
 
@@ -70,6 +70,7 @@ def audit(path, version):
         allowed_metadata = wheel and name.startswith(metadata) and name.removeprefix(metadata) in (
             'METADATA', 'WHEEL', 'RECORD', 'entry_points.txt', 'licenses/LICENSE')
         allowed_source = not wheel and (name in ROOT_FILES or re.fullmatch(r'tests/[a-z0-9_]+\.py', name)
+                                       or re.fullmatch(r'docs/listen/[a-z0-9-]+\.mp3', name)
                                        or name == 'fixtures/technical.md')
         if not (allowed_runtime or allowed_metadata or allowed_source):
             raise ReleaseError(f'Unexpected release file: {name}')
@@ -99,8 +100,37 @@ def audit(path, version):
     actual = {name for name in files if '/cast_assets/' in name}
     if actual != expected:
         raise ReleaseError('Character files differ from final references and metadata.')
+    introductions = {name for name in files if name.startswith('docs/listen/')}
+    introduction_count = 0
+    if introductions:
+        try:
+            manifest = json.loads(files['docs/listen/manifest.json'])
+            if (set(manifest) != {'schema_version', 'kind', 'recordings'}
+                    or manifest['schema_version'] != 1 or manifest['kind'] != 'hamr-generated-introductions'):
+                raise ValueError('Invalid introduction manifest')
+            recordings = manifest['recordings']
+            if ({r['character'] for r in recordings} != {c['id'] for c in cast}
+                    or len(recordings) != len(cast)):
+                raise ValueError('Introduction cast differs')
+            expected_introductions = {'docs/listen/manifest.json'}
+            for recording in recordings:
+                if (set(recording) != {'character', 'file', 'text', 'sha256', 'seconds'}
+                        or recording['file'] != recording['character'] + '.mp3'
+                        or not isinstance(recording['text'], str) or not recording['text'].strip()
+                        or type(recording['seconds']) not in (int, float) or not 0 < recording['seconds'] <= 60):
+                    raise ValueError('Invalid introduction fields')
+                name = 'docs/listen/' + recording['file']
+                if hashlib.sha256(files[name]).hexdigest() != recording['sha256']:
+                    raise ValueError('Introduction checksum differs')
+                expected_introductions.add(name)
+            if introductions != expected_introductions:
+                raise ValueError('Unexpected introduction files')
+            introduction_count = len(recordings)
+        except (KeyError, ValueError, TypeError) as exc:
+            raise ReleaseError('Missing or invalid public introductions; expected the exact cast and verified audio.') from exc
     return {'artifact': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
             'files': len(files), 'characters': len(cast), 'character_files': len(actual),
+            'public_introductions': introduction_count,
             'private_path_and_key_scan': 'passed', 'allowlist': 'passed'}
 
 

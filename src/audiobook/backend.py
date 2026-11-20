@@ -34,13 +34,11 @@ def transfer_asset(url,part,offset,size):
         if process.stdout:process.stdout.close()
 
 def doctor(store):
-    gpus=[]
-    for p in Path('/sys/class/drm').glob('card[0-9]*/device/mem_info_vram_total'):
-        try: gpus.append({'device':str(p.parent),'driver':(p.parent/'driver').resolve().name,'pci_id':(p.parent/'device').read_text().strip(),'vram_bytes':int(p.read_text()),'used_bytes':int((p.parent/'mem_info_vram_used').read_text())})
-        except OSError: pass
+    from .hardware import inspect_host,advise
+    host=inspect_host();advice=advise(host,loadjson(CATALOG))
     dependencies={x:shutil.which(x) for x in ['ffmpeg','ffprobe','mpv','tesseract']}
     issues=[{'code':'missing_dependency','executable':x,'action':f'Install {x} in user space before rendering.'} for x in ('ffmpeg','ffprobe') if not dependencies[x]]
-    return {'schema_version':1,'issues':issues,'os':platform.platform(),'arch':platform.machine(),'gpus':gpus,'ram_available_kib':next((int(s.split()[1]) for s in Path('/proc/meminfo').read_text().splitlines() if s.startswith('MemAvailable:')),0),'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'state':str(store.root),'automatic_profile':None,'qualification':'Explicit profile selection required until measured qualification.'}
+    return {'schema_version':1,'issues':issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup downloads only the selected profile and validates real startup before activation.','hardware':host,**advice}
 
 def acquire(url,dst,expected,size):
     if dst.exists():
@@ -60,7 +58,8 @@ def acquire(url,dst,expected,size):
 
 def setup(store,profile,cache=None):
     c=loadjson(CATALOG); profiles={p['id']:p for p in c['profiles']}; p=profiles.get(profile)
-    if not p or p['runtime']!='hoppou': raise Error('unsupported_profile','This build implements only the pinned Hoppou profiles.')
+    if not p or p['runtime']!='hoppou': raise Error('unsupported_profile',f'Backend profile {profile!r} is unknown or catalog-only in this build.','Run hamr profiles for the built-in CPU/Vulkan model choices; selecting one downloads its pinned runtime and weights.')
+    if platform.system()!='Linux' or platform.machine().lower() not in ('x86_64','amd64'): raise Error('unsupported_platform','This release installs the Linux x86_64 runtime.','Use a supported Linux x86_64 environment; native Windows, ARM and Apple MLX adapters are not implemented.')
     with store.lock():
         r=c['runtimes']['hoppou']['linux_x86_64']; package=c['packages'][p['packages'][0]]; root=store.root/'assets'/profile; root.mkdir(exist_ok=True)
         files=[dict(r,path=r['filename']),*package['files']]
@@ -87,7 +86,16 @@ def setup(store,profile,cache=None):
         acquire(license_file['url'],terms,license_file['sha256'],license_file['bytes'])
         identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':c['runtimes']['hoppou']['revision'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(root/package['files'][0]['path']),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{str(x.relative_to(runtime)):filehash(x) for x in runtime.rglob('*.so*') if x.is_file()}}
         # A real startup proves activation before replacing known-working settings.
-        with Engine(store,identity) as e: health=e.health
+        try:
+            with Engine(store,identity) as e: health=e.health
+        except Error as exc:
+            text=(store.root/'runtime/backend.log').read_text(errors='replace')[-12000:] if (store.root/'runtime/backend.log').exists() else ''
+            import re
+            if re.search(r'out.of.(?:device.|host.)?memory|failed to allocate|allocation failed|VK_ERROR_OUT_OF',text,re.I):
+                raise Error('insufficient_memory',f'{profile} could not allocate enough memory for startup.','Close memory-heavy applications, run hamr doctor, then try a smaller model (vulkan-q8, vulkan-q6, vulkan-q4), vulkan-q8-cpu-text-encoder, or cpu-q4. Previously active settings are preserved.') from exc
+            if re.search(r'VK_ERROR_INCOMPATIBLE_DRIVER|no (?:vulkan|physical).*device|failed.*vulkan|libvulkan.*cannot open',text,re.I):
+                raise Error('vulkan_unavailable',f'{profile} could not start with the installed Vulkan driver.',f'Run hamr doctor and vulkaninfo --summary; check the Vulkan loader and vendor ICD. CPU execution (cpu-q4) avoids the GPU but still needs libvulkan.so.1. Startup details: {store.root / "runtime/backend.log"}') from exc
+            raise Error(exc.code,exc.message,f'{exc.action} Profile: {profile}. Startup log: {store.root / "runtime/backend.log"}. Run hamr doctor for another starting choice.') from exc
         writejson(store.root/'settings.json',identity)
         return {'schema_version':1,'profile':profile,'health':health,'identity':identity,'model_terms':str(terms)}
 

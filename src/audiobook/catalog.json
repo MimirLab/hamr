@@ -1051,7 +1051,40 @@
       "status": "candidate",
       "settings": {
         "text_encoder": "cpu",
-        "parallel": false
+        "parallel": 1
+      }
+    },
+    {
+      "id": "cpu-f16",
+      "runtime": "hoppou",
+      "packages": [
+        "hoppou-f16"
+      ],
+      "status": "candidate",
+      "settings": {
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "cpu-q8",
+      "runtime": "hoppou",
+      "packages": [
+        "hoppou-q8"
+      ],
+      "status": "candidate",
+      "settings": {
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "cpu-q6",
+      "runtime": "hoppou",
+      "packages": [
+        "hoppou-q6"
+      ],
+      "status": "candidate",
+      "settings": {
+        "device": "cpu"
       }
     },
     {
