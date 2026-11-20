@@ -42,6 +42,7 @@ def test_only_final_reference_and_metadata_pass(tmp_path):
 @pytest.mark.parametrize('name', [
     '.git/config', 'evidence/book-plan.json', 'jobs/state.sqlite',
     'audiobook/cast_assets/example/sample.wav',
+    'docs/art/hamr-storyforge.png',
 ])
 def test_extra_workspace_or_audition_file_rejected(tmp_path, name):
     files = contents()
@@ -69,6 +70,8 @@ def test_source_archive_uses_same_boundary(tmp_path):
     files = contents('src/')
     files['README.md'] = b'Public documentation.'
     files['tests/test_faithful3.py'] = b'# Generic regression test module with a version in its name.\n'
+    files['docs/USAGE.md'] = b'Public command guide.'
+    files['docs/art/hamr-storyforge.png'] = b'Public illustration fixture.'
     with tarfile.open(path, 'w:gz') as archive:
         for name, data in files.items():
             item = tarfile.TarInfo('hamr-0.2.1/' + name)

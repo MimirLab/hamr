@@ -21,7 +21,9 @@ PRIVATE_TEXT = (
     re.compile(rb'-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----'),
 )
 ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock', 'install.sh',
-              'PKG-INFO', '.gitignore', 'tools/check_release.py'}
+              'PKG-INFO', '.gitignore', 'tools/check_release.py',
+              'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md',
+              'docs/art/hamr-storyforge.png', 'docs/art/hamr-listener.png'}
 
 
 def read_archive(path):
