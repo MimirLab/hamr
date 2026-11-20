@@ -1,0 +1,320 @@
+{
+  "schema_version": 1,
+  "characters": [
+    {
+      "id": "andrew-ryan",
+      "name": "Andrew Ryan",
+      "description": "Armin Shimerman · BioShock · in-person office bank",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "brock-samson",
+      "name": "Brock Samson",
+      "description": "Patrick Warburton · Poker Night 2 · compressed dialogue mirror",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "carl-sagan",
+      "name": "Carl Sagan",
+      "description": "Carl Sagan · The Pale Blue Dot, Library of Congress recording",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "cave-johnson",
+      "name": "Cave Johnson",
+      "description": "J. K. Simmons · Portal 2 · 1950s Aperture recordings",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "claudius",
+      "name": "Claudius",
+      "description": "Derek Jacobi · I, Claudius — solo abridged Jacobi reading, Canongate CSA Audio",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "dale-gribble",
+      "name": "Dale Gribble",
+      "description": "Johnny Hardwick · King of the Hill (Windows, 2000)",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "david-attenborough",
+      "name": "David Attenborough",
+      "description": "David Attenborough · David Attenborough: The Early Years Collection — publisher excerpt",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "dr-orpheus",
+      "name": "Dr. Orpheus",
+      "description": "Steven Rattazzi · The Venture Bros. · Film publisher excerpt",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "dwight-schrute",
+      "name": "Dwight Schrute",
+      "description": "Rainn Wilson · The Office · Dwight's Perfect Crime - The Office US",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "eric-cartman",
+      "name": "Eric Cartman",
+      "description": "Trey Parker · The Stick of Truth and The Fractured But Whole · Workshop dialogue",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "fourth-doctor",
+      "name": "Fourth Doctor",
+      "description": "Tom Baker · Doctor Who: Scratchman, narrated by Tom Baker",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "garak",
+      "name": "Garak",
+      "description": "Andrew Robinson · A Stitch in Time · official audiobook reading",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "hades",
+      "name": "Hades",
+      "description": "James Woods · Kingdom Hearts (PS2) · Olympus Coliseum cutscenes",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "hal-9000",
+      "name": "HAL 9000",
+      "description": "Douglas Rain · 2001: A Space Odyssey (1968)",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "handsome-jack",
+      "name": "Handsome Jack",
+      "description": "Dameon Clarke · Borderlands 2 original game sound",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "hank-hill",
+      "name": "Hank Hill",
+      "description": "Mike Judge · Warped Kart Racers original game dialogue",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "hk-47",
+      "name": "HK-47",
+      "description": "Kristoffer Tabori · Knights of the Old Republic II",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "j-jonah-jameson",
+      "name": "J. Jonah Jameson",
+      "description": "J. K. Simmons · Spider-Man 3 (PC, 2007)",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "james-burke",
+      "name": "James Burke",
+      "description": "James Burke · The Day the Universe Changed — Macmillan Audio",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "jon-irenicus",
+      "name": "Jon Irenicus",
+      "description": "David Warner · Baldur’s Gate II dialogue soundset",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "joshua-graham",
+      "name": "Joshua Graham",
+      "description": "Keith Szarabajka · Fallout: New Vegas, Honest Hearts",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "lorewalker-cho",
+      "name": "Lorewalker Cho",
+      "description": "Jim Cummings · World of Warcraft: Mists of Pandaria, 5.2",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "medivh-the-prophet",
+      "name": "Medivh / the Prophet",
+      "description": "Heroes of the Storm · Medivh · Michael Bell",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "michael-scott",
+      "name": "Michael Scott",
+      "description": "Steve Carell · The Office · Dwight Schrute Becomes Assistant Regional Manager - The Office US",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "mr-burns",
+      "name": "Mr. Burns",
+      "description": "Harry Shearer · The Simpsons: Road Rage (2001)",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "mr-house",
+      "name": "Mr. House",
+      "description": "René Auberjonois · Fallout: New Vegas, PC English, 2010 · isolated dialogue",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "nigel-thornberry",
+      "name": "Nigel Thornberry",
+      "description": "Tim Curry · The Wild Thornberrys Movie (Windows, 2002)",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "peggy-hill",
+      "name": "Peggy Hill",
+      "description": "Kathy Najimy · Warped Kart Racers original game dialogue",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "randy-marsh",
+      "name": "Randy Marsh",
+      "description": "Trey Parker · The Stick of Truth · direct recording",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "rick-sanchez",
+      "name": "Rick Sanchez",
+      "description": "Justin Roiland · Rick and Morty: Virtual Rick-ality · compressed dialogue mirror",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "roger",
+      "name": "Roger",
+      "description": "Seth MacFarlane · Warped Kart Racers original game dialogue",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "silco",
+      "name": "Silco",
+      "description": "Jason Spisak · Teamfight Tactics · Set 13",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "stan-smith",
+      "name": "Stan Smith",
+      "description": "Seth MacFarlane · Warped Kart Racers original game dialogue",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "sylvanas",
+      "name": "Sylvanas",
+      "description": "Patty Mattson · Heroes of the Storm base voice",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "the-arbiter",
+      "name": "The Arbiter",
+      "description": "Keith David · Halo 2 original dialogue",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "the-brain",
+      "name": "The Brain",
+      "description": "Maurice LaMarche · Pinky and the Brain: World Conquest original game dialogue",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "the-stanley-parable-narrator",
+      "name": "The Stanley Parable Narrator",
+      "description": "The Stanley Parable (2013 HD Remix) · Kevan Brighting",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "thrall",
+      "name": "Thrall",
+      "description": "Chris Metzen · Warcraft III classic",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "trade-prince-gallywix",
+      "name": "Trade Prince Gallywix",
+      "description": "Darin De Paul · World of Warcraft: Legion",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "uther",
+      "name": "Uther",
+      "description": "Michael McConnohie · Warcraft III classic",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "vizzini",
+      "name": "Vizzini",
+      "description": "Wallace Shawn · The Princess Bride (1987 film)",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "vol-jin",
+      "name": "Vol'jin",
+      "description": "Dave Fennoy · World of Warcraft: Mists of Pandaria, 5.3",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "wallace-breen",
+      "name": "Wallace Breen",
+      "description": "Robert Culp · Half-Life 2 · Breencast",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "werner-herzog",
+      "name": "Werner Herzog",
+      "description": "Werner Herzog · Every Man for Himself and God Against All — self-narrated memoir excerpt",
+      "language": "en",
+      "sample_kind": "reference"
+    },
+    {
+      "id": "yes-man",
+      "name": "Yes Man",
+      "description": "Dave Foley · Fallout: New Vegas",
+      "language": "en",
+      "sample_kind": "reference"
+    }
+  ]
+}
