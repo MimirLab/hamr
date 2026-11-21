@@ -46,6 +46,11 @@ def choose_date(request, order):
             'action':'select','candidate_id':choice['id'],'evidence_ids':choice['evidence_ids'],'requested_context':[]}
 
 
+def ask_context(request, *features):
+    return {'source_digest':request['source_digest'],'occurrence_id':request['occurrence_id'],
+            'action':'request_context','candidate_id':None,'evidence_ids':[],'requested_context':list(features)}
+
+
 def test_real_endpoint_selects_a_known_reading_and_replays_without_network(tmp_path,capsys):
     source=tmp_path/'book.md'
     source.write_text('The hearing is on 03/04.\n',encoding='utf-8')
@@ -63,6 +68,56 @@ def test_real_endpoint_selects_a_known_reading_and_replays_without_network(tmp_p
     assert 'April third' in stored['utterances'][0]['text']
     replay=plan(markdown(source.read_bytes()),stored['policy'])
     assert json.loads(json.dumps(replay))==stored
+
+
+def test_endpoint_supplies_only_requested_context_and_replays_the_choice():
+    source=('## Local calendar\n\nThe calendar team uses day and month in that order.\n\n'
+            'The hearing is on 03/04.\n\nPrivate `LOCAL_CANARY` text.\n\n## Other chapter\n\nCross chapter material.')
+    document=markdown(source.encode())
+    def respond(batch):
+        request,=batch
+        if 'additional_context' not in request:
+            return [ask_context(request,'neighbors','chapter')]
+        assert request['additional_context']=={'chapter':'Local calendar','neighbors':{
+            'previous_paragraph':'The calendar team uses day and month in that order.'}}
+        return [choose_date(request,'DM')]
+    with serve(respond) as (endpoint,requests):
+        result=plan(document,context_reviewer=endpoint)
+        assert len(requests)==2 and 'LOCAL_CANARY' not in json.dumps(requests)
+    assert result['contextual_resolution']['review_provider']['round_trips']==2
+    assert result['contextual_resolution']['review_provider']['followup_outcome']=='selected'
+    assert any('April third' in utterance['text'] for utterance in result['utterances'])
+    assert plan(document,result['policy'])==result
+
+
+def test_context_followup_is_bounded_and_keeps_unresolved_policy():
+    document=markdown(b'## Dates\n\nThe hearing is on 03/04.')
+    baseline=plan(document)
+    with serve(lambda batch:[ask_context(batch[0],'chapter')]) as (endpoint,requests):
+        result=plan(document,context_reviewer=endpoint)
+        assert len(requests)==2 and result['utterances']==baseline['utterances'] and not result['issues']
+        assert result['contextual_resolution']['review_provider']['followup_outcome']=='additional_context_unavailable'
+        strict=plan(document,{'context':{'mode':'strict'}},context_reviewer=endpoint)
+        assert len(requests)==4 and strict['issues']
+    with serve(lambda batch:[ask_context(batch[0],'table_header')]) as (endpoint,requests):
+        result=plan(document,context_reviewer=endpoint)
+        assert len(requests)==1 and result['contextual_resolution']['review_provider']['round_trips']==1
+
+
+def test_invalid_followup_does_not_discard_a_separate_accepted_reply():
+    document=markdown(b'## Dates\n\nThe hearing is on 03/04.\n\nThe meeting is on 05/06.')
+    def respond(batch):
+        if len(batch)==2:
+            return [choose_date(batch[0],'DM'),ask_context(batch[1],'chapter')]
+        return [{**choose_date(batch[0],'DM'),'source_digest':'0'*64}]
+    with serve(respond) as (endpoint,requests):
+        result=plan(document,context_reviewer=endpoint)
+        assert len(requests)==2
+    assert result['contextual_resolution']['review_provider']['followup_outcome']=='invalid_reply'
+    assert result['contextual_resolution']['review_provider']['selections']==1
+    spoken=' '.join(utterance['text'] for utterance in result['utterances'])
+    assert 'April third' in spoken and 'June fifth' not in spoken
+    assert plan(document,result['policy'])==result
 
 
 def test_malformed_provider_reply_and_unavailability_keep_code_fallback():

@@ -70,6 +70,8 @@
     "verbal_record": ["please", "must", "will", "can", "to"],
     "read_participle": ["was", "were", "is", "are", "am", "be", "been", "being", "had", "have", "has"],
     "read_base": ["to", "will", "shall", "could", "should", "can", "must", "would", "may", "might", "do", "does", "did"],
+    "read_coordination_past": ["arose", "came", "closed", "folded", "gave", "held", "opened", "picked", "rose", "sat", "stepped", "took", "turned", "unfolded", "walked", "went"],
+    "read_coordination_base": ["arise", "come", "close", "fold", "give", "hold", "open", "pick", "rise", "sit", "step", "take", "turn", "unfold", "walk", "go"],
     "past_read": ["yesterday", "last night", "last week", "last month", "last year"],
     "habitual_read": ["daily", "every morning", "every day", "every night", "each day", "usually", "often"],
     "notation": ["tex expression", "formula", "the vector space", "subscript notation", "math expression"],

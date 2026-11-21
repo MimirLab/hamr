@@ -230,6 +230,43 @@ def contraction(raw, expansion, kind, env):
     return [Candidate(kind,fields,expansion if choice else None,('governor','convention') if choice else ('governor',),(source_form,))]
 
 
+COORDINATOR = re.compile(r'\band\s+$',re.I)
+RELATIVE_ASIDE = re.compile(r',\s+(?:who|whose|which)\b[^,]+$',re.I)
+CLAUSE_SHIFT = re.compile(r'\b(?:to|when|while|unless|because|if|after|before|who|whose|which|that)\b',re.I)
+NOUN_MODIFIER = re.compile(r'\b(?:a|an|the|my|your|his|her|our|their|its|this|that)\s+(?:[A-Za-z]+ly\s+)?$',re.I)
+
+
+def coordinated_read(env):
+    """Find tense evidence in a coordinated verb with an omitted subject."""
+    origin,prefix=env.preceding_text(224)
+    link=COORDINATOR.search(prefix)
+    if not link:
+        return None
+    clause=re.split(r'[.!?;:\n]',prefix[:link.start()])[-1]
+    start=origin+link.start()-len(clause)
+    trimmed=clause.rstrip()
+    head=trimmed.rstrip(',').rstrip()
+    if trimmed.endswith(','):
+        relative=RELATIVE_ASIDE.search(head)
+        if relative:
+            head=head[:relative.start()]
+    for group,sense in (('read_coordination_past','past_read'),('read_coordination_base','present_read')):
+        pattern=env.resolver.cues[group]['nearby']
+        for verb in reversed(list(pattern.finditer(head))):
+            before=head[:verb.start()].rsplit(',',1)[-1]
+            after=head[verb.end():]
+            if CLAUSE_SHIFT.search(after) or re.search(r'\b(?:not|never|if|whether)\b',before,re.I):
+                continue
+            if sense=='past_read' and NOUN_MODIFIER.search(before):
+                continue
+            governing=env.resolver.cues['read_base']['left'].search(before.rstrip())
+            if bool(governing)!=(sense=='present_read'):
+                continue
+            env.governors.add((group,'left',verb[0],start+verb.start(),start+verb.end()))
+            return sense
+    return None
+
+
 def heteronym(raw,env):
     if raw=='record':
         if env.cue('nominal_record'):
@@ -240,6 +277,10 @@ def heteronym(raw,env):
     for group,sense in (('read_participle','past_read'),('read_base','present_read')):
         if env.cue(group):
             return [Candidate('contextual_pronunciation',{'sense':sense,'written_token_unchanged':True},None,('governor',))]
+    sense=coordinated_read(env)
+    if sense:
+        fields={'sense':sense,'written_token_unchanged':True,'syntax_context':'coordinated_verb'}
+        return [Candidate('contextual_pronunciation',fields,None,('governor',))]
     before=re.split(r'[.!?;:"“”\n]',env.before)[-1]
     after=re.split(r'[.!?;:"“”\n]',env.after)[0]
     window=' '.join((before,after)).strip().split()

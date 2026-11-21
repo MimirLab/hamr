@@ -81,6 +81,8 @@ def column_anchors(cells, date_headers, originals):
 class Evidence:
     def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column, chronology=None):
         self.resolver = resolver
+        self.text = text
+        self.start = start
         self.before = text[max(0,start-96):start].rsplit('\n',1)[-1]
         self.continuation=text[end:end+96]
         self.after = self.continuation.split('\n',1)[0]
@@ -106,6 +108,10 @@ class Evidence:
 
     def setting(self, name):
         return self.settings.get(name)
+
+    def preceding_text(self, length):
+        start=max(0,self.start-length)
+        return start,self.text[start:self.start]
 
     def number_separator(self):
         if len(self.number_anchors)==1:

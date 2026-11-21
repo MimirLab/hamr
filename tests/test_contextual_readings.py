@@ -346,6 +346,23 @@ def test_contextual_pronunciation_keeps_source_spelling_and_defers_realization()
     assert speech(contrast)=='The note was read daily. She asked me to read yesterday.'
 
 
+def test_coordinated_read_keeps_the_verb_form_of_its_own_phrase():
+    source=('He opened the envelope and read the note. She will open the envelope and read the note. '
+            'Then arose a quiet, thoughtful guest, whose face showed no surprise at the story, and read a poem.')
+    result=reading(source)
+    found=[row for row in events(result) if row['source']=='read']
+    assert [selected(row)['fields']['sense'] for row in found]==['past_read','present_read','past_read']
+    assert all(row['realization']=='existing_renderer' for row in found)
+    for row,verb in zip(found,('opened','open','arose')):
+        evidence=row['evidence'][0]['cues'][0]
+        assert evidence[2]==verb and source[evidence[3]:evidence[4]]==verb
+    assert speech(result)==source
+    adjective=reading('I keep my folded copy and read at night.')
+    assert not any(selected(e)['fields'].get('sense')=='past_read' for e in events(adjective))
+    infinitive=reading('I opened the file to check the title and read several pages.')
+    assert not any(selected(e)['fields'].get('sense')=='past_read' for e in events(infinitive))
+
+
 def test_authored_epub_edit_does_not_disable_context_around_literal():
     from audiobook.importers import epub
     from test_upstream_epub import book
