@@ -7,7 +7,7 @@ Homophones such as for/four and know/no are deliberately not equated.
 import re,unicodedata
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v18'
+POLICY='bounded-english-composed-scale-typed-v19'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -109,6 +109,49 @@ def cardinal(ts,i):
         if digits:value+='.'+''.join(digits);end=position
     return value,end
 
+MONEY_UNITS = {
+    ('us','dollar'): ('us','dollars'),
+    ('canadian','dollar'): ('canadian','dollars'),
+    ('australian','dollar'): ('australian','dollars'),
+    ('new','zealand','dollar'): ('new','zealand','dollars'),
+    ('british','pound'): ('british','pounds'),
+    ('euro',): ('euros',),
+    ('dollar',): ('dollars',),
+}
+MONEY_AMOUNT=re.compile(r'#-?[0-9]{1,12}(?:\.[0-9]{1,12})?')
+
+
+def money_tokens(tokens):
+    """Compare monetary notation and major/minor wording at equal value."""
+    comparable=[]
+    i=0
+    while i<len(tokens):
+        amount_at=i+2 if tokens[i:i+2]==['dollar','sign'] else i
+        if amount_at>=len(tokens) or not MONEY_AMOUNT.fullmatch(tokens[amount_at]):
+            comparable.append(tokens[i]);i+=1
+            continue
+        amount=tokens[amount_at]
+        end=amount_at+1
+        currency=('dollars',) if amount_at>i else None
+        for unit,canonical in MONEY_UNITS.items():
+            spelling=tuple(tokens[end:end+len(unit)])
+            if currency is None and spelling in (unit,canonical):
+                currency=canonical
+                end+=len(unit)
+                break
+        if currency is None:
+            comparable.append(tokens[i]);i+=1
+            continue
+        tail=tokens[end:end+3]
+        small=('penny','pence') if currency==('british','pounds') else ('cent','cents')
+        if '.' not in amount and len(tail)==3 and tail[0]=='and' and re.fullmatch(r'#[0-9]{1,2}',tail[1]) and tail[2] in small:
+            amount+='.'+tail[1][1:].zfill(2)
+            end+=3
+        comparable.extend((amount.rstrip('0').rstrip('.') if '.' in amount else amount,*currency))
+        i=end
+    return comparable
+
+
 def comparison_tokens(text):
     from .abbreviations import expand
     from .linguistic import comparison_text
@@ -145,7 +188,7 @@ def comparison_tokens(text):
         elif re.fullmatch('n+o+',t):out.append('no')
         else:out.append(t)
         i+=1
-    return out
+    return money_tokens(out)
 
 def quantities(ts):return [t[1:] for t in ts if t.startswith('#')]
 def negations(ts):return sum(t in ('not','never','no',"ain't") for t in ts)
@@ -190,7 +233,7 @@ def mathematical_markers(text):
     rates={'percent':r'\b(?:percent|per cent)\b|%', 'per_mille':r'\bper\s+mille\b|‰', 'basis_point':r'\bbasis\s+points?\b'}
     for label,pattern in rates.items():markers += ['rate:'+label]*len(re.findall(pattern,text))
     financial={'dollar sign':'unassigned-dollar','us dollar':'usd','canadian dollar':'cad','australian dollar':'aud',
-               'new zealand dollar':'nzd','euro':'eur','british pound':'gbp'}
+               'new zealand dollar':'nzd','euro':'eur','british pound':'gbp','dollar':'unassigned-dollar'}
     markers += ['currency:'+financial[m[1]] for m in re.finditer(r'\b('+'|'.join(financial)+r')s?\b',text)]
     # Inspect operators independently of matching numbers or aggregate WER.
     phrases={'greater than or equal to':'ge','less than or equal to':'le','greater than':'gt','less than':'lt'}

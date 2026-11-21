@@ -4,7 +4,7 @@ import re
 
 from . import abbreviations, boundaries, context_forms, context_lexical
 from .context_candidate import Candidate, Component, exact_components, literal, number_spoken, numeric_fields
-from .context_forms import CURRENCIES, MONTHS, SYMBOLS, UNIT_NAMES
+from .context_forms import CURRENCIES, MONTHS, SYMBOLS, UNIT_NAMES, money_words
 from .linguistic import UNITS as TECHNICAL_UNITS
 from .spoken_forms import identifier, number, ordinal
 from .typed_readings import clock_words
@@ -103,16 +103,18 @@ def monetary(raw, env):
     if ',' in digits:
         return [literal(raw)]
     fields = {**numeric_fields(sign+digits),'amount':digits,'currency_symbol':symbol}
+    technical=env.setting('narration_style')=='technical'
     sign_spoken = 'minus ' if sign in ('−','-') else 'plus ' if sign else ''
-    candidates = [literal(raw,sign_spoken+SYMBOLS[symbol]+' '+number_spoken(digits),
+    fallback=(sign_spoken+SYMBOLS[symbol]+' '+number_spoken(digits) if technical or symbol!='$'
+              else money_words(sign+digits,None))
+    candidates = [literal(raw,fallback,
                           fields={**fields,'currency':None},kind='money_symbol')]
     labelled=env.finance() and env.currency_label in ('USD','CAD','AUD','NZD')
     currency = {'€':'EUR','£':'GBP'}.get(symbol) or (env.currency_label if labelled else env.setting('dollar_currency'))
     if currency:
-        singular = digits == '1'
         origin='symbol' if symbol!='$' else 'source_label' if labelled else 'profile'
         candidates.append(Candidate('money', {**fields,'currency':currency,'currency_origin':origin},
-                                   number_spoken(sign+digits)+' '+CURRENCIES[currency]+('' if singular else 's'),
+                                   money_words(sign+digits,currency,technical),
                                    (('column' if env.header else 'governor') if labelled and symbol=='$' else 'convention' if symbol=='$' else 'syntax',)))
     return candidates
 
@@ -123,10 +125,11 @@ def money_modifier(raw, env):
     noun_phrase=env.cue('article')
     options=[]
     for option in monetary(amount,env):
-        if option.kind=='money' and noun_phrase:
+        if noun_phrase and (option.kind=='money' or option.kind=='money_symbol' and env.setting('narration_style')!='technical'):
+            label=CURRENCIES.get(option.fields['currency'],'dollar')
             fields={**option.fields,'noun':noun,'currency_grammar':'attributive_singular'}
-            spoken=number_spoken(option.fields['source_amount'])+' '+CURRENCIES[fields['currency']]+' '+noun
-            options.append(Candidate('money_modifier',fields,spoken,option.evidence))
+            spoken=number_spoken(option.fields['source_amount'])+' '+label+' '+noun
+            options.append(Candidate('money_modifier' if option.kind=='money' else 'money_symbol',fields,spoken,option.evidence))
         else:
             options.append(Candidate(option.kind,{**option.fields,'noun':noun},(option.spoken or amount)+separator+noun,option.evidence))
     return options
@@ -166,6 +169,8 @@ def candidates(kind, raw, env):
             units={2:('half','halves'),3:('third','thirds'),4:('quarter','quarters'),8:('eighth','eighths')}
             said=number(numerator)+' '+units[denominator][numerator!=1] if denominator in units else number(numerator)+' divided by '+number(denominator)
             unit=next(cue[2] for cue in env.governors if cue[0]=='fraction_unit')
+            if 1<numerator<denominator and denominator in units and not unit.casefold().endswith('s') and env.setting('narration_style')!='technical':
+                said+=' of an' if unit[0].casefold() in 'aeiou' else ' of a'
             options.append(Candidate('fraction',{'numerator':fields[0],'denominator':fields[1],'bound_unit':unit},said,('governor',)))
         quote=env.quoted_date_order()
         nearby_date=env.cue('date_link') and env.nearby('date_topic')

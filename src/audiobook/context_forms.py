@@ -39,6 +39,21 @@ COEFFICIENT = ('(?:a|'+'|'.join(ONES[1:])+'|(?:'+'|'.join(TENS_WORDS)+
 OPERATION = re.compile('('+DECIMAL+r')\s*([+−×÷-])\s*('+DECIMAL+r')(?:\s*=\s*('+SIGNED+'))?')
 
 
+def money_words(amount, currency, technical=False):
+    primary=CURRENCIES.get(currency,'dollar')
+    singular=amount.lstrip('+−-')=='1'
+    major,point,minor=amount.partition('.')
+    if not technical and point and len(minor)==2:
+        singular=major.lstrip('+−-')=='1'
+        spoken=number_spoken(major)+' '+primary+('' if singular else 's')
+        cents=int(minor)
+        if cents:
+            small=('penny' if cents==1 else 'pence') if currency=='GBP' else ('cent' if cents==1 else 'cents')
+            spoken+=' and '+number_spoken(str(cents))+' '+small
+        return spoken
+    return number_spoken(amount)+' '+primary+('' if singular else 's')
+
+
 def patterns(left,right,months):
     """Order wider owners ahead of their numeric or lexical children."""
     units='(?:'+UNIT_PATTERN+')'
@@ -98,6 +113,13 @@ def expand(kind, raw, env):
         label=CURRENCIES[currency]+'s' if currency else SYMBOLS[first]
         amount=number_spoken(start)+' to '+number_spoken(end)
         spoken=(amount+' '+label if currency else label+' '+amount)
+        if env.setting('narration_style')!='technical':
+            # One unit can serve both whole endpoints. State both monetary
+            # amounts when minor units need their own words.
+            if '.' in start or '.' in end:
+                spoken=money_words(start,currency)+' to '+money_words(end,currency)
+            else:
+                spoken=amount+' '+CURRENCIES.get(currency,'dollar')+'s'
         fields={'start':start,'end':end,'currency':currency,'shared_currency':not bool(second),'currency_symbol':first}
         if denominator:
             unit={'h':'hour','hr':'hour','min':'minute','s':'second'}[denominator]
@@ -110,7 +132,7 @@ def expand(kind, raw, env):
     if kind=='coded_money':
         currency,value=raw.split();whole,_,fraction=value.lstrip('+−-').partition('.')
         fields={'amount':value,'currency':currency,'integer_digits':whole,'fraction_digits':fraction,'scale':len(fraction),'currency_origin':'explicit_code'}
-        return [Candidate('money',fields,number_spoken(value)+' '+CURRENCIES[currency]+('' if value=='1' else 's'),('syntax',))]
+        return [Candidate('money',fields,money_words(value,currency,env.setting('narration_style')=='technical'),('syntax',))]
     if kind in ('date_time','timezone_offset'):
         if kind=='date_time':
             date_text,time,offset=re.fullmatch(r'(.*)T([0-9]{2}:[0-9]{2})(.*)',raw).groups()

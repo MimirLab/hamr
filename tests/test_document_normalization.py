@@ -139,7 +139,7 @@ def test_unknown_legacy_encoding_is_an_actionable_error(tmp_path):
 def test_typed_readings_preserve_distinct_repeated_ranges_and_unknown_forms():
     text = 'Room 007 costs $12.50. Departure 08:05. Record 0.080 and 0.080. Use 1,234.500 mL at 20 °C. Dates 03/04 and v1.090 stay literal.'
     decision = plan(markdown(text.encode()))['decisions'][0]
-    assert 'Room zero zero seven costs dollar sign twelve point five zero.' in decision['spoken']
+    assert 'Room zero zero seven costs twelve dollars and fifty cents.' in decision['spoken']
     assert 'Departure time, eight oh five.' in decision['spoken']
     assert 'zero point zero eight zero and zero point zero eight zero' in decision['spoken']
     assert 'one thousand two hundred thirty four point five zero zero milliliters at twenty degrees Celsius' in decision['spoken']

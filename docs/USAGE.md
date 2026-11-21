@@ -83,6 +83,8 @@ For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new s
 
 Inspect `decisions[].context_events` in `hamr plan DOCUMENT --json`. Each event records its source span, possible readings, evidence and selected candidate. Defaults keep uncertain dates in their printed field order and continue the book. Choose `"mode": "strict"` in the settings file to hold unresolved choices for review. Existing source and speech checks apply in either mode.
 
+Ordinary narration reads `$12.50` as “twelve dollars and fifty cents” and `3/4 cup` as “three quarters of a cup”. Set `"conventions": {"narration_style": "technical"}` when the spoken form should preserve printed currency symbols and decimal places. Either style keeps the exact source and separate reading evidence in the companion.
+
 Start with explicit conventions. This file selects day/month dates where the context identifies a date, and negative parentheses for labeled financial values.
 
 ```json

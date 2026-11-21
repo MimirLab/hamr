@@ -31,7 +31,7 @@ def test_owned_occurrences_keep_distinct_numeric_roles_and_literal_scope():
     report=events(result)
     assert [selected(e)['kind'] for e in report]==['identifier','cardinal_quantity','money_symbol']
     assert len({e['occurrence_id'] for e in report})==3
-    assert speech(result)=='Room two two two opens. There are 222 books. The price is dollar sign two hundred twenty two. Type $222 exactly.'
+    assert speech(result)=='Room two two two opens. There are 222 books. The price is two hundred twenty two dollars. Type $222 exactly.'
     for event in report:
         a,b=event['expression_span']
         assert source[a:b]==event['source']
@@ -61,7 +61,7 @@ def test_nearby_words_support_a_date_without_guessing_date_order():
     assert any(item['kind']=='nearby' for item in date['evidence'])
     assert selected(fraction)['fields']=={'numerator':'3','denominator':'4','bound_unit':'cup'}
     result=reading(source,conventions={'date_order':'DM'})
-    assert 'April third' in speech(result) and 'three quarters cup' in speech(result)
+    assert 'April third' in speech(result) and 'three quarters of a cup' in speech(result)
     assert selected(events(result)[0])['fields']['year'] is None
     assert not events(reading('The hearing ended. We waited for 03/04.'))[0].get('review')
 
@@ -197,7 +197,7 @@ def test_compound_expressions_own_their_operands_and_units():
     assert dimensions['fields']=={'axes':['10','20'],'shared_unit':'cm'}
     assert rate['fields']=={'coefficient':'25','scale':'basis_point'}
     text=speech(result)
-    assert 'two point two zero to three point four zero Canadian dollars per hour' in text
+    assert 'two Canadian dollars and twenty cents to three Canadian dollars and forty cents per hour' in text
     assert 'ten by twenty centimeters' in text and 'twenty five basis points' in text
     assert speech(reading('Type 12 m/s exactly.'))=='Type 12 m/s exactly.'
     assert 'twelve meters per second' in speech(reading('The speed is 12 m/s.'))
@@ -349,3 +349,17 @@ def test_mixed_script_occurrence_retains_codepoints():
     character,=candidate['components']
     assert character['fields']=={'retain_character':'а','script':'Cyrillic','unicode':'U+0430'}
     assert 'pаypal' in speech(result) and 'paypal' in speech(result)
+
+
+def test_natural_narration_and_opt_in_technical_readouts_keep_the_same_fields():
+    source='Add 3/4 cup of flour. This costs $12.50. A ticket costs €12.50.'
+    natural=reading(source)
+    technical=reading(source,conventions={'narration_style':'technical'})
+    assert speech(natural)=='Add three quarters of a cup of flour. This costs twelve dollars and fifty cents. A ticket costs twelve euros and fifty cents.'
+    assert speech(technical)=='Add three quarters cup of flour. This costs dollar sign twelve point five zero. A ticket costs twelve point five zero euros.'
+    assert [selected(e)['fields'] for e in events(natural)]==[selected(e)['fields'] for e in events(technical)]
+    assert not critical('This costs twelve dollars and fifty cents.','This costs $12.50.')
+    assert not critical('This costs twelve euros and fifty cents.','This costs €12.50.')
+    assert 'quantity' in critical('This costs twelve euros and fifty cents.','This costs €12.00.')
+    assert 'math_or_unit' in critical('This costs twelve euros and fifty cents.','This costs $12.50.')
+    assert 'quantity' in critical('The depth is 2.50 meters.','The depth is 2.5 meters.')
