@@ -1,5 +1,6 @@
 from __future__ import annotations
 import io,os,posixpath,re,subprocess,zipfile
+from collections import Counter
 from pathlib import Path,PurePosixPath
 from urllib.parse import urlsplit,unquote
 from bs4 import BeautifulSoup
@@ -109,14 +110,37 @@ def markdown(data:bytes)->Document:
     out.extend(note_blocks)
     return Document(title or 'Document','markdown',digest(data),out)
 
-def html_text(node):
+def html_runs(node):
     from bs4 import NavigableString
-    parts=[]
+    from .epub_semantics import NON_TEXT
     for child in node.descendants:
         if isinstance(child,NavigableString):
-            if not any(a.name in ('script','style') for a in child.parents): parts.append(str(child))
-        elif child.name=='br': parts.append('\n')
-    return ''.join(parts)
+            if not isinstance(child,NON_TEXT) and not any(a.name in ('script','style') for a in child.parents):
+                yield child,str(child)
+        elif child.name=='br':
+            yield None,'\n'
+
+
+def html_text(node):
+    return ''.join(value for _,value in html_runs(node))
+
+
+def epub_text(runs, ranks):
+    """Return trimmed source and its coordinates in parsed XHTML text leaves."""
+    runs=list(runs)
+    raw=''.join(value for _,value in runs)
+    left=len(raw)-len(raw.lstrip())
+    text=raw.strip()
+    right=left+len(text)
+    leaves=[]
+    position=0
+    for node,value in runs:
+        end=position+len(value)
+        a,b=max(position,left),min(end,right)
+        if node is not None and a<b:
+            leaves.append({'node_rank':ranks[id(node)],'block_span':[a-left,b-left],'node_start':a-position})
+        position=end
+    return text,leaves if len(leaves)>1 else []
 
 def archive_path(base,href):
     u=urlsplit(href)
@@ -228,7 +252,7 @@ def epub(data:bytes)->Document:
                 if src and label:
                     target,anchor=archive_path(posixpath.dirname(path),src[0]); chapter_labels[(target,anchor)]=label[0]
                     navigation.append({'path':target,'anchor':anchor,'label':label[0],'origin':path})
-    from .epub_semantics import AUDIT_SPANS,EMBEDDED,describe,language,uncertainty,hidden,accessible_label,note_container
+    from .epub_semantics import AUDIT_SPANS,EMBEDDED,NON_TEXT,describe,language,uncertainty,hidden,accessible_label,note_container,table_headers
     out=[]; inventory=[]; chapter='Opening';linked_targets={}
     for occurrence,item in enumerate(opf.xpath('//*[local-name()="spine"]/*'),1):
         if item.get('linear')=='no': continue
@@ -243,13 +267,14 @@ def epub(data:bytes)->Document:
         chapter=chapter_labels.get((path,''),chapter)
         found=0; start=len(out); positions={}; covered=set(); initial_chapter=chapter
         ranks={id(node):rank for rank,node in enumerate(body.descendants)}
+        identifiers=Counter(tag.get('id') for tag in s.find_all(id=True))
         for idx,node in enumerate(body.find_all(['h1','h2','h3','h4','p','pre','table','figcaption','math','img','image','svg'])):
             if node.find_parent(['table','pre']): continue
             if any(id(a) in covered for a in node.parents):continue
             if node.name=='math' and node.find_parent(['p','h1','h2','h3','h4','figcaption','math']):continue
             if any(note_container(a) for a in node.parents):continue
             chapter=chapter_labels.get((path,node.get('id')),chapter)
-            text=html_text(node).strip()
+            text,leaves=epub_text(html_runs(node),ranks) if node.name!='table' else (html_text(node).strip(),[])
             role='heading' if re.match('h[1-4]',node.name) else {'pre':'code','table':'table','figcaption':'caption','math':'equation','img':'figure','image':'figure','svg':'figure'}.get(node.name,'body')
             issue=None
             image_resource=None
@@ -335,15 +360,17 @@ def epub(data:bytes)->Document:
                 rows=[[html_text(c).strip() for c in row] for row in table_cells]
                 loc['rows']=rows
                 if node.find(attrs={'rowspan':True}) or node.find(attrs={'colspan':True}): issue='Merged table header associations require review.'
+                if node.find('table'):issue='Nested table associations need a verified reading.'
             out.append(block(text,loc,role,chapter,['EPUB spine occurrence and DOM element'],issue,links)); found+=1
+            if leaves and text==base_text and role in ('body','heading','caption'):
+                loc['text_leaves']=leaves
             if semantics:
                 loc['inline_semantics']=semantics
                 if 'exact' not in loc:loc['exact']=str(node)
             if role=='table' and table_cells:
-                loc['header_ids']=[cell.get('id') for cell in table_cells[0]]
-                loc['row_header_columns']={i:[j for j,cell in enumerate(row)
-                                             if cell.name=='th' and cell.get('scope')=='row']
-                                           for i,row in enumerate(table_cells[1:],1)}
+                table_locator,header_issue=table_headers(table_cells,identifiers)
+                loc.update(table_locator)
+                if header_issue and not out[-1].issue:out[-1].issue=header_issue
                 from .epub_semantics import reading
                 ruby_cells=[]
                 for i,row in enumerate(table_cells):
@@ -368,27 +395,29 @@ def epub(data:bytes)->Document:
         block_tags={'div','section','article','aside','li','dt','dd','blockquote','body','h5','h6','nav'}
         def flush_orphans():
             nonlocal pending,container,first_rank,found
-            raw=''.join(pending)
-            if raw.strip():
+            raw=''.join(value for _,value in pending)
+            text,leaves=epub_text(pending,ranks)
+            if text:
                 ancestors=[container,*container.parents]; role='body'
                 if any(hidden(a) for a in ancestors):role='hidden'
                 elif any(a.name=='nav' for a in ancestors):role='navigation'
                 elif any(a.get('id') in ('pg-header','pg-footer','project-gutenberg-license') for a in ancestors if hasattr(a,'get')): role='reference'
                 elif any(note_container(a) for a in ancestors):role='note'
-                elif raw.strip()=='[Illustration]': role='placeholder'
+                elif text=='[Illustration]': role='placeholder'
                 anchor=next((a.get('id') for a in ancestors if hasattr(a,'get') and a.get('id')),None)
                 loc={'format':'epub','occurrence':occurrence,'path':path,'anchor':anchor,'text_node_rank':first_rank,'exact':raw}
-                b=block(raw.strip(),loc,role,initial_chapter,['Independent DOM text-occurrence coverage audit','Recovered inline leaves with original whitespace'])
+                b=block(text,loc,role,initial_chapter,['Independent DOM text-occurrence coverage audit','Recovered inline leaves with original whitespace'])
+                if leaves and role=='body':loc['text_leaves']=leaves
                 out.append(b); positions[b.id]=first_rank; fallback_ids.add(b.id); found+=1
             pending=[]; container=None; first_rank=None
         for node in body.descendants:
             if id(node) in covered: flush_orphans()
-            if not isinstance(node,NavigableString): continue
+            if not isinstance(node,NavigableString) or isinstance(node,NON_TEXT): continue
             ancestors=list(node.parents)
             if any(id(a) in covered or a.name in ('script','style') for a in ancestors): flush_orphans(); continue
             parent=next((a for a in ancestors if hidden(a) or a.name in block_tags),body)
             if parent is not container: flush_orphans(); container=parent; first_rank=ranks[id(node)]
-            pending.append(str(node))
+            pending.append((node,str(node)))
         flush_orphans()
         # Container pseudo-elements fall outside paragraph extraction. Preserve
         # their insertion points once, including empty and hidden containers.
@@ -609,7 +638,6 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
                     if spanning['text']: ordered.append(spanning)
                     high=spanning['y']
                 segments=ordered; entry['route']='geometric_two_columns'
-            from collections import Counter
             coverage=lambda value:Counter(c for c in value if not c.isspace())
             issue=None
             if coverage(visible_native)!=coverage(''.join(s['text'] for s in segments)):

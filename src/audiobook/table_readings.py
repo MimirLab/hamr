@@ -10,7 +10,7 @@ def split_cell_fractions(rows):
             if re.fullmatch(r'[0-9]+',first.strip()) and re.fullmatch(r'/\s*[0-9]+',second.strip())]
 
 
-def rows_for_speech(rows,context, *, marker=None,cell_readings=()):
+def rows_for_speech(rows,context, *, marker=None,cell_readings=(),header_columns=None):
     if cell_readings:
         rows=[list(row) for row in rows]
         for cell in cell_readings:
@@ -20,13 +20,16 @@ def rows_for_speech(rows,context, *, marker=None,cell_readings=()):
     defined=bool(re.search(r'''〃[”"’']?\s+(?:means|denotes)\s+[“"‘']?same as above''',context,re.I))
     markers={'〃'} if defined or marker=='ditto' else set()
     if marker=='double_quote':markers.add('"')
+    headers=header_columns or {}
     result=[list(rows[0])];previous=None
-    for row in rows[1:]:
+    for index,row in enumerate(rows[1:],1):
         if len(row)!=len(rows[0]):return None,'Table cells do not have reliable header associations.'
         resolved=[]
         for column,value in enumerate(row):
             if value.strip() in markers or value.strip()=='〃':
                 if value.strip() not in markers or previous is None or not previous[column].strip():return None,'Ditto cell has no source-defined value in its immediately preceding row and column.'
+                if headers.get(f'{index}:{column}',column)!=headers.get(f'{index-1}:{column}',column):
+                    return None,'Ditto cell crosses different authored table columns.'
                 value=previous[column]
             resolved.append(value)
         previous=resolved

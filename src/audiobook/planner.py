@@ -322,7 +322,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                     from .table_readings import rows_for_speech
                     marker=resolver.table_ditto(b,block_chapter,block_chapter_id) if resolver else None
                     readings=[*b.locator.get('ruby_cells',()),*b.locator.get('pdf_cell_readings',())]
-                    rows,table_issue=rows_for_speech(rows,table_context,marker=marker,cell_readings=readings)
+                    rows,table_issue=rows_for_speech(rows,table_context,marker=marker,cell_readings=readings,
+                                                   header_columns=b.locator.get('header_columns') if resolver else None)
                     if table_issue:action='unreadable';reason=table_issue;text='';rows=[]
             if rows and action=='speak':
                 headers=rows[0]
@@ -330,7 +331,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 else:
                     if resolver:
                         from .contextual import table_view
-                        text,cells=table_view(rows)
+                        text,cells=table_view(rows,b.locator.get('header_columns'))
                         rendered={(cell['row'],cell['column']) for cell in b.locator.get('pdf_cell_readings',())}
                         if rendered:
                             prepared_text=text

@@ -1,4 +1,5 @@
 """Map source-adapter relationships into contextual evidence without rewriting them."""
+from bisect import bisect_right
 import re
 import unicodedata
 
@@ -16,6 +17,28 @@ BOUND_INLINE = {
     'object_label': ('CR-L046','authored_description'),
 }
 RAISED = re.compile(r'[⁰¹²³⁴⁵⁶⁷⁸⁹]+')
+
+
+def source_leaves(block, start, stop):
+    leaves=block.locator.get('text_leaves',())
+    index=bisect_right(leaves,start,key=lambda leaf:leaf['block_span'][1])
+    spans=[]
+    cursor=start
+    while cursor<stop and index<len(leaves):
+        leaf=leaves[index]
+        first,last=leaf['block_span']
+        if first>cursor:
+            return None
+        end=min(last,stop)
+        node_start=leaf['node_start']+cursor-first
+        spans.append({'node_rank':leaf['node_rank'],'node_span':[node_start,node_start+end-cursor],
+                      'block_span':[cursor,end]})
+        cursor=end
+        index+=1
+    if cursor==stop and len(spans)>1:
+        return {'path':block.locator['path'],'spine_occurrence':block.locator['occurrence'],
+                'node_basis':'zero-based parsed body descendant index',
+                'offset_basis':'half-open Unicode code points','segments':spans}
 
 
 def inline_reading(block, span, raw):
@@ -176,6 +199,8 @@ def observations(block, cells, table_fragments, *, source_digest):
     rows=block.locator.get('rows',[])
     row_headers=block.locator.get('row_header_columns',{})
     row_counts={}
+    inherited_cells={}
+    cell_ids=block.locator.get('cell_ids',{})
     pdf_readings={(cell['row'],cell['column']):cell for cell in block.locator.get('pdf_cell_readings',())}
     for _,_,row,column,header,value in cells:
         original=rows[row][column]
@@ -187,8 +212,13 @@ def observations(block, cells, table_fragments, *, source_digest):
             add('pdf_table_cell','typed_cell',{'row':row,'column':column,'source':original},fields,
                 (selected['event_id'],selected['kind'],fields,related))
         if original.strip() in ('〃','"') and original!=value:
-            fields={'header':header,'source_marker':original,'value':value,'inherited_value':value,
-                    'antecedent':{'table':block.id,'row':row-1,'column':column}}
+            antecedent={'table':block.id,'row':row-1,'column':column}
+            if authored_id:=cell_ids.get(f'{row-1}:{column}'):
+                antecedent['id']=authored_id
+            fields={'header':header,'source_marker':original,'value':value,'inherited_value':value,'antecedent':antecedent}
+            root=inherited_cells.get((row-1,column),antecedent)
+            inherited_cells[row,column]=root
+            if root is not antecedent:fields['value_source']=root
             add('table_relation','inherited_cell',{'row':row,'column':column,'source':original},fields,
                 ('CR-L032','inherited_cell_value',fields,()))
         columns=row_headers.get(str(row),row_headers.get(row,[]))

@@ -541,6 +541,81 @@ def test_epub_markup_records_author_roles_with_exact_source_spans():
     assert speech(result).count('Remember the full claim.')==1
 
 
+def test_epub_inline_fraction_binds_both_text_leaves_and_skips_comments():
+    from bs4 import BeautifulSoup, Comment
+    from audiobook.importers import epub
+    from test_upstream_epub import book
+
+    markup='<p>  Add 3/<!-- editorial comment --><em>4</em> cup. </p>'
+    data=book({'recipe':markup},['recipe','recipe'])
+    result=plan(epub(data))
+    body=BeautifulSoup('<body>'+markup+'</body>','xml').body
+    assert not result['issues'] and speech(result).count('Add three quarters of a cup.')==2
+    assert 'editorial comment' not in speech(result)
+    fractions=[event for event in events(result) if event['source']=='3/4']
+    assert len(fractions)==2 and len({event['occurrence_id'] for event in fractions})==2
+    for index,event in enumerate(fractions,1):
+        locations=event['source_leaves']
+        assert locations['path']=='recipe.xhtml' and locations['spine_occurrence']==index
+        pieces=[]
+        nodes=list(body.descendants)
+        for leaf in locations['segments']:
+            node=nodes[leaf['node_rank']]
+            assert not isinstance(node,Comment)
+            start,stop=leaf['node_span']
+            pieces.append(str(node)[start:stop])
+        assert pieces==['3/','4']
+        assert [leaf['block_span'] for leaf in locations['segments']]==[[4,6],[6,7]]
+
+
+def test_epub_uses_the_authored_column_reference_and_keeps_ditto_lineage():
+    from audiobook.importers import epub
+    from test_upstream_epub import book
+
+    markup=('<table><tr><th id="place">Place</th><th id="revenue">Revenue ($ millions)</th></tr>'
+            '<tr><td id="paris">Paris</td><td headers="revenue">222</td></tr>'
+            '<tr><td id="previous">〃</td><td headers="place">333</td></tr>'
+            '<tr><td>〃</td><td>444</td></tr></table>')
+    doc=epub(book({'c':markup},['c']))
+    table=next(b for b in doc.blocks if b.role=='table')
+    policy={'context':{'conventions':{'dollar_currency':'USD'}},'document':{
+        'source_sha256':doc.source_sha256,'context':{'tables':{table.id:{'ditto_marker':'ditto'}}}}}
+    result=plan(doc,policy)
+    assert not result['issues'] and 'Place: 333' in speech(result)
+    assert 'three hundred thirty three million' not in speech(result)
+    amount=next(event for event in events(result) if event['source']=='222')
+    money=selected(amount)['components'][0]
+    assert money['fields']['header_source']=={'block':table.id,'row':0,'column':1,'id':'revenue'}
+    assert any(fact.get('origin')=='authored table header reference' for fact in amount['evidence'])
+    dittos=[entry['fields'] for decision in result['decisions'] for entry in decision.get('context_structure',[])
+            if entry['kind']=='inherited_cell']
+    assert dittos[0]['antecedent']['id']=='paris'
+    assert dittos[1]['antecedent']['id']=='previous' and dittos[1]['value_source']==dittos[0]['antecedent']
+
+
+def test_epub_table_header_references_do_not_borrow_an_unowned_column():
+    from audiobook.importers import epub
+    from test_upstream_epub import book
+
+    markup=('<table><tr><th id="a">Code</th><th id="b">Revenue ($ millions)</th></tr>'
+            '<tr><td headers="b">222</td><td headers="a">333</td></tr></table>')
+    options={'context':{'conventions':{'dollar_currency':'USD'}}}
+    result=plan(epub(book({'c':markup},['c'])),options)
+    assert not result['issues']
+    assert 'Revenue ($ millions): two hundred twenty two million U S dollars' in speech(result)
+    assert 'Code: three three three' in speech(result)
+    for broken in ('missing','a b'):
+        release=plan(epub(book({'c':markup.replace('headers="b"',f'headers="{broken}"')},['c'])),options)
+        assert release['issues'] and 'Authored table header references' in release['issues'][0]['reason']
+    duplicate=plan(epub(book({'c':markup+'<p id="b">Duplicate identifier.</p>'},['c'])),options)
+    assert 'Authored table header references' in duplicate['issues'][0]['reason']
+    mismatch=markup.replace('</table>','<tr><td>〃</td><td>444</td></tr></table>')
+    doc=epub(book({'c':mismatch},['c']))
+    table=next(b.id for b in doc.blocks if b.role=='table')
+    options['document']={'source_sha256':doc.source_sha256,'context':{'tables':{table:{'ditto_marker':'ditto'}}}}
+    assert 'crosses different authored table columns' in plan(doc,options)['issues'][0]['reason']
+
+
 def test_ditto_and_scale_keep_table_coordinates_and_header_lineage():
     source='| Site | Revenue ($ millions) |\n| --- | --- |\n| Paris | 222 |\n| " | 333 |'
     doc=markdown(source.encode())

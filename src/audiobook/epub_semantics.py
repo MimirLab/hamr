@@ -1,9 +1,10 @@
 """Preserve explicit XHTML roles before plain-text concatenation loses them."""
 import re
 import unicodedata
-from bs4 import NavigableString
+from bs4 import Comment, Declaration, Doctype, NavigableString, ProcessingInstruction
 
 EMBEDDED = ('audio', 'canvas', 'embed', 'iframe', 'object', 'video')
+NON_TEXT = (Comment, Declaration, Doctype, ProcessingInstruction)
 AUDIT_SPANS={'hyperlink','title_style','emphasis','display_case','math_script','math_vector','abbreviation_label'}
 HAN_NAMES=('CJK UNIFIED IDEOGRAPH','CJK COMPATIBILITY IDEOGRAPH')
 KANA_NAMES=('HIRAGANA LETTER','KATAKANA LETTER')
@@ -69,6 +70,36 @@ def accessible_label(node):
     return ''
 
 
+def table_headers(rows, identifiers):
+    """Bind simple column labels and explicit same-table header references."""
+    cell_ids={f'{row}:{column}':element['id'] for row,cells in enumerate(rows)
+              for column,element in enumerate(cells) if element.get('id') and identifiers[element['id']]==1}
+    headers=[cell_ids.get(f'0:{column}') if cell.name=='th' and cell.get('scope') in (None,'col') else None
+             for column,cell in enumerate(rows[0])]
+    columns={identifier:column for column,identifier in enumerate(headers) if identifier}
+    row_headers={}
+    overrides={}
+    issue=None
+    for row,cells in enumerate(rows[1:],1):
+        scoped=[column for column,cell in enumerate(cells) if cell.name=='th' and cell.get('scope')=='row']
+        row_headers[row]=scoped
+        local={cell_ids.get(f'{row}:{column}'):column for column in scoped}
+        for column,cell in enumerate(cells):
+            if not cell.has_attr('headers'):
+                continue
+            value=cell['headers']
+            refs=set(value.split() if isinstance(value,str) else value)
+            matched=refs & columns.keys()
+            if len(matched)!=1 or any(ident not in columns and not 0<=local.get(ident,-1)<column for ident in refs):
+                issue='Authored table header references need a verified column and row association.'
+                continue
+            header_column=columns[next(iter(matched))]
+            overrides[f'{row}:{column}']=header_column
+    locator={'header_ids':headers,'cell_ids':cell_ids,'row_header_columns':row_headers}
+    if overrides:locator['header_columns']=overrides
+    return locator,issue
+
+
 def ruby_pronunciation(node):
     """Recognize an unambiguous authored kana reading for each base group."""
     if node.find(['ruby','rtc','br']) or any(parent.name in ('ruby','code','kbd','samp') for parent in node.parents):
@@ -77,6 +108,7 @@ def ruby_pronunciation(node):
         return None
     base=[]; readings=[]
     for child in node.children:
+        if isinstance(child,NON_TEXT):continue
         if child.name=='rp':continue
         if child.name!='rt':
             base.append(str(child) if isinstance(child,NavigableString) else child.get_text())
@@ -100,14 +132,18 @@ def ruby_pronunciation(node):
 def ruby_base(node):
     if node.name in ('rt','rp','rtc','script','style') or hidden(node):
         return ''
-    return ''.join(str(child) if isinstance(child,NavigableString) else ruby_base(child) for child in node.children)
+    return ''.join(str(child) if isinstance(child,NavigableString) else ruby_base(child)
+                   for child in node.children if not isinstance(child,NON_TEXT))
 
 
 def describe(node,resolve_asset=None,cover_assets=()):
     pieces=[];spans=[];position=0
     def visit(n):
         nonlocal position
-        if isinstance(n,NavigableString):pieces.append(str(n));position+=len(str(n));return
+        if isinstance(n,NavigableString):
+            if not isinstance(n,NON_TEXT):
+                pieces.append(str(n));position+=len(str(n))
+            return
         if n.name in ('script','style'):return
         start=position;first_piece=len(pieces)
         if n.name=='br':

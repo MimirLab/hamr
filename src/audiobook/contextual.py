@@ -46,12 +46,14 @@ def review_choice(reply, request):
     return 'invalid_reply', None
 
 
-def table_view(rows):
+def table_view(rows, header_columns=None):
     """Keep typed cell ownership while preparing the established spoken table."""
     cells, parts = [], ['Table. ']
     position = len(parts[0])
+    mappings=header_columns or {}
     for row_index, row in enumerate(rows[1:], 1):
-        for column, (header,value) in enumerate(zip(rows[0],row)):
+        for column,value in enumerate(row):
+            header=rows[0][mappings.get(f'{row_index}:{column}',column)]
             prefix = f'{header}: '
             suffix = '; ' if column+1 < len(row) else '. '
             start = position+len(prefix)
@@ -61,7 +63,7 @@ def table_view(rows):
     return ''.join(parts).rstrip(),cells
 
 
-def column_anchors(cells, date_headers, originals):
+def column_anchors(cells, date_headers, originals, header_columns):
     observations = defaultdict(lambda: defaultdict(list))
     for _,_,row,column,header,value in cells:
         if header.casefold().strip() not in date_headers:
@@ -74,12 +76,13 @@ def column_anchors(cells, date_headers, originals):
             fields = [a,b]+(tail if tail[0] is not None else [])
             orders=[order for order in ('MD','DM') if grammar.date_candidate(fields,order,())]
             if len(orders)==1:
-                observations[column][orders[0]].append({'row':row,'column':column,'surface':value})
+                header_column=header_columns.get(f'{row}:{column}',column)
+                observations[header_column][orders[0]].append({'row':row,'column':column,'surface':value})
     return {column:dict(readings) for column,readings in observations.items()}
 
 
 class Evidence:
-    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column, chronology=None):
+    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column, chronology=None, *, header_by_id=False):
         self.resolver = resolver
         self.text = text
         self.start = start
@@ -90,6 +93,10 @@ class Evidence:
         self.header, self.anchors = header,anchors
         self.chronology=chronology
         self.header_source = {'block':table_id,'row':0,'column':column} if table_id is not None else None
+        header_ids=resolver.table_header_ids.get(table_id,())
+        if self.header_source and column<len(header_ids) and header_ids[column]:
+            self.header_source['id']=header_ids[column]
+        self.header_by_id=header_by_id
         self.inferred_order = next(iter(anchors)) if len(anchors)==1 and len({row['surface'].strip() for row in next(iter(anchors.values()))})>=2 else None
         self.settings = {}
         self.origins = {}
@@ -193,7 +200,8 @@ class Evidence:
             if self.chronology:return {'origin':'authored chronology heading and date-entry shape','heading':self.chronology}
             return {'cues':sorted(self.governors),'origin':'adjacent source wording'}
         if family=='nearby':return {'cues':sorted(self.neighbors),'origin':'bounded source clause with an adjacent governing word'}
-        if family=='column':return {'header':self.header,'source':self.header_source,'origin':'same table column'}
+        if family=='column':return {'header':self.header,'source':self.header_source,
+                                   'origin':'authored table header reference' if self.header_by_id else 'same table column'}
         if family=='anchors':
             mark=self.number_separator()
             if mark:return {'decimal_separator':mark,'anchors':list(self.number_anchors[mark].values()),
@@ -268,6 +276,7 @@ class Resolver:
                         'Use the matching build or hamr repair JOB --upgrade-rules.')
         self.document_conventions,self.chapters,self.tables=context_config.scopes(source_policy.get('context',{}))
         table_ids={block.id for block in doc.blocks if block.role=='table'}
+        self.table_header_ids={block.id:block.locator['header_ids'] for block in doc.blocks if 'cell_ids' in block.locator}
         if self.tables.keys()-table_ids:
             context_config.invalid('A context table policy names an unknown source table.')
         self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
@@ -379,6 +388,8 @@ class Resolver:
              'seed_span':seed,'expression_span':span,'offset_basis':'half-open Unicode code points',
              'source':raw,'candidates':rows,'selected':winner['id'],'score_kind':'heuristic',
              'margin':margin,'route':route,'evidence':list(facts.values())}
+        if view['kind']=='block_source' and (leaves:=context_structure.source_leaves(block,*span)):
+            row['source_leaves']=leaves
         if conflict:
             location='chronology' if env.chronology else 'column'
             row['conflict']=f'Configured date order disagrees with unambiguous dates in this {location}.'
@@ -425,10 +436,14 @@ class Resolver:
                 start,end,_,_=slots.pop();end=max(end,b);slots.append((start,end,text[start:end],None))
             else:slots.append((a,b,text[a:b],None))
         aliases=[m.span() for m in self.aliases.finditer(text)] if self.aliases else []
-        anchors=column_anchors(cells,self.config['cues']['date_column'],block.locator.get('rows',[])) if cells else {}
+        header_columns=block.locator.get('header_columns',{})
+        anchors=column_anchors(cells,self.config['cues']['date_column'],block.locator.get('rows',[]),header_columns) if cells else {}
         views=cells or [(0,len(text),None,None,None,text)]
         guard_slots={(a,b):i for i,(a,b,_,_) in enumerate(slots)}
         for start,_,row,column,header,value in views:
+            cell=f'{row}:{column}'
+            header_column=header_columns.get(cell,column)
+            authored_header=cell in header_columns
             view=({'kind':'table_cell','row':row,'column':column,'header':header,'input':value} if row is not None else
                   {'kind':'block_source' if value==block.source else 'prepared_reading'})
             view['text_sha256']=digest(value.encode())
@@ -436,8 +451,8 @@ class Resolver:
                 a,b=start+match.start(),start+match.end()
                 if (a,b) not in guard_slots or any(a<end and b>begin for begin,end in literal_spans+aliases):
                     continue
-                env=Evidence(self,value,match.start(),match.end(),header,anchors.get(column,{}),chapter,chapter_id,
-                             block.id if row is not None else None,column)
+                env=Evidence(self,value,match.start(),match.end(),header,anchors.get(header_column,{}),chapter,chapter_id,
+                             block.id if row is not None else None,header_column,header_by_id=authored_header)
                 option=context_lexical.opaque_reading(match.lastgroup,match[0],env)
                 if option is not None:
                     result,spoken=self.outcome(block,view,match,env,[option])
@@ -448,9 +463,9 @@ class Resolver:
                 if any(a<end and b>begin for begin,end in protected+aliases):continue
                 chronology=(self.chronology_headings.get(self.scope(block)) if match.lastgroup=='slash' and a==0
                             and value==block.source and match[0]==self.chronology_entries.get(block.id) else None)
-                inferred=self.chronologies.get(self.scope(block),{}) if chronology else anchors.get(column,{})
+                inferred=self.chronologies.get(self.scope(block),{}) if chronology else anchors.get(header_column,{})
                 env=Evidence(self,value,match.start(),match.end(),header,inferred,chapter,chapter_id,
-                             block.id if row is not None else None,column,chronology)
+                             block.id if row is not None else None,header_column,chronology,header_by_id=authored_header)
                 if (match.lastgroup in ('separators','measurement','uncertainty') and value==block.source and row is None
                         and not any(a<end and begin<b for begin,end in self.number_exclusions.get(block.id,()))):
                     env.number_anchors=self.number_anchors.get(self.scope(block),{})
