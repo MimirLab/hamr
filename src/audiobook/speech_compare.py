@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v24'
+POLICY='bounded-english-composed-scale-typed-v25'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -47,10 +47,24 @@ def ordinal(ts,i,previous=None):
         if ts[i+1]==suffix:return value,i+2
     return None
 
+
+def repeated_decimal_digit(ts,i):
+    if i+1>=len(ts) or ts[i] not in ('double','triple'):
+        return None
+    token=ts[i+1]
+    digit=SMALL_VALUES.get(token,integer_value(token))
+    if digit is None or digit>9:
+        return None
+    return str(digit)*(2 if ts[i]=='double' else 3)
+
+
 def cardinal(ts,i):
     if i>=len(ts):return None
     literal=numeric_literal(ts[i]);negative=bool(literal and literal.startswith('-'))
-    if literal is not None and integer_value(literal.removeprefix('-')) is None:return literal,i+1
+    if literal is not None and integer_value(literal.removeprefix('-')) is None:
+        if re.fullmatch(r'-?[0-9]+\.[0-9]+',literal) and (repeat:=repeated_decimal_digit(ts,i+1)):
+            return literal+repeat,i+3
+        return literal,i+1
     def small(at,first=False,hundreds=True):
         if at>=len(ts):return None
         token=ts[at]
@@ -109,8 +123,12 @@ def cardinal(ts,i):
     value=('-' if negative else '')+str(total+n)
     if end<len(ts) and ts[end]=='point':
         position=end+1;digits=[]
-        while position<len(ts) and ts[position] in SMALL_VALUES and SMALL_VALUES[ts[position]]<10:
-            digits.append(str(SMALL_VALUES[ts[position]]));position+=1
+        while position<len(ts):
+            if ts[position] in SMALL_VALUES and SMALL_VALUES[ts[position]]<10:
+                digits.append(str(SMALL_VALUES[ts[position]]));position+=1
+            elif digits and (repeat:=repeated_decimal_digit(ts,position)):
+                digits.append(repeat);position+=2
+            else:break
         if digits:value+='.'+''.join(digits);end=position
     return value,end
 
@@ -258,6 +276,7 @@ def mathematical_markers(text):
     markers += ['plus-or-minus']*len(re.findall(r'plus\s+(?:or\s+)?minus|±|\+\s*/\s*-',text))
     markers += ['last-digit-uncertainty']*len(re.findall(
         r'\buncertainty (?:of )?(?:#[0-9]+ )+in (?:the )?(?:final|last) digits?\b',' '.join(ts)))
+    markers += ['fraction:'+a+'/'+b for a,b in re.findall(r'\bnumerator #([0-9]+) and denominator #([0-9]+)\b',' '.join(ts))]
     # A half already included in an exact scaled quantity must be compared by
     # that value. Independent fractional words/measurements stay protected.
     markers += ['fraction:'+('half' if w=='halves' else w.rstrip('s')) for w in ts if w in FRACTIONS]
@@ -285,9 +304,13 @@ def mathematical_markers(text):
     markers += ['comparison:'+phrases[m[0]] for m in operators.finditer(text)]
     for i,t in enumerate(ts):
         if t=='power' and i+1<len(ts) and ts[i+1].startswith('#'):markers.append('exponent:'+ts[i+1][1:])
-        if t in ('subscript','superscript') and i+1<len(ts):
+        if t in ('subscript','subscripts','superscript','superscripts') and i+1<len(ts):
             value=ts[i+1]
-            if value.startswith('#') or re.fullmatch('[a-z]',value):markers.append(t+':'+value.removeprefix('#'))
+            role=t.removesuffix('s')
+            if value.startswith('#') or re.fullmatch('[a-z]',value):markers.append(role+':'+value.removeprefix('#'))
+            if value=='capital' and i+2<len(ts) and re.fullmatch('[a-z]',ts[i+2]):markers.append(role+':capital:'+ts[i+2])
+        if t=='bar' and i and i+1<len(ts) and ts[i+1] in ('slash','subscript','subscripts','superscript','superscripts'):
+            markers.append('bar:'+ts[i-1])
         if t=='to' and i and i+1<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#'):markers.append('numeric-range')
         if t=='by' and i and i+2<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#') and re.fullmatch(units,ts[i+2]):markers.append('dimension-axis')
         if t in ('a','p') and i and ts[i+1:i+2]==['m']:

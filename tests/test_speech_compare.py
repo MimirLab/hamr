@@ -53,3 +53,14 @@ def test_scientific_denominator_seconds_and_script_letters_are_distinct():
     assert math('per square second')==math('per square seconds')
     assert math('m subscript p')!=math('m subscript e')
     assert math('alpha superscript minus one')!=math('alpha superscript one')
+
+
+def test_exact_decimal_repeats_and_formula_attachments():
+    assert c('three point eight six one five nine two six seven double four')==c('3.8615926744')
+    assert c('3.86159267 double 4')==c('3.8615926744')
+    assert c('3.86159267 double four')!=c('3.861592674')
+    assert c('double four')!=c('44')
+    assert math('M subscript U')==math('M subscripts U')
+    assert math('lambda bar subscript capital C')!=math('lambda subscript capital C')
+    assert math('subscript capital C')!=math('subscript C')
+    assert math('numerator one and denominator twelve')!=math('numerator twelve and denominator one')
