@@ -52,6 +52,41 @@ def test_literal_scopes_do_not_expand_machine_syntax_or_abbreviation():
     assert 'open parenthesis sigh close parenthesis' in speech(reading('This says `(sigh)`.'))
 
 
+def test_quoted_numeric_symbols_are_voiced_as_characters_in_a_literal_instruction():
+    source='The string "3/4" contains three characters. Type "$222" exactly, including the dollar sign. Pay $222.'
+    result=reading(source)
+    fraction,literal_amount,cost=[selected(event) for event in events(result)]
+    assert fraction['fields']['exact_characters']=='3/4' and fraction['fields']['metalinguistic']
+    assert literal_amount['fields']['exact_characters']=='$222' and literal_amount['fields']['dollar_sign_is_named']
+    assert cost['kind']=='money_symbol'
+    assert speech(result)==('The string "three slash four" contains three characters. '
+                            'Type "dollar sign two two two" exactly, including the dollar sign. '
+                            'Pay two hundred twenty two dollars.')
+    assert result['decisions'][0]['source']==source and not result['issues']
+
+
+def test_authored_vocal_markers_are_read_as_words_and_keep_original_punctuation():
+    source='The word [laughs] appears in the transcript. The guide prints (clears throat).'
+    result=reading(source)
+    assert speech(result)==('The word laughs appears in the transcript. '
+                            'The guide prints open parenthesis clears throat close parenthesis.')
+    fields=[selected(event)['fields'] for event in events(result)]
+    assert [record['exact_characters'] for record in fields]==['[laughs]','(clears throat)']
+    assert all(record['performance_control'] is False for record in fields)
+    assert result['decisions'][0]['source']==source and not result['issues']
+    code=reading('The guide prints `[laughs]`. Ordinary words (with care) stay in parentheses.')
+    assert speech(code)=='The guide prints laughs. Ordinary words (with care) stay in parentheses.'
+
+
+def test_authored_redaction_is_spoken_without_reconstructing_hidden_text():
+    source='The password is [REDACTED]. The account owner is [redacted]. Type [redacted] including the brackets.'
+    result=reading(source)
+    assert speech(result)==('The password is redacted. The account owner is redacted. '
+                            'Type open bracket redacted close bracket including the brackets.')
+    assert [selected(event)['kind'] for event in events(result)]==['redaction_marker','redaction_marker','literal_marker_text']
+    assert result['decisions'][0]['source']==source and not result['issues']
+
+
 def test_nearby_words_support_a_date_without_guessing_date_order():
     source='The hearing is scheduled for 03/04. Add 3/4 cup.'
     unresolved=reading(source)

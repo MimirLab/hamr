@@ -20,14 +20,25 @@ COMPARATORS={'>=':'greater than or equal to','<=':'less than or equal to',
              '>':'greater than','<':'less than'}
 NUMBER=r'[+-]?\d+(?:\.\d+)?'
 CONTROL_CUES=re.compile(r'\((sigh|laugh|chuckle|gasp|cough|cry)\)',re.I)
+VOCAL_WORDS = r'sighs?|laughs?|chuckles?|gasps?|coughs?|cry|cries|clears? (?:the )?throat|whispers?|whispering|nervous chuckle'
+VOCAL_MARKER = r'(?i:\((?:'+VOCAL_WORDS+r')\)|\[(?:'+VOCAL_WORDS+r')\])'
+VOCAL_MARKERS = re.compile(VOCAL_MARKER)
 COEFFICIENT_OBSERVATION = re.compile(
     r'\b((?:coefficient|mantissa|measured value)\s+(?:is|was|equals)\s+)'
     r'([+−-]?[0-9]{1,12}\.[0-9]{3,4}(?:[ \t]+[0-9]{3,4}){0,2}[ \t]+[0-9]{1,4})'
     r'(?=[ \t]*(?:[.;!?](?![0-9])|$))', re.I)
 
 
-def literal_cues(text):
+def literal_cues(text, *, current=False):
+    if current:
+        return VOCAL_MARKERS.sub(lambda match: spoken_vocal_marker(match[0]),text)
     return CONTROL_CUES.sub(lambda match:'open parenthesis '+match[1]+' close parenthesis',text)
+
+
+def spoken_vocal_marker(raw):
+    if raw.startswith('['):
+        return raw[1:-1]
+    return 'open parenthesis '+raw[1:-1]+' close parenthesis'
 
 
 def safe_unicode(text):

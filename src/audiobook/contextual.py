@@ -216,7 +216,7 @@ class Projection:
         pieces=[];cursor=0
         for index,(a,b,spoken,event) in enumerate(sorted(slots,key=lambda slot:slot[:2]),1):
             marker=prefix+format(index,'x').translate(str.maketrans('0123456789','klmnopqrst'))+'z'
-            self.slots.append((marker,text[a:b],literal_cues(spoken),event))
+            self.slots.append((marker,text[a:b],literal_cues(spoken,current=True),event))
             pieces.extend((text[cursor:a],marker));cursor=b
         self.text=''.join((*pieces,text[cursor:]))
 
@@ -462,7 +462,7 @@ class Resolver:
                 elif env.literal_mention() and match.lastgroup not in ('censoring','stage_direction','shell_token'):
                     if (match.lastgroup in ('money','money_modifier','money_rate','slash') and
                             (env.cue('literal_tail',side='right') or env.before.strip().endswith(('“','"')))):
-                        options=[grammar.literal(match[0],fields={'reading_mode':'characters'})]
+                        options=[grammar.literal_notation(match[0])]
                     else:options=[context_lexical.literal_candidate(match.lastgroup,match[0],env)]
                 else:
                     options=grammar.candidates(match.lastgroup,match[0],env)

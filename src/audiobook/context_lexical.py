@@ -4,7 +4,7 @@ import unicodedata
 
 from . import boundaries
 from .context_candidate import Candidate, Component, literal
-from .linguistic import LIGATURES
+from .linguistic import LIGATURES, VOCAL_MARKER, spoken_vocal_marker
 from .spoken_forms import identifier
 
 EMAIL = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}"
@@ -37,7 +37,7 @@ PATTERNS = {
     'citation': ('CR-L041', r'et al\.'),
     'pictograph': ('CR-L042',PICTOGRAPH+r'(?:\u200d'+PICTOGRAPH+r'){0,8}(?!\u200d)'),
     'censoring': ('CR-L043', r"[A-Za-z]\*{2,8}|(?i:\[redacted\])"),
-    'stage_direction': ('CR-L044', r'(?i:\((?:sigh|laugh|gasp|chuckle|cry|cough)\)|\[(?:sighs|laughs|cries|gasps|chuckles|coughs)\])'),
+    'stage_direction': ('CR-L044', VOCAL_MARKER),
     'indexed_symbol': ('CR-L049', r'[A-Za-z][_^][A-Za-z0-9]{1,8}'),
     'chess_move': ('CR-L040', r'[KQRBN][a-h][1-8]'),
     'unknown_symbol': ('CR-L048', r'[\u27c0-\u27ef\u2980-\u29ff]'),
@@ -157,12 +157,19 @@ def candidates(kind,raw,env):
             return [Candidate('localized_symbol_name',{**fields,'name':name,'language':'en'},name,('convention',))]
         return [literal(raw,kind='literal_sequence',fields=fields)]
     if kind=='censoring':
-        return [Candidate(('redaction_marker' if raw=='[REDACTED]' else 'literal_marker_text') if raw.startswith('[') else 'authored_censoring',
-                          {'retain_brackets':raw.startswith('['),'hidden_word_not_reconstructed':True},raw,('syntax',))]
+        if raw.casefold()=='[redacted]':
+            if env.cue('literal_delimiter',side='right') or env.cue('literal') in ('type','spell','enter exactly','write exactly'):
+                return [Candidate('literal_marker_text',{'retain_brackets':True},
+                                  'open bracket '+raw[1:-1]+' close bracket',('governor',))]
+            fields={'retain_brackets':True,'hidden_word_not_reconstructed':True,
+                    'redaction_preserved':True,'missing_words_not_reconstructed':True}
+            return [Candidate('redaction_marker',fields,'redacted',('syntax',))]
+        return [Candidate('authored_censoring',{'retain_brackets':False,'hidden_word_not_reconstructed':True},raw,('syntax',))]
     if kind=='stage_direction':
-        fields={'do_not_execute_unapproved_control':True,'must_not_trigger_vocal_event':True}
+        fields={'exact_characters':raw,'performance_control':False,
+                'do_not_execute_unapproved_control':True,'must_not_trigger_vocal_event':True}
         return [Candidate('narrated_stage_direction' if raw.startswith('[') and not env.before.strip() else 'literal_control_like_text',
-                          fields, raw,('syntax',))]
+                          fields,spoken_vocal_marker(raw),('syntax',))]
     if kind=='implication' and (env.cue('implication') or env.setting('notation')=='propositional_implication'):
         left,right=map(str.strip,raw.split('→'))
         evidence='convention' if env.setting('notation')=='propositional_implication' else 'governor'

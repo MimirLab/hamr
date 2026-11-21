@@ -112,6 +112,8 @@ An optional top-level `native_names` list records particular names whose reading
 
 The contextual reader gives whole forms such as rates, ranges, dimensions, and measurements priority over their component numbers. It still draws on the established EPUB handling for authored links, literal text, and publisher pronunciation. For words such as “read” or “record”, a recorded contextual interpretation may rely on Breeze for pronunciation. Hearing and acoustic evaluation are required to verify the resulting stress or vowel.
 
+In an instruction to copy `"$222"` exactly, Hamr reads the dollar sign and digits as characters. The same amount in ordinary prose reads as money. Recognized vocal markers such as `[laughs]` and `(clears throat)` are read as text. Their original spelling and punctuation remain in the companion.
+
 English narration passes through mixed-language text such as scientific names and short quotations. EPUB language tags remain in the source and help match a publisher’s pronunciation lexicon. Speech QA still checks the rendered audio, and an unresolved publisher pronunciation instruction can be repaired for its exact occurrence.
 
 HAMR reads a complete EPUB ruby annotation written in kana for its ideographic base once. In other ruby markup, it reads the base and any explicitly authored definition. The companion retains the original markup. The default narration and speech checks are qualified for English.

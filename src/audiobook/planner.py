@@ -24,7 +24,7 @@ def normalize(text,aliases=None,rule_revision=RULES,abbreviation_audit=None,pres
     text=text.replace('\u00ad','').replace('\u00a0',' ')
     # Literal spelling is distinct from the runtime's performance-cue syntax.
     from .linguistic import literal_cues
-    text=literal_cues(text)
+    text=literal_cues(text,current=rule_revision==RULES)
     if rule_revision in ('faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE):
         if rule_revision in MODERN:
             from .linguistic import technical

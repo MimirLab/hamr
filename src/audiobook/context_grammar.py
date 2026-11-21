@@ -28,6 +28,8 @@ DURATION_UNITS = {'minutes_seconds':('minutes','seconds'),'hours_minutes':('hour
 DURATION_FIELDS = {'mm:ss':'minutes_seconds','minutes:seconds':'minutes_seconds',
                    'hh:mm':'hours_minutes','hours:minutes':'hours_minutes'}
 DURATION_DECLARATION = re.compile(r'[ \t]+\(('+'|'.join(DURATION_FIELDS)+r')\)$',re.I)
+LITERAL_SIGNS = {'$':'dollar sign','€':'euro sign','£':'pound sign','/':'slash','+':'plus sign',
+                 '-':'hyphen','−':'minus sign',',':'comma','.':'dot'}
 PATTERNS = {
     'date_iso': LEFT + r'[0-9]{4}-[0-9]{2}-[0-9]{2}' + RIGHT,
     **{name: expression for name, (_, expression) in COMPOSITES.items() if name!='signed'},
@@ -81,6 +83,15 @@ def related_events(kind,raw,env,selected):
     if form=='measurement' and fields.get('unit')=='kelvin':events.add('CR-N052')
     if kind=='integer' and len(raw)==4 and form=='cardinal_quantity':events.add('CR-N024')
     return sorted(events-{EVENTS[kind]})
+
+
+def literal_notation(raw):
+    fields={'reading_mode':'characters','exact_characters':raw,'metalinguistic':True}
+    if '$' in raw:
+        fields['dollar_sign_is_named']=True
+    pieces=re.findall(r'[^\W\d_]+|[^\s]',raw)
+    return literal(raw,' '.join(identifier(c) if c.isascii() and c.isdigit() else LITERAL_SIGNS.get(c,c)
+                                for c in pieces),fields=fields)
 
 
 def date_candidate(fields, order, evidence, technical=False):
