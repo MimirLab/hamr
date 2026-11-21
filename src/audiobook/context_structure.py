@@ -5,7 +5,7 @@ import unicodedata
 from .core import key
 from .abbreviations import PROTECTED
 
-EVENT_IDS = {'CR-N036','CR-L011','CR-L014','CR-L019','CR-L020','CR-L023',
+EVENT_IDS = {'CR-N004','CR-N018','CR-N034','CR-N036','CR-N051','CR-L011','CR-L014','CR-L019','CR-L020','CR-L023',
              'CR-L024','CR-L025','CR-L026','CR-L027','CR-L030','CR-L031','CR-L032','CR-L033','CR-L045','CR-L046','CR-L047'}
 BOUND_INLINE = {
     'emphasis': ('CR-L026','contrastive_emphasis'),
@@ -164,9 +164,16 @@ def observations(block, cells, table_fragments, *, source_digest):
     rows=block.locator.get('rows',[])
     row_headers=block.locator.get('row_header_columns',{})
     row_counts={}
+    pdf_readings={(cell['row'],cell['column']):cell for cell in block.locator.get('pdf_cell_readings',())}
     for _,_,row,column,header,value in cells:
         original=rows[row][column]
         row_counts[row]=row_counts.get(row,0)+1
+        if selected:=pdf_readings.get((row,column)):
+            fields={**selected['fields'],'header':header,'panel_row':block.locator['panel_row'],
+                    'native_ranges':block.locator['pdf_table_cells'][column]['native_ranges']}
+            related=('CR-N051',) if selected['event_id']=='CR-N034' and fields.get('exponent') else ()
+            add('pdf_table_cell','typed_cell',{'row':row,'column':column,'source':original},fields,
+                (selected['event_id'],selected['kind'],fields,related))
         if original.strip() in ('〃','"') and original!=value:
             fields={'header':header,'source_marker':original,'value':value,'inherited_value':value,
                     'antecedent':{'table':block.id,'row':row-1,'column':column}}

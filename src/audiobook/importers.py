@@ -461,6 +461,7 @@ def epub(data:bytes)->Document:
 def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
     import pypdfium2 as pdfium
     from PIL import Image,ImageChops,ImageStat
+    from .pdf_geometry import crop_glyphs,glyph_baseline
     from .pdf_textlayer import nonpainting_regions
     from .text_evidence import suspect_characters
     try: doc=pdfium.PdfDocument(data)
@@ -475,9 +476,8 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
         if n>=2000: raise Error('page_limit','PDF exceeds 2000-page import limit.')
         tp=page.get_textpage(); native=tp.get_text_range(); w,h=page.get_size()
         # Independently inventory image objects, including raster beside hidden/selectable text.
-        images=[]
-        for obj in page.get_objects():
-            if obj.type==3: images.append(list(obj.get_bounds()))
+        image_objects=[(obj,list(obj.get_bounds())) for obj in page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE])]
+        images=[rect for _,rect in image_objects]
         entry={'page':n+1,'size':[w,h],'glyphs':tp.count_chars(),'rotation':page.get_rotation(),'raster_regions':images,'route':'native','native_observation':native}
         if damaged:=suspect_characters(native):entry['native_character_diagnostics']=damaged
         box=page.get_bbox();media=page.get_mediabox()
@@ -487,8 +487,18 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
         entry['visible_cropbox']=list(box)
         inventory.append(entry)
         chapter=f'Page {n+1}'
-        if images or nonpainting or not native.strip():
-            entry['ocr_admission']=[reason for condition,reason in ((images,'raster regions'),(nonpainting,'nonpainting text layer'),(not native.strip(),'no native text')) if condition]
+        content_images=images
+        panels,marks=[],[]
+        cached_glyphs=None
+        if len(images)>=4 and not nonpainting and native.strip() and entry['native_geometry_qualified']:
+            from .pdf_rules import classify
+            cached_glyphs=crop_glyphs(tp,box)
+            panels,rules,marks,remaining=classify(image_objects,cached_glyphs[0])
+            if panels:
+                entry.update(raster_table_rules=rules,raster_text_marks=marks,raster_content_regions=remaining,ruled_panels=panels)
+                content_images=remaining
+        if content_images or nonpainting or not native.strip():
+            entry['ocr_admission']=[reason for condition,reason in ((content_images,'raster content regions'),(nonpainting,'nonpainting text layer'),(not native.strip(),'no native text')) if condition]
             bitmap=page.render(scale=2); im=bitmap.to_pil().convert('RGB')
             extrema=ImageStat.Stat(im).stddev
             if max(extrema)<0.8 and not native.strip():
@@ -539,23 +549,38 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
             finally: bitmap.close()
         else:
             # Build glyph lines, then use a large central gutter only with bilateral evidence.
-            from .pdf_geometry import crop_glyphs,glyph_baseline
             from .pdf_overlays import verified_overlays
             overlays=verified_overlays(page,tp) if entry['native_geometry_qualified'] else []
             if overlays:entry['duplicate_paint_observations']=overlays
-            chars,outside,clipped=crop_glyphs(tp,box)
+            chars,outside,clipped=cached_glyphs if cached_glyphs is not None else crop_glyphs(tp,box)
             visible_native=''.join(ch for ch,_,_ in chars)
             entry.update(excluded_crop_glyphs=outside,visible_native_observation=visible_native,clipped_visible_glyphs=clipped)
             if page.get_rotation()==0:entry['native_geometry_qualified']=True
+            hyphens={i for ch,_,i in chars if ch=='\ufffe' and pdfium.raw.FPDFText_IsHyphen(tp,i)==1}
+            if hyphens:
+                entry['native_hyphen_glyphs']=sorted(hyphens)
+                chars=[('-' if i in hyphens else ch,rect,i) for ch,rect,i in chars]
+                visible_native=''.join(ch for ch,_,_ in chars)
+            table_segments=[]
+            outside_panels=[]
+            if panels:
+                from .pdf_tables import framed_source,source_segments,surrounding_segments
+                tables,claimed=framed_source(tp,chars,panels,marks)
+                table_segments=source_segments(tables,native)
+                chars=[glyph for glyph in chars if glyph[2] not in claimed]
+                outside_panels=surrounding_segments(tp,chars)
+                visible_native=''.join(ch for ch,_,_ in chars)
+                entry['route']='native_ruled_panels'
+                entry['table_source_glyphs']=len(claimed)
             lines=[]
-            for ch,rect,index in chars:
+            for ch,rect,index in (() if panels else chars):
                 l,b,r,t=rect
                 baseline=glyph_baseline(tp,index,box[1],b)
                 # A descender's box reaches below the baseline of its word.
                 target=next((x for x in lines if abs(x['y']-baseline)<3.5),None)
                 if target is None: target={'y':baseline,'chars':[]}; lines.append(target)
                 target['chars'].append((l,r,ch,rect,index))
-            segments=[]
+            segments=outside_panels
             for line in sorted(lines,key=lambda a:-a['y']):
                 seq=sorted(line['chars'],key=lambda x:(x[0],x[4])); chunks=[]; current=[]; last=None
                 for x in seq:
@@ -575,7 +600,7 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
                     if text.strip():segments.append({'text':text.strip(),'rect':[chunk[0][0],min(x[3][1] for x in chunk),chunk[-1][1],max(x[3][3] for x in chunk)],'y':line['y']})
             left=[s for s in segments if s['rect'][2]<w*.52]; right=[s for s in segments if s['rect'][0]>w*.48]
             two=len(left)>=3 and len(right)>=3 and max(s['rect'][2] for s in left)+12<min(s['rect'][0] for s in right)
-            if two:
+            if two and not panels:
                 # Spanning elements split the page into bands; each band's left column precedes right.
                 full=[s for s in segments if s not in left and s not in right]; ordered=[]; high=float('inf')
                 for spanning in sorted(full,key=lambda s:-s['y'])+[{'y':-1,'text':''}]:
@@ -592,10 +617,17 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
             if clipped:issue='A meaningful glyph crosses the visible CropBox edge; verify the original source before narration.'
             if page.get_rotation()!=0:issue='Rotated native PDF text needs a verified visible reading and order; this geometry path is not qualified.'
             entry['glyph_character_coverage']='exact' if not issue else 'disputed'
+            if table_segments:
+                segments=sorted(segments+table_segments,key=lambda s:(-s['y'],s.get('ordered_group',s['rect'][0])))
             for idx,s in enumerate(segments):
-                locator={'format':'pdf','page':n+1,'rect':s['rect'],'line':idx}
-                out.append(block(s['text'],locator,'body',chapter,['PDF glyph geometry',entry['route'],'Native whitespace and punctuation retained'],issue))
-                if issue:continue
+                locator={'format':'pdf','page':n+1,'rect':s['rect'],'line':idx,**s.get('locator',{})}
+                local_issue=issue or s.get('issue')
+                if not local_issue and marks and s['rect'] and not s.get('locator'):
+                    l,b,r,t=s['rect']
+                    if any(x1>l and x0<r and y1>b and y0<t for x0,y0,x1,y1 in (m['rect'] for m in marks)):
+                        local_issue='A raster mark overlaps this native line. Verify the original before speech.'
+                out.append(block(s['text'],locator,s.get('role','body'),chapter,['PDF glyph geometry',entry['route'],'Native whitespace and punctuation retained'],local_issue))
+                if local_issue:continue
                 l,b,r,t=s['rect']
                 observations=[]
                 for overlay in overlays:

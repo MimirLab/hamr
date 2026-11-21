@@ -10,10 +10,10 @@ def split_cell_fractions(rows):
             if re.fullmatch(r'[0-9]+',first.strip()) and re.fullmatch(r'/\s*[0-9]+',second.strip())]
 
 
-def rows_for_speech(rows,context, *, marker=None,ruby_cells=()):
-    if ruby_cells:
+def rows_for_speech(rows,context, *, marker=None,cell_readings=()):
+    if cell_readings:
         rows=[list(row) for row in rows]
-        for cell in ruby_cells:
+        for cell in cell_readings:
             row,column=cell['row'],cell['column']
             if rows[row][column]==cell['source']:rows[row][column]=cell['reading']
     if not rows or not rows[0] or any(not str(h).strip() for h in rows[0]):return None,'Table headers need verified column labels.'
