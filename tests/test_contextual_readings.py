@@ -132,6 +132,32 @@ def test_same_colon_shape_has_clock_reference_and_duration_owners():
     assert speech(result)=='Departure time, three twenty. Reference zero three colon two zero. Elapsed time: three minutes twenty seconds.'
 
 
+def test_dotted_meridiem_owns_the_clock_without_breaking_before_the_zone():
+    source='Launch was 9:32 a.m. EDT. Landing was at 12:50 p.m. Then we went home.'
+    result=reading(source)
+    clocks=events(result)
+    assert [row['source'] for row in clocks]==['9:32 a.m.','12:50 p.m.']
+    assert [selected(row)['fields']['meridiem'] for row in clocks]==['AM','PM']
+    assert speech(result)=='Launch was nine thirty two A M EDT. Landing was at twelve fifty P M. Then we went home.'
+    assert not critical('Launch was nine thirty two A M EDT.','Launch was 9:32 a.m. EDT.')
+    assert critical('Launch was nine thirty two A M EDT.','Launch was 9:32 p.m. EDT.')
+
+
+def test_dates_use_a_whole_named_date_or_a_source_bound_chronology():
+    source=('May 25, 1961, was windy. The launch was July 16, 1969.\n\n'
+            '## Milestones\n\n11/21/68 – Integrated test\n\n1/18/69 – Docking\n\n6/1/69 – Readiness test\n\n'
+            '## Storage\n\n6/1/69 – Rack label')
+    result=reading(source)
+    dates=[selected(event)['fields'] for event in events(result)]
+    assert [d['year'] for d in dates]==['1961','1969','68','69','69']
+    assert dates[-1]['month']=='6' and dates[-1]['day']=='1'
+    assert 'May twenty fifth, nineteen sixty one, was windy.' in speech(result)
+    assert 'June first sixty nine' in speech(result) and '6/1/69 – Rack label' in speech(result)
+    assert any(f.get('heading',{}).get('title')=='Milestones' for f in events(result)[-1]['evidence'])
+    assert not reading('## Timeline\n\n6/1/69 – Readiness test')['issues']
+    assert selected(events(reading('## Timeline\n\n6/1/69 – Readiness test'))[0])['fields']['month'] is None
+
+
 def test_qa_holds_a_lost_measurement_instruction_at_matching_date_and_fraction():
     exact='The hearing is scheduled for April third. Add one quarter cup of water.'
     assert 'measurement_instruction' in critical(exact,'The hearing is scheduled for April 3rd and one quarter cup of water.')

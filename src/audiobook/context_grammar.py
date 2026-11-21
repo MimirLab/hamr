@@ -12,7 +12,11 @@ from .typed_readings import clock_words
 LEFT = r'(?<![\w./:@#$£€+-])(?<![0-9],)'
 RIGHT = r'(?!\w|[.,:/@-]\w|[$£€])'
 AMOUNT = r'[+−-]?[0-9]{1,12}(?:[.,][0-9]{1,12})?'
-CLOCK = re.compile(r'([0-9]{1,3}):([0-9]{1,3})(?:[ \t]*(UTC|GMT|AM|PM))?')
+SLASH_DATE = r'[0-9]{1,2}/[0-9]{1,2}/(?:[0-9]{4}|[0-9]{2})'
+CLOCK_SUFFIX = r'(?:UTC|GMT)(?![+−-][0-9])|[AP]M|[aApP]\.[ \t]*[mM]\.?(?!\.?\w)'
+CLOCK_CORE = r'([0-9]{1,3}):([0-9]{1,3})(?:[ \t]*(' + CLOCK_SUFFIX + '))?'
+CLOCK = re.compile(CLOCK_CORE)
+CLOCK_ZONE = re.compile(r'\s+(?:UTC|GMT|[ECMP][SD]T)\b')
 UNITS = {**TECHNICAL_UNITS, **UNIT_NAMES}
 COMPOSITES = context_forms.patterns(LEFT, RIGHT, MONTHS)
 PATTERNS = {
@@ -20,8 +24,8 @@ PATTERNS = {
     **{name: expression for name, (_, expression) in COMPOSITES.items() if name!='signed'},
     'money_modifier': LEFT + r'[$£€][0-9]{1,12}(?:\.[0-9]{1,12})?[ \t]+(?i:{price_nouns})' + RIGHT,
     'money': LEFT + r'(?:[+−-]?[$£€][ \t]*[0-9]{1,12}(?:[.,][0-9]{1,12})?)' + RIGHT,
-    'slash': LEFT + r'[0-9]{1,2}/[0-9]{1,2}(?:/[0-9]{4})?' + RIGHT,
-    'colon': LEFT + r'[0-9]{1,3}:[0-9]{1,3}(?:[ \t]*(?:(?:UTC|GMT)(?![+−-][0-9])|AM|PM))?' + RIGHT,
+    'slash': LEFT + r'(?:' + SLASH_DATE + r'|[0-9]{1,2}/[0-9]{1,2})' + RIGHT,
+    'colon': LEFT + CLOCK_CORE + RIGHT,
     'parentheses': r'\([ \t]*[0-9]{1,9}(?:[.,][0-9]{1,12})?[ \t]*\)',
     'measurement': LEFT + AMOUNT + r'(?:[ \t]+(?:'+context_forms.UNIT_PATTERN+r')|[ \t]*(?:' + '|'.join(map(re.escape, TECHNICAL_UNITS)) + '))' + RIGHT,
     'separators': LEFT + r'[+−-]?[0-9]{1,12}[.,][0-9]{1,12}' + RIGHT,
@@ -70,17 +74,18 @@ def related_events(kind,raw,env,selected):
     return sorted(events-{EVENTS[kind]})
 
 
-def date_candidate(fields, order, evidence):
+def date_candidate(fields, order, evidence, technical=False):
     a, b, *tail = fields
     month, day = (a,b) if order=='MD' else (b,a)
     year = tail[0] if tail else None
     try:
-        date(int(year) if year is not None else 2000, int(month), int(day))
+        calendar_year=2000 if year is None else 2000+int(year) if len(year)==2 else int(year)
+        date(calendar_year, int(month), int(day))
     except ValueError:
         return None
     said = MONTHS[int(month)]+' '+ordinal(int(day))
     if year is not None:
-        said += ' '+number_spoken(year)
+        said += ' '+context_forms.year_words(year,technical)
     return Candidate('date',{'components':fields,'date_order':order,'month':month,'day':day,'year':year},said,evidence)
 
 
@@ -174,13 +179,15 @@ def candidates(kind, raw, env):
             options.append(Candidate('fraction',{'numerator':fields[0],'denominator':fields[1],'bound_unit':unit},said,('governor',)))
         quote=env.quoted_date_order()
         nearby_date=env.cue('date_link') and env.nearby('date_topic')
-        if env.cue('date') or env.header_cue('date_column') or nearby_date or quote:
-            role='column' if env.header_cue('date_column') else 'nearby' if nearby_date and not env.cue('date') else 'governor'
+        if env.cue('date') or env.header_cue('date_column') or nearby_date or quote or env.chronology:
+            role=('column' if env.header_cue('date_column') else
+                  'nearby' if nearby_date and not env.cue('date') and not env.chronology else 'governor')
             order=env.setting('date_order')
             inferred=env.inferred_order
             valid=[value for value in ('MD','DM') if date_candidate(fields,value,())]
+            technical=env.setting('narration_style')=='technical'
             if quote in valid:
-                entry=date_candidate(fields,quote,('definition',))
+                entry=date_candidate(fields,quote,('definition',),technical)
                 return [Candidate(entry.kind,{**entry.fields,'date_order_evidence':'explicit_quote_scope'},entry.spoken,entry.evidence)]
             if not any(option.kind=='fraction' for option in options):
                 options=[literal(raw,fallback.spoken,kind='date',fields={**fallback.fields,'class':'date',
@@ -190,14 +197,17 @@ def candidates(kind, raw, env):
                 supports=(role, *(('convention',) if order==value else ()), *(('anchors',) if inferred==value else ()))
                 if len(valid)==1:
                     supports += ('syntax',)
-                options.append(scoped_date(date_candidate(fields,value,supports),raw,env))
+                options.append(scoped_date(date_candidate(fields,value,supports,technical),raw,env))
+        elif len(fields)==3 and len(fields[-1])==2:
+            return []
         return options
     if kind=='colon':
         clock=CLOCK.fullmatch(raw)
-        first,second,suffix=clock.groups()
+        first,second,written_suffix=clock.groups()
+        suffix=written_suffix.translate(str.maketrans('', '', '. \t')).upper() if written_suffix else None
         numeric=raw[:clock.end(2)]
         base={'components':[first,second],'separator':':'}
-        fallback=literal(raw,exact_components(numeric,':','colon')+((' '+suffix) if suffix else ''),fields=base)
+        fallback=literal(raw,exact_components(numeric,':','colon')+((' '+written_suffix) if written_suffix else ''),fields=base)
         if env.cue('ratio') or env.cue('ratio',side='right'):
             return [Candidate('ratio',{'left':first,'right':second},number_spoken(first)+' to '+number_spoken(second),('governor',))]
         if env.cue('reference'):
@@ -213,7 +223,10 @@ def candidates(kind, raw, env):
             if suffix in ('AM','PM'):
                 fields['meridiem']=suffix
                 part=Component('CR-N016','clock_time',(0,len(numeric)),dict(fields))
-                return [Candidate('clock_time',fields,clock_words(first,second)+' '+' '.join(suffix),('syntax',),(part,))]
+                following=env.after.lstrip()
+                stop=written_suffix.endswith('.') and (not following or following[0].isupper() or following[0] in '"”’)]')
+                punctuation='.' if stop and not CLOCK_ZONE.match(env.after) else ''
+                return [Candidate('clock_time',fields,clock_words(first,second)+' '+' '.join(suffix)+punctuation,('syntax',),(part,))]
             # The existing formatter still owns unsuffixed clocks and UTC/GMT.
             return [Candidate('clock_time',fields,None,('syntax',))]
         return [fallback]

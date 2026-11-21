@@ -29,6 +29,7 @@
     "date_topic": ["hearing", "appointment", "meeting", "appointment date", "deadline"],
     "date_link": ["on", "by", "for"],
     "date_column": ["date", "invoice date", "delivery date", "recorded on", "due date"],
+    "date_chronology": ["chronology", "milestones", "timeline"],
     "fraction_unit": ["cup", "cups", "teaspoon", "teaspoons", "tablespoon", "tablespoons", "liter", "liters", "litre", "litres", "inch", "inches", "pound", "pounds"],
     "identifier": ["room", "case", "record", "route", "model", "build identifier", "code", "access code", "identifier", "build id", "record id", "inventory code", "catalog id", "catalog identifier", "exact identifier", "product code", "catalog label", "part number", "serial number"],
     "count": ["books", "visitors", "people", "copies", "birds", "units", "votes", "items", "subscribers", "objects", "records"],

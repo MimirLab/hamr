@@ -54,6 +54,17 @@ def money_words(amount, currency, technical=False):
     return number_spoken(amount)+' '+primary+('' if singular else 's')
 
 
+def year_words(year, technical=False):
+    if len(year)==2:
+        return ('oh '+identifier(year[1])) if year.startswith('0') else number_spoken(year)
+    value=int(year)
+    if not technical and (1100<=value<2000 or 2010<=value<2100):
+        century,within=divmod(value,100)
+        tail='hundred' if within==0 else ('oh ' if within<10 else '')+number_spoken(str(within))
+        return number_spoken(str(century))+' '+tail
+    return number_spoken(year)
+
+
 def patterns(left,right,months):
     """Order wider owners ahead of their numeric or lexical children."""
     units='(?:'+UNIT_PATTERN+')'
@@ -67,7 +78,7 @@ def patterns(left,right,months):
         ('coded_money','CR-N013',r'(?:'+NAMED_CURRENCIES+r')[ \t]+'+SIGNED),
         ('telephone','CR-N027',r'[0-9]{3}-[0-9]{3}-[0-9]{4}(?:[ \t]+(?:ext\.?|extension)[ \t]+[0-9]{1,6})?'),
         ('date_range','CR-N044',month+r'[ \t]+[0-9]{1,2}\s*[–—-]\s*[0-9]{1,2}'),
-        ('named_date','CR-N025',month+r'[ \t]+[0-9]{1,2}(?:st|nd|rd|th)?'),
+        ('named_date','CR-N025',month+r'[ \t]+[0-9]{1,2}(?:st|nd|rd|th)?(?:,[ \t]+[1-9][0-9]{3})?'),
         ('uncertainty','CR-N034',DECIMAL+r'\([0-9]{1,6}\)'),
         ('scientific','CR-N051',SIGNED+r'[eE][+−-]?[0-9]{1,4}'),
         ('duration_units','CR-N022',r'[0-9]{1,5}h[0-9]{1,2}m(?:[0-9]{1,2}s)?'),
@@ -151,15 +162,20 @@ def expand(kind, raw, env):
     if kind in ('named_date','date_range'):
         month,first,tail=re.fullmatch(r'([A-Za-z]+)\s+([0-9]+)(.*)',raw).groups()
         month_num=str(MONTHS.index(month))
-        limit=monthrange(2000,int(month_num))[1]
+        year=tail.partition(',')[2].strip() or None
+        limit=monthrange(int(year or 2000),int(month_num))[1]
         if kind=='date_range':
             end=tail.strip().lstrip('–—-').strip()
             if not 1<=int(first)<=int(end)<=limit:return [literal(raw)]
             return [Candidate('date_range',{'start_month':month_num,'end_month':month_num,'start_day':first,'end_day':end,'year':None},
                       month+' '+ordinal(int(first))+' through '+ordinal(int(end)),('syntax',))]
-        if not 1<=int(first)<=limit or month=='May' and not env.cue('date') and not env.cue('date_link') and not env.header_cue('date_column'):
+        if not 1<=int(first)<=limit or month=='May' and not year and not env.cue('date') and not env.cue('date_link') and not env.header_cue('date_column'):
             return []
-        return [Candidate('partial_date',{'month':month_num,'day':first,'year':None},month+' '+ordinal(int(first)),('syntax',))]
+        if year and env.literal_mention():
+            return [literal(raw)]
+        spoken=month+' '+ordinal(int(first))
+        if year:spoken+=', '+year_words(year,env.setting('narration_style')=='technical')
+        return [Candidate('date' if year else 'partial_date',{'month':month_num,'day':first,'year':year},spoken,('syntax',))]
     if kind=='version':
         components=re.sub(r'^[vV]','',raw).split('.')
         if not env.cue('version'):

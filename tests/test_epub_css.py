@@ -22,6 +22,29 @@ def test_css_superscript_retains_ambiguous_semantics_as_review():
     assert not p['utterances'] and any('superscript' in r['reason'] for r in p['issues'])
 
 
+def test_static_css_siblings_and_namespaces_keep_visibility_scoped():
+    body=('<style>@namespace se "http://www.idpf.org/2007/ops"; '
+          '[se|type~="z3998:poem"] p > span + b, [data-text="a,b"] ~ b {display:none}</style>'
+          '<section epub:type="z3998:poem"><p><span>First.</span> <b>HIDDEN.</b> Next.</p></section>'
+          '<p><i data-text="a,b">Second.</i> <b>HIDDEN TOO.</b> Again.</p>'
+          '<p><span>Third.</span> <b>VISIBLE.</b></p>')
+    p=plan(epub(book({'c':body},['c'])))
+    assert not p['issues']
+    assert speech(p)=='First. Next. Second. Again. Third. VISIBLE.'
+    assert sum('HIDDEN' in row['source'] for row in p['decisions'])==2
+
+
+def test_css_font_size_supports_branch_keeps_the_accessible_text():
+    body=('<style>.title {display:none} @supports(font-size: 0) {.title {display:block}} '
+          '@media (prefers-color-scheme: dark) {.body {display:block}}</style>'
+          '<p class="title">TITLE.</p><p class="body">BODY.</p>')
+    p=plan(epub(book({'c':body},['c'])))
+    assert not p['issues'] and speech(p)=='TITLE. BODY.'
+    uncertain=body.replace('font-size: 0','unknown-property: value')
+    p=plan(epub(book({'c':uncertain},['c'])))
+    assert p['issues'] and all('Conditional CSS' in row['reason'] for row in p['issues'])
+
+
 def test_unqualified_generated_content_does_not_silently_disappear():
     body='<style>p::before {content:counter(chapter)}</style><p>BODY_CANARY.</p>'
     p=plan(epub(book({'c':body},['c'])))

@@ -12,6 +12,7 @@ REVIEW_CONTEXT = {'neighbors', 'table_header', 'chapter'}
 DEFINITION=re.compile(r'^In this chapter +([A-Za-z]{1,10}\.) +(?:means|stands for) +([A-Za-z]+(?: [A-Za-z]+){0,5})\.',re.I)
 QUOTED_DATE_ORDER=re.compile(r'(?<!\w)(?:uses|date order(?: is)?)\s+(DD/MM|MM/DD)(?:/YYYY)?\s*:\s*$',re.I)
 SCALE_HEADER=re.compile(r'\((USD|CAD|AUD|NZD|EUR|GBP|\$|£|€)\s+(thousands|millions|billions)\)$')
+CHRONOLOGY_ENTRY=re.compile(r'(?P<date>'+grammar.SLASH_DATE+r')[ \t]+[–—][ \t]+(?=\w)')
 
 
 def review_data(value):
@@ -67,7 +68,7 @@ def column_anchors(cells, date_headers, originals):
             continue
         if originals and (row>=len(originals) or column>=len(originals[row]) or originals[row][column]!=value):
             continue
-        match = re.fullmatch(r'([0-9]{1,2})/([0-9]{1,2})(?:/([0-9]{4}))?',value.strip())
+        match = re.fullmatch(r'([0-9]{1,2})/([0-9]{1,2})(?:/([0-9]{4}|[0-9]{2}))?',value.strip())
         if match:
             a,b,*tail = match.groups()
             fields = [a,b]+(tail if tail[0] is not None else [])
@@ -78,13 +79,14 @@ def column_anchors(cells, date_headers, originals):
 
 
 class Evidence:
-    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column):
+    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column, chronology=None):
         self.resolver = resolver
         self.before = text[max(0,start-96):start].rsplit('\n',1)[-1]
         self.continuation=text[end:end+96]
         self.after = self.continuation.split('\n',1)[0]
         self.before_start,self.after_start=start-len(self.before),end
         self.header, self.anchors = header,anchors
+        self.chronology=chronology
         self.header_source = {'block':table_id,'row':0,'column':column} if table_id is not None else None
         self.inferred_order = next(iter(anchors)) if len(anchors)==1 and len({row['surface'].strip() for row in next(iter(anchors.values()))})>=2 else None
         self.settings = {}
@@ -172,7 +174,9 @@ class Evidence:
         return currency,plural[:-1],{'thousands':'1000','millions':'1000000','billions':'1000000000'}[plural]
 
     def details(self, family):
-        if family=='governor':return {'cues':sorted(self.governors),'origin':'adjacent source wording'}
+        if family=='governor':
+            if self.chronology:return {'origin':'authored chronology heading and date-entry shape','heading':self.chronology}
+            return {'cues':sorted(self.governors),'origin':'adjacent source wording'}
         if family=='nearby':return {'cues':sorted(self.neighbors),'origin':'bounded source clause with an adjacent governing word'}
         if family=='column':return {'header':self.header,'source':self.header_source,'origin':'same table column'}
         if family=='anchors':return {'date_order':self.inferred_order,'anchors':self.anchors,'origin':'valid unambiguous source dates'}
@@ -250,7 +254,24 @@ class Resolver:
         self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],
                                              self.config['cues']['price_noun'],self.config['native_names'])
         self.definitions=defaultdict(list)
+        self.chronologies=defaultdict(lambda:defaultdict(list))
+        self.chronology_headings={}
+        self.chronology_entries={}
+        headings=self.config['cues']['date_chronology']
+        chronology_headings=re.compile(r'(?<!\w)(?:'+'|'.join(map(re.escape,headings))+r')(?!\w)',re.I) if headings else None
         for block in doc.blocks:
+            scope=self.scope(block)
+            if block.role=='heading' and not block.issue and chronology_headings and chronology_headings.search(block.source):
+                self.chronology_headings[scope]={'block':block.id,'title':block.source}
+            if block.role=='body' and not block.issue and scope in self.chronology_headings:
+                entry=CHRONOLOGY_ENTRY.match(block.source)
+                if entry and not any(span['kind'] in ('literal','hidden') and span['source_start']<entry.end('date')
+                                     for span in block.locator.get('inline_semantics',[])):
+                    value=entry['date']
+                    self.chronology_entries[block.id]=value
+                    orders=[order for order in ('MD','DM') if grammar.date_candidate(value.split('/'),order,())]
+                    if len(orders)==1:
+                        self.chronologies[scope][orders[0]].append({'block':block.id,'surface':value,'span':list(entry.span('date'))})
             match=DEFINITION.match(block.source) if block.role=='body' and not block.issue else None
             if match and match[1].casefold() in self.config['lexicon'] and not any(
                     span['kind'] in ('literal','hidden') and span['source_start']<match.end() for span in block.locator.get('inline_semantics',[])):
@@ -321,7 +342,9 @@ class Resolver:
              'seed_span':seed,'expression_span':span,'offset_basis':'half-open Unicode code points',
              'source':raw,'candidates':rows,'selected':winner['id'],'score_kind':'heuristic',
              'margin':margin,'route':route,'evidence':list(facts.values())}
-        if conflict:row['conflict']='Configured date order disagrees with unambiguous dates in this column.'
+        if conflict:
+            location='chronology' if env.chronology else 'column'
+            row['conflict']=f'Configured date order disagrees with unambiguous dates in this {location}.'
         if unclear:
             self.request_count+=1
             request={k:row[k] for k in ('source_digest','occurrence_id','source','candidates','evidence')}
@@ -386,8 +409,11 @@ class Resolver:
             for match in self.expressions.finditer(value):
                 a,b=start+match.start(),start+match.end()
                 if any(a<end and b>begin for begin,end in protected+aliases):continue
-                env=Evidence(self,value,match.start(),match.end(),header,anchors.get(column,{}),chapter,chapter_id,
-                             block.id if row is not None else None,column)
+                chronology=(self.chronology_headings.get(self.scope(block)) if match.lastgroup=='slash' and a==0
+                            and value==block.source and match[0]==self.chronology_entries.get(block.id) else None)
+                inferred=self.chronologies.get(self.scope(block),{}) if chronology else anchors.get(column,{})
+                env=Evidence(self,value,match.start(),match.end(),header,inferred,chapter,chapter_id,
+                             block.id if row is not None else None,column,chronology)
                 if match.lastgroup=='abbreviation':
                     env.definitions=self.definitions.get((self.scope(block),match[0].casefold()),[])
                 defines=any(item['block']==block.id and item['token_span']==[a,b] for item in env.definitions)
