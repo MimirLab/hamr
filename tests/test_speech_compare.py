@@ -45,3 +45,11 @@ def test_unit_power_and_dimension_changes_remain_inspectable():
     assert math('6 square centimeters per gram')!=math('6 grams per square centimeter')
     assert math('45 degrees')==math('45°')
     assert math('one foot')==math('two feet')  # Values are checked separately.
+
+
+def test_scientific_denominator_seconds_and_script_letters_are_distinct():
+    assert quantities(c('per kilogram per square second'))==[]
+    assert quantities(c('she came second'))==['ordinal:2']
+    assert math('per square second')==math('per square seconds')
+    assert math('m subscript p')!=math('m subscript e')
+    assert math('alpha superscript minus one')!=math('alpha superscript one')

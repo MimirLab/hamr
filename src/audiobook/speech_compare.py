@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v23'
+POLICY='bounded-english-composed-scale-typed-v24'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -38,6 +38,8 @@ def integer_value(token):
 
 def ordinal(ts,i,previous=None):
     # A numeric measurement's singular second/third is not an ordinal.
+    if ts[i]=='second' and i and ts[i-1] in ('per','square','cubic'):
+        return None
     if ts[i] in ORDINALS and not (previous or '').startswith('#'):return ORDINALS[ts[i]],i+1
     if i+1<len(ts) and ts[i] in TENS_VALUES and ts[i+1] in ORDINALS and 0<ORDINALS[ts[i+1]]<10:return TENS_VALUES[ts[i]]+ORDINALS[ts[i+1]],i+2
     if i+1<len(ts) and ts[i+1] in ('st','nd','rd','th') and len(ts[i])<=12 and re.fullmatch(r'(?:0|[1-9]\d*)',ts[i]):
@@ -283,7 +285,9 @@ def mathematical_markers(text):
     markers += ['comparison:'+phrases[m[0]] for m in operators.finditer(text)]
     for i,t in enumerate(ts):
         if t=='power' and i+1<len(ts) and ts[i+1].startswith('#'):markers.append('exponent:'+ts[i+1][1:])
-        if t=='subscript' and i+1<len(ts) and ts[i+1].startswith('#'):markers.append('subscript:'+ts[i+1][1:])
+        if t in ('subscript','superscript') and i+1<len(ts):
+            value=ts[i+1]
+            if value.startswith('#') or re.fullmatch('[a-z]',value):markers.append(t+':'+value.removeprefix('#'))
         if t=='to' and i and i+1<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#'):markers.append('numeric-range')
         if t=='by' and i and i+2<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#') and re.fullmatch(units,ts[i+2]):markers.append('dimension-axis')
         if t in ('a','p') and i and ts[i+1:i+2]==['m']:
