@@ -142,6 +142,9 @@ def heteronym(raw,env):
         if env.cue('verbal_record'):
             return [Candidate('verb_stress',{'part_of_speech':'verb','source_spelling_unchanged':True},None,('governor',))]
         return []
+    for group,sense in (('read_participle','past_read'),('read_base','present_read')):
+        if env.cue(group):
+            return [Candidate('contextual_pronunciation',{'sense':sense,'written_token_unchanged':True},None,('governor',))]
     before=re.split(r'[.!?;:"“”\n]',env.before)[-1]
     after=re.split(r'[.!?;:"“”\n]',env.after)[0]
     window=' '.join((before,after)).strip().split()

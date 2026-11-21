@@ -241,6 +241,10 @@ def test_contextual_pronunciation_keeps_source_spelling_and_defers_realization()
     assert 'I read it daily.' in speech(result)
     assert not result['issues']
 
+    contrast=reading('The note was read daily. She asked me to read yesterday.')
+    assert [selected(e)['fields']['sense'] for e in events(contrast)]==['past_read','present_read']
+    assert speech(contrast)=='The note was read daily. She asked me to read yesterday.'
+
 
 def test_authored_epub_edit_does_not_disable_context_around_literal():
     from audiobook.importers import epub

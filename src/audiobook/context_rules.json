@@ -63,6 +63,8 @@
     "possessed_noun": ["hat", "coat", "book", "bag", "boat", "name", "father", "mother", "sister", "brother", "friend", "house"],
     "nominal_record": ["a", "the", "our", "their", "your", "his", "her"],
     "verbal_record": ["please", "must", "will", "can", "to"],
+    "read_participle": ["was", "were", "is", "are", "am", "be", "been", "being", "had", "have", "has"],
+    "read_base": ["to", "will", "shall", "could", "should", "can", "must", "would", "may", "might", "do", "does", "did"],
     "past_read": ["yesterday", "last night", "last week", "last month", "last year"],
     "habitual_read": ["daily", "every morning", "every day", "every night", "each day", "usually", "often"],
     "notation": ["tex expression", "formula", "the vector space", "subscript notation", "math expression"],
