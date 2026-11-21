@@ -174,6 +174,10 @@ Rules9/10 anchor ordinary complete paragraphs independently, preserve complete s
 
 ## Recovery and repair
 
+When publication is on hold, `hamr status JOB` shows the planned M4B path and the next step. **Speech check pending** means saved narration still needs the automatic check. Run `hamr resume JOB` to check it and finish the book. If the checker is missing, run `hamr setup --checks-only` first. **Listening review needed** means Hamr flagged specific recordings. The status includes a command to export the first flagged passage, and `hamr status JOB --json` lists the reasons and report paths. **Source review needed** means a passage in the original document must be resolved before publication.
+
+For a standalone report, run `hamr qa JOB --all --require-review` with the checker installed by setup. The report records the check, and `hamr resume JOB` writes the book once all holds are cleared. Use the custom Python and model options only when supplying your own local checker.
+
 ```sh
 hamr status JOB --json
 hamr resume JOB

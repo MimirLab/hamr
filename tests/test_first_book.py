@@ -1,9 +1,12 @@
 """Front door, review checkpoint, and machine inspection regressions."""
 import json
 from pathlib import Path
+import sys
+
+import pytest
 
 from audiobook import cli, jobs, operator_cli
-from audiobook.core import Store
+from audiobook.core import Store, writejson
 from test_listening_findings import matching_observations
 from test_media import prepared
 
@@ -48,6 +51,77 @@ def test_open_reports_missing_speech_checker_before_creating_job(tmp_path, capsy
                     '--yes', expected=2)
     assert result['error']['code'] == 'speech_checks_required'
     assert store.jobs() == []
+
+
+def test_pending_legacy_job_explains_its_destination_and_finishes_using_defaults(tmp_path, capsys, monkeypatch):
+    source = tmp_path / 'Book.md'
+    source.write_text('The saved narration is ready to check.')
+    store, job = prepared(tmp_path, source)
+    jid = job['id']
+    destination = jobs.final_path(job) / 'book.m4b'
+    job['audio_gate'] = True
+    job['status'] = 'needs_review'
+    job['error'] = {'code': 'speech_qa_pending', 'message': 'Old checkpoint message',
+                    'action': f'hamr qa {jid} --asr-python ASR_PYTHON --asr-model LOCAL_MODEL --all --require-review'}
+    store.save(job)
+
+    result = invoke(store.root, capsys, 'status', jid)
+    assert result['output'] is None and result['planned_output'] == str(destination)
+    assert result['error']['action'] == f'Run hamr setup --checks-only, then hamr resume {jid}.'
+    assert not destination.exists()
+    assert store.get(jid)['error'] == job['error']
+
+    model = tmp_path / 'speech model'
+    model.mkdir()
+    for name in ('model.bin', 'config.json', 'tokenizer.json', 'vocabulary.txt'):
+        (model / name).touch()
+    writejson(store.root / 'speech-checks.json', {'schema_version': 1, 'python': sys.executable,
+                                                'model': str(model), 'second_model': str(model)})
+    assert cli.main(['--home', str(store.root), 'status', jid]) == 0
+    status = capsys.readouterr().out
+    assert 'Speech check pending' in status
+    assert str(destination) in status and f'hamr resume {jid}' in status
+    assert 'ASR_PYTHON' not in status and 'needs review' not in status.lower()
+
+    matching_observations(monkeypatch)
+    monkeypatch.setattr('audiobook.qa_cache.observer_identity', lambda *args: {'model_files': {}})
+
+    def unexpected_synthesis(*args):
+        raise AssertionError('Checking and packaging an existing take must reuse the recorded audio')
+
+    monkeypatch.setattr(jobs, 'Engine', unexpected_synthesis)
+    result = invoke(store.root, capsys, 'render', jid)
+    assert result['status'] == 'ready' and result['planned_output'] == str(destination)
+    assert destination.is_file()
+
+
+def test_listening_hold_names_exact_passage_and_offers_export(tmp_path, capsys):
+    from audiobook.qa import flag
+
+    source = tmp_path / 'Book.md'
+    source.write_text('The words are intact despite a strange noise.')
+    store, job = prepared(tmp_path, source)
+    jid = job['id']
+    uid = job['plan']['utterances'][0]['id']
+    flag(store, jid, uid, 'A strange noise was audible.')
+    assert cli.main(['--home', str(store.root), 'status', jid]) == 0
+    status = capsys.readouterr().out
+    assert 'Listening review needed' in status and f'Flagged passages: {uid}' in status
+    assert f'hamr excerpt {jid} --start {uid} --count 1 --output hamr-review-' in status
+    assert not jobs.final_path(job).exists()
+
+
+@pytest.mark.parametrize(('options','code','detail'), [
+    (('--asr-python', 'ASR_PYTHON', '--asr-model', 'LOCAL_MODEL'), 'asr_placeholder', 'stand for local paths'),
+    (('--asr-python', 'missing-python', '--asr-model', 'missing-model'), 'asr_python_missing', 'missing-python'),
+    (('--asr-python', sys.executable, '--asr-model', 'missing-model'), 'asr_model_missing', 'missing-model'),
+    (('--asr-python', sys.executable, '--asr-model', 'empty model'), 'asr_model_incomplete', 'empty model'),
+])
+def test_qa_explains_invalid_custom_checker_paths(tmp_path, capsys, monkeypatch, options, code, detail):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'empty model').mkdir()
+    result = invoke(tmp_path / 'state', capsys, 'qa', 'saved-job', *options, '--all', '--require-review', expected=2)
+    assert result['error']['code'] == code and detail in result['error']['message']
 
 
 def test_agent_inspects_without_reconciling_or_exporting_text(tmp_path, capsys, monkeypatch):

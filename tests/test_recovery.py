@@ -143,7 +143,8 @@ def test_bad_pcm(data):
 
 def test_missing_output_mount_is_recoverable(job):
     s,j,_=job; output=Path(j['output_parent']); output.rename(output.with_name('disconnected'))
-    with pytest.raises(Error,match='unavailable'): render(s,j['id'])
+    with pytest.raises(Error,match='unavailable') as failure: render(s,j['id'])
+    assert str(output) in failure.value.message
     assert s.get(j['id'])['status']=='failed' and not output.exists()
     output.with_name('disconnected').rename(output); assert render(s,j['id'])['status']=='ready'
 
@@ -152,7 +153,8 @@ def test_enospc_after_clip_checkpoint(job,monkeypatch):
     s,j,_=job; original=module.publish
     def fail(*args): raise OSError(28,'No space left on device',j['output_parent'])
     monkeypatch.setattr(module,'publish',fail)
-    with pytest.raises(Error): render(s,j['id'])
+    with pytest.raises(Error,match='No space left on device') as failure: render(s,j['id'])
+    assert j['output_parent'] in failure.value.message
     assert s.get(j['id'])['status']=='failed'
     assert all(valid_clip(s,clip_key(u,j)) for u in j['plan']['utterances'])
     monkeypatch.setattr(module,'publish',original); assert render(s,j['id'])['status']=='ready'

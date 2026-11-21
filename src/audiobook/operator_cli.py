@@ -129,6 +129,7 @@ def snapshot(root, job, *, content=False, verify=False):
         'error_code': (job.get('error') or {}).get('code'),
         'reviews': reviews, 'publication_verified': verified,
         'audio': str(final / 'book.m4b') if status == 'ready' and verified is not False else None,
+        'planned_output': str(final / 'book.m4b'),
         'actions': {
             'status': [*prefix, 'status', jid, '--json'],
             'resume': [*prefix, 'resume', jid, '--json'],

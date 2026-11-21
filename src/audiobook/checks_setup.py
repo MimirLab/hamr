@@ -33,17 +33,37 @@ def configured(store):
         return None
 
 
+def local_model(path, option):
+    path = path.expanduser().absolute()
+    if not path.is_dir():
+        raise Error('asr_model_missing', f'{option} needs a local speech-check model directory. No directory found at {path}.',
+                    f'Give {option} the path to an installed model directory or omit it to use setup defaults.')
+    if not (path / 'model.bin').is_file():
+        raise Error('asr_model_incomplete', f'Speech-check model file not found: {path / "model.bin"}',
+                    f'Give {option} the directory containing the local faster-whisper model.')
+    return path
+
+
 def observer(store, python=None, model=None, second=None, *, use_second=True):
+    if (python == Path('ASR_PYTHON') or model == Path('LOCAL_MODEL')) and not (
+            python and python.is_file() and model and model.is_dir()):
+        raise Error('asr_placeholder', 'ASR_PYTHON and LOCAL_MODEL in older instructions stand for local paths.',
+                    'Omit --asr-python and --asr-model to use the installed speech checker. Run hamr setup --checks-only if needed.')
     if python is not None or model is not None:
         if not python or not model:
-            raise Error('asr_options', 'Supply both --asr-python and --asr-model for a manual checker.')
-        return python.absolute(), model.absolute(), second.absolute() if second else None
+            raise Error('asr_options', 'Custom speech checking needs both --asr-python and --asr-model.',
+                        'Omit both options to use the installed speech checker.')
+        python = python.expanduser().absolute()
+        if not python.is_file():
+            raise Error('asr_python_missing', f'Speech-check Python executable not found: {python}',
+                        'Give --asr-python the path to a Python executable with faster-whisper installed, or omit both custom options.')
+        return python, local_model(model, '--asr-model'), local_model(second, '--second-model') if second else None
     saved = configured(store)
     if not saved:
-        raise Error('speech_checks_required', 'The offline speech checker needs setup.',
+        raise Error('speech_checks_required', 'The offline speech checker is missing or its installation is incomplete.',
                     'Run hamr setup --checks-only, then repeat the book command.')
     return (Path(saved['python']), Path(saved['model']),
-            second.absolute() if second else Path(saved['second_model']) if use_second else None)
+            local_model(second, '--second-model') if second else Path(saved['second_model']) if use_second else None)
 
 
 def preflight():

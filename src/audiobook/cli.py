@@ -12,10 +12,24 @@ from .jobs import cleanup,create,render,repair,summary,excerpt
 def emit(value,json_mode=False):
     if json_mode: print(dumps(value),end=''); return
     if isinstance(value,dict) and 'job' in value:
-        print(f'{value["job"]} · {value["status"]} · {value.get("title","")}')
+        error=value.get('error') or {}
+        status=value['status']
+        if status=='needs_review':
+            status={'speech_qa_pending':'Speech check pending', 'speech_qa_review':'Listening review needed',
+                    'listening_review':'Listening review needed', 'source_review':'Source review needed'}.get(error.get('code'),'Needs review')
+        print(f'{value["job"]} · {status} · {value.get("title","")}')
         if value.get('output'): print(Path(value['output']) / 'book.m4b')
-        if value.get('needs_review'): print(f'{len(value["needs_review"])} unresolved locations; inspect with hamr show {value["job"]} --content')
-        if value.get('error'): print(value['error']['message']); print(value['error']['action'])
+        if error.get('message'): print(error['message'])
+        if value['status']=='needs_review' and value.get('planned_output'):
+            print(f'Current audiobook publication is on hold. Planned file: {value["planned_output"]}')
+        if error.get('action'): print(error['action'])
+        if error.get('code') in ('speech_qa_review','listening_review'):
+            passages=[issue['utterance'] for issue in value.get('needs_review',[]) if 'utterance' in issue]
+            if passages:
+                print('Flagged passages: '+', '.join(passages[:3])+ (f' and {len(passages)-3} more' if len(passages)>3 else ''))
+                jid=value['job']; uid=passages[0]; dest=f'hamr-review-{jid}-{uid}-r{value["revision"]}'
+                print(f'Export the first flagged passage with hamr excerpt {jid} --start {uid} --count 1 --output {dest}')
+                print(f'Listen to {dest}/audio.wav and compare it with the expected passage in the speech-check report.')
     elif isinstance(value,dict) and 'jobs' in value:
         if not value['jobs']: print('No audiobook jobs yet. Run hamr open DOCUMENT.')
         for job in value['jobs']: emit(job)
@@ -190,7 +204,7 @@ def parser():
             q.add_argument('--yes',action='store_true')
             q.add_argument('--play',action='store_true',help='Play the M4B after publication')
     for name in ['render','resume']:
-        q=sub(name,'Run or recover a saved job'); q.add_argument('job'); q.add_argument('--output',type=Path);q.add_argument('--no-synthesis',action='store_true',help='Use verified cached takes only; never start the speech backend');q.add_argument('--max-new-takes',type=int,help='Stop at a durable checkpoint after this many new unique takes')
+        q=sub(name,'Render, check and publish a saved book'); q.add_argument('job'); q.add_argument('--output',type=Path);q.add_argument('--no-synthesis',action='store_true',help='Assemble only verified, already checked takes; never start the speech backend');q.add_argument('--max-new-takes',type=int,help='Use a manual render batch with this limit; resume normally to check and publish')
     q=sub('run','Run the durable speech/CPU-QA/review/publication pipeline');q.add_argument('job');q.add_argument('--asr-python',type=Path);q.add_argument('--asr-model',type=Path);q.add_argument('--second-model',type=Path);q.add_argument('--batch-takes',type=int,default=1);q.add_argument('--max-retakes',type=int,default=8);q.add_argument('--max-new-takes',type=int);q.add_argument('--prepare-clear',action='store_true',help='Prepare accounted speech while source issues still hold publication');q.add_argument('--resident',action='store_true',help='Retain the owned model across render batches, CPU review and batch rests');q.add_argument('--batch-rest-seconds',type=float,default=0,help='Pause new generation between resident batches while retaining the model')
     q.add_argument('--overlap-batch-rest',action='store_true',help='Count CPU review after a committed render batch toward its minimum rest interval')
     q=sub('status','List jobs or reconcile ready output'); q.add_argument('job',nargs='?')
@@ -205,7 +219,7 @@ def parser():
     q=sub('worker','Process the durable queue; failed/review jobs do not block others'); q.add_argument('--once',action='store_true'); q.add_argument('--detach',action='store_true')
     q=sub('review','Record or resolve an exact-take listening finding'); q.add_argument('job');action=q.add_mutually_exclusive_group(required=True);action.add_argument('--accept',dest='accept_utterance');action.add_argument('--flag',dest='flag_utterance');q.add_argument('--reason',required=True)
     q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
-    q=sub('qa','Run unprompted offline CPU ASR against approved speech'); q.add_argument('job'); q.add_argument('--asr-python',type=Path); q.add_argument('--asr-model',type=Path); q.add_argument('--all',action='store_true'); q.add_argument('--require-review',action='store_true')
+    q=sub('qa','Check saved narration locally; resume normally to check and publish'); q.add_argument('job'); q.add_argument('--asr-python',type=Path,help='Optional Python executable for a custom checker'); q.add_argument('--asr-model',type=Path,help='Optional local model directory for a custom checker'); q.add_argument('--all',action='store_true'); q.add_argument('--require-review',action='store_true',help='Save the check as evidence for publication and hold flagged passages')
     q=sub('excerpt','Export consecutive committed takes while a render continues'); q.add_argument('job'); q.add_argument('--start',default='u00001'); q.add_argument('--count',type=int,default=4); q.add_argument('--output',type=Path,required=True)
     q=sub('preview','Audition an actual planned passage outside ready output'); q.add_argument('job'); q.add_argument('--utterance',default='u00001'); q.add_argument('--play',action='store_true')
     q=sub('play','Open ready M4B in the real target player'); q.add_argument('job'); q.add_argument('--start',type=float,default=0)
@@ -402,7 +416,7 @@ def dispatch(argv=None):
             if jm: emit(result,True)
             if result['status']=='needs_review': return 3
         elif a.command in ('render','resume'):
-            if a.command=='resume' and not a.no_synthesis and a.max_new_takes is None:
+            if not a.no_synthesis and a.max_new_takes is None:
                 from .book_flow import finish_book
                 result=finish_book(s,a.job,output=a.output,announce=not jm)
             else: result=render(s,a.job,a.output,allow_synthesis=not a.no_synthesis,max_new_takes=a.max_new_takes)
@@ -506,7 +520,11 @@ def dispatch(argv=None):
         return 130
     except FileNotFoundError as e:
         return emit_error(Error('local_io',f'File not found: {e.filename or str(e)}','Check the named path and repeat the command.'),jm or a.command=='agent')
-    except (OSError,ValueError,KeyError) as e:
+    except OSError as e:
+        detail=e.strerror or str(e)
+        if e.filename: detail=f'{detail}: {e.filename}'
+        return emit_error(Error('local_io',detail,'Fix the filesystem problem and repeat the command.'),jm or a.command=='agent')
+    except (ValueError,KeyError) as e:
         return emit_error(Error('local_io',f'Local operation failed ({type(e).__name__}).','Check app/output paths, permissions and free space. Run doctor and resume.'),jm or a.command=='agent')
 
 if __name__=='__main__': sys.exit(main())

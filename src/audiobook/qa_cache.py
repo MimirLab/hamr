@@ -28,14 +28,20 @@ for name in ('faster-whisper','ctranslate2'):
     with p.open('rb') as f: code[s]=hashlib.file_digest(f,'sha256').hexdigest()
 print(json.dumps({'python':sys.version,'machine':platform.machine(),'packages':versions,'code_sha256':code}))
 """
+    ffmpeg=shutil.which('ffmpeg')
+    if not ffmpeg:
+        raise Error('missing_dependency','FFmpeg is needed to check saved speech.','Install FFmpeg and repeat the command.')
     try:
         environment=json.loads(subprocess.check_output([str(python),'-c',probe],stderr=subprocess.PIPE,timeout=60))
-        ffmpeg=Path(shutil.which('ffmpeg') or '')
-        ffmpeg_version=subprocess.check_output([str(ffmpeg),'-version'],stderr=subprocess.PIPE,timeout=10).decode()
     except (OSError,ValueError,subprocess.SubprocessError) as e:
-        raise Error('asr_environment','Cannot identify the selected offline ASR environment.','Use the installed faster-whisper environment and local model directory.') from e
+        raise Error('asr_environment',f'Could not run the speech checker with Python at {python}.',
+                    'Use a Python environment with faster-whisper installed, or run hamr setup --checks-only to repair the default checker.') from e
+    try:
+        ffmpeg_version=subprocess.check_output([ffmpeg,'-version'],stderr=subprocess.PIPE,timeout=10).decode()
+    except (OSError,ValueError,subprocess.SubprocessError) as e:
+        raise Error('asr_environment',f'Could not run FFmpeg at {ffmpeg}.','Check the FFmpeg installation and repeat the command.') from e
     return {'schema_version':1,'worker_sha256':filehash(worker),'model_files':files,
-            'environment':environment,'ffmpeg_sha256':filehash(ffmpeg),'ffmpeg_version':ffmpeg_version,
+            'environment':environment,'ffmpeg_sha256':filehash(Path(ffmpeg)),'ffmpeg_version':ffmpeg_version,
             'device':'cpu','compute_type':'int8','cpu_threads':2,'prompt':None,
             'language':'en','beam_size':5,'condition_on_previous_text':False,'vad_filter':False,
             'input_format':'s16le mono 24000; FFmpeg f32le mono 16000'}

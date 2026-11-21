@@ -85,6 +85,33 @@ def verify_publication(path,j):
 
 def final_path(j): return Path(j['output_parent'])/(j['id']+f'-r{j["revision"]}')
 
+
+def speech_check_pending(jid):
+    return {'code':'speech_qa_pending',
+            'message':'The narration is saved. Hamr will check it automatically before writing the audiobook. You only need to listen if it flags a passage.',
+            'action':f'Run hamr resume {jid} to check the saved audio and finish the book.'}
+
+
+def review_error(store,j):
+    error=j['error']
+    code=(error or {}).get('code')
+    jid=j['id']
+    if code in ('speech_qa_review','listening_review') or (not code and j.get('audio_review')):
+        return {'code':code or 'speech_qa_review',
+                'message':'Flagged audio needs a listening check before publication. The saved narration is retained.',
+                'action':f'Run hamr status {jid} --json for the passage IDs, reasons and report paths.'}
+    if code=='source_review' or (code in (None,'speech_qa_pending') and j['plan']['issues']):
+        return {'code':'source_review',
+                'message':'Some source passages need to be resolved before Hamr can finish the audiobook.',
+                'action':f'Run hamr show {jid} --content to find those passages.'}
+    if code in (None,'speech_qa_pending'):
+        from .checks_setup import configured
+        error=speech_check_pending(jid)
+        if not configured(store):
+            error['action']=f'Run hamr setup --checks-only, then hamr resume {jid}.'
+    return error
+
+
 def summary(store,j):
     if j['status'] in ('rendering','assembling'):
         try:
@@ -101,7 +128,7 @@ def summary(store,j):
             if e.code!='busy':raise
     final=final_path(j)
     if j['status']=='ready' and not verify_publication(final,j):
-        j['status']='failed'; j['error']={'code':'publication_corrupt','message':'Ready output is missing or corrupt.','action':f'hamr resume {j["id"]} --output NEW_PARENT'}
+        j['status']='failed'; j['error']={'code':'publication_corrupt','message':f'The published audiobook is missing or damaged at {final}.','action':'Choose another existing output directory and pass it with --output when resuming.'}
         if not store.save_if_current(j,j['updated']): return summary(store,store.get(j['id']))
     reviews=list(j['plan']['issues'])
     for r in j.get('audio_review',[]):
@@ -133,7 +160,8 @@ def summary(store,j):
                 if (j.get('error') or {}).get('message'):pipeline_progress['error']=j['error']['message']
             pipeline_progress['automatic_retakes_used']=len(recorded.get('retakes',[]))
     except (OSError,ValueError,KeyError):pass
-    return {'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(valid_clip(store,k) is not None for k in set(j['clips'].values())),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':j['error'],'output':str(final) if j['status']=='ready' else None,'resume':f'hamr resume {j["id"]}','metrics':j.get('metrics',{}),'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
+    error=review_error(store,j) if j['status']=='needs_review' else j['error']
+    return {'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(valid_clip(store,k) is not None for k in set(j['clips'].values())),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':j.get('metrics',{}),'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
 
 def generate_takes(engine,j,todo,parallel):
     """Keep at most N requests in flight; the caller alone commits durable state."""
@@ -183,7 +211,7 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
             if j.get('audio_gate') and j.get('audio_gate_approved_plan')!=j['plan']['plan_sha256']:
                 j['status']='needs_review'; store.save(j); return summary(store,j)
             j['status']='ready'; j['error']=None; store.save(j); return summary(store,j)
-        if final.exists(): raise Error('output_collision','Existing destination differs from this job manifest.','Use resume --output NEW_PARENT.')
+        if final.exists(): raise Error('output_collision',f'An existing folder at {final} does not match this audiobook job.','Choose another existing output directory and pass it with --output when resuming.')
         if j['backend'] is None:
             if not (store.root/'settings.json').exists(): raise Error('setup_required','No Breeze backend configured.','Run hamr setup --profile vulkan-f16.')
             j['backend']=loadjson(store.root/'settings.json')
@@ -194,7 +222,7 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
         try:
             for dependency in ('ffmpeg','ffprobe'):
                 if not shutil.which(dependency): raise Error('missing_dependency',f'Missing executable: {dependency}',f'Install {dependency} in user space and resume.')
-            if not Path(j['output_parent']).is_dir(): raise Error('output_unavailable','Output parent is unavailable.','Create or reconnect the chosen output directory, then resume.')
+            if not Path(j['output_parent']).is_dir(): raise Error('output_unavailable',f'Output directory is unavailable: {j["output_parent"]}','Create or reconnect that directory, then resume.')
             estimated_seconds=j['plan']['estimated_minutes']*60
             expected_clip_bytes=int(estimated_seconds*RATE*2*1.3)
             retained=sum(p.stat().st_size for k in j['clips'].values() if (p:=store.root/'clips'/k/'audio.pcm').is_file())
@@ -244,8 +272,16 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
                 return summary(store,j)
             from .speech_compare import POLICY as comparison_policy
             current_comparison=j.get('speech_contract',1)<2 or j.get('audio_gate_approved_comparison_policy')==comparison_policy
-            if j.get('audio_gate') and (not current_comparison or j.get('audio_gate_approved_plan')!=j['plan']['plan_sha256'] or j.get('audio_gate_approved_takes')!=take_signature(store,j)):
-                j['status']='needs_review'; j['error']={'code':'speech_qa_pending','message':'Changed speech awaits the required QA/review checkpoint.','action':f'hamr qa {jid} --asr-python ASR_PYTHON --asr-model LOCAL_MODEL --all --require-review'}; store.save(j); return summary(store,j)
+            if j.get('audio_gate'):
+                plan_hash=j['plan']['plan_sha256']
+                approved=current_comparison and j.get('audio_gate_approved_plan')==plan_hash
+                takes=take_signature(store,j) if approved or j.get('audio_review') else None
+                if not approved or j.get('audio_gate_approved_takes')!=takes:
+                    checked=(takes is not None and j.get('audio_gate_checked_plan')==plan_hash and j.get('audio_gate_checked_takes')==takes
+                             and (j.get('speech_contract',1)<2 or j.get('audio_gate_checked_comparison_policy')==comparison_policy))
+                    j['status']='needs_review'
+                    j['error']=review_error(store,j) if checked and j.get('audio_review') else speech_check_pending(jid)
+                    store.save(j); return summary(store,j)
             if j['plan']['issues']:
                 j['status']='needs_review'; store.save(j); return summary(store,j)
             j['status']='assembling'; store.save(j); publish(store,j)
@@ -255,7 +291,7 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
         except KeyboardInterrupt:
             j['status']='paused'; j['error']={'code':'interrupted','message':'Owned work stopped; verified clips are retained.','action':f'hamr resume {jid}'}; store.save(j); raise
         except (Error,OSError) as e:
-            j['status']='failed'; j['error']={'code':getattr(e,'code','storage_or_io'),'message':getattr(e,'message',f'I/O failed at {getattr(e,"filename",None) or store.path(j)} (errno {getattr(e,"errno",None)}).'),'action':getattr(e,'action','Check output mount and free space, then resume.')} ; store.save(j)
+            j['status']='failed'; j['error']={'code':getattr(e,'code','storage_or_io'),'message':getattr(e,'message',f'{getattr(e,"strerror",None) or "I/O failed"}: {getattr(e,"filename",None) or store.path(j)}'),'action':getattr(e,'action',f'Fix the filesystem problem, then run hamr resume {jid}.')} ; store.save(j)
             raise Error(j['error']['code'],j['error']['message'],j['error']['action']) from e
 
 
@@ -276,7 +312,7 @@ def escape_meta(s):
 def publish(store,j):
     parent=Path(j['output_parent'])
     # Do not recreate a vanished destination mount/directory: require explicit existing parent.
-    if not parent.is_dir(): raise Error('output_unavailable','Output parent is unavailable.','Create or reconnect the chosen output directory, then resume.')
+    if not parent.is_dir(): raise Error('output_unavailable',f'Output directory is unavailable: {parent}','Create or reconnect that directory, then resume.')
     final=final_path(j); stage=parent/('.audiobook-'+j['id']+f'-r{j["revision"]}.partial')
     if stage.is_symlink(): raise Error('unsafe_path','Publication staging path is a symlink.')
     if stage.exists():

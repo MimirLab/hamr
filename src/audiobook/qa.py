@@ -178,7 +178,17 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
                 j['audio_gate_approved_comparison_policy']=POLICY
                 j['status']='needs_review' if j['plan']['issues'] else ('ready' if verify_publication(final_path(j),j) else 'queued')
             store.save(j)
-        return {'schema_version':1,'status':j['status'],'job':jid,'clips_checked':len(rows),'wer':report['wer'],'flagged_passages':report['flagged_passages'],'report':str(dest),'device':'cpu','prompt':None}
+        result={'schema_version':1,'status':j['status'],'job':jid,'clips_checked':len(rows),'wer':report['wer'],'flagged_passages':report['flagged_passages'],'report':str(dest),'device':'cpu','prompt':None,'planned_output':str(final_path(j)/'book.m4b')}
+        if require_review and j.get('audio_review'):
+            result.update(message='Flagged audio needs a listening check before publication.',
+                          action=f'Run hamr status {jid} for the flagged passages and listening instructions.')
+        elif require_review and j['plan']['issues']:
+            result.update(message='The speech check finished. Source passages still need review.',
+                          action=f'Run hamr status {jid} for the source review instructions.')
+        elif j['status']!='ready':
+            result.update(message='The speech check finished. This command does not write the audiobook.',
+                          action=f'Run hamr resume {jid} to continue to publication.')
+        return result
 
 
 def accept(store,jid,utterance,reason,*,expect_revision=None):

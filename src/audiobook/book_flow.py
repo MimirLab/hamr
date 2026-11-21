@@ -63,6 +63,7 @@ def finish_book(store, jid, *, output=None, announce=False):
         default.mkdir(exist_ok=True)
     if announce:
         print(f'{jid}: rendering and checking speech. Resume with hamr resume {jid}.', file=sys.stderr, flush=True)
+        print(f'Planned audiobook: {jobs.final_path(job) / "book.m4b"}', file=sys.stderr, flush=True)
     from .pipeline import run as run_pipeline
     return run_pipeline(store, jid, python, model, second_model, batch_takes=8, resident=True,
                         report_progress=announce)

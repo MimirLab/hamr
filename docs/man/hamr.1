@@ -69,13 +69,18 @@ job, or process the queue.
 .BI "resume " JOB
 Continue a saved job using verified takes and speech observations.
 .B "render"
-runs the lower-level render stage.
+also runs the full workflow by default. Use
+.B \-\-max-new-takes
+for a manual render batch.
 .B "run"
 exposes pipeline options.
 .TP
 .B "status, show, preview, excerpt, play"
 Inspect jobs or source locations, audition a passage, export saved
-takes, or play a ready book.
+takes, or play a ready book. For a publication hold,
+.B "status JOB"
+shows the planned output file and whether to resume the automatic
+speech check or review a specific passage.
 .TP
 .B "repair, qa, review"
 Apply a scoped correction, compare speech to the plan, or record and
@@ -109,7 +114,7 @@ to check the state of a saved job.
 Command or input error.
 .TP
 .B 3
-The book needs review.
+Publication is held for an automatic speech check or a review finding.
 .TP
 .B 130
 Interrupted. Committed work can be resumed.
