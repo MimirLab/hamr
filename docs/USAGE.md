@@ -104,6 +104,8 @@ The effective settings are in `.policy.context` in the plan. Edit a cue group's 
 
 A document policy bound to the file's SHA-256 can set `context.conventions` for the book, `context.chapters` for exact chapter names or occurrence IDs, and `context.tables` for exact table block IDs. Find those IDs in `hamr plan SOURCE --json`. Hamr can also recognize a date-order declaration within the same quotation and apply it to that date. A date can be recognized while month and day stay unresolved. The plan exposes that distinction, scoped evidence, and the selected reading.
 
+For technical books, set `number_locale` in the applicable conventions when you know the notation. Supported values are `en-US`, `en-GB`, `de-DE`, and `fr-FR`. Without a setting, unambiguous measurements can establish a decimal separator for other measurements in the same source section. The plan records the exact passages that support the reading. Printed thin spaces and nonbreaking spaces can join groups of digits inside a number.
+
 Use a scoped `notation` setting for sources with plain-text symbols whose meaning is already known. Supported values include `ASCII_subscript`, `ASCII_power`, `propositional_implication`, and `chess`. A table convention `ditto_marker: "double_quote"` lets a bare quote inherit the verified value immediately above it. `emoji_speech: "localized_name"` names supported single pictographs. `expand_contractions` controls spoken expansion in recognized grammatical constructions.
 
 An optional top-level `native_names` list records particular names whose reading is being checked. The narrator receives the full printed name. A supplied pronunciation alias takes precedence.

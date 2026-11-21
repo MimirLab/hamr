@@ -2,7 +2,7 @@
 from datetime import date
 import re
 
-from . import abbreviations, boundaries, context_forms, context_lexical
+from . import abbreviations, boundaries, context_forms, context_lexical, context_numbers
 from .context_candidate import Candidate, Component, exact_components, literal, number_spoken, numeric_fields
 from .context_forms import CURRENCIES, MONTHS, SYMBOLS, UNIT_NAMES, money_words
 from .linguistic import UNITS as TECHNICAL_UNITS
@@ -19,6 +19,11 @@ CLOCK = re.compile(CLOCK_CORE)
 CLOCK_ZONE = re.compile(r'\s+(?:UTC|GMT|[ECMP][SD]T)\b')
 UNITS = {**TECHNICAL_UNITS, **UNIT_NAMES}
 COMPOSITES = context_forms.patterns(LEFT, RIGHT, MONTHS)
+MEASUREMENT = re.compile(rf'({context_numbers.MEASUREMENT_AMOUNT})[^\S\r\n]*(.+)')
+MEASUREMENT_PEER = re.compile(rf'^[ \t]*,[ \t]*{context_numbers.MEASUREMENT_AMOUNT}[^\S\r\n]+' +
+                              '(?:' + '|'.join(context_numbers.SI_SYMBOLS) + '|°[CF])' + RIGHT)
+MEASUREMENT_PREVIOUS = re.compile(LEFT + context_numbers.MEASUREMENT_AMOUNT + r'[^\S\r\n]+(?:m|' +
+                                  '|'.join(context_numbers.SI_SYMBOLS) + r'|°[CF])[ \t]*,[ \t]*(?:and[ \t]+)?$')
 PATTERNS = {
     'date_iso': LEFT + r'[0-9]{4}-[0-9]{2}-[0-9]{2}' + RIGHT,
     **{name: expression for name, (_, expression) in COMPOSITES.items() if name!='signed'},
@@ -27,8 +32,8 @@ PATTERNS = {
     'slash': LEFT + r'(?:' + SLASH_DATE + r'|[0-9]{1,2}/[0-9]{1,2})' + RIGHT,
     'colon': LEFT + CLOCK_CORE + RIGHT,
     'parentheses': r'\([ \t]*[0-9]{1,9}(?:[.,][0-9]{1,12})?[ \t]*\)',
-    'measurement': LEFT + AMOUNT + r'(?:[ \t]+(?:'+context_forms.UNIT_PATTERN+r')|[ \t]*(?:' + '|'.join(map(re.escape, TECHNICAL_UNITS)) + '))' + RIGHT,
-    'separators': LEFT + r'[+−-]?[0-9]{1,12}[.,][0-9]{1,12}' + RIGHT,
+    'measurement': LEFT + context_numbers.MEASUREMENT_AMOUNT + r'(?:[^\S\r\n]+(?:'+context_forms.UNIT_PATTERN+r')|[^\S\r\n]*(?:' + '|'.join(map(re.escape, TECHNICAL_UNITS)) + '))' + RIGHT,
+    'separators': LEFT + context_numbers.PUNCTUATED + RIGHT,
     'signed': COMPOSITES['signed'][1],
     'abbreviation': r'(?<![\w.@/])(?i:{lexicon})(?![\w./@-])',
     'integer': LEFT + r'[0-9]{1,12}' + RIGHT,
@@ -140,6 +145,48 @@ def money_modifier(raw, env):
     return options
 
 
+def measurement(raw, env):
+    amount, unit = MEASUREMENT.fullmatch(raw).groups()
+    if env.cue('identifier') or env.header_cue('identifier'):
+        return [literal(raw)]
+    peer = MEASUREMENT_PEER.match(env.after) if not env.cue('duration') else None
+    previous = MEASUREMENT_PREVIOUS.search(env.before) if unit in context_numbers.SI_SYMBOLS else None
+    local = env.cue('measurement') or env.cue('temperature') or unit == 'm' and env.cue('length')
+    if unit not in TECHNICAL_UNITS and unit not in context_numbers.SI_SYMBOLS and not (unit=='m' and peer or local):
+        return []
+    joined = any(c in context_numbers.SPACES for c in raw[len(amount):])
+    expanded = unit in ('m','K') or bool(peer or previous or local or joined)
+    reading = UNITS[unit]
+    unit_name = reading.replace('degrees ', 'degree ').removesuffix('s')
+    if peer:
+        env.governors.add(('measurement_peer','right',peer[0],env.after_start+peer.start(),env.after_start+peer.end()))
+    if previous:
+        env.governors.add(('measurement_peer','left',previous[0],env.before_start+previous.start(),env.before_start+previous.end()))
+
+    def render(value):
+        singular = re.fullmatch(r'[+−-]?1(?:\.0+)?', value)
+        return number_spoken(value) + ' ' + (unit_name if singular else reading)
+
+    base = {'amount': amount, 'value': amount, 'unit': unit_name, 'case': unit, 'reading': reading}
+    unit_evidence = 'governor' if local or peer or previous else 'syntax'
+    if not re.search(r'[.,\u00a0\u2009\u202f]', amount):
+        return [Candidate('measurement', base, render(amount) if expanded else None, (unit_evidence,))]
+    options=[]
+    for choice in context_numbers.candidates(amount, env, measurement=True):
+        if choice.kind == 'literal':
+            options.append(literal(raw))
+            continue
+        fields = {**base, 'value':choice.fields['value']}
+        part = Component('CR-N004', choice.kind, (0,len(amount)), dict(choice.fields))
+        # Amount evidence must settle punctuation before a unit can be voiced.
+        evidence = (*choice.evidence, unit_evidence) if choice.evidence else ()
+        legacy = (unit=='mL' and choice.kind=='decimal_quantity' and choice.fields['decimal_separator']=='.'
+                  and choice.fields.get('group_separator') in (None, ',') and not env.setting('number_locale'))
+        spoken = render(fields['value']) if not legacy and (expanded or fields['value']!=amount or env.setting('number_locale')) else None
+        options.append(Candidate('measurement', fields, spoken, evidence, (part,)))
+    return options
+
+
 def candidates(kind, raw, env):
     if kind in context_lexical.PATTERNS:
         return context_lexical.candidates(kind, raw, env)
@@ -238,33 +285,20 @@ def candidates(kind, raw, env):
             return [Candidate('accounting_negative',{'amount':amount,'sign':'negative','notation':'parentheses','currency':env.currency_label},'minus '+number_spoken(amount),('convention','column' if env.header else 'governor'))]
         return [Candidate('parenthetical_quantity',{'amount':amount,'integer_digits':amount if amount.isdigit() else None,'aside':True,'sign':'not_negative'},None,('syntax',))]
     if kind=='measurement':
-        amount,unit=re.fullmatch('('+AMOUNT+r')\s*(.+)',raw).groups()
-        if unit not in TECHNICAL_UNITS and not (env.cue('measurement') or env.cue('temperature') or unit in ('mL','kg','km','cm','mm','mg')):
-            return []
-        spoken=number_spoken(amount)+' kelvin' if unit=='K' else None
-        reading=UNITS[unit]
-        return [Candidate('measurement',{'amount':amount,'value':amount,'unit':reading.removesuffix('s'),'case':unit,'reading':reading},spoken,('syntax',))]
+        return measurement(raw,env)
     if kind=='separators':
-        sign, first, separator, second=re.fullmatch(r'([+−-]?)([0-9]+)([.,])([0-9]+)',raw).groups()
-        if separator=='.' and not sign and env.cue('version'):
+        dotted=context_numbers.DECIMAL_SURFACE.fullmatch(raw)
+        if env.cue('version'):
+            if not dotted or not dotted[1] or dotted[2]!='.':
+                return [literal(raw)]
+            first,_,second=dotted.groups()
             said=number_spoken(first)+' point '+(identifier(second) if second.startswith('0') else number_spoken(second))
             fields={'components':[first,second],'role':'version','preserve_component_zeroes':True}
             kind='version' if env.cue('version_label') else 'component_identifier'
             return [Candidate(kind,fields,said,('governor',))]
-        locale=env.setting('number_locale')
-        decimal_separator='.' if locale in ('en-US','en-GB') else ',' if locale else None
-        option=Candidate('decimal_quantity',{'whole':first,'fraction':second,'integer_digits':first,'fraction_digits':second,
-                                              'scale':len(second),'sign':sign,'separator':separator},
-                         number_spoken(sign+first+'.'+second),('convention',) if separator==decimal_separator else ())
-        readings=[literal(raw),option]
-        if len(first)<=3 and len(second)==3 and not first.startswith('0'):
-            readings.append(Candidate('grouped_integer',{'groups':[first,second],'sign':sign,'separator':separator},
-                                      number_spoken(sign+first+second),('convention',) if decimal_separator and separator!=decimal_separator else ()))
-        if not locale and separator=='.' and (second.endswith('0') or len(second)!=3):
-            # The earlier qualified path protects visible decimal scale when
-            # the user has not selected a competing number convention.
-            return [Candidate('decimal_quantity',option.fields,None,('fallback',))]
-        return readings
+        if env.header_cue('identifier') or env.cue('identifier') and not context_numbers.PLAIN_POINT.fullmatch(raw):
+            return [literal(raw)]
+        return context_numbers.candidates(raw,env)
     if kind=='integer':
         if env.cue('schema_count') and env.cue('decimal_schema',side='right'):
             return [Candidate('explicit_cardinal',{'integer_value':str(int(raw)),'source_digits':raw},number_spoken(str(int(raw))),('governor',))]

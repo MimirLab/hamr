@@ -20,6 +20,10 @@ COMPARATORS={'>=':'greater than or equal to','<=':'less than or equal to',
              '>':'greater than','<':'less than'}
 NUMBER=r'[+-]?\d+(?:\.\d+)?'
 CONTROL_CUES=re.compile(r'\((sigh|laugh|chuckle|gasp|cough|cry)\)',re.I)
+COEFFICIENT_OBSERVATION = re.compile(
+    r'\b((?:coefficient|mantissa|measured value)\s+(?:is|was|equals)\s+)'
+    r'([+−-]?[0-9]{1,12}\.[0-9]{3,4}(?:[ \t]+[0-9]{3,4}){0,2}[ \t]+[0-9]{1,4})'
+    r'(?=[ \t]*(?:[.;!?](?![0-9])|$))', re.I)
 
 
 def literal_cues(text):
@@ -59,6 +63,9 @@ def comparison_text(text):
     from .spoken_forms import expand
     from .typed_readings import clock_observation, expand as interpret
     from .typed_readings import clock_words
+    # English ASR can print a single coefficient's trailing digits as separate
+    # groups. Only a complete singular coefficient clause owns this reading.
+    text=COEFFICIENT_OBSERVATION.sub(lambda m:m[1]+''.join(m[2].split()),text)
     meridiem=re.compile(r'(?<![\w.,])([0-9]{1,2})([.:])([0-9]{2})\s*([AP])(?:\.\s*|[ \t]*)M(?!\w)',re.I)
     clock_context=re.compile(r'\b(?:departs at|arrives at|departure|arrival|clock reads|time is|starts at|opens at|closes at)\s*[:=]?\s*$',re.I)
     meridiem_zone=r'[.,]?[ \t]+(?:UTC|GMT|[ECMP][SD]T)\b'

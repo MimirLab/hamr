@@ -2,7 +2,7 @@
 from collections import Counter, defaultdict
 import re
 
-from . import context_config, context_grammar as grammar, context_lexical, context_structure
+from . import context_config, context_grammar as grammar, context_lexical, context_numbers, context_structure
 from .abbreviations import PROTECTED
 from .core import Error, digest, key
 from .linguistic import literal_cues
@@ -102,9 +102,17 @@ class Evidence:
         self.definitions=[]
         self.date_definition=None
         self.currency_label=None
+        self.number_anchors={}
 
     def setting(self, name):
         return self.settings.get(name)
+
+    def number_separator(self):
+        if len(self.number_anchors)==1:
+            mark, observed=next(iter(self.number_anchors.items()))
+            if len(observed)>=2:
+                return mark
+        return None
 
     def cue(self, group, *, side='left'):
         text = self.before.rstrip(' \t:="“\'‘') if side=='left' else self.after.lstrip(' \t')
@@ -179,7 +187,11 @@ class Evidence:
             return {'cues':sorted(self.governors),'origin':'adjacent source wording'}
         if family=='nearby':return {'cues':sorted(self.neighbors),'origin':'bounded source clause with an adjacent governing word'}
         if family=='column':return {'header':self.header,'source':self.header_source,'origin':'same table column'}
-        if family=='anchors':return {'date_order':self.inferred_order,'anchors':self.anchors,'origin':'valid unambiguous source dates'}
+        if family=='anchors':
+            mark=self.number_separator()
+            if mark:return {'decimal_separator':mark,'anchors':list(self.number_anchors[mark].values()),
+                            'origin':'unambiguous written measurements in the same source section'}
+            return {'date_order':self.inferred_order,'anchors':self.anchors,'origin':'valid unambiguous source dates'}
         if family=='definition':
             if self.date_definition:return {'definition':self.date_definition,'origin':'explicit date order inside the same quotation'}
             return {'definitions':self.definitions,'origin':'explicit source definition in this chapter'}
@@ -255,10 +267,14 @@ class Resolver:
                                              self.config['cues']['price_noun'],self.config['native_names'])
         self.definitions=defaultdict(list)
         self.chronologies=defaultdict(lambda:defaultdict(list))
+        self.number_anchors=defaultdict(lambda:defaultdict(dict))
+        self.number_exclusions={}
         self.chronology_headings={}
         self.chronology_entries={}
         headings=self.config['cues']['date_chronology']
         chronology_headings=re.compile(r'(?<!\w)(?:'+'|'.join(map(re.escape,headings))+r')(?!\w)',re.I) if headings else None
+        quantity_units=set(self.config['cues']['quantity_unit'])|set(context_numbers.SI_SYMBOLS)
+        number_pattern=context_numbers.witness_pattern(grammar.LEFT,grammar.RIGHT,quantity_units)
         for block in doc.blocks:
             scope=self.scope(block)
             if block.role=='heading' and not block.issue and chronology_headings and chronology_headings.search(block.source):
@@ -277,6 +293,17 @@ class Resolver:
                     span['kind'] in ('literal','hidden') and span['source_start']<match.end() for span in block.locator.get('inline_semantics',[])):
                 self.definitions[self.scope(block),match[1].casefold()].append(
                     {'block':block.id,'token_span':list(match.span(1)),'reading_span':list(match.span(2)),'reading':match[2]})
+            if block.role=='body' and not block.issue and ('.' in block.source or ',' in block.source):
+                excluded=[(span['source_start'],span['source_end']) for span in block.locator.get('inline_semantics',[])
+                          if span['kind'] in ('literal','hidden','hyperlink','language')]
+                excluded.extend(match.span() for match in context_numbers.QUOTATIONS.finditer(block.source))
+                if block.locator.get('format')=='markdown' and block.locator.get('exact','').lstrip().startswith('>'):
+                    excluded=[(0,len(block.source))]
+                if excluded:self.number_exclusions[block.id]=excluded
+                for mark, number, span in context_numbers.witnesses(block.source,number_pattern,excluded):
+                    observed=self.number_anchors[scope][mark]
+                    if len(observed)<4:
+                        observed.setdefault(number,{'block':block.id,'span':span,'value':number})
         policy.update(context=self.config,context_implementation=self.implementation)
         self.review,self.answers=review_data(policy.get('context_review'))
         self.cues={}
@@ -414,6 +441,9 @@ class Resolver:
                 inferred=self.chronologies.get(self.scope(block),{}) if chronology else anchors.get(column,{})
                 env=Evidence(self,value,match.start(),match.end(),header,inferred,chapter,chapter_id,
                              block.id if row is not None else None,column,chronology)
+                if (match.lastgroup in ('separators','measurement') and value==block.source and row is None
+                        and not any(a<end and begin<b for begin,end in self.number_exclusions.get(block.id,()))):
+                    env.number_anchors=self.number_anchors.get(self.scope(block),{})
                 if match.lastgroup=='abbreviation':
                     env.definitions=self.definitions.get((self.scope(block),match[0].casefold()),[])
                 defines=any(item['block']==block.id and item['token_span']==[a,b] for item in env.definitions)

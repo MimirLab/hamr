@@ -93,7 +93,7 @@ def patterns(left,right,months):
         ('symbolic_fraction','CR-N035',r'[A-Za-z]/[A-Za-z]'),
         ('tuple','CR-N046',r'[\[(]\s*'+SIGNED+r'\s*,\s*'+SIGNED+r'\s*[\])]'),
         ('mixed_fraction','CR-N009',r'(?:[0-9]{1,9}[ \t]+[0-9]{1,2}/[0-9]{1,2}|[0-9]{0,9}[½¼¾⅓⅔⅛⅜⅝⅞])'),
-        ('temperature','CR-N020',SIGNED+r'[ \t]*°[CF]?'),
+        ('temperature','CR-N020',SIGNED+r'[^\S\r\n]*°[CF]?'),
         ('rate','CR-N015',SIGNED+r'[ \t]*(?:%|‰|bp)'),
         ('radix','CR-N032',r'(?:0[xX][0-9A-Fa-f]{1,32}|0[bB][01]{1,32}|0[oO][0-7]{1,24})'),
         ('version','CR-N029',r'(?:[vV][0-9]{1,8}(?:\.[0-9]{1,8}){1,5}|[0-9]{1,8}(?:\.[0-9]{1,8}){2,5})'),

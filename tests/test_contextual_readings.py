@@ -125,6 +125,64 @@ def test_finance_and_case_sensitive_unit_contracts_reach_speech_and_qa():
     assert 'math_or_unit' in critical('Link A is 5 MB.', 'Link A is 5 Mb.')
 
 
+def test_source_measurements_disambiguate_separators_only_in_their_scope():
+    source=('# Flight record\n\nThe probe climbed 118.65 miles. A pass took 23.67 seconds.\n\n'
+            'The distance was 26,000 feet above “high gate”. The inclination was 32.521 degrees.\n\n'
+            'The coordinates were .71 degrees north.\n\n“Another report gives 26,000 feet.”\n\n'
+            '# Another record\n\nThe distance was 26,000 feet.')
+    result=reading(source)
+    target=[event for event in events(result) if event['source']=='26,000']
+    assert [selected(event)['kind'] for event in target]==['grouped_integer','literal','literal']
+    assert selected(target[0])['fields']['integer_digits']=='26000'
+    assert selected(target[0])['fields']['group_separator']==','
+    assert any(f.get('decimal_separator')=='.' and len(f['anchors'])>=2 for f in target[0]['evidence'])
+    assert 'twenty six thousand feet' in speech(result)
+    assert 'thirty two point five two one degrees' in speech(result)
+    assert 'zero point seven one degrees north' in speech(result)
+    disputed=source.replace('23.67 seconds','23,67 seconds')
+    assert all(selected(e)['kind']=='literal' for e in events(reading(disputed)) if e['source']=='26,000')
+
+
+def test_linked_digit_groups_and_measurements_keep_exact_digits_and_owner():
+    source='The lot contained 76\u00a0483\u00a0522 items. The coefficient was 0.453\u2009592\u202f37. The sample weighed 1\u202f234.50 kg.'
+    result=reading(source)
+    group,decimal,measurement=events(result)
+    assert selected(group)['fields']['value']=='76483522'
+    assert selected(decimal)['fields']['fraction_digits']=='45359237'
+    assert selected(measurement)['fields']['value']=='1234.50'
+    part=selected(measurement)['components'][0]
+    assert part['source']=='1\u202f234.50' and part['fields']['scale']==2
+    assert 'zero point four five three five nine two three seven' in speech(result)
+    assert 'one thousand two hundred thirty four point five zero kilograms' in speech(result)
+    assert result['decisions'][0]['source']==source
+    assert speech(reading('The identifier is 123\u00a0456. The two labels are 123 456.'))=='The identifier is 123 456. The two labels are 123 456.'
+    table=reading('| A | B |\n| --- | --- |\n| 123 | 456 |')
+    assert '123456' not in speech(table) and 'thousand' not in speech(table)
+
+
+def test_qa_joins_recognizer_digits_only_for_a_complete_coefficient():
+    expected='The measured coefficient was zero point four five three five nine two three seven.'
+    assert not critical(expected,'The measured coefficient was 0.4535 9237.')
+    assert 'quantity' in critical(expected,'The measured coefficient was 0.4535 9273.')
+    assert 'quantity' in critical(expected,'The measured coefficient was 0.4535 923.')
+    assert 'quantity' in critical(expected,'The measured coefficient was 0.4535; 9237.')
+    assert 'quantity' in critical('The reference was 0.45359237.','The reference was 0.4535 9237.')
+
+
+def test_measurement_symbols_keep_case_and_use_comparison_evidence():
+    result=reading('The readings were 7 m, 31.4 kg, and 250 mm. The width was 1.0\u00a0m. The code was 4 m.')
+    assert [selected(e)['fields']['unit'] for e in events(result) if selected(e)['kind']=='measurement']==[
+        'meter','kilogram','millimeter','meter']
+    assert 'seven meters, thirty one point four kilograms, and two hundred fifty millimeters' in speech(result)
+    assert 'one point zero meter' in speech(result) and 'code was 4 m' in speech(result)
+    assert 'seven meters' not in speech(reading('Elapsed time: 7 m, 4 kg.'))
+    french=reading('The distance is 1,234 km.',conventions={'number_locale':'fr-FR'})
+    assert 'one point two three four kilometers' in speech(french)
+    assert selected(events(french)[0])['components'][0]['fields']['decimal_separator']==','
+    temperature=reading('The outside temperature was 37\u00a0°C.')
+    assert selected(events(temperature)[0])['fields']=={'value':'37','unit':'celsius'}
+
+
 def test_same_colon_shape_has_clock_reference_and_duration_owners():
     result=reading('Departure 03:20. Reference 03:20. Elapsed time: 03:20.',
                    conventions={'duration_fields':'minutes_seconds'})

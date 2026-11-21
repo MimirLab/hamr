@@ -52,6 +52,8 @@
     "interval": ["interval is", "interval"],
     "pair": ["coordinate pair is", "coordinate pair", "ordered pair"],
     "measurement": ["measured value", "measured length", "measured temperature", "coefficient", "uncertainty"],
+    "length": ["length", "width", "distance", "height", "depth", "thickness", "radius"],
+    "quantity_unit": ["mile", "miles", "foot", "feet", "yard", "yards", "meter", "meters", "metre", "metres", "kilometer", "kilometers", "degree", "degrees", "second", "seconds", "minute", "minutes", "hour", "hours", "gram", "grams", "kilogram", "kilograms", "pound", "pounds", "liter", "liters", "litre", "litres"],
     "ratio": ["ratio", "ratio is", "score", "score is"],
     "article": ["a", "an"],
     "price_noun": ["fee", "charge", "payment", "ticket", "purchase"],
