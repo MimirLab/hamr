@@ -103,12 +103,16 @@ def test_windows_writer_lock_and_no_replace_promotion(tmp_path):
     dest=store.root/'runtime'/'publication'
     source.mkdir()
     dest.mkdir()
+    passage = source/'committed audio.pcm'
+    passage.write_bytes(b'checked content')
+    core.syncfile(passage)
     with pytest.raises(core.Error,match='already exists'):
         rename_new(source,dest)
     assert source.is_dir() and dest.is_dir()
     store.safe_remove(dest)
     rename_new(source,dest)
     assert dest.is_dir() and not source.exists()
+    assert (dest/passage.name).read_bytes()==b'checked content'
 
 
 def test_protected_mix_keeps_original_tensor_bytes(tmp_path, monkeypatch):

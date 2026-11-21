@@ -76,8 +76,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path 'published' | Out-Null
           $setup = (& $hamr --home 'speech state' setup --profile cpu-q8 --json | Out-String) | ConvertFrom-Json
           if ($setup.health.actual_device -notlike 'CPU*') { throw 'The CPU runtime was not verified.' }
-          $result = (& $hamr --home 'speech state' open 'Garden control.md' --output 'published' --voice cast:nigel-thornberry --yes --json | Out-String) | ConvertFrom-Json
-          if ($result.status -ne 'ready') { throw 'The control book did not pass its publication checks.' }
+          $PSNativeCommandUseErrorActionPreference = $false
+          $publication = & $hamr --home 'speech state' open 'Garden control.md' --output 'published' --voice cast:nigel-thornberry --yes --json | Out-String
+          $publicationExit = $LASTEXITCODE
+          $PSNativeCommandUseErrorActionPreference = $true
+          $result = $publication | ConvertFrom-Json
+          if ($publicationExit -ne 0 -or $result.status -ne 'ready') { throw "The control book did not publish. $publication" }
           $m4b = Join-Path $result.output 'book.m4b'
           ffprobe -v error -show_entries format=duration -of json $m4b
           $inspection = (& $hamr --home 'speech state' agent inspect $result.job --verify | Out-String) | ConvertFrom-Json

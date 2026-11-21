@@ -21,6 +21,10 @@ def syncdir(p:Path):
         fd=os.open(p,os.O_DIRECTORY)
         try: os.fsync(fd)
         finally: os.close(fd)
+def syncfile(p:Path):
+    # Windows FlushFileBuffers requires a handle with write access.
+    with p.open('r+b' if os.name == 'nt' else 'rb') as f:
+        os.fsync(f.fileno())
 def atomic(p:Path,data:bytes):
     p.parent.mkdir(parents=True,exist_ok=True)
     fd,tmp=tempfile.mkstemp(prefix='.'+p.name,dir=p.parent)

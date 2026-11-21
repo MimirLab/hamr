@@ -3,7 +3,7 @@ import ctypes,errno,html,json,os,re,shutil,signal,subprocess,time,uuid
 from concurrent.futures import ThreadPoolExecutor,wait,FIRST_COMPLETED
 from dataclasses import asdict
 from pathlib import Path
-from .core import Block,Document,Error,RATE,Store,atomic,digest,dumps,fault,filehash,key,loadjson,syncdir,writejson
+from .core import Block,Document,Error,RATE,Store,atomic,digest,dumps,fault,filehash,key,loadjson,syncdir,syncfile,writejson
 from .importers import inspect,cached_inspect,IMPORT_REVISION
 from .planner import plan,RULES
 from .backend import Engine,validate_pcm,validate_request
@@ -363,7 +363,7 @@ def publish(store,j):
     files={p.name:filehash(p) for p in stage.iterdir() if p.name!='owner.json'}
     writejson(stage/'manifest.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'plan_sha256':j['plan']['plan_sha256'],'source_sha256':j['document']['source_sha256'],'files':files})
     for p in stage.iterdir():
-        with p.open('rb') as f: os.fsync(f.fileno())
+        syncfile(p)
     syncdir(stage); fault('before_publish_rename'); rename_new(stage,final); fault('after_publish_rename')
     if not verify_publication(final,j): raise Error('publication_validation','Published directory failed checksum validation.')
 
@@ -499,7 +499,7 @@ def excerpt(store,jid,start,count,output):
         receipt={'schema_version':1,'kind':'experimental_excerpt','ready_publication':False,'job':jid,'revision':j['revision'],'plan_sha256':j['plan']['plan_sha256'],'source_sha256':j['document']['source_sha256'],'source_snapshot':j['snapshot'],'voice_name':j['voice']['name'],'sample_rate':RATE,'samples':pos,'seconds':pos/RATE,'utterances':rows,'source_blocks':[b for b in j['document']['blocks'] if b['id'] in ids],'audio_sha256':filehash(stage/'audio.wav'),'qualification':'Committed signal-checked takes; human listening and full-book qualification are separate.'}
         writejson(stage/'excerpt.json',receipt)
         for p in stage.iterdir():
-            with p.open('rb') as f:os.fsync(f.fileno())
+            syncfile(p)
         syncdir(stage);rename_new(stage,dest)
         return {'schema_version':1,'job':jid,'kind':'experimental_excerpt','ready_publication':False,'audio':str(dest/'audio.wav'),'receipt':str(dest/'excerpt.json'),'utterances':[u['id'] for u in selected],'seconds':pos/RATE}
     finally:
