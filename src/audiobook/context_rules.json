@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "mode": "automatic",
+  "minimum_margin": 2,
+  "conventions": {},
+  "lexicon": {
+    "dr.": {"name": "Doctor", "address": "Drive"},
+    "st.": {"name": "Saint", "address": "Street"}
+  },
+  "weights": {
+    "syntax": 8,
+    "governor": 6,
+    "nearby": 3,
+    "column": 8,
+    "convention": 10,
+    "anchors": 7,
+    "definition": 16,
+    "fallback": 0
+  },
+  "cues": {
+    "date": ["hearing is on", "appointment is on", "meeting is on", "dated", "on the date", "date is", "due on"],
+    "date_topic": ["hearing", "appointment", "meeting", "appointment date", "deadline"],
+    "date_link": ["on", "by", "for"],
+    "date_column": ["date", "invoice date", "delivery date", "recorded on", "due date"],
+    "fraction_unit": ["cup", "cups", "teaspoon", "teaspoons", "tablespoon", "tablespoons", "liter", "liters", "litre", "litres", "inch", "inches", "pound", "pounds"],
+    "identifier": ["room", "case", "record", "route", "model", "build identifier", "code", "access code", "identifier"],
+    "count": ["books", "visitors", "people", "copies", "birds", "units", "votes", "items"],
+    "finance": ["loss", "balance", "profit", "net income", "net loss", "debit", "credit", "expense", "amount", "cash flow"],
+    "clock": ["departure", "arrival", "departure time", "arrival time", "departure is at", "arrival is at", "clock reads", "scheduled for"],
+    "duration": ["elapsed time", "elapsed", "duration", "running time"],
+    "reference": ["verse", "chapter", "reference", "section"],
+    "literal": ["type", "enter exactly", "write exactly", "spell", "literal", "exact notation", "password is"],
+    "literal_tail": ["individually", "character by character", "exactly as printed"],
+    "name": ["author", "physician", "met", "asked", "doctor"],
+    "address": ["street", "road", "address", "avenue", "lane"]
+  }
+}

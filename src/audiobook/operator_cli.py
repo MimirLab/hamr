@@ -54,6 +54,9 @@ def capabilities(parser):
     return {'schema_version': 1, 'hamr_version': __version__,
             'formats': ['epub', 'markdown', 'pdf', 'text'], 'languages': ['en'],
             'cli': schema(parser), 'operator_guide': ['hamr', 'agent', 'guide'],
+            'contextual_readings': {'default_mode':'automatic','modes':['automatic','strict'], 'settings_flag':'--context',
+                                    'review_replies_flag':'--context-review','reviewer':'local_file',
+                                    'details':'plan.decisions[].context_events', 'scores':'heuristic'},
             'exit_status': {'success': 0, 'error': 2, 'needs_review': 3, 'interrupted': 130}}
 
 
@@ -142,6 +145,8 @@ def snapshot(root, job, *, content=False, verify=False):
             pass
     if content:
         result['plan'] = job['plan']
+    if context:=job['plan'].get('contextual_resolution'):
+        result['contextual_readings']={k:context[k] for k in ('configuration_sha256','score_kind','routes') if k in context}
     return result
 
 

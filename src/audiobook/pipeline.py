@@ -19,6 +19,7 @@ def critical(expected,observed,protected=None,reference=None):
     if negations(ref)!=negations(hyp):result.add('negation')
     if qa.misplaced_negation(expected,observed):result.add('negation_scope')
     if qa.content_gaps(expected,observed):result.add('internal_gap')
+    if qa.missing_measurement_instruction(expected,observed):result.add('measurement_instruction')
     if qa.reference_leakage(expected,observed,reference):result.add('reference_leakage')
     if mathematical_markers(expected)!=mathematical_markers(observed):result.add('math_or_unit')
     if qa.missing_parenthetical_counts(expected,observed,protected):result.add('count')

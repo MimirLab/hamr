@@ -32,6 +32,8 @@ def project(decisions,utterances,issues,selection):
         if d['block'] not in selected_blocks:
             d.update(action='companion',spoken='',connector=False,reason='Explicitly unselected chapter occurrence retained in the complete source companion.')
             d.pop('normalization',None)
+            d.pop('context_events',None)
+            d.pop('context_input',None)
     utterances=[u for u in utterances if any(b in selected_blocks for b in u['sources'])]
     for i,u in enumerate(utterances):u['id']=f'u{i+1:05d}'
     for row in catalog:row['selected']=row['id'] in wanted

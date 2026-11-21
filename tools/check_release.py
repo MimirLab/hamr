@@ -67,7 +67,7 @@ def audit(path, version):
     for name, data in files.items():
         runtime = name.removeprefix(package) if name.startswith(package) else ''
         allowed_runtime = re.fullmatch(
-            r'audiobook/(?:[a-z_]+\.py|cast\.json|catalog\.json|asr_assets\.json|gguf_recipes\.json|asr(?:-windows)?\.lock|agent_guide\.md|cast_assets/[a-z0-9-]+/(?:reference\.wav|voice\.json))'
+            r'audiobook/(?:[a-z_]+\.py|cast\.json|catalog\.json|asr_assets\.json|gguf_recipes\.json|context_rules\.json|asr(?:-windows)?\.lock|agent_guide\.md|cast_assets/[a-z0-9-]+/(?:reference\.wav|voice\.json))'
             r'|hamr/__(?:init|main)__\.py', runtime)
         allowed_metadata = wheel and name.startswith(metadata) and name.removeprefix(metadata) in (
             'METADATA', 'WHEEL', 'RECORD', 'entry_points.txt', 'licenses/LICENSE')

@@ -8,11 +8,13 @@ Three matching Radeon controls are available for blind listening: F16, stock Q8 
 
 ### Document normalization preview
 
-New plans use `faithful-13`. Markdown imports whole footnote definitions and retains reference locations. EPUB checks the protection method and the declared resource type before admitting font-only obfuscation. Its source inventory includes opaque embedded media. Plain text has a strict Unicode decoder with source line locations. [Document planning guide](docs/USAGE.md#check-how-a-document-will-be-read)
+Document normalization introduced `faithful-13`. Markdown imports whole footnote definitions and retains reference locations. EPUB checks the protection method and the declared resource type before admitting font-only obfuscation. Its source inventory includes opaque embedded media. Plain text has a strict Unicode decoder with source line locations. [Document planning guide](docs/USAGE.md#check-how-a-document-will-be-read)
 
 The planner preserves leading identifier zeros and decimal precision in supported readings. It records exact offsets in the input used for each typed rewrite. Known PDF nonpainting text objects can trigger an independent OCR observation. Conflicting text, unmapped glyphs and inaccessible content can hold a job before speech generation.
 
 A two-paragraph Markdown note survived real synthesis and publication. A plain-text control retained its unaffected PCM through a targeted clock-reading repair and published after offline QA. Both M4Bs decoded with mpv. A hidden PDF text disagreement and a private-use glyph in plain text each held publication at source review. DOCX, HTML, general PDF table recognition and other adapters still need their own source and reading-order qualification.
+
+The contextual reading preview adds `faithful-14`. It ranks typed interpretations before narration, using adjacent wording, nearby clause cues, table columns, explicit definitions and selected conventions. A settings file can change cue lists, lexicon readings or weights without changing code. The plan records its candidates and their evidence. Automatic reading preserves unresolved fields without holding routine ambiguous text. Strict mode and validated local reviewer replies are optional. [Context settings and review](docs/USAGE.md#tune-readings-that-depend-on-context)
 
 ## hamr 0.3.0
 

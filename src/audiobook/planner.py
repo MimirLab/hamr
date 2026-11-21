@@ -2,8 +2,9 @@ from __future__ import annotations
 import re
 from .core import Document,key,Error,digest
 
-RULES='faithful-13'
-SOURCE_STRUCTURE=('faithful-12',RULES)
+RULES='faithful-14'
+SOURCE_STRUCTURE=('faithful-12','faithful-13',RULES)
+NORMALIZATION_TRACE=('faithful-13',RULES)
 MODERN=('faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
 ASIDES=('faithful-3','faithful-4','faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
 BOUNDED=('faithful-4','faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
@@ -22,7 +23,8 @@ COUNT_RE=re.compile(r'\(\s*((?:0|[1-9]\d{0,2})|'+ '|'.join(SMALL+TENS[2:])+r')\s
 def normalize(text,aliases=None,rule_revision=RULES,abbreviation_audit=None,preserve_lines=False,*,normalization_audit=None,source=None,literals=(),typed=True):
     text=text.replace('\u00ad','').replace('\u00a0',' ')
     # Literal spelling is distinct from the runtime's performance-cue syntax.
-    text=re.sub(r'\((sigh|laugh|chuckle|gasp|cough|cry)\)',lambda m:'open parenthesis '+m[1]+' close parenthesis',text,flags=re.I)
+    from .linguistic import literal_cues
+    text=literal_cues(text)
     if rule_revision in ('faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE):
         if rule_revision in MODERN:
             from .linguistic import technical
@@ -33,7 +35,7 @@ def normalize(text,aliases=None,rule_revision=RULES,abbreviation_audit=None,pres
         expanded,edits,pending=expand(text,aliases)
         if abbreviation_audit is not None:
             abbreviation_audit.update(readings=edits,review=pending)
-            if rule_revision==RULES and (edits or pending):
+            if rule_revision in NORMALIZATION_TRACE and (edits or pending):
                 abbreviation_audit['input_basis']='block_source' if text==source else 'abbreviation_input'
                 if text!=source:abbreviation_audit['input']=text
         text=expanded
@@ -55,9 +57,9 @@ def normalize(text,aliases=None,rule_revision=RULES,abbreviation_audit=None,pres
         text=re.sub(r',\s*([.!?;:])',r'\1',text)
     if rule_revision in SOURCE_STRUCTURE:
         from .spoken_forms import expand as written_forms
-        text=written_forms(text,literal_clocks=rule_revision!=RULES or not typed)
+        text=written_forms(text,literal_clocks=rule_revision not in NORMALIZATION_TRACE or not typed)
     text=re.sub(r'[^\S\n]+' if preserve_lines else r'\s+',' ',text).strip()
-    if rule_revision==RULES and typed and (not literals or text==source):
+    if rule_revision in NORMALIZATION_TRACE and typed and (not literals or text==source):
         from .typed_readings import expand as typed_readings
         revised,edits=typed_readings(text,literals)
         if normalization_audit is not None and edits:
@@ -157,6 +159,11 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
                 raise Error('document_policy_verification','A pause override must bind an exact source scene marker; words cannot be replaced by a pause.')
             if override.get('announce') not in (None,'table','figure'):
                 raise Error('document_policy_verification','Companion announcements support only a table or figure.')
+    resolver=None
+    if rule_revision==RULES:
+        from .contextual import Resolver
+        resolver=Resolver(doc,policy,document_policy,aliases or {})
+    section_defaults={k:v for k,v in policy.items() if k not in ('document','context','context_implementation','context_review')}
     from .pdf_layout import structure_policy,spoken_paragraph
     document_title,pdf_chapters=structure_policy(doc,document_policy,by_source=rule_revision in SOURCE_STRUCTURE)
     source_positions={b.id:i for i,b in enumerate(doc.blocks)}
@@ -263,10 +270,10 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
         if rule_revision in SOURCE_STRUCTURE and b.locator.get('auxiliary'):
             block_chapter=chapter or block_chapter;block_chapter_id=chapter_id
         section=policy.get('sections',{}).get(block_chapter,{})
-        effective={**{k:v for k,v in policy.items() if k!='document'},**section}
+        effective={**section_defaults,**section}
         if 'mode' in section:
-            effective={**{k:v for k,v in policy.items() if k!='document'},'code':'speak' if section['mode']=='procedure' else 'companion','references':'speak' if section['mode']=='study' else 'companion',**section}
-        action='speak'; reason='Preserve authored content and qualifiers.'; text=spoken_paragraph(b); connector=False;force_pause=False
+            effective={**section_defaults,'code':'speak' if section['mode']=='procedure' else 'companion','references':'speak' if section['mode']=='study' else 'companion',**section}
+        action='speak'; reason='Preserve authored content and qualifiers.'; text=spoken_paragraph(b); connector=False;force_pause=False;cells=()
         if rule_revision in MODERN and b.locator.get('inline_semantics'):
             from .epub_semantics import reading
             text=reading(b,effective.get('notes','after_paragraph'))
@@ -299,7 +306,12 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
             if rows and action=='speak':
                 headers=rows[0]
                 if any(len(r)!=len(headers) for r in rows): action='unreadable'; reason='Table cells do not have reliable header associations.'; text=''
-                else: text='Table. '+' '.join('; '.join(f'{h}: {v}' for h,v in zip(headers,row))+'.' for row in rows[1:]); reason='Speak every row with explicit header labels; keep exact table in companion.'
+                else:
+                    if resolver:
+                        from .contextual import table_view
+                        text,cells=table_view(rows)
+                    else:text='Table. '+' '.join('; '.join(f'{h}: {v}' for h,v in zip(headers,row))+'.' for row in rows[1:])
+                    reason='Speak every row with explicit header labels; keep exact table in companion.'
         if effective['references']=='companion' and re.search(r'^(bibliography|references|works cited|index)$',block_chapter,re.I):
             action='companion'; reason='Bibliography lookup retained in companion by selected policy.'; text=''
         if b.id in overrides:
@@ -314,7 +326,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
             hints=unresolved(b,doc.language)+note_issues(b,effective.get('notes','after_paragraph'))
             if hints:action='unreadable';reason=' '.join(hints);text=''
         damaged=None
-        if rule_revision==RULES and text:
+        if rule_revision in NORMALIZATION_TRACE and text:
             from .text_evidence import suspect_characters
             damaged=suspect_characters(text)
             if damaged:
@@ -338,13 +350,23 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
         explicit_reading=rule_revision in MODERN and b.id in overrides and 'spoken' in overrides[b.id]
         preserve_lines=rule_revision in SOURCE_STRUCTURE and b.id in authored_lines and not explicit_reading
         literals=tuple((s['source_start'],s['source_end']) for s in b.locator.get('inline_semantics',[]) if s['kind']=='literal')
-        spoken=normalize(text,{} if explicit_reading else aliases,rule_revision,abbreviation_audit,preserve_lines=preserve_lines,
-                         normalization_audit=normalization_audit,source=b.source,literals=literals,typed=b.role!='code' and not explicit_reading)
+        projection=None;context_events=[];context_spans=[]
+        if resolver and action=='speak' and b.id not in overrides:
+            projection,context_events=resolver.prepare(b,text,chapter=block_chapter,chapter_id=block_chapter_id,cells=cells)
+        spoken=normalize(projection.text if projection else text,{} if explicit_reading else aliases,rule_revision,abbreviation_audit,
+                         preserve_lines=preserve_lines,normalization_audit=normalization_audit,source=b.source,
+                         literals=() if projection and projection.slots else literals,typed=b.role!='code' and not explicit_reading)
+        if projection:
+            spoken,context_spans=projection.finish(spoken,abbreviation_audit,normalization_audit)
         decisions.append({'block':b.id,'action':action,'reason':reason,'evidence':b.evidence,'rule':rule_revision,'destination':'source.html#'+b.id,'source':b.source,'spoken':spoken,'connector':connector,'section_policy':effective})
         if rule_revision in SOURCE_STRUCTURE:decisions[-1].update(chapter=block_chapter,chapter_occurrence=block_chapter_id or block_chapter)
         if normalization_audit:
             decisions[-1]['normalization']=normalization_audit
-            protected_readings[b.id]=(spoken,normalization_audit['edits'])
+        if normalization_audit or context_spans:
+            protected_readings[b.id]=(spoken,normalization_audit.get('edits',[])+[{'output_start':a,'output_end':z} for a,z in context_spans])
+        if context_events:
+            decisions[-1]['context_events']=context_events
+            if any(row['view']['kind']=='prepared_reading' for row in context_events):decisions[-1]['context_input']=text
         if damaged:decisions[-1]['source_characters']=damaged
         if (optional_reference or continuous and b.role=='furniture') and b.issue:decisions[-1]['source_warning']=b.issue
         if rule_revision in ('faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE):decisions[-1]['abbreviations']=abbreviation_audit
@@ -397,7 +419,14 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
     issues=[{'block':d['block'],'location':doc.blocks[i].locator,'reason':d['reason'],'repair':f'Use repair --block {d["block"]} --text-file verified.txt'} for i,d in enumerate(decisions) if d['action']=='unreadable']
     for i,d in enumerate(decisions):
         for reading in d.get('abbreviations',{}).get('review',[]):
+            if resolver and resolver.config['mode']=='automatic':continue
             issues.append({'block':d['block'],'location':doc.blocks[i].locator,'reason':reading['reason'],'abbreviation':reading['source'],'repair':f'Use repair --pronounce "{reading["source"]}=VERIFIED READING" or a source-bound document policy for this occurrence.'})
+        held=[event for event in d.get('context_events',[]) if event.get('hold')]
+        if held:
+            issues.append({'block':d['block'],'location':doc.blocks[i].locator,'kind':'context',
+                           'reason_code':'ambiguous_context','reason':'The selected strict reading policy requires a decision for ambiguous expressions in this source block.',
+                           'occurrences':[event['occurrence_id'] for event in held],
+                           'repair':'Use contextual settings for the applicable scope or supply validated candidate selections.'})
     for issue in flow_issues:
         location=next(b.locator for b in doc.blocks if b.id==issue['block'])
         issues.append({**issue,'location':location,'repair':'Use a verified reading for this exact source occurrence.'})
@@ -411,6 +440,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
     result={'schema_version':1,'rule_revision':rule_revision,'source_sha256':doc.source_sha256,'policy':policy,'aliases':aliases or {},'decisions':decisions,'utterances':utterances,'issues':issues,'estimated_minutes':round(words/150,1),'estimate_basis':'150 words/minute; excludes unresolved material','chapters':[u['chapter'] for i,u in enumerate(utterances) if i==0 or (utterances[i-1]['chapter'],utterances[i-1].get('chapter_id'))!=(u['chapter'],u.get('chapter_id'))], 'warnings':doc.warnings}
     if document_title:result['document_title']=document_title
     if catalog is not None:result['chapter_catalog']=catalog
+    if resolver:result['contextual_resolution']=resolver.report([event for row in decisions for event in row.get('context_events',[])])
     if rule_revision in SOURCE_STRUCTURE:
         from .review_grouping import source_groups
         result['review_groups']=source_groups(doc.json(),result)

@@ -86,6 +86,8 @@ def describe(node,resolve_asset=None,cover_assets=()):
             spans.append({**data,'kind':'mathml','reading':reading,'issue':issue})
         elif n.name in ('sup','sub') and not any(noteref(a) or a.name=='math' for a in n.parents):
             spans.append({**data,'kind':'superscript' if n.name=='sup' else 'subscript'})
+        elif n.name in ('code','kbd','samp'):
+            spans.append({**data,'kind':'literal'})
         elif n.name=='ruby':
             base=''.join(str(c) for c in n.descendants if isinstance(c,NavigableString) and not any(a.name in ('rt','rp') for a in c.parents))
             annotation=' '.join(t.get_text(' ',strip=True) for t in n.find_all('rt'))

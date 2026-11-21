@@ -368,7 +368,7 @@ def publish(store,j):
     if not verify_publication(final,j): raise Error('publication_validation','Published directory failed checksum validation.')
 
 
-def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None):
+def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None,context=None,context_review=None):
     with store.lock():
         from .core import check_revision
         j=store.get(jid)
@@ -404,9 +404,15 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             identity=key({'text':target['text'],'sources':target['sources']}); takes[identity]=target.get('seed',42)+1
             j['repairs'].append({'kind':'retake','utterance':retake,'seed':takes[identity]})
         j['retakes']=takes
-        revision=RULES if upgrade_rules else j['plan']['rule_revision']
-        if upgrade_rules: j['repairs'].append({'kind':'rules_upgrade','from':j['plan']['rule_revision'],'to':revision})
+        refresh=upgrade_rules or context is not None or context_review is not None and j['plan']['rule_revision']!=RULES
+        revision=RULES if refresh else j['plan']['rule_revision']
+        if refresh: j['repairs'].append({'kind':'rules_upgrade','from':j['plan']['rule_revision'],'to':revision})
         selected_policy=dict(j['plan']['policy'])
+        if refresh:selected_policy.pop('context_implementation',None)
+        if context is not None:
+            selected_policy['context']=context
+            selected_policy.pop('context_review',None)
+        if context_review is not None:selected_policy['context_review']=context_review
         if chapters is not None:
             from .selection import parse
             selected=parse(chapters)

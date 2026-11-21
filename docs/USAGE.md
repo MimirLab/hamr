@@ -67,7 +67,7 @@ Use `--notes after_paragraph|inline|companion` to control linked notes. `--chapt
 
 ### Check how a document will be read
 
-Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-13` rules.
+Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-14` rules.
 
 - Markdown note definitions can contain several paragraphs or list items. A code span containing a note marker stays literal. Missing, duplicate and nested note targets need review when selected for speech.
 - Plain `.txt` files accept UTF-8 or BOM-marked UTF-16/UTF-32. Blank lines separate paragraphs. The source locations retain exact decoded lines and line endings. Convert files from other encodings before opening them.
@@ -78,6 +78,29 @@ Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisi
 In a decision’s `normalization.edits`, the input and output ranges use half-open Unicode code-point offsets. Read input offsets against `source` when `input_basis` is `block_source`. When earlier processing changed the text, use the included `normalization.input`. Output offsets point into `spoken`. These mappings cover the new typed readings. Other transformations have their own provenance, such as note links, PDF locations and abbreviation evidence.
 
 For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new spoken rules. Add `--reimport` to pick up importer fixes from the original snapshot. Examine the new review state with `hamr show JOB --content` before resuming.
+
+### Tune readings that depend on context
+
+Inspect `decisions[].context_events` in `hamr plan DOCUMENT --json`. Each event records its source span, possible readings, evidence and selected candidate. Defaults keep uncertain dates in their printed field order and continue the book. Choose `"mode": "strict"` in the settings file to hold unresolved choices for review. Existing source and speech checks apply in either mode.
+
+Start with explicit conventions. This file selects day/month dates where the context identifies a date, and negative parentheses for labeled financial values.
+
+```json
+{
+  "conventions": {"date_order": "DM", "accounting_parentheses": true}
+}
+```
+
+```sh
+hamr plan report.txt --context context.json --json > plan.json
+hamr profile technical --context context.json
+hamr open report.txt --profile technical --voice cast:nigel-thornberry
+hamr repair JOB --context context.json --expect-revision REVISION
+```
+
+The effective settings are in `.policy.context` in the plan. Edit a cue group's literal phrases to try a new context. For example, add a term to `cues.date_topic` to associate it with a date when an adjacent word such as “on” governs the value. The `lexicon` maps lowercase dotted spellings to readings keyed by known cue groups. The settings accept bounded integer evidence weights and a `minimum_margin`. These are ranking scores. Check each change against a similar phrase that should keep a different reading. A source-bound document policy can also set `context.conventions` for a book and `context.chapters` for exact chapter names or occurrence IDs.
+
+Hamr exports ambiguous candidate requests in `.contextual_resolution.review_requests`. If you use an outside reviewer, pass its local JSON array of replies with `--context-review FILE`. A selection supplies the request's `source_digest` and `occurrence_id`, `action` set to `select`, a listed `candidate_id`, listed `evidence_ids`, and an empty `requested_context` array. Replies with invented or stale IDs fall back to code. Hamr makes no model calls for contextual resolution. A job saves its applied settings and accepted replies so reopening it uses the same choices.
 
 A preview is stored beside the job snapshot and never placed in ready output. The preview command returns exact source locations. JSON diagnostics use exit 2 for failures, 3 for needs-review, 130 for interruption; normal success is 0. Source/script export requires `show --content`; ordinary diagnostics omit transcripts.
 

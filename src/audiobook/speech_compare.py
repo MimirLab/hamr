@@ -7,7 +7,7 @@ Homophones such as for/four and know/no are deliberately not equated.
 import re,unicodedata
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v13'
+POLICY='bounded-english-composed-scale-typed-v15'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -183,6 +183,9 @@ def mathematical_markers(text):
         return {'cm':'centimeter','mm':'millimeter','mg':'milligram','kg':'kilogram','lb':'pound','lbs':'pound','inches':'inch','feet':'foot','celsius':'celsius'}.get(word,word.rstrip('s'))
     markers += ['unit:'+unit(w) for w in re.findall(r'\b('+units+r')\b',text)]
     markers += ['denominator:'+unit(w) for w in re.findall(r'\bper\s+(?:square\s+|cubic\s+)?('+units+r')\b',text)]
+    financial={'dollar sign':'unassigned-dollar','us dollar':'usd','canadian dollar':'cad','australian dollar':'aud',
+               'new zealand dollar':'nzd','euro':'eur','british pound':'gbp'}
+    markers += ['currency:'+financial[m[1]] for m in re.finditer(r'\b('+'|'.join(financial)+r')s?\b',text)]
     # Inspect operators independently of matching numbers or aggregate WER.
     phrases={'greater than or equal to':'ge','less than or equal to':'le','greater than':'gt','less than':'lt'}
     operators=re.compile('|'.join(phrases))

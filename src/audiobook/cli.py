@@ -135,6 +135,8 @@ def choose_backend(store, json_mode, *, automatic=False, advanced=False, include
 def add_source(p):
     p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile',dest='listening_profile',help='Saved listening defaults created with hamr profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
     p.add_argument('--chapters',help='Source chapter occurrences, e.g.5,2-3,2; original order is retained. Use all to reset.')
+    p.add_argument('--context',type=Path,help='Context cue weights, conventions and review mode as JSON')
+    p.add_argument('--context-review',type=Path,help='Local JSON array of replies to source-bound context review requests')
 
 def policy(a):
     selected={**getattr(a,'saved_policy',{}),**{k:getattr(a,k) for k in ('mode','tables','code','references','notes') if getattr(a,k,None) is not None}}
@@ -145,6 +147,12 @@ def policy(a):
         sections[name]={'mode':mode}
     if sections: selected['sections']=sections
     if getattr(a,'document_policy',None): selected['document']=loadjson(a.document_policy)
+    if getattr(a,'context',None):
+        from .context_config import effective,read
+        selected['context']=effective(read(a.context))
+    if getattr(a,'context_review',None):
+        from .context_config import read
+        selected['context_review']=read(a.context_review)
     if getattr(a,'chapters',None) is not None:
         from .selection import parse
         selected['chapters']=parse(a.chapters)
@@ -158,6 +166,7 @@ def parser():
         q=subs.add_parser(name,help=help); q.add_argument('--json',action='store_true',default=argparse.SUPPRESS); return q
     sub('doctor','Inspect host and dependencies without downloading')
     q=sub('profile','Save explicit reusable listening defaults'); q.add_argument('name'); q.add_argument('--mode',choices=['listen','study','procedure'],default='listen'); q.add_argument('--tables',choices=['speak','companion'],default='speak'); q.add_argument('--code',choices=['speak','companion']); q.add_argument('--references',choices=['speak','companion']); q.add_argument('--notes',choices=['after_paragraph','inline','companion']); q.add_argument('--pronounce',action='append',default=[]); q.add_argument('--section',action='append',default=[])
+    q.add_argument('--context',type=Path,help='Save reusable context settings from JSON')
     q=sub('setup','Download and check one speech model')
     selection=q.add_mutually_exclusive_group()
     selection.add_argument('--profile',dest='backend_profile',help='Choose a specific model from hamr profiles')
@@ -181,6 +190,7 @@ def parser():
     q=sub('status','List jobs or reconcile ready output'); q.add_argument('job',nargs='?')
     q=sub('show','Inspect saved plan and exact unresolved locations'); q.add_argument('job'); q.add_argument('--content',action='store_true',help='Explicitly export source/script content')
     q=sub('repair','Change only a scoped pronunciation, verified passage or saved voice'); q.add_argument('job'); q.add_argument('--pronounce'); q.add_argument('--repackage',action='store_true'); q.add_argument('--reimport',action='store_true'); q.add_argument('--upgrade-rules',action='store_true'); q.add_argument('--retake'); q.add_argument('--block'); q.add_argument('--text-file',type=Path); q.add_argument('--voice'); q.add_argument('--document-policy',type=Path);q.add_argument('--metadata',type=Path,help='Source-preserving publication metadata overrides as JSON; null clears, inherit resets')
+    q.add_argument('--context',type=Path,help='Replace contextual reading settings and replan'); q.add_argument('--context-review',type=Path,help='Apply source-bound context review replies and replan')
     q.add_argument('--chapters',help='Replace source chapter occurrence selection; all restores complete source order.')
     q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
     for state in ['pause','cancel']:
@@ -403,8 +413,10 @@ def dispatch(argv=None):
             j=s.get(a.job); emit({'schema_version':1,'job':j['id'],'plan':j['plan']} if a.content else summary(s,j),True)
         elif a.command=='repair':
             if a.block and not a.text_file: raise Error('repair_text','--block requires --text-file containing a verified reading.')
-            if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters]): raise Error('repair_required','Specify a scoped repair, --document-policy, --metadata or --chapters.')
-            emit(repair(s,a.job,a.pronounce,a.block,a.text_file.read_text() if a.text_file else None,a.voice,a.retake,a.reimport,a.upgrade_rules,loadjson(a.document_policy) if a.document_policy else None,loadjson(a.metadata) if a.metadata else None,chapters=a.chapters,expect_revision=a.expect_revision),jm)
+            if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters,a.context,a.context_review]): raise Error('repair_required','Specify a scoped repair, --document-policy, --context, --metadata or --chapters.')
+            from .context_config import read as read_context
+            emit(repair(s,a.job,a.pronounce,a.block,a.text_file.read_text() if a.text_file else None,a.voice,a.retake,a.reimport,a.upgrade_rules,loadjson(a.document_policy) if a.document_policy else None,loadjson(a.metadata) if a.metadata else None,chapters=a.chapters,expect_revision=a.expect_revision,
+                        context=read_context(a.context) if a.context else None,context_review=read_context(a.context_review) if a.context_review else None),jm)
         elif a.command in ('pause','cancel'):
             with s.lock():
                 j=s.get(a.job); j['status']='paused' if a.command=='pause' else 'cancelled'

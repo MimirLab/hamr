@@ -32,7 +32,7 @@ def decimal(raw):
     else:
         value = int(whole)
         parts = []
-        for scale, label in ((10**6, 'million'), (10**3, 'thousand')):
+        for scale, label in ((10**9, 'billion'), (10**6, 'million'), (10**3, 'thousand')):
             group, value = divmod(value, scale)
             if group:
                 parts.append(number(group) + ' ' + label)

@@ -19,6 +19,11 @@ COMPARATORS={'>=':'greater than or equal to','<=':'less than or equal to',
              '≥':'greater than or equal to','≤':'less than or equal to',
              '>':'greater than','<':'less than'}
 NUMBER=r'[+-]?\d+(?:\.\d+)?'
+CONTROL_CUES=re.compile(r'\((sigh|laugh|chuckle|gasp|cough|cry)\)',re.I)
+
+
+def literal_cues(text):
+    return CONTROL_CUES.sub(lambda match:'open parenthesis '+match[1]+' close parenthesis',text)
 
 
 def safe_unicode(text):
@@ -72,6 +77,12 @@ def comparison_text(text):
     text=re.sub(r'(\bRoom\s+)('+atom+r'(?:\s+'+atom+r'){1,15})(?!\w)',room,text,flags=re.I)
     text=clock_observation(text)
     text,_=interpret(text,kinds={'measurement','currency_symbol'})
+    # An observer may format a spoken euro/pound amount with its explicit
+    # symbol. Bare dollars retain the existing symbol-only interpretation.
+    currencies={'€':'euros','£':'British pounds'}
+    text=re.sub(r'(?<![\w$£€])([€£])\s*([0-9]{1,12}(?:\.[0-9]{1,12})?)(?!\w|[.,]\d|[€£$])',
+                lambda m:m[2]+' '+currencies[m[1]],text)
+    text=re.sub(r'\b(?:U\s+S|US) dollars?\b','US dollars',text,flags=re.I)
     text=expand(text)
     text=technical(text)
     # These are notation variants, not homophone or approximate-value rules.

@@ -66,6 +66,26 @@ def content_gaps(expected,observed):
         if left[0]==right[0]=='equal' and left[2]-left[1]>=4 and right[2]-right[1]>=4:gaps.append({'expected_token_range':[a,b],'observed_token_range':[c,d]})
     return gaps
 
+
+def missing_measurement_instruction(expected,observed):
+    """Catch a dropped measurement verb at an otherwise recovered boundary."""
+    from .boundaries import sentence_spans
+    starts=set()
+    for sentence in sentence_spans(expected):
+        words=comparison_tokens(sentence['text'])
+        if words and words[0] in ('add','remove') and any(word.startswith('#') for word in words[1:4]):
+            starts.add(len(comparison_tokens(expected[:sentence['start']])))
+    if not starts:return False
+    ref,hyp=comparison_tokens(expected),comparison_tokens(observed)
+    alignment=SequenceMatcher(None,ref,hyp,autojunk=False).get_opcodes()
+    for index,(action,start,end,_,_) in enumerate(alignment[:-1]):
+        if action not in ('delete','replace') or start not in starts or end-start!=1:
+            continue
+        following=alignment[index+1]
+        if following[0]=='equal' and following[2]-following[1]>=3 and (start==0 or alignment[index-1][0]=='equal'):
+            return True
+    return False
+
 def negation_contexts(text):
     from collections import Counter
     ts=comparison_tokens(text);ignored={'a','an','the','to','of','is','be','been','being','was','were','are','and','or','that','this'}
@@ -122,6 +142,7 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             if misplaced_negation(u['text'],comparison_text):flags.append('Negation is associated with different neighboring words; inspect its scope.')
             gaps=content_gaps(u['text'],comparison_text)
             if gaps:flags.append('ASR misses an internal source phrase between recovered anchors; inspect possible missing speech.')
+            if missing_measurement_instruction(u['text'],comparison_text):flags.append('ASR loses the opening verb of a measurement instruction; inspect the sentence boundary.')
             if reference_leakage(u['text'],comparison_text,(j.get('voice') or {}).get('transcript')):flags.append('ASR contains a reference-only phrase; inspect possible conditioning-audio leakage.')
             if [t for t in ref if t in ('checked','unchecked')]!=[t for t in hyp if t in ('checked','unchecked')]:flags.append('Checklist status disagreement requires listening.')
             if mathematical_markers(u['text'])!=mathematical_markers(comparison_text):flags.append('Fraction, mathematical operator or physical-unit disagreement requires inspection.')
