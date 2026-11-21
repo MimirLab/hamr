@@ -56,7 +56,7 @@ def test_nearby_words_support_a_date_without_guessing_date_order():
     date,fraction=events(unresolved)
     assert date['route']=='literal_fallback' and not unresolved['issues']
     assert date['field_status']['month']=='unspecified'
-    assert {c['fields']['date_order'] for c in date['candidates'] if c['kind']=='date'}=={'MD','DM'}
+    assert {c['fields']['date_order'] for c in date['candidates'] if 'date_order' in c['fields']}=={'MD','DM'}
     assert any(item['kind']=='nearby' for item in date['evidence'])
     assert selected(fraction)['fields']=={'numerator':'3','denominator':'4'}
     result=reading(source,conventions={'date_order':'DM'})
@@ -183,3 +183,73 @@ def test_context_configuration_is_pinned_to_job_until_explicit_repair(tmp_path,c
     repaired=json.loads(capsys.readouterr().out)['plan']
     assert 'April third' in speech(repaired)
     assert original['contextual_resolution']['configuration_sha256']!=repaired['contextual_resolution']['configuration_sha256']
+
+
+def test_compound_expressions_own_their_operands_and_units():
+    source='The fee was ($2.20–$3.40)/h. The panel measures 10×20 cm. The rate was 25 bp.'
+    result=reading(source,conventions={'dollar_currency':'CAD'})
+    report=events(result)
+    assert [event['source'] for event in report]==['($2.20–$3.40)/h','10×20 cm','25 bp']
+    charge,dimensions,rate=map(selected,report)
+    assert charge['fields']['start']=='2.20' and charge['fields']['end']=='3.40'
+    assert charge['fields']['currency']=='CAD' and charge['fields']['denominator_unit']=='hour'
+    assert dimensions['fields']=={'axes':['10','20'],'shared_unit':'cm'}
+    assert rate['fields']=={'coefficient':'25','scale':'basis_point'}
+    text=speech(result)
+    assert 'two point two zero to three point four zero Canadian dollars per hour' in text
+    assert 'ten by twenty centimeters' in text and 'twenty five basis points' in text
+    assert speech(reading('Type 12 m/s exactly.'))=='Type 12 m/s exactly.'
+    assert 'twelve meters per second' in speech(reading('The speed is 12 m/s.'))
+    assert not critical('The rate was five percent.','The rate was 5%.')
+    assert 'math_or_unit' in critical('The rate was five percent.','The rate was five per mille.')
+    assert 'math_or_unit' in critical('The panel measures ten by twenty centimeters.','The panel measures ten to twenty centimeters.')
+    assert 'math_or_unit' not in critical('The panel measures ten by twenty centimeters.','The panel measures 10 x 20 cm.')
+    assert 'math_or_unit' in critical('The panel measures ten by twenty centimeters.','The panel measures 10 x 20 mm.')
+
+
+def test_quote_and_table_conventions_are_scoped_to_their_source():
+    source=('She wrote, “The record uses DD/MM: 03/04.” The hearing is on 03/04.\n\n'
+            '| Date | Code |\n| --- | --- |\n| 03/04 | 03/04 |')
+    doc=markdown(source.encode())
+    table=next(block.id for block in doc.blocks if block.role=='table')
+    result=plan(doc,{'context':{'conventions':{'date_order':'MD'}},
+                    'document':{'source_sha256':doc.source_sha256,'context':{'tables':{table:{'date_order':'DM'}}}}})
+    quoted,book,cell,code=[event for event in events(result) if event['source']=='03/04']
+    assert [selected(e)['fields'].get('date_order') for e in (quoted,book,cell,code)]==['DM','MD','DM',None]
+    assert quoted['evidence'][0]['kind']=='definition'
+    assert any(e['origins']['date_order']=='table policy' for e in cell['evidence'] if e['kind']=='convention')
+    assert code['route']=='literal_fallback'
+    assert 'April third' in speech(result) and 'March fourth' in speech(result)
+
+
+def test_typed_date_and_equation_preserve_invalid_authored_values():
+    result=reading('The date is 2026-02-31. The exercise says 2 + 2 = 5.')
+    date,formula=map(selected,events(result))
+    assert date['fields']['calendar_validity']=='invalid_authored_value'
+    assert date['fields']['day']=='31'
+    assert formula['fields']['equality_rhs']=='5' and not formula['fields']['correct_source']
+    assert 'two plus two equals five' in speech(result)
+
+
+def test_contextual_pronunciation_keeps_source_spelling_and_defers_realization():
+    result=reading("I'd finished yesterday. I'd finish if asked. Yesterday I read the book. I read it daily. I read it.")
+    chosen=[selected(event) for event in events(result)]
+    assert [c['kind'] for c in chosen[:2]]==['had_contraction','would_contraction']
+    assert [c['fields']['sense'] for c in chosen[2:]]==['past_read','present_read',None]
+    assert all(event['realization']=='existing_renderer' for event in events(result))
+    assert "I'd finished yesterday." in speech(result)
+    assert 'I read it daily.' in speech(result)
+    assert not result['issues']
+
+
+def test_authored_epub_edit_does_not_disable_context_around_literal():
+    from audiobook.importers import epub
+    from test_upstream_epub import book
+    markup='<p><ruby>Specimen<rt>reading</rt></ruby>: Save <code>025</code>. Room 007 is ready.</p>'
+    result=plan(epub(book({'c':markup},['c'])))
+    assert 'Specimen: Save 025.' in speech(result)
+    assert 'Room zero zero seven is ready.' in speech(result)
+    assert [event['source'] for event in events(result)]==['007']
+    assert events(result)[0]['view']['kind']=='prepared_reading'
+    observed=[row for entry in result['decisions'] for row in entry.get('context_structure',[])]
+    assert {row['kind'] for row in observed}=={'ruby','literal'}

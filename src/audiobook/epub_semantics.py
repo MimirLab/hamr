@@ -141,7 +141,7 @@ def describe(node,resolve_asset=None,cover_assets=()):
     return source,spans
 
 
-def reading(block,note_policy='after_paragraph'):
+def reading(block,note_policy='after_paragraph', *, with_spans=False):
     """Use explicit roles; an unclassified superscript is not a guessed power."""
     source=block.source;edits=[];spans=block.locator.get('inline_semantics',[])
     references=[s for s in spans if s['kind']=='note_reference' and not any(h['kind']=='hidden' and h['source_start']<=s['source_start'] and h['source_end']>=s['source_end'] for h in spans)]
@@ -169,12 +169,25 @@ def reading(block,note_policy='after_paragraph'):
     for a,b,value in sorted(edits,key=lambda x:(x[0],-x[1])):
         if selected and a<selected[-1][1]:continue
         selected.append((a,b,value))
+    protected=[]
+    if with_spans:
+        shift=0
+        for a,b,value in selected:
+            if value:protected.append((a+shift,a+shift+len(value)))
+            shift+=len(value)-(b-a)
+        for span in spans:
+            if span['kind']!='literal':continue
+            a,b=span['source_start'],span['source_end']
+            if any(x<b and a<y for x,y,_ in selected):continue
+            before=sum(len(value)-(y-x) for x,y,value in selected if y<=a)
+            after=sum(len(value)-(y-x) for x,y,value in selected if y<=b)
+            protected.append((a+before,b+after))
     for a,b,value in reversed(selected):source=source[:a]+value+source[b:]
     notes={link['href']:link.get('reading',link['text']) for link in block.links if link.get('kind')=='note' and any(s['source_start']==link.get('source_start') for s in references)}
     if note_policy=='after_paragraph':
         for text in notes.values():source+=' Note. '+text+' End note.'
     elif note_policy=='companion' and notes:source+=' A note is available in the companion.'
-    return source
+    return (source,protected) if with_spans else source
 
 
 def note_issues(block,note_policy):

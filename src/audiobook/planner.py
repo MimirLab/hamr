@@ -273,10 +273,14 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
         effective={**section_defaults,**section}
         if 'mode' in section:
             effective={**section_defaults,'code':'speak' if section['mode']=='procedure' else 'companion','references':'speak' if section['mode']=='study' else 'companion',**section}
-        action='speak'; reason='Preserve authored content and qualifiers.'; text=spoken_paragraph(b); connector=False;force_pause=False;cells=()
+        action='speak'; reason='Preserve authored content and qualifiers.'; text=spoken_paragraph(b); connector=False;force_pause=False;cells=();prepared_spans=None
         if rule_revision in MODERN and b.locator.get('inline_semantics'):
             from .epub_semantics import reading
-            text=reading(b,effective.get('notes','after_paragraph'))
+            if resolver:
+                text,prepared_spans=reading(b,effective.get('notes','after_paragraph'),with_spans=True)
+            else:
+                text=reading(b,effective.get('notes','after_paragraph'))
+        prepared_text=text
         task=b.locator.get('checklist')
         if task and text.startswith(task['marker']):
             text=('Checked. ' if task['checked'] else 'Unchecked. ')+text[len(task['marker']):]
@@ -352,7 +356,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
         literals=tuple((s['source_start'],s['source_end']) for s in b.locator.get('inline_semantics',[]) if s['kind']=='literal')
         projection=None;context_events=[];context_spans=[]
         if resolver and action=='speak' and b.id not in overrides:
-            projection,context_events=resolver.prepare(b,text,chapter=block_chapter,chapter_id=block_chapter_id,cells=cells)
+            projection,context_events=resolver.prepare(b,text,chapter=block_chapter,chapter_id=block_chapter_id,cells=cells,
+                                                       prepared_spans=prepared_spans if text==prepared_text else None)
         spoken=normalize(projection.text if projection else text,{} if explicit_reading else aliases,rule_revision,abbreviation_audit,
                          preserve_lines=preserve_lines,normalization_audit=normalization_audit,source=b.source,
                          literals=() if projection and projection.slots else literals,typed=b.role!='code' and not explicit_reading)
@@ -367,6 +372,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
         if context_events:
             decisions[-1]['context_events']=context_events
             if any(row['view']['kind']=='prepared_reading' for row in context_events):decisions[-1]['context_input']=text
+        if resolver and (structure:=resolver.structural_evidence(b,cells)):
+            decisions[-1]['context_structure']=structure
         if damaged:decisions[-1]['source_characters']=damaged
         if (optional_reference or continuous and b.role=='furniture') and b.issue:decisions[-1]['source_warning']=b.issue
         if rule_revision in ('faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE):decisions[-1]['abbreviations']=abbreviation_audit

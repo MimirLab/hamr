@@ -7,7 +7,7 @@ Homophones such as for/four and know/no are deliberately not equated.
 import re,unicodedata
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v15'
+POLICY='bounded-english-composed-scale-typed-v17'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -162,6 +162,10 @@ def mathematical_markers(text):
     from .abbreviations import expand
     from .linguistic import comparison_text
     text=comparison_text(text)
+    # Observers often transcribe a dimension's “by” as x. A written
+    # length unit and two complete values own this equivalence.
+    span=r'(?<![\w.])[0-9]{1,9}(?:\.[0-9]+)?(?:\s*[x×]\s*[0-9]{1,9}(?:\.[0-9]+)?){1,2}(?=\s*(?:mm|cm|km|m|(?:milli|centi|kilo)?met(?:er|re)s?)\b)'
+    text=re.sub(span,lambda match:re.sub(r'\s*[x×]\s*',' by ',match[0]),text)
     text,_,_=expand(text)
     text=text.lower().replace('²',' squared ').replace('³',' cubed ').replace('°',' degrees ')
     text=text.replace('½',' half ').replace('¼',' quarter ').replace('¾',' three quarters ')
@@ -177,12 +181,14 @@ def mathematical_markers(text):
     markers += ['exponent:3']*len(re.findall(r'\bcubic\b|\bcubed\b',text))
     for name,pattern in [('divide',r'\bdivided by\b'),('sine',r'\bsine\b'),('cosine',r'\bcosine\b')]:
         markers += [name]*len(re.findall(pattern,text))
-    units=r'centimet(?:er|re)s?|millimet(?:er|re)s?|milligrams?|kilograms?|grams?|pounds?|yards?|seconds?|degrees?|inch(?:es)?|feet|foot|cm|mm|mg|kg|lbs?|millivolts?|microvolts?|kilopascals?|megabytes?|megabits?|kilobytes?|kilobits?|cups?|teaspoons?|tablespoons?|lit(?:er|re)s?|millilit(?:er|re)s?|celsius|fahrenheit|ounces?|hours?|minutes?'
+    units=r'(?:centi|milli|kilo)?met(?:er|re)s?|milligrams?|kilograms?|grams?|pounds?|yards?|seconds?|degrees?|inch(?:es)?|feet|foot|cm|mm|mg|kg|lbs?|(?:milli|micro)?volts?|kilopascals?|megabytes?|megabits?|kilobytes?|kilobits?|cups?|teaspoons?|tablespoons?|lit(?:er|re)s?|millilit(?:er|re)s?|celsius|fahrenheit|kelvin|ounces?|hours?|minutes?'
     def unit(word):
         word=word.replace('metre','meter').replace('litre','liter')
         return {'cm':'centimeter','mm':'millimeter','mg':'milligram','kg':'kilogram','lb':'pound','lbs':'pound','inches':'inch','feet':'foot','celsius':'celsius'}.get(word,word.rstrip('s'))
     markers += ['unit:'+unit(w) for w in re.findall(r'\b('+units+r')\b',text)]
     markers += ['denominator:'+unit(w) for w in re.findall(r'\bper\s+(?:square\s+|cubic\s+)?('+units+r')\b',text)]
+    rates={'percent':r'\b(?:percent|per cent)\b|%', 'per_mille':r'\bper\s+mille\b|‰', 'basis_point':r'\bbasis\s+points?\b'}
+    for label,pattern in rates.items():markers += ['rate:'+label]*len(re.findall(pattern,text))
     financial={'dollar sign':'unassigned-dollar','us dollar':'usd','canadian dollar':'cad','australian dollar':'aud',
                'new zealand dollar':'nzd','euro':'eur','british pound':'gbp'}
     markers += ['currency:'+financial[m[1]] for m in re.finditer(r'\b('+'|'.join(financial)+r')s?\b',text)]
@@ -194,4 +200,5 @@ def mathematical_markers(text):
         if t=='power' and i+1<len(ts) and ts[i+1].startswith('#'):markers.append('exponent:'+ts[i+1][1:])
         if t=='subscript' and i+1<len(ts) and ts[i+1].startswith('#'):markers.append('subscript:'+ts[i+1][1:])
         if t=='to' and i and i+1<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#'):markers.append('numeric-range')
+        if t=='by' and i and i+2<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#') and re.fullmatch(units,ts[i+2]):markers.append('dimension-axis')
     return dict(sorted(Counter(markers).items()))

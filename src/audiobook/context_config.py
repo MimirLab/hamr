@@ -72,20 +72,29 @@ def effective(value=None):
                 or any(not isinstance(s,str) or not re.fullmatch(r"[A-Za-z]+(?:[ '-][A-Za-z]+){0,7}",s) for s in readings.values())):
             invalid('A context lexicon entry needs a lowercase dotted token and plain-word readings keyed by known cue groups.')
     merged_lexicon={token:dict(sorted(readings.items())) for token,readings in {**DEFAULT['lexicon'],**lexicon}.items()}
+    initialisms=config['initialisms']
+    if (not isinstance(initialisms,dict) or len(initialisms)>128 or any(
+            not isinstance(token,str) or not re.fullmatch(r'[A-Z]{2,10}',token) or style not in ('word','letters')
+            for token,style in initialisms.items())):
+        invalid('Context initialisms must map uppercase tokens to word or letters.')
     return {**config, 'weights': {**DEFAULT['weights'], **weights}, 'cues': merged_cues, 'lexicon':merged_lexicon,
             'conventions': conventions(config['conventions'])}
 
 
 def scopes(value):
-    if not isinstance(value, dict) or value.keys() - {'conventions', 'chapters'}:
-        invalid('Source-bound context accepts conventions and chapters.')
-    chapters = value.get('chapters', {})
-    if not isinstance(chapters, dict) or any(not isinstance(name,str) or not name or len(name) > 200 for name in chapters):
-        invalid('Context chapters must map exact chapter names or occurrence IDs to conventions.')
-    return conventions(value.get('conventions', {})), {name: conventions(values) for name, values in chapters.items()}
+    if not isinstance(value, dict) or value.keys() - {'conventions', 'chapters', 'tables'}:
+        invalid('Source-bound context accepts conventions, chapters and tables.')
+
+    def scoped(group):
+        entries = value.get(group, {})
+        if not isinstance(entries, dict) or any(not isinstance(name,str) or not name or len(name) > 200 for name in entries):
+            invalid(f'Context {group} must map exact source IDs or chapter names to conventions.')
+        return {name: conventions(values) for name, values in entries.items()}
+
+    return conventions(value.get('conventions', {})), scoped('chapters'), scoped('tables')
 
 
 def implementation():
     return key({name: filehash(Path(__file__).with_name(name))
-                for name in ('context_config.py','contextual.py','context_grammar.py','context_rules.json',
-                             'abbreviations.py','boundaries.py','spoken_forms.py','typed_readings.py')})
+                for name in ('context_config.py','contextual.py','context_grammar.py','context_candidate.py','context_forms.py','context_lexical.py','context_rules.json',
+                             'abbreviations.py','boundaries.py','epub_semantics.py','spoken_forms.py','typed_readings.py')})

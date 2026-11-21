@@ -4,8 +4,14 @@
   "minimum_margin": 2,
   "conventions": {},
   "lexicon": {
-    "dr.": {"name": "Doctor", "address": "Drive"},
-    "st.": {"name": "Saint", "address": "Street"}
+    "dr.": {
+      "name": "Doctor",
+      "address": "Drive"
+    },
+    "st.": {
+      "name": "Saint",
+      "address": "Street"
+    }
   },
   "weights": {
     "syntax": 8,
@@ -18,20 +24,59 @@
     "fallback": 0
   },
   "cues": {
-    "date": ["hearing is on", "appointment is on", "meeting is on", "dated", "on the date", "date is", "due on"],
+    "date": ["hearing is on", "appointment is on", "meeting is on", "dated", "on the date", "date is", "due on", "appointment date", "delivery date", "signed on", "date of birth", "issued on"],
     "date_topic": ["hearing", "appointment", "meeting", "appointment date", "deadline"],
     "date_link": ["on", "by", "for"],
     "date_column": ["date", "invoice date", "delivery date", "recorded on", "due date"],
     "fraction_unit": ["cup", "cups", "teaspoon", "teaspoons", "tablespoon", "tablespoons", "liter", "liters", "litre", "litres", "inch", "inches", "pound", "pounds"],
-    "identifier": ["room", "case", "record", "route", "model", "build identifier", "code", "access code", "identifier"],
-    "count": ["books", "visitors", "people", "copies", "birds", "units", "votes", "items"],
+    "identifier": ["room", "case", "record", "route", "model", "build identifier", "code", "access code", "identifier", "build id", "record id", "inventory code", "catalog identifier", "exact identifier", "product code", "catalog label", "part number", "serial number"],
+    "count": ["books", "visitors", "people", "copies", "birds", "units", "votes", "items", "subscribers", "objects", "records"],
     "finance": ["loss", "balance", "profit", "net income", "net loss", "debit", "credit", "expense", "amount", "cash flow"],
-    "clock": ["departure", "arrival", "departure time", "arrival time", "departure is at", "arrival is at", "clock reads", "scheduled for"],
+    "clock": ["departure", "arrival", "departure time", "arrival time", "departure is at", "arrival is at", "clock reads", "scheduled for", "local time", "departs at", "arrives at"],
     "duration": ["elapsed time", "elapsed", "duration", "running time"],
     "reference": ["verse", "chapter", "reference", "section"],
-    "literal": ["type", "enter exactly", "write exactly", "spell", "literal", "exact notation", "password is"],
-    "literal_tail": ["individually", "character by character", "exactly as printed"],
+    "literal": ["type", "enter exactly", "write exactly", "spell", "literal", "exact notation", "password is", "print the literal token", "literal text", "spell the literal", "as printed", "write the token", "name the glyph", "name the symbol", "print the characters", "the code sample prints", "mention the token", "example text", "literal token", "print the literal", "literal formula", "literal glyph", "discussing the character string", "the characters", "literal string", "exact characters", "literal label", "exact label", "printed token", "read the label", "format string contains"],
+    "literal_tail": ["individually", "character by character", "exactly as printed", "exactly as written"],
     "name": ["author", "physician", "met", "asked", "doctor"],
-    "address": ["street", "road", "address", "avenue", "lane"]
+    "address": ["street", "road", "address", "avenue", "lane"],
+    "telephone": ["call", "telephone", "phone", "dial"],
+    "version": ["version", "release", "build version", "install"],
+    "chapter": ["chapter"],
+    "formula": ["formula", "molecular formula", "chemical formula", "water is"],
+    "temperature": ["temperature", "sample is at", "temperature is"],
+    "result": ["result", "reading", "value"],
+    "math": ["evaluate", "expression is", "calculate"],
+    "interval": ["interval is", "interval"],
+    "pair": ["coordinate pair is", "coordinate pair", "ordered pair"],
+    "measurement": ["measured value", "measured length", "measured temperature", "coefficient", "uncertainty"],
+    "ratio": ["ratio", "ratio is", "score", "score is"],
+    "article": ["a", "an"],
+    "price_noun": ["fee", "charge", "payment", "ticket", "purchase"],
+    "schema_count": ["count field"],
+    "decimal_schema": ["under the decimal-integer schema"],
+    "address_label": ["address", "street address"],
+    "year": ["happened in", "born in", "died in", "founded in"],
+    "country_context": ["office", "edition", "military", "embassy", "government", "resident", "senator", "in the"],
+    "had_verb": ["finished", "been", "gone", "seen", "written", "done", "taken", "made", "left", "said", "heard", "eaten"],
+    "would_verb": ["finish", "be", "go", "see", "write", "do", "take", "make", "leave", "say", "hear", "eat", "like", "prefer"],
+    "present_participle": ["arriving", "going", "waiting", "leaving", "coming", "talking", "sailing", "walking"],
+    "possessed_noun": ["hat", "coat", "book", "bag", "boat", "name", "father", "mother", "sister", "brother", "friend", "house"],
+    "nominal_record": ["a", "the", "our", "their", "your", "his", "her"],
+    "verbal_record": ["please", "must", "will", "can", "to"],
+    "past_read": ["yesterday", "last night", "last week", "last month", "last year"],
+    "habitual_read": ["daily", "every morning", "every day", "every night", "each day", "usually", "often"],
+    "notation": ["tex expression", "formula", "the vector space", "subscript notation", "math expression"],
+    "index_description": ["denote the indexed value", "denotes the indexed value"],
+    "quoted_string": ["the string", "string", "literal string"],
+    "configuration": ["in the configuration"],
+    "implication": ["implication", "logical expression"]
+  },
+  "initialisms": {
+    "NASA": "word",
+    "FBI": "letters",
+    "CIA": "letters",
+    "USA": "letters",
+    "BBC": "letters",
+    "US": "letters"
   }
 }

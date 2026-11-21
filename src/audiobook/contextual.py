@@ -2,7 +2,7 @@
 from collections import Counter, defaultdict
 import re
 
-from . import context_config, context_grammar as grammar
+from . import context_config, context_grammar as grammar, context_lexical
 from .abbreviations import PROTECTED
 from .core import Error, digest, key
 from .linguistic import literal_cues
@@ -10,6 +10,8 @@ from .linguistic import literal_cues
 REVIEW_LIMIT = 32
 REVIEW_CONTEXT = {'neighbors', 'table_header', 'chapter'}
 DEFINITION=re.compile(r'^In this chapter +([A-Za-z]{1,10}\.) +(?:means|stands for) +([A-Za-z]+(?: [A-Za-z]+){0,5})\.',re.I)
+QUOTED_DATE_ORDER=re.compile(r'(?<!\w)(?:uses|date order(?: is)?)\s+(DD/MM|MM/DD)(?:/YYYY)?\s*:\s*$',re.I)
+SCALE_HEADER=re.compile(r'\((USD|CAD|AUD|NZD|EUR|GBP|\$|£|€)\s+(thousands|millions|billions)\)$')
 
 
 def review_data(value):
@@ -58,10 +60,12 @@ def table_view(rows):
     return ''.join(parts).rstrip(),cells
 
 
-def column_anchors(cells, date_headers):
+def column_anchors(cells, date_headers, originals):
     observations = defaultdict(lambda: defaultdict(list))
     for _,_,row,column,header,value in cells:
         if header.casefold().strip() not in date_headers:
+            continue
+        if originals and (row>=len(originals) or column>=len(originals[row]) or originals[row][column]!=value):
             continue
         match = re.fullmatch(r'([0-9]{1,2})/([0-9]{1,2})(?:/([0-9]{4}))?',value.strip())
         if match:
@@ -74,7 +78,7 @@ def column_anchors(cells, date_headers):
 
 
 class Evidence:
-    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id):
+    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id):
         self.resolver = resolver
         self.before = text[max(0,start-96):start].rsplit('\n',1)[-1]
         self.continuation=text[end:end+96]
@@ -83,11 +87,17 @@ class Evidence:
         self.header, self.anchors = header,anchors
         self.inferred_order = next(iter(anchors)) if len(anchors)==1 and len({row['surface'].strip() for row in next(iter(anchors.values()))})>=2 else None
         local = resolver.chapters.get(chapter_id,resolver.chapters.get(chapter,{}))
-        self.settings = {**resolver.config['conventions'],**resolver.document_conventions,**local}
-        self.origins = {name:('chapter policy' if name in local else 'document policy' if name in resolver.document_conventions else 'listening settings') for name in self.settings}
+        table = resolver.tables.get(table_id,{})
+        self.settings = {}
+        self.origins = {}
+        for origin, settings in (('listening settings',resolver.config['conventions']),
+                                 ('document policy',resolver.document_conventions),('chapter policy',local),('table policy',table)):
+            self.settings.update(settings)
+            self.origins.update(dict.fromkeys(settings,origin))
         self.governors = set()
         self.neighbors = set()
         self.definitions=[]
+        self.date_definition=None
         self.currency_label=None
 
     def setting(self, name):
@@ -96,22 +106,44 @@ class Evidence:
     def cue(self, group, *, side='left'):
         text = self.before.rstrip(' \t:="“\'‘') if side=='left' else self.after.lstrip(' \t')
         match = self.resolver.cues[group][side].search(text)
+        if match is None and side=='left':
+            match = self.resolver.cues[group][side].search(re.sub(r'\s+(?:is|was|equals|reads|says)$','',text,flags=re.I))
         if match:
             origin=self.before_start if side=='left' else self.after_start+len(self.after)-len(text)
             self.governors.add((group,side,match[0],origin+match.start(),origin+match.end()))
         return match is not None
 
-    def nearby(self, group):
-        clause=re.split(r'[.!?;:"“”\n]',self.before)[-1]
-        words=list(re.finditer(r'\S+',clause))
-        start=words[-10].start() if len(words)>10 else 0
-        context=clause[start:]
-        if re.search(r'\b(?:not|never|neither)\b',context,re.I):return False
-        match=self.resolver.cues[group]['nearby'].search(context)
-        if match:
-            origin=self.before_start+len(self.before)-len(clause)+start
-            self.neighbors.add((group,match[0],origin+match.start(),origin+match.end()))
-        return match is not None
+    def literal_mention(self):
+        quoted=self.before.strip().endswith(('“','"')) and self.after.lstrip().startswith(('”','"'))
+        return self.cue('literal') or self.cue('literal_tail',side='right') or quoted and self.cue('quoted_string')
+
+    def quoted_date_order(self):
+        quote = re.search(r'[“"]([^“”"]*)$',self.before)
+        if not quote or self.after.lstrip(' \t.!?,;')[:1]!=('”' if quote[0][0]=='“' else '"'):
+            return None
+        declaration = QUOTED_DATE_ORDER.search(quote[1])
+        if not declaration:
+            return None
+        start = self.before_start+quote.start(1)
+        self.date_definition={'span':[start+declaration.start(1),start+declaration.end(1)],'source':declaration[1]}
+        return 'DM' if declaration[1].upper().startswith('DD') else 'MD'
+
+    def nearby(self, group, *, side='left'):
+        before=re.split(r'[.!?;:"“”\n]',self.before)[-1]
+        after=re.split(r'[.!?;:"“”\n]',self.after)[0]
+        locations=[(before,self.before_start+len(self.before)-len(before))]
+        if side=='either':locations.append((after,self.after_start))
+        found=False
+        for clause,origin in locations:
+            words=list(re.finditer(r'\S+',clause))
+            start=words[-10].start() if len(words)>10 else 0
+            context=clause[start:]
+            if re.search(r'\b(?:not|never|neither)\b',context,re.I):continue
+            match=self.resolver.cues[group]['nearby'].search(context)
+            if match:
+                self.neighbors.add((group,match[0],origin+start+match.start(),origin+start+match.end()))
+                found=True
+        return found
 
     def header_cue(self, group):
         if self.header is None:
@@ -130,12 +162,22 @@ class Evidence:
             self.governors.add(('finance','left',label,self.before_start,self.before_start+len(label)))
         return valid
 
+    def scale_label(self):
+        if not self.header:return None
+        match=SCALE_HEADER.search(self.header)
+        if not match:return None
+        symbol,plural=match.groups()
+        currency={'$':self.setting('dollar_currency'),'£':'GBP','€':'EUR'}.get(symbol,symbol)
+        return currency,plural[:-1],{'thousands':'1000','millions':'1000000','billions':'1000000000'}[plural]
+
     def details(self, family):
         if family=='governor':return {'cues':sorted(self.governors),'origin':'adjacent source wording'}
         if family=='nearby':return {'cues':sorted(self.neighbors),'origin':'bounded source clause with an adjacent governing word'}
         if family=='column':return {'header':self.header,'origin':'same table column'}
         if family=='anchors':return {'date_order':self.inferred_order,'anchors':self.anchors,'origin':'valid unambiguous source dates'}
-        if family=='definition':return {'definitions':self.definitions,'origin':'explicit source definition in this chapter'}
+        if family=='definition':
+            if self.date_definition:return {'definition':self.date_definition,'origin':'explicit date order inside the same quotation'}
+            return {'definitions':self.definitions,'origin':'explicit source definition in this chapter'}
         if family=='convention':return {'values':self.settings,'origins':self.origins}
         if family=='syntax':return {'origin':'source spelling and expression grammar'}
         return {'origin':'preserve surface without assigning additional meaning'}
@@ -199,9 +241,12 @@ class Resolver:
         if policy.get('context_implementation',self.implementation)!=self.implementation:
             raise Error('context_rules_changed','The saved plan uses a different contextual reader.',
                         'Use the matching build or hamr repair JOB --upgrade-rules.')
-        self.document_conventions,self.chapters=context_config.scopes(source_policy.get('context',{}))
-        self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters])
-        self.expressions=grammar.expressions(self.config['lexicon'])
+        self.document_conventions,self.chapters,self.tables=context_config.scopes(source_policy.get('context',{}))
+        table_ids={block.id for block in doc.blocks if block.role=='table'}
+        if self.tables.keys()-table_ids:
+            context_config.invalid('A context table policy names an unknown source table.')
+        self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
+        self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],self.config['cues']['price_noun'])
         self.definitions=defaultdict(list)
         for block in doc.blocks:
             match=DEFINITION.match(block.source) if block.role=='body' and not block.issue else None
@@ -227,8 +272,33 @@ class Resolver:
     def scope(block):
         return block.locator.get('chapter_id') or (block.locator.get('occurrence'),block.chapter)
 
+    @staticmethod
+    def structural_evidence(block, cells):
+        source=block.source;records=[]
+        spans=block.locator.get('inline_semantics',[])
+        for span in spans:
+            a,b=span['source_start'],span['source_end']
+            kind=span['kind']
+            if kind in ('anchor','hidden') or any(h['kind']=='hidden' and h['source_start']<=a<=b<=h['source_end'] for h in spans):
+                continue
+            if not 0<=a<=b<=len(source) or source[a:b]!=span.get('source',source[a:b]):
+                continue
+            records.append({'provider':'inline_source','source_span':[a,b],'kind':kind,
+                            'fields':{k:v for k,v in span.items() if k not in ('source_start','source_end','source','kind')}})
+        for link in block.links:
+            if link['kind']=='hyperlink':
+                records.append({'provider':'source_link','kind':'hyperlink','fields':{'target':link['href'],'label':link.get('label')}})
+        rows=block.locator.get('rows',[])
+        for _,_,row,column,header,value in cells:
+            if rows[row][column].strip()=='〃' and rows[row][column]!=value:
+                records.append({'provider':'table_relation','kind':'inherited_cell','row':row,'column':column,
+                                'fields':{'header':header,'source_marker':rows[row][column],'value':value,'antecedent':[row-1,column]}})
+        return records
+
     def outcome(self, block, view, match, env, options):
         raw=match[0];event=grammar.EVENTS[match.lastgroup]
+        if match.lastgroup=='money_rate' and all(option.kind=='literal' for option in options) and env.literal_mention():
+            event='CR-N040'
         span=[match.start(),match.end()]
         seed=[span[0],span[0]+1] if match.lastgroup=='money' and raw[0] in grammar.SYMBOLS else span
         occurrence=key([self.doc.source_sha256,block.id,view,span,raw,event])
@@ -249,8 +319,8 @@ class Resolver:
         conflict=bool(env.inferred_order and env.setting('date_order') in ('MD','DM') and env.inferred_order!=env.setting('date_order'))
         unclear=margin is not None and margin<self.config['minimum_margin'] or conflict
         if unclear and margin==0:
-            winner=next((c for c in ranked if c['kind'] in ('literal','money_symbol')),winner)
-        route=('literal_fallback' if winner['kind'] in ('literal','money_symbol') else
+            winner=next((c for c in ranked if c['kind'] in ('literal','money_symbol') or c['fields'].get('day_month_order')=='retain_alternatives_if_not_established' or c['fields'].get('sense',False) is None),winner)
+        route=('literal_fallback' if winner['kind'] in ('literal','money_symbol') or winner['fields'].get('day_month_order')=='retain_alternatives_if_not_established' else
                'automatic_best_guess' if unclear else 'code_resolved')
         row={'event_id':event,'occurrence_id':occurrence,'source_digest':self.doc.source_sha256,'view':view,
              'seed_span':seed,'expression_span':span,'offset_basis':'half-open Unicode code points',
@@ -281,13 +351,17 @@ class Resolver:
                                   'selected_with_alternatives' if any(name in c['fields'] and c['fields'][name]!=winner['fields'][name] for c in rows) else
                                   'retained') for name in sorted(fields)}
         row['realization']='existing_renderer' if winner['spoken'] is None else 'explicit_reading'
+        related=grammar.related_events(match.lastgroup,raw,env,winner)
+        if related:row['related_event_ids']=related
         return row,winner['spoken']
 
-    def prepare(self, block, text, *, chapter, chapter_id, cells=()):
+    def prepare(self, block, text, *, chapter, chapter_id, cells=(), prepared_spans=None):
         records=[];slots=[]
         if not text or block.role=='code':return Projection(text,slots,block.id),records
         literal_spans=[(s['source_start'],s['source_end']) for s in block.locator.get('inline_semantics',[]) if s['kind']=='literal']
-        if literal_spans and text!=block.source:
+        if prepared_spans is not None:
+            literal_spans=prepared_spans
+        elif literal_spans and text!=block.source:
             return Projection(text,slots,block.id),records
         protected=sorted({*literal_spans,*(m.span() for m in PROTECTED.finditer(text)),
                           *(m.span() for m in grammar.PROTECTED_PATH.finditer(text))})
@@ -296,7 +370,7 @@ class Resolver:
                 start,end,_,_=slots.pop();end=max(end,b);slots.append((start,end,text[start:end],None))
             else:slots.append((a,b,text[a:b],None))
         aliases=[m.span() for m in self.aliases.finditer(text)] if self.aliases else []
-        anchors=column_anchors(cells,self.config['cues']['date_column']) if cells else {}
+        anchors=column_anchors(cells,self.config['cues']['date_column'],block.locator.get('rows',[])) if cells else {}
         views=cells or [(0,len(text),None,None,None,text)]
         for start,_,row,column,header,value in views:
             view=({'kind':'table_cell','row':row,'column':column,'header':header,'input':value} if row is not None else
@@ -305,14 +379,17 @@ class Resolver:
             for match in self.expressions.finditer(value):
                 a,b=start+match.start(),start+match.end()
                 if any(a<end and b>begin for begin,end in protected+aliases):continue
-                env=Evidence(self,value,match.start(),match.end(),header,anchors.get(column,{}),chapter,chapter_id)
+                env=Evidence(self,value,match.start(),match.end(),header,anchors.get(column,{}),chapter,chapter_id,block.id if row is not None else None)
                 if match.lastgroup=='abbreviation':
                     env.definitions=self.definitions.get((self.scope(block),match[0].casefold()),[])
                 defines=any(item['block']==block.id and item['token_span']==[a,b] for item in env.definitions)
                 if defines:
                     options=[grammar.literal(match[0],' '.join(match[0][:-1].upper()))]
-                elif env.cue('literal') or env.cue('literal_tail',side='right'):
-                    options=[grammar.literal(match[0])]
+                elif env.literal_mention() and match.lastgroup not in ('censoring','stage_direction','shell_token'):
+                    if (match.lastgroup in ('money','money_modifier','money_rate','slash') and
+                            (env.cue('literal_tail',side='right') or env.before.strip().endswith(('“','"')))):
+                        options=[grammar.literal(match[0],fields={'reading_mode':'characters'})]
+                    else:options=[context_lexical.literal_candidate(match.lastgroup,match[0],env)]
                 else:
                     options=grammar.candidates(match.lastgroup,match[0],env)
                 if not options:continue
