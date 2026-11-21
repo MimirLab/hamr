@@ -52,6 +52,7 @@ def technical(text,preserve_lines=False):
 
 def comparison_text(text):
     from .spoken_forms import expand
+    from .typed_readings import clock_observation, expand as interpret
     # Compact clock digits need both a clock label and a timezone. Bare
     # identifiers remain distinct; no expected script is supplied to ASR.
     def compact_clock(m):
@@ -69,6 +70,8 @@ def comparison_text(text):
     atom=r'(?:[0-9]|'+'|'.join(digits)+r')'
     def room(m):return m[1]+''.join(digits.get(t.lower(),t) for t in m[2].split())
     text=re.sub(r'(\bRoom\s+)('+atom+r'(?:\s+'+atom+r'){1,15})(?!\w)',room,text,flags=re.I)
+    text=clock_observation(text)
+    text,_=interpret(text,kinds={'measurement','currency_symbol'})
     text=expand(text)
     text=technical(text)
     # These are notation variants, not homophone or approximate-value rules.

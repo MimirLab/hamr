@@ -2,7 +2,7 @@
 
 ## Make your first book
 
-[Install hamr](../README.md#install-on-linux), then run these commands with a terminal. Replace the EPUB path with your file. PDF and Markdown work with the same command.
+[Install hamr](../README.md#install-on-linux), then run these commands with a terminal. Replace the EPUB path with your file. PDF, Markdown and plain-text files work with the same command.
 
 ```sh
 hamr setup
@@ -64,6 +64,20 @@ hamr play JOB
 Listen mode preserves claims/qualifiers, speaks tables with explicit headers, inserts linked notes beside their claim, and keeps exact code in the companion. Study mode also speaks reference sections. Procedure mode speaks literal blocks. Explicit category choices override mode defaults. These deterministic modes do not summarize or infer content. Exact-heading section policies are available; sophisticated note placement and bibliography recognition beyond labeled sections remain limited.
 
 Use `--notes after_paragraph|inline|companion` to control linked notes. `--chapters '5,2-3,2'` selects chapters 2, 3 and 5 in source order. Use `hamr repair JOB --chapters all` to restore the complete selection.
+
+### Check how a document will be read
+
+Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-13` rules.
+
+- Markdown note definitions can contain several paragraphs or list items. A code span containing a note marker stays literal. Missing, duplicate and nested note targets need review when selected for speech.
+- Plain `.txt` files accept UTF-8 or BOM-marked UTF-16/UTF-32. Blank lines separate paragraphs. The source locations retain exact decoded lines and line endings. Convert files from other encodings before opening them.
+- EPUB can read the text of a book that uses the standard font-obfuscation method on declared fonts. Its inventory records the affected resources. Embedded media that needs an accessible reading appears in source review. [EPUB 3.3 font obfuscation](https://www.w3.org/TR/epub-33/#sec-obfuscation)
+- PDF text objects declared invisible or clip-only can trigger visual OCR, even on pages without raster images. The plan retains conflicting observations for review. Private-use and unmapped characters in a selected reading also need review. Complex layouts and vector-only labels still need separate source checks.
+- Supported explicit readings include `Room 007`, `Departure 08:05`, `0.080`, `mL` and `°C` or `°F` after a number. A bare `$` is read as a symbol without assigning a country. Numeric dates without a locale cue retain their written field order.
+
+In a decision’s `normalization.edits`, the input and output ranges use half-open Unicode code-point offsets. Read input offsets against `source` when `input_basis` is `block_source`. When earlier processing changed the text, use the included `normalization.input`. Output offsets point into `spoken`. These mappings cover the new typed readings. Other transformations have their own provenance, such as note links, PDF locations and abbreviation evidence.
+
+For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new spoken rules. Add `--reimport` to pick up importer fixes from the original snapshot. Examine the new review state with `hamr show JOB --content` before resuming.
 
 A preview is stored beside the job snapshot and never placed in ready output. The preview command returns exact source locations. JSON diagnostics use exit 2 for failures, 3 for needs-review, 130 for interruption; normal success is 0. Source/script export requires `show --content`; ordinary diagnostics omit transcripts.
 

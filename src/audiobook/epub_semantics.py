@@ -2,6 +2,7 @@
 import re
 from bs4 import NavigableString
 
+EMBEDDED = ('audio', 'canvas', 'embed', 'iframe', 'object', 'video')
 
 def noteref(node):
     return getattr(node,'attrs',None) is not None and ('noteref' in str(node.get('epub:type','')) or node.get('role')=='doc-noteref')

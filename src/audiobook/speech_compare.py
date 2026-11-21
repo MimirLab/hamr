@@ -7,7 +7,7 @@ Homophones such as for/four and know/no are deliberately not equated.
 import re,unicodedata
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v11'
+POLICY='bounded-english-composed-scale-typed-v13'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -177,10 +177,10 @@ def mathematical_markers(text):
     markers += ['exponent:3']*len(re.findall(r'\bcubic\b|\bcubed\b',text))
     for name,pattern in [('divide',r'\bdivided by\b'),('sine',r'\bsine\b'),('cosine',r'\bcosine\b')]:
         markers += [name]*len(re.findall(pattern,text))
-    units=r'centimet(?:er|re)s?|millimet(?:er|re)s?|milligrams?|kilograms?|grams?|pounds?|yards?|seconds?|degrees?|inch(?:es)?|feet|foot|cm|mm|mg|kg|lbs?|millivolts?|microvolts?|kilopascals?|megabytes?|megabits?|kilobytes?|kilobits?|cups?|teaspoons?|tablespoons?|lit(?:er|re)s?|ounces?|hours?|minutes?'
+    units=r'centimet(?:er|re)s?|millimet(?:er|re)s?|milligrams?|kilograms?|grams?|pounds?|yards?|seconds?|degrees?|inch(?:es)?|feet|foot|cm|mm|mg|kg|lbs?|millivolts?|microvolts?|kilopascals?|megabytes?|megabits?|kilobytes?|kilobits?|cups?|teaspoons?|tablespoons?|lit(?:er|re)s?|millilit(?:er|re)s?|celsius|fahrenheit|ounces?|hours?|minutes?'
     def unit(word):
-        word=word.replace('metre','meter')
-        return {'cm':'centimeter','mm':'millimeter','mg':'milligram','kg':'kilogram','lb':'pound','lbs':'pound','inches':'inch','feet':'foot'}.get(word,word.rstrip('s'))
+        word=word.replace('metre','meter').replace('litre','liter')
+        return {'cm':'centimeter','mm':'millimeter','mg':'milligram','kg':'kilogram','lb':'pound','lbs':'pound','inches':'inch','feet':'foot','celsius':'celsius'}.get(word,word.rstrip('s'))
     markers += ['unit:'+unit(w) for w in re.findall(r'\b('+units+r')\b',text)]
     markers += ['denominator:'+unit(w) for w in re.findall(r'\bper\s+(?:square\s+|cubic\s+)?('+units+r')\b',text)]
     # Inspect operators independently of matching numbers or aggregate WER.

@@ -13,9 +13,11 @@ def source_groups(document,plan):
             if span['kind'] not in ('pronunciation_hint','lexicon_hint'):continue
             evidence={k:span.get(k) for k in ('phoneme','phonemes','alphabet','reading','origin') if span.get(k) is not None}
             candidates.append((span.get('source',''),span.get('language') or locator.get('language',document.get('language','en')),evidence,None))
-        for pending in decisions.get(block['id'],{}).get('abbreviations',{}).get('review',[]):
+        audit=decisions.get(block['id'],{}).get('abbreviations',{})
+        for pending in audit.get('review',[]):
             # Without an authored sense, only identical local contexts group.
-            context=source[max(0,pending['input_start']-50):pending['input_end']+50]
+            evidence_text=audit.get('input',source)
+            context=evidence_text[max(0,pending['input_start']-50):pending['input_end']+50]
             candidates.append((pending['source'],locator.get('language',document.get('language','en')),{'reason':pending['reason']},re.sub(r'\s+',' ',context)))
         for spelling,language,evidence,sense_context in candidates:
             identity={'spelling':spelling,'language':language,'evidence':evidence,'sense_context':sense_context};identifier='g'+key(identity)[:16]

@@ -20,7 +20,7 @@
   <a href="https://github.com/MimirLab/hamr/releases/latest">Downloads</a>
 </p>
 
-**hamr turns EPUB, Markdown and PDF files into audiobooks with Breeze TTS2.** It runs on your computer and comes with 45 voices. Choose one, check the text, and make a chaptered M4B you can take to your audiobook player.
+**hamr turns EPUB, Markdown, PDF and plain-text files into audiobooks with Breeze TTS2.** It runs on your computer and comes with 45 voices. Choose one, check the text, and make a chaptered M4B you can take to your audiobook player.
 
 Give Nigel Thornberry a nature book or Carl Sagan an astronomy text. Cave Johnson will read the safety manual too, if you're feeling brave.
 
@@ -56,7 +56,7 @@ e6ff67e457854bb6 · ready · Ravens in Winter
 /tmp/hamr-demo/Audiobooks/e6ff67e457854bb6-r1/book.m4b
 ```
 
-Use the same command with a PDF or Markdown file. If interrupted, run `hamr resume JOB` with the printed job ID. For an unattended command, add `--yes`. If a passage needs review, `hamr show JOB --content` points to the issue.
+Use the same command with a PDF, Markdown or `.txt` file. If interrupted, run `hamr resume JOB` with the printed job ID. For an unattended command, add `--yes`. If a passage needs review, `hamr show JOB --content` points to the issue.
 
 ## Listen
 

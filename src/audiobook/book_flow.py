@@ -10,14 +10,13 @@ from .core import Error, run
 
 
 def check_source(source):
+    from .importers import input_adapter
     if source.is_dir():
         raise Error('source_is_directory', f'Choose a file inside {source}.',
                     'Example: hamr open "Folder/My book.epub".')
     if not source.is_file():
         raise Error('source_missing', f'Document not found: {source}', 'Check the document path.')
-    if source.suffix.lower() not in ('.epub', '.pdf', '.md', '.markdown'):
-        raise Error('unsupported_format', f'Unsupported document: {source.name}',
-                    'Choose an EPUB, PDF or Markdown file.')
+    input_adapter(source)
 
 
 def preflight(store, voice, output, play):

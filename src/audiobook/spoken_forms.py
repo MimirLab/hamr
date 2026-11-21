@@ -32,7 +32,7 @@ def ordinal(n):
     return None
 
 
-def expand(text):
+def expand(text, *, literal_clocks=True):
     # Match supported context, not every colon or slash in a command/URL.
     text=re.sub(r'\b(Chapter|CHAPTER)\s+([IVXLCDM]+)\b',lambda m:m[1]+' '+number(roman(m[2])) if roman(m[2]) else m[0],text)
     def royal(m):
@@ -44,7 +44,8 @@ def expand(text):
         h,minute=int(m[1]),int(m[2]);zone=m[3]
         return number(h)+(' oh '+number(minute) if 0<minute<10 else ' '+number(minute) if minute else ' hundred')+' '+('U T C' if zone=='UTC' else 'G M T')
     text=re.sub(r'(?<![\w/:])([01]\d|2[0-3]):([0-5]\d)\s+(UTC|GMT)\b',clock,text)
-    text=re.sub(r'(?<![\w/:])([01]\d|2[0-3]):([0-5]\d)(?![\w/:])',lambda m:identifier(m[1])+' colon '+identifier(m[2]),text)
+    if literal_clocks:
+        text=re.sub(r'(?<![\w/:])([01]\d|2[0-3]):([0-5]\d)(?![\w/:])',lambda m:identifier(m[1])+' colon '+identifier(m[2]),text)
     # A measurement unit disambiguates these fractions from calendar dates.
     fractions={2:('half','halves'),3:('third','thirds'),4:('quarter','quarters'),8:('eighth','eighths')}
     def fraction(m):

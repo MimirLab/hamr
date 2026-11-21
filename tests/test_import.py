@@ -8,7 +8,8 @@ from audiobook.core import Error
 @pytest.mark.parametrize('literal', ['2.4.10','0.08','-2.5','< 8 kPa','>= 12 kPa','03/04/2026','--no-cache','not 0.80','Do not restart','12 mg','+4.5 °C','https://example.test/a','/tmp/a b','0.0001','1,024','10–12','≤ 0.08','C++'])
 def test_annotated_literals(literal):
     d=markdown(('# Test\n\nPreserve '+literal+' exactly.\n').encode()); p=plan(d)
-    expected={'< 8 kPa':'less than 8 kilopascals','>= 12 kPa':'greater than or equal to 12 kilopascals','10–12':'10 to 12','≤ 0.08':'less than or equal to 0.08','03/04/2026':'zero three slash zero four slash two zero two six'}.get(literal,literal)
+    expected={'< 8 kPa':'less than 8 kilopascals','>= 12 kPa':'greater than or equal to 12 kilopascals','10–12':'10 to 12','≤ 0.08':'less than or equal to 0.08','03/04/2026':'zero three slash zero four slash two zero two six',
+              'not 0.80':'not zero point eight zero','+4.5 °C':'plus four point five degrees Celsius'}.get(literal,literal)
     assert expected in ' '.join(u['text'] for u in p['utterances'])
     assert literal in d.blocks[1].source
 

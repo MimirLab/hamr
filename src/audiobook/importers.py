@@ -7,6 +7,7 @@ from lxml import etree
 from markdown_it import MarkdownIt
 from mdit_py_plugins.footnote import footnote_plugin
 from .core import Block,Document,Error,digest,run
+from .text_source import physical_lines, plain
 
 MAX_INPUT=200*1024*1024
 
@@ -14,61 +15,98 @@ def block(text,loc,role='body',chapter='Opening',evidence=None,issue=None,links=
     return Block('b'+digest(str(loc).encode())[:16],text,loc,role,chapter,evidence or [],issue,links or [])
 
 def markdown(data:bytes)->Document:
-    text=data.decode('utf-8-sig'); lines=text.splitlines(keepends=True)
-    md=MarkdownIt('commonmark',{'html':False}).enable('table').use(footnote_plugin)
-    tokens=md.parse(text); out=[]; chapter='Opening'; title=None
-    # Inline tokens retain punctuation and whitespace across emphasis/code leaves.
-    def inline(t):
-        return ''.join(('Figure. '+c.content if c.type=='image' else c.content) if c.type not in ('softbreak','hardbreak') else '\n' if c.type=='hardbreak' else ' ' for c in (t.children or []) if c.type in ('text','code_inline','softbreak','hardbreak','html_inline','image'))
-    notes={m.group(1):m.group(2) for m in re.finditer(r'^\[\^([^]]+)\]:\s*(.+(?:\n[ \t]+.+)*)',text,re.M)}
+    from itertools import accumulate
+    from markdown_it.token import Token
+    from . import markdown_notes
+
+    try: text=data.decode('utf-8-sig')
+    except UnicodeDecodeError as exc:
+        raise Error('text_encoding', f'Markdown cannot be decoded as UTF-8 at byte {exc.start}.',
+                    'Save the original as UTF-8 Markdown and try again.') from exc
+    # Markdown-it line maps count only CR, LF and CRLF, not Unicode separators.
+    lines=[match[0] for match in physical_lines(text)]
+    offsets=list(accumulate(map(len, lines),initial=0))
+    md=MarkdownIt('commonmark',{'html':False}).enable('table').use(footnote_plugin,move_to_end=False,always_match_refs=True)
+    env={}
+    tokens, definitions=markdown_notes.split_definitions(md.parse(text,env))
+    inline_notes={i:n for i,n in env.get('footnotes',{}).get('list',{}).items() if 'tokens' in n}
+    inline_sources={i:n['content'] for i,n in inline_notes.items()}
+    out=[]; chapter='Opening'; title=None; notes={}; note_blocks=[]
+
+    def location(first,last):
+        start,end=offsets[first],offsets[last]
+        return {'format':'markdown','lines':[first+1,last],'start':start,'end':end,'exact':text[start:end]}
+
+    def add_note(href, label, children, provenance):
+        source,reading,issue=markdown_notes.definition(children,inline_sources)
+        candidates=notes.setdefault(href,[])
+        loc={'format':'markdown','note':label}
+        if candidates:loc['definition_occurrence']=len(candidates)+1
+        note=block(source,loc,'note',evidence=['Markdown AST note definition'])
+        note.locator.update(provenance)
+        if issue:note.locator['note_issue']=issue
+        candidates.append((note,reading));note_blocks.append(note)
+
+    for definition,children in definitions:
+        label=definition.meta['label']
+        add_note('markdown-note:'+label,label,children,location(*definition.map))
+    for index,note in inline_notes.items():
+        add_note(f'markdown-inline-note:{index}',f'inline:{index}',
+                 [Token('inline','',0,children=note['tokens'])],{'exact':'^['+note['content']+']'})
     i=0;chapter_id=None;list_depth=0
     while i<len(tokens):
         t=tokens[i]
         if t.type in ('bullet_list_open','ordered_list_open'):list_depth+=1
         elif t.type in ('bullet_list_close','ordered_list_close'):list_depth-=1
-        if t.type=='footnote_block_open': break
         if t.type=='hr':
             loc={'format':'markdown','lines':[t.map[0]+1,t.map[1]],'exact':''.join(lines[t.map[0]:t.map[1]])}
             if chapter_id is not None:loc['chapter_id']=chapter_id
             out.append(block(loc['exact'].strip(),loc,'scene_break',chapter,['Markdown AST thematic break']))
         if t.type in ('heading_open','paragraph_open') and i+1<len(tokens):
-            v=tokens[i+1]; loc={'format':'markdown','lines':[t.map[0]+1,t.map[1]],'start':sum(map(len,lines[:t.map[0]])),'end':sum(map(len,lines[:t.map[1]]))}
-            raw=''.join(lines[t.map[0]:t.map[1]])
-            spoken=inline(v)
+            v=tokens[i+1]; loc=location(*t.map)
+            source, spans=markdown_notes.inline(v,inline_sources)
             if any(c.type=='hardbreak' for c in (v.children or [])):loc['authored_line_breaks']=True
-            # Resolve by source marker: parser footnote IDs alone lose original labels.
-            links=[]; issue='Image has no authored description; verify whether it carries essential content.' if any(c.type=='image' and not c.content.strip() for c in (v.children or [])) else None
-            for label in re.findall(r'\[\^([^]]+)\]',raw):
-                if label in notes:
-                    spoken+=' Note: '+notes[label]; links.append({'note':label,'text':notes[label]})
-                else: issue='Unresolved Markdown footnote reference requires verification.'
+            links=markdown_notes.links_for(spans,notes)
+            issue='Image has no authored description; verify whether it carries essential content.' if any(c.type=='image' and not c.content.strip() for c in (v.children or [])) else None
             role='heading' if t.type=='heading_open' else 'body'
-            task=re.match(r'^\[([xX ])\]\s+',spoken) if list_depth and role=='body' else None
+            task=re.match(r'^\[([xX ])\]\s+',source) if list_depth and role=='body' else None
             if task:loc['checklist']={'checked':task[1].lower()=='x','marker':task[0],'origin':'Explicit Markdown task marker in a list item'}
             if role=='heading':
-                chapter=spoken; title=title or spoken
+                chapter=source
+                for ref in reversed(spans):
+                    if ref['kind']=='note_reference':chapter=chapter[:ref['source_start']]+chapter[ref['source_end']:]
+                chapter=chapter.strip() or 'Opening'; title=title or chapter
                 chapter_id='markdown:'+str(t.map[0]+1)
             if chapter_id is not None:loc['chapter_id']=chapter_id
-            out.append(block(spoken,loc,role,chapter,['Markdown AST source range'],issue=issue,links=links)); out[-1].locator['exact']=raw
+            # Exact/raw text and extra interpretations should not alter stable block IDs.
+            exact=loc.pop('exact')
+            b=block(source,loc,role,chapter,['Markdown AST source range'],issue=issue,links=links)
+            b.locator['exact']=exact
+            if spans:b.locator['inline_semantics']=spans
+            out.append(b)
             i+=3; continue
         if t.type in ('fence','code_block'):
             loc={'format':'markdown','lines':[t.map[0]+1,t.map[1]],'exact':''.join(lines[t.map[0]:t.map[1]])}
             if chapter_id is not None:loc['chapter_id']=chapter_id
             out.append(block(t.content,loc,'code',chapter,['AST literal block']))
         if t.type=='table_open':
-            start=t.map[0]; end=t.map[1]; rows=[]; row=[]; j=i+1
+            start=t.map[0]; end=t.map[1]; rows=[]; row=[]; references=[]; j=i+1
             while j<len(tokens) and tokens[j].type!='table_close':
                 q=tokens[j]
                 if q.type=='tr_open': row=[]
-                if q.type=='inline': row.append(inline(q))
+                if q.type=='inline':
+                    source, refs=markdown_notes.inline(q,inline_sources)
+                    row.append(source); references.extend(ref for ref in refs if ref['kind']=='note_reference')
                 if q.type=='tr_close': rows.append(row)
                 j+=1
             loc={'format':'markdown','lines':[start+1,end],'exact':''.join(lines[start:end]),'rows':rows}
             if chapter_id is not None:loc['chapter_id']=chapter_id
-            out.append(block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row']))
+            issue='Markdown table note references need a verified reading.' if references else None
+            out.append(block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row'],issue,markdown_notes.links_for(references,notes)))
             i=j
         i+=1
-    for name,value in notes.items(): out.append(block(value,{'format':'markdown','note':name},'note',chapter,['resolved inline at referring claim']))
+    for note in note_blocks:note.chapter=chapter
+    out.extend(note_blocks)
     return Document(title or 'Document','markdown',digest(data),out)
 
 def html_text(node):
@@ -93,28 +131,32 @@ def document_reference(document_path,href):
     return archive_path(posixpath.dirname(document_path),href)
 
 def epub(data:bytes)->Document:
+    from .epub_obfuscation import font_references, verify_font_manifest
+
     try: z=zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile: raise Error('unreadable_epub','Invalid EPUB ZIP container.')
     info=z.infolist()
     if len(info)>10000 or sum(x.file_size for x in info)>MAX_INPUT: raise Error('archive_limit','EPUB exceeds decoded size or entry limit.')
     names=set()
     for x in info:
+        if x.flag_bits&1: raise Error('protected_epub','EPUB contains ZIP-encrypted resources.')
         if x.filename in names: raise Error('unsafe_epub','Duplicate EPUB archive entry.')
         names.add(x.filename); archive_path('',x.filename)
         if x.file_size>max(1024*1024,x.compress_size*500): raise Error('archive_limit','EPUB compression ratio exceeds safety bound.')
     def xml(name):
         try: return etree.fromstring(z.read(name),etree.XMLParser(resolve_entities=False,no_network=True))
         except (KeyError,etree.XMLSyntaxError): raise Error('unreadable_epub','Missing or malformed EPUB package XML.')
-    if 'META-INF/encryption.xml' in names:
-        enc=z.read('META-INF/encryption.xml')
-        if b'EncryptedData' in enc: raise Error('protected_epub','Encrypted EPUB resources require an unprotected authorized input.')
+    fonts=font_references(xml('META-INF/encryption.xml'),names) if 'META-INF/encryption.xml' in names else set()
     container=xml('META-INF/container.xml'); roots=container.xpath('//*[local-name()="rootfile"]/@full-path')
     if not roots: raise Error('unreadable_epub','EPUB container has no rootfile.')
-    opf_path,_=archive_path('',roots[0]); opf=xml(opf_path); base=posixpath.dirname(opf_path)
+    opf_path,_=archive_path('',roots[0])
+    if opf_path in fonts:raise Error('protected_epub','EPUB protection metadata names the package document as a font.')
+    opf=xml(opf_path); base=posixpath.dirname(opf_path)
     title=opf.xpath('//*[local-name()="title"]/text()'); lang=opf.xpath('//*[local-name()="language"]/text()')
     if opf.xpath('//*[local-name()="meta" and @property="rendition:layout" and text()="pre-paginated"]'): raise Error('fixed_layout','Fixed-layout EPUB requires visual review; reflowable EPUB is supported.')
     manifest_nodes={x.get('id'):x for x in opf.xpath('//*[local-name()="manifest"]/*')}
     manifest={identifier:archive_path(base,x.get('href'))[0] for identifier,x in manifest_nodes.items() if x.get('href')}
+    verify_font_manifest(fonts,manifest,manifest_nodes)
     # A declared cover asset is decorative furniture, not a missing story diagram.
     cover_ids=set(opf.xpath('//*[local-name()="meta" and @name="cover"]/@content'))
     cover_assets={manifest[i] for i in cover_ids if i in manifest}
@@ -151,12 +193,14 @@ def epub(data:bytes)->Document:
         if asset in names:metadata['cover']={'path':asset,'sha256':digest(z.read(asset))}
     soups={}
     def soup(path):
+        if path in fonts:raise Error('protected_epub','EPUB references an obfuscated font as a text resource.')
         if path not in soups:
             try: soups[path]=BeautifulSoup(z.read(path),'xml')
             except KeyError: raise Error('unreadable_epub','Missing EPUB spine/note resource.')
             from .epub_styles import apply
             def css(href):
                 target,_=document_reference(path,href)
+                if target in fonts:raise Error('protected_epub','EPUB references an obfuscated font as a stylesheet or lexicon.')
                 return z.read(target),target
             soups[path].__dict__['_audiobook_css_warnings']=apply(soups[path],css)
             from .pronunciation import linked
@@ -184,7 +228,7 @@ def epub(data:bytes)->Document:
                 if src and label:
                     target,anchor=archive_path(posixpath.dirname(path),src[0]); chapter_labels[(target,anchor)]=label[0]
                     navigation.append({'path':target,'anchor':anchor,'label':label[0],'origin':path})
-    from .epub_semantics import describe,language,uncertainty,hidden,accessible_label,note_container
+    from .epub_semantics import EMBEDDED,describe,language,uncertainty,hidden,accessible_label,note_container
     out=[]; inventory=[]; chapter='Opening';linked_targets={}
     for occurrence,item in enumerate(opf.xpath('//*[local-name()="spine"]/*'),1):
         if item.get('linear')=='no': continue
@@ -241,10 +285,10 @@ def epub(data:bytes)->Document:
             if not text and not issue and not any(s['kind']=='object_label' and (s.get('reading') or s.get('cover')) for s in semantics): continue
             if role=='heading': chapter=text
             links=[]
-            note_spans=iter(sorted((s for s in semantics if s['kind']=='note_reference'),key=lambda s:s['source_start']))
+            note_references=iter(sorted((s for s in semantics if s['kind']=='note_reference'),key=lambda s:s['source_start']))
             for a in node.find_all('a',href=True):
                 if 'noteref' in str(a.get('epub:type','')) or a.get('role')=='doc-noteref':
-                    location=next(note_spans,None)
+                    location=next(note_references,None)
                     try:np,anchor=document_reference(path,a['href']); n=soup(np).find(id=anchor)
                     except Error:issue='Linked note resource is missing or unsupported.';continue
                     if not n: issue='Linked note target is missing.'; continue
@@ -255,6 +299,8 @@ def epub(data:bytes)->Document:
                     from .epub_semantics import reading as note_reading
                     from .pronunciation import unresolved
                     note_problems=[uncertainty(note_spans),*style_issues(n),*vars(soup(np)).get('_audiobook_lexicon_problems',[]),*unresolved(note_block,lang[0] if lang else 'en')]
+                    if any(not any(hidden(a) for a in [obj,*obj.parents]) for obj in n.find_all(EMBEDDED)):
+                        note_problems.append('This EPUB note contains embedded content that needs a verified reading.')
                     if n.find('a',attrs={'role':'doc-noteref'}) or any('noteref' in str(a.get('epub:type','')).split() for a in n.find_all('a')):note_problems.append('Nested linked notes require a verified reading; recursive note expansion is not inferred.')
                     note_problem=' '.join(dict.fromkeys(p for p in note_problems if p)) or None
                     target=(np,anchor);linked_targets[target]=n
@@ -335,12 +381,23 @@ def epub(data:bytes)->Document:
                 role='hidden' if any(hidden(a) for a in [node,*node.parents]) else 'note' if any(note_container(a) for a in [node,*node.parents]) else 'body'
                 generated=block('',loc,role,initial_chapter,['Authored CSS generated label at a container boundary'])
                 out.append(generated);positions[generated.id]=at;fallback_ids.add(generated.id);found+=1
+        opaque=[]
+        for node in body.find_all(EMBEDDED):
+            if any(parent.name in EMBEDDED or note_container(parent) for parent in node.parents):continue
+            rank=ranks[id(node)]
+            loc={'format':'epub','occurrence':occurrence,'path':path,'dom_rank':rank,'element_type':node.name,'exact':str(node)}
+            concealed=any(hidden(parent) for parent in [node,*node.parents])
+            issue=None if concealed else f'Embedded EPUB {node.name} needs a verified accessible reading or companion disposition.'
+            item=block('',loc,'hidden' if concealed else 'unreadable',initial_chapter,['Independent inventory of embedded EPUB content'],issue)
+            out.append(item);positions[item.id]=rank;fallback_ids.add(item.id);found+=1
+            opaque.append({'block':item.id,'element':node.name,'disposition':'authored hidden' if concealed else 'source review'})
         ordered=sorted(out[start:],key=lambda b:positions[b.id]); current=initial_chapter
         for b in ordered:
             if b.id in fallback_ids: b.chapter=current
             else: current=b.chapter
         out[start:]=ordered
-        inventory.append({'occurrence':occurrence,'path':path,'fallback_chain':chain,'recovered_inline_runs':len(fallback_ids),'represented_blocks':len(ordered),'text_coverage':'Every non-script/style DOM text occurrence is assigned to a supported block or a recovered inline run.'})
+        inventory.append({'occurrence':occurrence,'path':path,'fallback_chain':chain,'recovered_inline_runs':len(fallback_ids)-len(opaque),'represented_blocks':len(ordered),'text_coverage':'Every non-script/style DOM text occurrence is assigned to a supported block or a recovered inline run.'})
+        if opaque:inventory[-1]['embedded_objects']=opaque
         if not found: out.append(block('',{'format':'epub','path':path,'occurrence':occurrence},'unreadable',chapter,issue='Image-only or empty spine resource requires visual review.'))
     from .epub_navigation import route
     out,nav_records,warnings=route(out,navigation,soup)
@@ -375,12 +432,15 @@ def epub(data:bytes)->Document:
     for path,parsed in soups.items():
         warnings.extend(path+': '+warning for warning in vars(parsed).get('_audiobook_css_warnings',[]))
     if nav_records:inventory.append({'kind':'navigation','entries':nav_records,'purpose':'Chapter view only; primary source order remains the spine occurrence order.'})
+    if fonts:inventory.append({'kind':'font_obfuscation','resources':sorted(fonts),'disposition':'Font bytes retained in the original EPUB; narration uses the text resources.'})
     if any(b.role=='placeholder' for b in out):warnings.append('This source edition contains illustration placeholders; no visual relationship is inferred from them.')
     return Document(title[0] if title else 'Book','epub',digest(data),out,lang[0] if lang else 'en',inventory=inventory,warnings=warnings,metadata=metadata)
 
 def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
     import pypdfium2 as pdfium
     from PIL import Image,ImageChops,ImageStat
+    from .pdf_textlayer import nonpainting_regions
+    from .text_evidence import suspect_characters
     try: doc=pdfium.PdfDocument(data)
     except Exception: raise Error('unreadable_pdf','PDF is protected, damaged or unsupported.')
     out=[]; inventory=[];outlines=[]
@@ -397,12 +457,16 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
         for obj in page.get_objects():
             if obj.type==3: images.append(list(obj.get_bounds()))
         entry={'page':n+1,'size':[w,h],'glyphs':tp.count_chars(),'rotation':page.get_rotation(),'raster_regions':images,'route':'native','native_observation':native}
+        if damaged:=suspect_characters(native):entry['native_character_diagnostics']=damaged
         box=page.get_bbox();media=page.get_mediabox()
+        nonpainting=nonpainting_regions(page,box)
+        if nonpainting:entry['nonpainting_text_regions']=nonpainting
         entry['native_geometry_qualified']=page.get_rotation()==0 and all(abs(a-b)<.01 for a,b in zip(box,(0,0,w,h))) and all(abs(a-b)<.01 for a,b in zip(box,media))
         entry['visible_cropbox']=list(box)
         inventory.append(entry)
         chapter=f'Page {n+1}'
-        if images or not native.strip():
+        if images or nonpainting or not native.strip():
+            entry['ocr_admission']=[reason for condition,reason in ((images,'raster regions'),(nonpainting,'nonpainting text layer'),(not native.strip(),'no native text')) if condition]
             bitmap=page.render(scale=2); im=bitmap.to_pil().convert('RGB')
             extrema=ImageStat.Stat(im).stddev
             if max(extrema)<0.8 and not native.strip():
@@ -533,19 +597,23 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
     if any(e.get('status')=='unresolved' for e in outlines):warnings.append('Some PDF outline destinations lack a unique matching heading or qualified coordinates. All prose remains in source order; chapter navigation needs review.')
     return Document('PDF document','pdf',digest(data),out,inventory=inventory,warnings=warnings)
 
+ADAPTERS={'.md':markdown,'.markdown':markdown,'.epub':epub,'.pdf':pdf,'.txt':plain}
+
+def input_adapter(path):
+    adapter=ADAPTERS.get(path.suffix.lower())
+    if not adapter: raise Error('unsupported_format','Supported input formats: EPUB, Markdown, PDF, plain text (.txt).')
+    return adapter
+
 def inspect(path:Path)->Document:
     if path.stat().st_size>MAX_INPUT: raise Error('input_limit','Input exceeds 200 MiB limit.')
     with path.open('rb') as f: data=f.read(MAX_INPUT+1)
     if len(data)>MAX_INPUT: raise Error('input_limit','Input exceeds 200 MiB limit.')
-    suffix=path.suffix.lower()
-    adapter={'.md':markdown,'.markdown':markdown,'.epub':epub,'.pdf':pdf}.get(suffix)
-    if not adapter: raise Error('unsupported_format','Supported input formats: EPUB, Markdown, PDF.')
-    d=adapter(data)
+    d=input_adapter(path)(data)
     if not d.blocks: raise Error('empty_document','Document contains no narratable material.')
     if not d.language.lower().startswith('en'): d.warnings.append('Only English is currently a qualification target.')
     return d
 
-IMPORT_REVISION='import-22'
+IMPORT_REVISION='import-23'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .core import atomic,key,loadjson,writejson,filehash
     import importlib.metadata
@@ -567,7 +635,7 @@ def cached_inspect(path:Path,cache:Path)->Document:
             reusable_extraction=ocr_config[3]
         except Error:
             reusable_extraction=False
-    implementation={p.name:filehash(p) for p in Path(__file__).parent.glob('*.py') if p.name=='importers.py' or p.name.startswith(('epub_','pdf_')) or p.name=='pronunciation.py'}
+    implementation={p.name:filehash(p) for p in Path(__file__).parent.glob('*.py') if p.name in ('importers.py','pronunciation.py','markdown_notes.py','text_source.py','text_evidence.py') or p.name.startswith(('epub_','pdf_'))}
     identity=key({'source':digest(data),'extension':path.suffix.lower(),'import_revision':IMPORT_REVISION,'dependencies':dependencies,'implementation':implementation})
     target=cache/(identity+'.json')
     if target.is_symlink(): raise Error('unsafe_path','Extraction cache entry cannot be a symlink.')
@@ -576,8 +644,7 @@ def cached_inspect(path:Path,cache:Path)->Document:
         if envelope['document_sha256']==key(payload) and payload['source_sha256']==digest(data):
             return Document(payload['title'],payload['format'],payload['source_sha256'],[Block(**b) for b in payload['blocks']],payload['language'],payload['inventory'],payload['warnings'],payload.get('metadata',{}))
     # Import from the immutable bytes we just identified, never reread the mutable path.
-    adapter={'.md':markdown,'.markdown':markdown,'.epub':epub,'.pdf':pdf}.get(path.suffix.lower())
-    if not adapter: raise Error('unsupported_format','Supported input formats: EPUB, Markdown, PDF.')
+    adapter=input_adapter(path)
     doc=adapter(data,ocr_cache=cache/'pdf-observations',ocr_config=ocr_config) if path.suffix.lower()=='.pdf' else adapter(data)
     if not doc.blocks: raise Error('empty_document','Document contains no narratable material.')
     if not doc.language.lower().startswith('en'): doc.warnings.append('Only English is currently a qualification target.')

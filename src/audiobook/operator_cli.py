@@ -52,7 +52,7 @@ def schema(parser):
 
 def capabilities(parser):
     return {'schema_version': 1, 'hamr_version': __version__,
-            'formats': ['epub', 'markdown', 'pdf'], 'languages': ['en'],
+            'formats': ['epub', 'markdown', 'pdf', 'text'], 'languages': ['en'],
             'cli': schema(parser), 'operator_guide': ['hamr', 'agent', 'guide'],
             'exit_status': {'success': 0, 'error': 2, 'needs_review': 3, 'interrupted': 130}}
 

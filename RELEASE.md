@@ -6,6 +6,14 @@ The development preview includes a Windows x64 installer and the pinned Hoppou W
 
 Three matching Radeon controls are available for blind listening: F16, stock Q8 and Q8 with original depth and codec tensors. Each has a real continuous take exceeding 45 seconds. The engine guide records the measured time and word checks. Model placement and audible quality are separate checks.
 
+### Document normalization preview
+
+New plans use `faithful-13`. Markdown imports whole footnote definitions and retains reference locations. EPUB checks the protection method and the declared resource type before admitting font-only obfuscation. Its source inventory includes opaque embedded media. Plain text has a strict Unicode decoder with source line locations. [Document planning guide](docs/USAGE.md#check-how-a-document-will-be-read)
+
+The planner preserves leading identifier zeros and decimal precision in supported readings. It records exact offsets in the input used for each typed rewrite. Known PDF nonpainting text objects can trigger an independent OCR observation. Conflicting text, unmapped glyphs and inaccessible content can hold a job before speech generation.
+
+A two-paragraph Markdown note survived real synthesis and publication. A plain-text control retained its unaffected PCM through a targeted clock-reading repair and published after offline QA. Both M4Bs decoded with mpv. A hidden PDF text disagreement and a private-use glyph in plain text each held publication at source review. DOCX, HTML, general PDF table recognition and other adapters still need their own source and reading-order qualification.
+
 ## hamr 0.3.0
 
 [Install hamr and make a first book](README.md#epub-to-audiobook-in-three-commands). Run `man hamr` from the terminal for command help.
