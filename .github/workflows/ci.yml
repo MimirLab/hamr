@@ -56,3 +56,29 @@ jobs:
           & $hamr --version
           & $hamr --home 'preview state' voice sample nigel-thornberry --json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Render one checked Windows CPU control
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[windows-speech]')
+        timeout-minutes: 12
+        shell: pwsh
+        env:
+          PYTHONUTF8: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg --yes --no-progress
+          }
+          $hamr = Join-Path $env:LOCALAPPDATA 'hamr-app\venv\Scripts\hamr.exe'
+          $work = Join-Path $env:RUNNER_TEMP 'hamr-native-control'
+          New-Item -ItemType Directory -Force -Path $work | Out-Null
+          Set-Location $work
+          Set-Content 'Garden control.md' 'A quiet bird waited in the garden.'
+          New-Item -ItemType Directory -Force -Path 'published' | Out-Null
+          $setup = (& $hamr --home 'speech state' setup --profile cpu-q8 --json | Out-String) | ConvertFrom-Json
+          if ($setup.health.actual_device -notlike 'CPU*') { throw 'The CPU runtime was not verified.' }
+          $result = (& $hamr --home 'speech state' open 'Garden control.md' --output 'published' --voice cast:nigel-thornberry --yes --json | Out-String) | ConvertFrom-Json
+          if ($result.status -ne 'ready') { throw 'The control book did not pass its publication checks.' }
+          $m4b = Join-Path $result.output 'book.m4b'
+          ffprobe -v error -show_entries format=duration -of json $m4b
+          $inspection = (& $hamr --home 'speech state' agent inspect $result.job --verify | Out-String) | ConvertFrom-Json
+          if (-not $inspection.publication_verified) { throw 'Publication checksums did not verify.' }
