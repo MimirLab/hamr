@@ -34,7 +34,7 @@ PATTERNS = {
     'ampersand': ('CR-L034', r'&'),
     'shell_token': ('CR-L037', r'\$[A-Z_][A-Z_0-9]*|--[a-zA-Z][a-zA-Z0-9-]*'),
     'implication': ('CR-L038', r'[A-Z]\s*→\s*[A-Z]'),
-    'citation': ('CR-L041', r'et al\.'),
+    'citation': ('CR-L041', r'(?i:et[ \t]+al\.)'),
     'pictograph': ('CR-L042',PICTOGRAPH+r'(?:\u200d'+PICTOGRAPH+r'){0,8}(?!\u200d)'),
     'censoring': ('CR-L043', r"[A-Za-z]\*{2,8}|(?i:\[redacted\])"),
     'stage_direction': ('CR-L044', VOCAL_MARKER),
@@ -140,13 +140,15 @@ def candidates(kind,raw,env):
     if kind=='ampersand' and env.before[-1:].isspace() and env.after[:1].isspace() and env.before.rstrip()[-1:].isalnum() and env.after.lstrip()[:1].isalnum():
         return [Candidate('conjunction',{'spoken_relation':'and'},'and',('syntax',))]
     if kind=='shell_token':
-        variable=raw.startswith('$')
-        component=() if variable else (Component('CR-L022','literal_cli_syntax',(0,2),{'retain_two_hyphens':True}),)
-        return [Candidate('shell_variable' if variable else 'cli_option',
-                          {'exact_identifier':raw,**({'do_not_interpret_as_money':True} if variable else {'retain_two_hyphens':True})},
-                          raw,('syntax',),component)]
+        return [shell_reading(raw,env)]
     if kind=='citation':
-        return [Candidate('citation_shorthand',{'retain_citation_identity':True},None,('syntax',))]
+        expand=env.setting('expand_citations')
+        fields={'retain_citation_identity':True,'profile_controls_expansion':True}
+        spoken=None
+        if expand:
+            spoken='And others' if raw[0].isupper() else 'and others'
+            if boundaries.period_stop(env.before+raw+env.continuation,len(env.before)+len(raw),raw):spoken+='.'
+        return [Candidate('citation_shorthand',fields,spoken,('syntax','convention') if expand is not None else ('syntax',))]
     if kind=='pictograph' and env.setting('emoji_speech'):
         fields={'sequence':raw,'retain_complete_sequence':True,'do_not_infer_author_emotion':True}
         # Unicode names apply to individual symbols. A sequence can have a
@@ -228,6 +230,22 @@ def opaque_reading(kind, raw, env):
     return None
 
 
+def shell_reading(raw,env):
+    fields={'exact_identifier':raw,'exact_characters':raw}
+    if raw.startswith('$'):
+        fields['do_not_interpret_as_money']=True
+        if env.cue('shell_command'):
+            fields['source_language']='shell'
+            name=raw[1:].replace('_',' underscore ')
+            return Candidate('shell_variable',fields,'dollar sign '+name,('syntax','governor'))
+        return Candidate('shell_variable',fields,raw,('syntax',))
+    fields.update(retain_two_hyphens=True,leading_hyphens=2)
+    component=Component('CR-L022','literal_cli_syntax',(0,2),{'retain_two_hyphens':True})
+    if env.cue('command_option') or env.literal_mention():
+        return Candidate('cli_option',fields,'double dash '+raw[2:].replace('-',' dash '),('syntax','governor'),(component,))
+    return Candidate('cli_option',fields,raw,('syntax',),(component,))
+
+
 def contraction(raw, expansion, kind, env):
     fields={'expansion':expansion,'source_contraction_preserved':True,'optional_expansion_if_requested':expansion}
     choice=env.setting('expand_contractions')
@@ -241,8 +259,9 @@ COORDINATOR = re.compile(r'\band\s+$',re.I)
 RELATIVE_ASIDE = re.compile(r',\s+(?:who|whose|which)\b[^,]+$',re.I)
 CLAUSE_SHIFT = re.compile(r'\b(?:to|when|while|unless|because|if|after|before|who|whose|which|that)\b',re.I)
 NOUN_MODIFIER = re.compile(r'\b(?:a|an|the|my|your|his|her|our|their|its|this|that)\s+(?:[A-Za-z]+ly\s+)?$',re.I)
-CLAUSE_OPEN = r'(?:^|[.!?;:]["”’)]*|["“‘])\s*(?:(?:and|or|but|then|again)\s+)?'
-INVERTED_AUXILIARY = re.compile(CLAUSE_OPEN+r'(?P<cue>[A-Za-z]+)\s+(?:i|you|he|she|it|we|they|ye)$',re.I)
+CLAUSE_OPEN = r"(?:^|[.!?;:][\"”’)]*|[\"“‘]|(?<!\w)')\s*(?:(?:and|or|but|then|again)\s+)?"
+INVERTED_AUXILIARY = re.compile(CLAUSE_OPEN+r'(?:(?:what|when|where|why|how)\s+)?(?P<cue>[A-Za-z]+)\s+(?:i|you|he|she|it|we|they|ye)$',re.I)
+BARE_COMMAND = re.compile(CLAUSE_OPEN+r'(?:[A-Z][a-z]+,\s*)?$')
 THIRD_PERSON = re.compile(r'(?:'+CLAUSE_OPEN+r'|\b(?:when|while|as|before|after|until)\s+)(?P<cue>he|she|it)$',re.I)
 CONTRACTED_HAVE = re.compile(r"(?P<cue>\b(?:i|you|we|they)['’]ve)$",re.I)
 OBJECT_PRONOUN = re.compile(r'^\s+(?:it|them|this|that|all)\b',re.I)
@@ -313,9 +332,9 @@ def heteronym(raw,env):
         if env.cue('verbal_record'):
             return [Candidate('verb_stress',{'part_of_speech':'verb','source_spelling_unchanged':True},None,('governor',))]
         return []
+    if BARE_COMMAND.search(env.before) and (OBJECT_PRONOUN.match(env.after) or env.after.lstrip().startswith('the ')):
+        return [Candidate('contextual_pronunciation',{'sense':'present_read','written_token_unchanged':True},None,('syntax',))]
     if raw=='Read':
-        if re.search(CLAUSE_OPEN+'$',env.before,re.I) and OBJECT_PRONOUN.match(env.after):
-            return [Candidate('contextual_pronunciation',{'sense':'present_read','written_token_unchanged':True},None,('syntax',))]
         return []
     sense=locally_governed_read(env)
     if sense:

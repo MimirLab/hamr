@@ -90,6 +90,12 @@ def duration_words(fields):
     return ' '.join(quantity_words(str(int(value)), unit) for unit, value in fields.items())
 
 
+def duration_pair(first, second):
+    tail=identifier(second) if second=='00' else ('oh '+number_spoken(str(int(second))) if second.startswith('0')
+                                                   else number_spoken(second))
+    return number_spoken(str(int(first)))+' '+tail
+
+
 def patterns(left,right,months):
     """Order wider owners ahead of their numeric or lexical children."""
     units='(?:'+UNIT_PATTERN+')'

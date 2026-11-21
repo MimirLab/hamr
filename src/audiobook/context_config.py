@@ -17,9 +17,10 @@ CONVENTIONS = {
     'emoji_speech': {'literal','localized_name'},
     'ditto_marker': {'double_quote','ditto'},
     'expand_contractions': {True,False},
+    'expand_citations': {True,False},
     'narration_style': {'natural','technical'},
 }
-BOOLEAN_CONVENTIONS={'accounting_parentheses','expand_contractions'}
+BOOLEAN_CONVENTIONS={'accounting_parentheses','expand_contractions','expand_citations'}
 
 
 def invalid(message):

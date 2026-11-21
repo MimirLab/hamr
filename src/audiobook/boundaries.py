@@ -28,6 +28,8 @@ def period_stop(text,end,token):
     if word=='st' and next_word and next_word[0].isupper() and next_word not in STARTERS:return False
     if word in old.LABELS and re.match(r'\s*\d',after):return False
     if word in ('e.g','i.e','vs','cf','dept','approx','mt'):return False
+    if re.fullmatch(r'et[ \t]+al',word) or word=='al' and re.search(r'(?<!\w)et[ \t]+$',before,re.I):
+        return not after.strip(" \t\r\n\"”’')]") or bool(next_word and next_word[0].isupper())
     if word in ('a.m','p.m') and old.NUMBER_BEFORE.search(before):
         if next_word in DAYS or re.match(r'\s*(?:Dr|Mr|Mrs|Ms|Prof)\.',after):return False
         return next_word in STARTERS

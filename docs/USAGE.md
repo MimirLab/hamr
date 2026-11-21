@@ -122,7 +122,9 @@ English narration passes through mixed-language text such as scientific names an
 
 HAMR reads a complete EPUB ruby annotation written in kana for its ideographic base once. In other ruby markup, it reads the base and any explicitly authored definition. The companion retains the original markup. The default narration and speech checks are qualified for English.
 
-A duration label such as `Elapsed time (mm:ss)` supplies the units for `03:20`. Normal narration says the duration in minutes and seconds once. The companion and plan keep the original format, and technical narration keeps it in the speech script. When a source omits the unit order, the plan keeps the written components and offers both interpretations. Set `duration_fields` in a context convention to apply a known order to a document, chapter, or table.
+A duration label such as `Elapsed time (mm:ss)` supplies the units for `03:20`. Normal narration says the duration in minutes and seconds once. When a source omits the unit order, normal narration says “three twenty.” The plan keeps both interpretations, and technical narration says the printed components and colon. Set `duration_fields` in a context convention to apply a known order to a document, chapter, or table.
+
+Hamr keeps “et al.” in ordinary narration. Set `expand_citations: true` in the context conventions to read it as “and others.” In explicit command examples, Hamr can voice the dollar sign in a shell variable and the double dash in a long option. The plan and companion keep the command as written.
 
 In a measurement context, `1.234(5) m` is read as a length with an uncertainty of five in the final digits. The plan retains the unit, coefficient precision, and exact uncertainty digits.
 

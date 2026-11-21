@@ -82,12 +82,14 @@ def column_anchors(cells, date_headers, originals, header_columns):
 
 
 class Evidence:
-    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column, chronology=None, *, header_by_id=False):
+    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column, chronology=None, *, header_by_id=False, wrapped_prose=False):
         self.resolver = resolver
         self.text = text
         self.start = start
-        self.before = text[max(0,start-96):start].rsplit('\n',1)[-1]
-        self.continuation=text[end:end+96]
+        self.wrapped_prose=wrapped_prose
+        _,prefix=self.preceding_text(96)
+        self.before=prefix.rsplit('\n',1)[-1]
+        self.continuation=self.prose_context(text[end:end+96])
         self.after = self.continuation.split('\n',1)[0]
         self.before_start,self.after_start=start-len(self.before),end
         self.header, self.anchors = header,anchors
@@ -120,7 +122,11 @@ class Evidence:
 
     def preceding_text(self, length):
         start=max(0,self.start-length)
-        return start,self.text[start:self.start]
+        return start,self.prose_context(self.text[start:self.start])
+
+    def prose_context(self, text):
+        # Preserve character offsets when consulting text on the preceding line.
+        return text.replace('\r',' ').replace('\n',' ') if self.wrapped_prose else text
 
     def number_separator(self):
         if len(self.number_anchors)==1:
@@ -467,8 +473,11 @@ class Resolver:
                 chronology=(self.chronology_headings.get(self.scope(block)) if match.lastgroup=='slash' and a==0
                             and value==block.source and match[0]==self.chronology_entries.get(block.id) else None)
                 inferred=self.chronologies.get(self.scope(block),{}) if chronology else anchors.get(header_column,{})
+                wrapped=(block.locator.get('format')=='text' and view['kind']=='block_source'
+                         and match.lastgroup in ('heteronym','colon'))
                 env=Evidence(self,value,match.start(),match.end(),header,inferred,chapter,chapter_id,
-                             block.id if row is not None else None,header_column,chronology,header_by_id=authored_header)
+                             block.id if row is not None else None,header_column,chronology,
+                             header_by_id=authored_header,wrapped_prose=wrapped)
                 if (match.lastgroup in ('separators','measurement','uncertainty') and value==block.source and row is None
                         and not any(a<end and begin<b for begin,end in self.number_exclusions.get(block.id,()))):
                     env.number_anchors=self.number_anchors.get(self.scope(block),{})

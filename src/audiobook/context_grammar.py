@@ -217,7 +217,10 @@ def colon_duration(first, second, base, fallback, env):
         'column' if env.header_cue('duration') else 'governor' if env.cue('duration') else None)
     if not origin:
         return []
-    neutral=Candidate('duration',{**base,'field_order':None},fallback.spoken,(origin,))
+    spoken=fallback.spoken
+    if len(second)==2 and int(second)<60 and env.setting('narration_style')!='technical':
+        spoken=context_forms.duration_pair(first,second)
+    neutral=Candidate('duration',{**base,'field_order':None},spoken,(origin,))
     if int(second)>=60:
         return [neutral]
     convention=env.setting('duration_fields')
@@ -303,7 +306,13 @@ def candidates(kind, raw, env):
             return [Candidate('reference',base,fallback.spoken,('governor',))]
         if suffix is None and (durations:=colon_duration(first,second,base,fallback,env)):
             return durations
-        if (suffix or env.cue('clock')) and len(second)==2 and int(first)<24 and int(second)<60 and (suffix not in ('AM','PM') or 1<=int(first)<=12):
+        if len(second)==2 and int(first)<24 and int(second)<60 and (suffix not in ('AM','PM') or 1<=int(first)<=12):
+            clock_cue=env.cue('clock') if suffix is None else None
+            contextual=not (suffix or clock_cue) and (
+                env.cue('clock_at') and not (env.nearby('reference') or env.nearby('ratio'))
+                and (env.cue('clock_daypart',side='right') or env.cue('clock_transport',side='right')
+                     or env.nearby('clock_transport',side='left')))
+            if not (suffix or clock_cue or contextual):return [fallback]
             fields={'hour':first,'minute':second,'zone':suffix if suffix in ('UTC','GMT') else None}
             if suffix in ('AM','PM'):
                 fields['meridiem']=suffix
@@ -313,7 +322,8 @@ def candidates(kind, raw, env):
                 punctuation='.' if stop and not CLOCK_ZONE.match(env.after) else ''
                 return [Candidate('clock_time',fields,clock_words(first,second)+' '+' '.join(suffix)+punctuation,('syntax',),(part,))]
             # The existing formatter still owns unsuffixed clocks and UTC/GMT.
-            return [Candidate('clock_time',fields,None,('syntax',))]
+            return [Candidate('clock_time',fields,clock_words(first,second) if contextual else None,
+                              ('governor','nearby') if contextual and env.neighbors else ('governor',) if contextual else ('syntax',))]
         return [fallback]
     if kind=='parentheses':
         amount=raw[1:-1].strip()

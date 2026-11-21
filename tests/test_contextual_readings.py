@@ -260,6 +260,8 @@ def test_duration_separates_the_class_from_its_units():
     result=reading(source)
     plain,declared,suffixed=events(result)
     assert not result['issues'] and plain['route']=='automatic_best_guess'
+    assert 'Elapsed time: three twenty.' in speech(result)
+    assert 'Elapsed time: zero three colon two zero.' in speech(reading(source,conventions={'narration_style':'technical'}))
     assert plain['field_status']['hours']==plain['field_status']['seconds']=='unspecified'
     assert {c['fields']['field_order'] for c in plain['candidates']}=={None,'minutes_seconds','hours_minutes'}
     assert selected(declared)['fields']['hours']==selected(declared)['fields']['minutes']=='01'
@@ -275,6 +277,19 @@ def test_duration_separates_the_class_from_its_units():
     assert '(mm:ss)' not in speech(table) and '(hh:mm)' not in speech(table)
     technical=reading(source,conventions={'narration_style':'technical'})
     assert '(mm:ss)' in speech(technical) and '(hh:mm)' in speech(technical)
+
+
+def test_colon_clock_uses_actual_travel_or_time_of_day_context_in_wrapped_plain_text():
+    from audiobook.importers import plain
+
+    source='We board the train at about\r\n05:15. Be there at 06:35 this evening. The train reference at 04:25 was printed.'
+    result=plan(plain(source.encode()))
+    clock_one,clock_two,reference=[selected(event) for event in events(result)]
+    assert clock_one['fields']=={'hour':'05','minute':'15','zone':None}
+    assert clock_two['fields']=={'hour':'06','minute':'35','zone':None}
+    assert reference['kind']=='literal' and reference['fields']['components']==['04','25']
+    assert 'at about five fifteen' in speech(result) and 'at six thirty five this evening' in speech(result)
+    assert result['decisions'][0]['source']==source
 
 
 def test_uncertainty_claims_its_unit_without_losing_precision_or_identifier_scope():
@@ -450,6 +465,29 @@ def test_contextual_pronunciation_keeps_source_spelling_and_defers_realization()
     assert speech(contrast)=='The note was read daily. She asked me to read yesterday.'
 
 
+def test_optional_citation_expansion_preserves_sentence_joins_and_literal_mentions():
+    source='Smith et al. report the result. We first read Chen et al. Their findings agree. Print et al. exactly as written.'
+    unexpanded=reading(source)
+    assert speech(unexpanded)==source
+    assert [span['text'] for span in unexpanded['decisions'][0]['sentence_spans']]==[
+        'Smith et al. report the result.','We first read Chen et al.','Their findings agree.','Print et al. exactly as written.']
+    expanded=reading(source,conventions={'expand_citations':True})
+    assert speech(expanded)==('Smith and others report the result. We first read Chen and others. '
+                              'Their findings agree. Print et al. exactly as written.')
+    assert expanded['decisions'][0]['source']==source
+
+
+def test_shell_language_requires_context_and_code_tokens_keep_source_shape():
+    source='Run echo "$HOME". Use the option --no-cache. The label reads $HOME.'
+    result=reading(source)
+    shell,option,unknown=[selected(event) for event in events(result)]
+    assert shell['fields']['exact_characters']=='$HOME' and shell['fields']['source_language']=='shell'
+    assert option['fields']['exact_characters']=='--no-cache' and option['fields']['leading_hyphens']==2
+    assert 'source_language' not in unknown['fields']
+    assert speech(result)=='Run echo "dollar sign HOME". Use the option double dash no dash cache. The label reads $HOME.'
+    assert result['decisions'][0]['source']==source
+
+
 def test_coordinated_read_keeps_the_verb_form_of_its_own_phrase():
     source=('He opened the envelope and read the note. She will open the envelope and read the note. '
             'Then arose a quiet, thoughtful guest, whose face showed no surprise at the story, and read a poem.')
@@ -479,6 +517,18 @@ def test_reading_sense_uses_auxiliaries_and_leaves_plain_ambiguity_open():
     assert {c['fields']['sense'] for c in final['candidates']}=={None,'past_read','present_read'}
     assert speech(result)==source
     assert reading('I read it.',mode='strict')['issues']
+
+
+def test_reading_sense_uses_perfect_and_imperative_context_in_plain_text():
+    from audiobook.importers import plain
+
+    source=("I've so often read it before. The witness had twice\r\nread the note. "
+            "'Herald, read the announcement!' she said. What do you read? I read it.")
+    result=plan(plain(source.encode()))
+    senses=[selected(event)['fields']['sense'] for event in events(result) if event['source']=='read']
+    assert senses==['past_read','past_read','present_read','present_read',None]
+    assert result['decisions'][0]['source']==source
+    assert 'I read it.' in speech(result) and not result['issues']
     assert not [row for row in events(reading('Ms. Read inspected the order.')) if row['source']=='Read']
 
 
