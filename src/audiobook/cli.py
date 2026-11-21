@@ -58,6 +58,10 @@ def print_doctor(result):
         if host['system'] != 'Windows':
             print(f'Manual: {installation["manual"] or "unavailable on the manual path"}')
         print(f'Speech checking: {"ready" if result["speech_checks_ready"] else "run hamr setup"}')
+    if ocr:=result.get('ocr'):
+        print(f'Scanned PDFs: {ocr["active_profile"] or "setup available" if ocr["local_engine"] else "Tesseract required"}')
+        print(f'  {ocr["reason"]}')
+        if not ocr['ready']: print(f'  {ocr["action"]}')
     for gpu in host['gpus']:
         memory=gpu.get('available_vram_bytes')
         detail=f'{memory/1024**3:.1f} GiB available budget/free memory' if memory is not None else 'shared or unknown memory'
@@ -196,6 +200,8 @@ def parser():
     scope=q.add_mutually_exclusive_group()
     scope.add_argument('--engine-only',action='store_true',help='Set up just the speech engine')
     scope.add_argument('--checks-only',action='store_true',help='Set up offline speech checking')
+    scope.add_argument('--ocr-only',action='store_true',help='Set up offline OCR for scanned PDFs')
+    q.add_argument('--ocr-profile',choices=('auto','tesseract-fast'),help='Also set up scanned PDF support using this profile')
     sub('profiles','Show pinned candidate catalog and implemented profiles')
     for name in ['plan','queue','open']:
         q=sub(name,{'plan':'Inspect and plan without model setup','queue':'Persist a headless job','open':'Review and start a document'}[name]); add_source(q)
@@ -363,9 +369,17 @@ def dispatch(argv=None):
             writejson(s.root/'profiles'/(a.name+'.json'),value); emit(value,True)
         elif a.command=='setup':
             from .checks_setup import preflight, provision
+            from .ocr_setup import provision as provision_ocr
             from .setup_progress import SetupProgress
             progress=SetupProgress()
-            if a.checks_only:
+            if a.ocr_profile and (a.checks_only or a.engine_only):
+                raise Error('setup_scope','--ocr-profile needs ordinary setup or --ocr-only.')
+            if a.ocr_only:
+                if a.backend_profile or a.auto or a.choose:
+                    raise Error('setup_scope','--ocr-only does not select a speech engine.')
+                with s.lock():
+                    result={'schema_version':1,'ocr':provision_ocr(s,progress,a.cache,a.ocr_profile or 'auto')}
+            elif a.checks_only:
                 if a.backend_profile or a.auto or a.choose:
                     raise Error('setup_scope', '--checks-only does not select a speech engine.')
                 with s.lock():
@@ -375,11 +389,26 @@ def dispatch(argv=None):
                                                             include_checks=not a.engine_only)
                 if not a.engine_only: preflight()
                 stage=None if a.engine_only else lambda: provision(s,progress,a.cache)
+                ocr_profile=a.ocr_profile
+                if not ocr_profile and not (a.engine_only or jm or a.auto) and sys.stdin.isatty():
+                    from .ocr_setup import MODEL_BYTES, NOTICE_BYTES
+                    from .pdf_ocr import tesseract_binary
+                    if tesseract_binary()[0].is_file():
+                        megabytes=(MODEL_BYTES+NOTICE_BYTES) / 1_000_000
+                        try: answer=input(f'Add offline scanned PDF support using installed Tesseract ({megabytes:.1f} MB)? [Y/n] ').strip().lower()
+                        except EOFError: answer='n'
+                        if answer in ('','y','yes'): ocr_profile='auto'
+                    else:
+                        print('Scanned PDFs can be enabled after installing Tesseract. Run hamr setup --ocr-only.')
                 result=setup(s,selected,a.cache,progress=progress,before_activate=stage)
+                if ocr_profile:
+                    with s.lock():
+                        result['ocr']=provision_ocr(s,progress,a.cache,ocr_profile)
             if jm: emit(result,True)
             else:
                 if result.get('profile'): print(f'Speech engine ready: {result["profile"]}')
                 if result.get('speech_checks'): print('Offline speech checking ready.')
+                if result.get('ocr'): print('Offline scanned PDF support ready.')
                 print('Next: hamr open "My book.epub" --voice cast:nigel-thornberry')
         elif a.command=='plan':
             from .book_flow import check_source

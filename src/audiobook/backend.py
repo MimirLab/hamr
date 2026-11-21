@@ -46,13 +46,14 @@ def doctor(store):
     from .hardware import inspect_host,advise
     from .checks_setup import configured
     from .installation import inspect as inspect_installation
+    from .ocr_setup import describe as describe_ocr
     host=inspect_host();advice=advise(host,loadjson(CATALOG))
     dependencies={x:shutil.which(x) for x in ['ffmpeg','ffprobe','mpv','tesseract']}
     issues=[{'code':'missing_dependency','executable':x,'action':f'Install {x} in user space before rendering.'} for x in ('ffmpeg','ffprobe') if not dependencies[x]]
     installation,installation_issues=inspect_installation()
     if not dependencies['mpv']:
         issues.append({'code':'missing_player','executable':'mpv','action':'Install mpv to use hamr playback commands.'})
-    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,**advice}
+    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,'ocr':describe_ocr(store,host),**advice}
 
 def acquire(url,dst,expected,size,*,progress=None,label=None):
     label=label or dst.name

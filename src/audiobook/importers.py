@@ -489,13 +489,14 @@ def epub(data:bytes)->Document:
 
 def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
     import pypdfium2 as pdfium
-    from PIL import Image,ImageChops,ImageStat
+    from .pdf_visual import Observer, authored_artifact, bind_captions, merge_regions, regional_images
     from .pdf_geometry import crop_glyphs,glyph_baseline
     from .pdf_textlayer import nonpainting_regions
     from .text_evidence import suspect_characters
     try: doc=pdfium.PdfDocument(data)
     except Exception: raise Error('unreadable_pdf','PDF is protected, damaged or unsupported.')
     out=[]; inventory=[];outlines=[]
+    visual=Observer(ocr_cache,ocr_config)
     for index,item in enumerate(doc.get_toc()):
         destination=item.get_dest();page_index=destination.get_index() if destination else None
         mode,position=destination.get_view() if destination else (0,[])
@@ -516,66 +517,40 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
         entry['visible_cropbox']=list(box)
         inventory.append(entry)
         chapter=f'Page {n+1}'
-        content_images=images
+        visual_objects=[]
+        artifacts=[]
+        for obj,rect in image_objects:
+            if authored_artifact(obj): artifacts.append(rect)
+            else: visual_objects.append((obj,rect))
+        content_images=[rect for _,rect in visual_objects]
+        if artifacts:entry['authored_raster_artifacts']=artifacts
         panels,marks=[],[]
         cached_glyphs=None
-        if len(images)>=4 and not nonpainting and native.strip() and entry['native_geometry_qualified']:
+        if len(visual_objects)>=4 and not nonpainting and native.strip() and entry['native_geometry_qualified']:
             from .pdf_rules import classify
             cached_glyphs=crop_glyphs(tp,box)
-            panels,rules,marks,remaining=classify(image_objects,cached_glyphs[0])
+            panels,rules,marks,remaining=classify(visual_objects,cached_glyphs[0])
             if panels:
                 entry.update(raster_table_rules=rules,raster_text_marks=marks,raster_content_regions=remaining,ruled_panels=panels)
                 content_images=remaining
-        if content_images or nonpainting or not native.strip():
-            entry['ocr_admission']=[reason for condition,reason in ((content_images,'raster content regions'),(nonpainting,'nonpainting text layer'),(not native.strip(),'no native text')) if condition]
-            bitmap=page.render(scale=2); im=bitmap.to_pil().convert('RGB')
-            extrema=ImageStat.Stat(im).stddev
-            if max(extrema)<0.8 and not native.strip():
-                entry['route']='verified_blank'; bitmap.close(); tp.close(); page.close(); continue
-            try:
-                from .pdf_ocr import configuration,observe
-                if ocr_config is None:ocr_config=configuration()
-                b=io.BytesIO(); im.save(b,format='PNG')
-                observed,reused=observe(b.getvalue(),ocr_config,ocr_cache)
-                if ocr_cache is not None:
-                    import sys
-                    print(f'PDF visual OCR: {n+1}/{len(doc)} pages; '+('saved observation reused.' if reused else 'observation checkpointed.'),file=sys.stderr,flush=True)
-                rows=[x.split('\t',11) for x in observed.splitlines()[1:]]
-                words=[x for x in rows if len(x)==12 and x[11].strip() and float(x[10])>=0]
-                groups={}
-                for x in words: groups.setdefault(tuple(x[1:5]),[]).append(x)
-                text='\n'.join(' '.join(x[11] for x in group) for group in groups.values())
-                conf=sum(float(x[10]) for x in words)/max(1,len(words)); issue=None
-                if not text.strip() or conf<65: issue='Visible page text could not be read reliably.'
-                from .pdf_fidelity import damaged_regnal_glyph,disputes
-                critical_disputes=disputes(native,text);entry['critical_disputes']=critical_disputes
-                if critical_disputes:issue='Native and visual OCR disagree on critical values or mathematical notation. Verify the visible source before rendering this page.'
-                if not issue and any(float(x[10])<70 and re.search(r'\d',x[11]) for x in words): issue='Low-confidence numeric OCR requires verification.'
-                entry.update(route='visual_ocr',ocr_confidence=conf,native_observation=native,ocr_observation=text,raw_OCR_reused=reused,ocr_words=[{'text':x[11],'confidence':float(x[10]),'rect_pixels':[int(v) for v in x[6:10]],'group':[int(v) for v in x[1:5]]} for x in words])
-                from .pdf_layout import paragraphs
-                parts=paragraphs(words,n+1,h,None if critical_disputes else issue)
-                from .pdf_regions import localize,glyph_reader
-                box=page.get_bbox();media=page.get_mediabox()
-                geometry=page.get_rotation()==0 and all(abs(a-b)<.01 for a,b in zip(box,(0,0,w,h))) and all(abs(a-b)<.01 for a,b in zip(box,media))
-                native_region=glyph_reader(tp) if geometry else lambda rect:''
-                entry['critical_localization']=localize(parts,native,text,native_region,geometry)
-                if not parts:
-                    parts=[{'text':text,'locator':{'format':'pdf','page':n+1,'rect':[0,0,w,h]},'issue':issue}]
-                from .pdf_words import localize_words
-                entry['lexical_localization']=localize_words(parts,native,text,native_region,geometry)
-                for part in parts:
-                    if damaged_regnal_glyph(part['text']):
-                        reason='Visual OCR shows an unmatched bracket in a possible regnal numeral. Verify the printed reading before synthesis.'
-                        part['issue']=' '.join(filter(None,(part['issue'],reason)))
-                    locator=part['locator']
-                    joins=locator.pop('line_wrap_joins',None)
-                    out.append(block(part['text'],locator,'body',chapter,['Independent raster inventory','Tesseract paragraph geometry','Native text retained as competing observation'],part['issue']))
-                    if joins:locator['line_wrap_joins']=joins
-            except Error as e:
-                out.append(block(native,{'format':'pdf','page':n+1,'rect':[0,0,w,h]},'unreadable',chapter,['Raster inventory'],e.message))
-            except (subprocess.SubprocessError,OSError):
-                out.append(block(native,{'format':'pdf','page':n+1,'rect':[0,0,w,h]},'unreadable',chapter,issue='OCR failed; verify this page.'))
-            finally: bitmap.close()
+        crops=None
+        if (content_images and native.strip() and not nonpainting and not damaged
+                and entry['native_geometry_qualified'] and not panels):
+            if cached_glyphs is None:
+                cached_glyphs=crop_glyphs(tp,box)
+            crops=regional_images(content_images,cached_glyphs[0],w,h)
+        first_block=len(out)
+        if crops is None and (content_images or nonpainting or damaged or not native.strip()):
+            entry['ocr_admission']=[reason for condition,reason in ((content_images,'raster content regions'),
+                (nonpainting,'nonpainting text layer'),(damaged,'native character mapping'),(not native.strip(),'no native text')) if condition]
+            parts, observation=visual.read(page,tp,entry,[0,0,w,h],native)
+            entry['route']='verified_blank' if observation['status']=='verified_blank' else 'visual_ocr'
+            entry.update({key:value for key,value in observation.items() if key not in ('rect','status')})
+            entry['visual_observations']=[observation]
+            for part in parts:
+                locator=part['locator']
+                out.append(block(part['text'],locator,part.get('role','body'),chapter,
+                                 ['Independent visual OCR','Native observation retained'],part['issue']))
         else:
             # Build glyph lines, then use a large central gutter only with bilateral evidence.
             from .pdf_overlays import verified_overlays
@@ -665,6 +640,22 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
                         observations.append({**overlay,'source_span':[start,start+len(overlay['text'])]})
                 if observations:locator['duplicate_paint_observations']=observations
             if not segments and native.strip():out.append(block('',{'format':'pdf','page':n+1,'rect':[0,0,w,h]},'unreadable',chapter,issue='Native glyphs fall outside the visible crop; verify whether the visible page is blank.'))
+        if crops:
+            entry['route']='regional_visual_ocr'
+            entry['ocr_admission']=['disjoint visible raster regions']
+            observations=[]
+            for rect in crops:
+                parts, observation=visual.read(page,tp,entry,rect,regional=True)
+                observations.append(observation)
+                for part in parts:
+                    output=block(part['text'],part['locator'],part.get('role','body'),chapter,
+                                 ['Independent regional visual OCR'],part['issue'])
+                    observation.setdefault('source_blocks',[]).append(output.id)
+                    out.append(output)
+            entry['visual_observations']=observations
+            blocks=out[first_block:]
+            bind_captions(blocks,observations)
+            out[first_block:]=merge_regions(blocks,w)
         tp.close(); page.close()
     doc.close()
     from .pdf_layout import mark_folios
@@ -711,7 +702,7 @@ def inspect(path:Path)->Document:
     if not d.blocks: raise Error('empty_document','Document contains no narratable material.')
     return d
 
-IMPORT_REVISION='import-23'
+IMPORT_REVISION='import-24'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .core import atomic,key,loadjson,writejson,filehash
     import importlib.metadata
@@ -719,32 +710,21 @@ def cached_inspect(path:Path,cache:Path)->Document:
     with path.open('rb') as f: data=f.read(MAX_INPUT+1)
     if len(data)>MAX_INPUT: raise Error('input_limit','Input exceeds 200 MiB.')
     dependencies={name:importlib.metadata.version(name) for name in ['beautifulsoup4','lxml','markdown-it-py','mdit-py-plugins','pypdfium2','Pillow','tinycss2','webencodings']}
-    ocr_config=None;reusable_extraction=True
-    if path.suffix.lower()=='.pdf':
-        import shutil
-        ocr_root=Path(os.environ.get('AUDIOBOOK_OCR_ROOT',Path.home()/'.local/share/audiobook-tools/ocr'))
-        exe=Path(shutil.which('tesseract') or ocr_root/'usr/bin/tesseract')
-        dependencies['ocr_binary']=filehash(exe) if exe.is_file() else 'missing'
-        datafile=ocr_root/'usr/share/tessdata/eng.traineddata'
-        dependencies['ocr_eng']=filehash(datafile) if datafile.is_file() else 'system'
-        from .pdf_ocr import configuration
-        try:
-            ocr_config=configuration();dependencies['ocr_observer']=ocr_config[2]
-            reusable_extraction=ocr_config[3]
-        except Error:
-            reusable_extraction=False
     implementation={p.name:filehash(p) for p in Path(__file__).parent.glob('*.py') if p.name in ('importers.py','pronunciation.py','markdown_notes.py','text_source.py','text_evidence.py') or p.name.startswith(('epub_','pdf_'))}
     identity=key({'source':digest(data),'extension':path.suffix.lower(),'import_revision':IMPORT_REVISION,'dependencies':dependencies,'implementation':implementation})
     target=cache/(identity+'.json')
     if target.is_symlink(): raise Error('unsafe_path','Extraction cache entry cannot be a symlink.')
-    if target.exists() and reusable_extraction:
+    if target.exists():
         envelope=loadjson(target); payload=envelope['document']
         if envelope['document_sha256']==key(payload) and payload['source_sha256']==digest(data):
             return Document(payload['title'],payload['format'],payload['source_sha256'],[Block(**b) for b in payload['blocks']],payload['language'],payload['inventory'],payload['warnings'],payload.get('metadata',{}))
     # Import from the immutable bytes we just identified, never reread the mutable path.
     adapter=input_adapter(path)
-    doc=adapter(data,ocr_cache=cache/'pdf-observations',ocr_config=ocr_config) if path.suffix.lower()=='.pdf' else adapter(data)
+    doc=adapter(data,ocr_cache=cache/'pdf-observations') if path.suffix.lower()=='.pdf' else adapter(data)
     if not doc.blocks: raise Error('empty_document','Document contains no narratable material.')
     payload=doc.json()
-    if reusable_extraction:writejson(target,{'document_sha256':key(payload),'document':payload,'import_revision':IMPORT_REVISION,'dependencies':dependencies,'implementation':implementation})
+    visual=[observation for page in doc.inventory if isinstance(page,dict)
+            for observation in page.get('visual_observations',[])]
+    if all(observation['status']=='verified_blank' for observation in visual):
+        writejson(target,{'document_sha256':key(payload),'document':payload,'import_revision':IMPORT_REVISION,'dependencies':dependencies,'implementation':implementation})
     return doc

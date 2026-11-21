@@ -202,9 +202,11 @@ Ready output is `~/Audiobooks/JOB-rREV/`: `book.m4b`, `source.html`, `companion.
 
 ## PDF and OCR
 
-Native PDF glyph rectangles are inventoried separately from raster regions. The importer tests a detected central gutter and uses spanning elements to split bands. Any raster-backed page is OCR'd as a visual competing observation, including selectable/hidden text. Numeric disagreement blocks that page for review while clear pages render. The current whole-page OCR route needs further complex-layout validation. Semantic tags, robust furniture suppression, charts and structured math speech remain pending.
+Searchable PDFs with reliable visible text go straight to planning. In a mixed PDF, Hamr retains native text and reads scan insets in their own crops when their boundaries are clear. It keeps competing visible and hidden text observations, checks reliable column geometry, and reports unresolved regions by page. On a uniquely captioned figure, the companion keeps the crop, its recognized labels, and its authored caption together. Captions follow the normal reading policy.
 
-Tesseract may be on PATH or extracted in user space under `~/.local/share/audiobook-tools/ocr`, with `usr/bin/tesseract`, `usr/lib` and `usr/share/tessdata`. `AUDIOBOOK_OCR_ROOT` overrides that root. Missing OCR is reported as an exact unresolved page and does not silently omit it. OCR assets are acquired separately from the program.
+When Tesseract is installed, guided setup offers English scanned-PDF support. Run `hamr setup --ocr-only` to add the pinned English model to an existing installation, or `hamr setup --ocr-profile auto` with your ordinary setup options. The model and notice total about 4.1 MB, with Tesseract supplied by your system. `hamr doctor` reports whether OCR is ready. The model runs on the CPU and recognition stays local. Tesseract can be on PATH or in a user-space tree selected by `AUDIOBOOK_OCR_ROOT`.
+
+If interrupted before a job ID appears, repeat `hamr open` with the same PDF to reuse completed OCR checkpoints. Once you have a job ID, use `hamr resume JOB`. For an existing job held on a page whose OCR engine was missing, enable OCR and use `hamr repair JOB --reimport` before resuming. Large or unresolved regions remain source findings, with their observations available locally for review.
 
 ## Cleanup and uninstall
 

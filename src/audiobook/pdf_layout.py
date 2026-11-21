@@ -57,20 +57,77 @@ def apply_line_wraps(text, joins):
     return text
 
 
-def paragraphs(words, page, height, page_issue=None):
+def column_order(items, width, rect, *, min_lines=3):
+    """Keep whole columns in order when geometry establishes a central gutter."""
+    left = [item for item in items if rect(item)[2] <= width * .52]
+    right = [item for item in items if rect(item)[0] >= width * .48 and item not in left]
+    if len(left) < min_lines or len(right) < min_lines:
+        return None
+    if min(rect(item)[0] for item in right)-max(rect(item)[2] for item in left) < 12:
+        return None
+    if min(max(rect(item)[3] for item in side) for side in (left,right)) <= max(
+            min(rect(item)[1] for item in side) for side in (left,right)):
+        return None
+    spanning = [item for item in items if item not in left and item not in right]
+    ordered, high = [], float('inf')
+    for item in sorted(spanning,key=lambda value: -rect(value)[3]):
+        y = rect(item)[3]
+        for side in (left,right):
+            ordered.extend(sorted((part for part in side if y <= rect(part)[3] < high), key=lambda part: -rect(part)[3]))
+        ordered.append(item)
+        high = y
+    for side in (left,right):
+        ordered.extend(sorted((part for part in side if rect(part)[3] < high), key=lambda part: -rect(part)[3]))
+    return ordered
+
+
+def paragraphs(words, page, height, page_issue=None, *, region=None, width=None):
+    origin_left, origin_top = (region[0], region[3]) if region else (0, height)
     groups = OrderedDict()
     for word in words:
         groups.setdefault(tuple(word[1:4]), []).append(word)
+
+    def rectangle(group):
+        left = min(int(x[6]) for x in group) / 2
+        top = min(int(x[7]) for x in group) / 2
+        right = max(int(x[6]) + int(x[8]) for x in group) / 2
+        bottom = max(int(x[7]) + int(x[9]) for x in group) / 2
+        return [origin_left+left, origin_top-bottom, origin_left+right, origin_top-top]
+
+    layout = None
+    if width:
+        line_parts = []
+        for identity, group in groups.items():
+            lines = OrderedDict()
+            for word in group:
+                lines.setdefault(word[4], []).append(word)
+            for line in lines.values():
+                left, right = [], []
+                for word in line:
+                    coordinate = origin_left + int(word[6]) / 2
+                    (left if coordinate < width / 2 else right).append(word)
+                if left and right and rectangle(right)[0] - rectangle(left)[2] >= 18:
+                    line_parts.extend((identity, side, rectangle(side)) for side in (left, right))
+                else:
+                    line_parts.append((identity, line, rectangle(line)))
+        if ordered := column_order(line_parts, width, lambda part: part[2]):
+            groups = OrderedDict()
+            previous = None
+            for identity, line, rect in ordered:
+                side = 'left' if rect[2] <= width * .52 else 'right' if rect[0] >= width * .48 else 'spanning'
+                key = (identity, side)
+                if key != previous:
+                    groups[len(groups)] = []
+                groups[len(groups)-1].extend(line)
+                previous = key
+            layout = 'geometric_two_columns'
+
     result = []
     for index, group in enumerate(groups.values()):
         lines = OrderedDict()
         for x in group:
             lines.setdefault(x[4], []).append(x)
         text = '\n'.join(' '.join(x[11] for x in line) for line in lines.values())
-        left = min(int(x[6]) for x in group) / 2
-        top = min(int(x[7]) for x in group) / 2
-        right = max(int(x[6]) + int(x[8]) for x in group) / 2
-        bottom = max(int(x[7]) + int(x[9]) for x in group) / 2
         confidence = sum(float(x[10]) for x in group) / len(group)
         issue = None
         if confidence < 65:
@@ -79,8 +136,10 @@ def paragraphs(words, page, height, page_issue=None):
             issue = 'Low-confidence numeric OCR requires verification.'
         if page_issue and page_issue.startswith('Native and visual'):
             issue = page_issue
-        locator = {'format': 'pdf', 'page': page, 'rect': [left, height-bottom, right, height-top],
+        locator = {'format': 'pdf', 'page': page, 'rect': rectangle(group),
                    'paragraph': index, 'ocr_confidence': confidence}
+        if layout:
+            locator['ocr_layout'] = layout
         result.append({'text': text, 'locator': locator, 'issue': issue})
     return result
 
