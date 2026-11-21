@@ -113,6 +113,7 @@ class Evidence:
         self.currency_label=None
         self.number_anchors={}
         self.duration_label=None
+        self.scale_span=None
 
     def setting(self, name):
         return self.settings.get(name)
@@ -191,6 +192,8 @@ class Evidence:
         if not self.header:return None
         match=SCALE_HEADER.search(self.header)
         if not match:return None
+        label_end=len(self.header[:match.start()].rstrip())
+        if label_end:self.scale_span=(label_end,match.end())
         symbol,plural=match.groups()
         currency={'$':self.setting('dollar_currency'),'£':'GBP','€':'EUR'}.get(symbol,symbol)
         return currency,plural[:-1],{'thousands':'1000','millions':'1000000','billions':'1000000000'}[plural]
@@ -485,16 +488,24 @@ class Resolver:
                 result,spoken=self.outcome(block,view,match,env,options)
                 records.append(result)
                 if spoken is not None:
-                    if env.duration_label and env.setting('narration_style')!='technical' and not result.get('hold'):
+                    if (env.duration_label or env.scale_span) and env.setting('narration_style')!='technical' and not result.get('hold'):
                         selected=next(candidate for candidate in result['candidates'] if candidate['id']==result['selected'])
-                        if selected['fields'].get('field_order'):
-                            first,last=env.duration_label
+                        label=None
+                        if env.duration_label and selected['fields'].get('field_order'):
+                            label=env.duration_label
+                            audit_key, realization='duration_format', 'spoken_duration_units'
+                        elif (env.scale_span and result['source']==value and selected['kind']=='scaled_quantity'
+                              and selected['fields'].get('currency')):
+                            label=env.scale_span
+                            audit_key, realization='scale_format', 'spoken_scale_and_currency'
+                        if label:
+                            first,last=label
                             origin=start-len(header)-2 if header is not None else start
                             label_start,label_end=origin+first,origin+last
                             if not any(label_start<end and begin<label_end for begin,end,_,_ in slots):
                                 slots.append((label_start,label_end,'',None))
-                                result['duration_format']={'span':[first,last],'scope':'table_header' if header is not None else view['kind'],
-                                                           'source':text[label_start:label_end],'rendered_as':'spoken_duration_units'}
+                                result[audit_key]={'span':[first,last],'scope':'table_header' if header is not None else view['kind'],
+                                                   'source':text[label_start:label_end],'rendered_as':realization}
                     slots.append((a,b,spoken,result))
         if guard_slots and records:
             records.sort(key=lambda row:(row['view'].get('row',0),row['view'].get('column',0),row['expression_span']))

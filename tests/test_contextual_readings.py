@@ -602,8 +602,14 @@ def test_epub_table_header_references_do_not_borrow_an_unowned_column():
     options={'context':{'conventions':{'dollar_currency':'USD'}}}
     result=plan(epub(book({'c':markup},['c'])),options)
     assert not result['issues']
-    assert 'Revenue ($ millions): two hundred twenty two million U S dollars' in speech(result)
+    assert 'Revenue: two hundred twenty two million U S dollars' in speech(result)
     assert 'Code: three three three' in speech(result)
+    scaled=next(event for event in events(result) if event['source']=='222')
+    assert scaled['scale_format']['source']==' ($ millions)'
+    assert scaled['scale_format']['rendered_as']=='spoken_scale_and_currency'
+    technical={'context':{'conventions':{'dollar_currency':'USD','narration_style':'technical'}}}
+    assert 'Revenue ($ millions)' in speech(plan(epub(book({'c':markup},['c'])),technical))
+    assert 'Revenue ($ millions)' in speech(plan(epub(book({'c':markup},['c']))))
     for broken in ('missing','a b'):
         release=plan(epub(book({'c':markup.replace('headers="b"',f'headers="{broken}"')},['c'])),options)
         assert release['issues'] and 'Authored table header references' in release['issues'][0]['reason']
