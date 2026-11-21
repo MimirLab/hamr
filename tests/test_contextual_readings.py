@@ -7,6 +7,7 @@ from audiobook.core import Error
 from audiobook.importers import markdown
 from audiobook.pipeline import critical
 from audiobook.planner import plan
+from audiobook.speech_compare import comparison_tokens
 
 
 def events(result):
@@ -167,6 +168,13 @@ def test_qa_joins_recognizer_digits_only_for_a_complete_coefficient():
     assert 'quantity' in critical(expected,'The measured coefficient was 0.4535 923.')
     assert 'quantity' in critical(expected,'The measured coefficient was 0.4535; 9237.')
     assert 'quantity' in critical('The reference was 0.45359237.','The reference was 0.4535 9237.')
+
+
+def test_speech_qa_ignores_the_inaudible_its_apostrophe():
+    expected='Vulpes vulpes, its scientific name.'
+    assert comparison_tokens(expected)==comparison_tokens('Vulpes vulpes, it’s scientific name.')
+    assert comparison_tokens(expected)!=comparison_tokens('Vulpes vulpes, scientific name.')
+    assert comparison_tokens(expected)!=comparison_tokens('Vulpies, Vulpies, it’s scientific name.')
 
 
 def test_measurement_symbols_keep_case_and_use_comparison_evidence():

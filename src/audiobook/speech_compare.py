@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v21'
+POLICY='bounded-english-composed-scale-typed-v22'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -224,6 +224,7 @@ def comparison_tokens(text):
         elif t=='cannot':out.extend(['can','not'])
         elif t.endswith("n't") and t!="ain't":out.extend([t[:-3],'not'])
         elif t=="ain't":out.append(t)
+        elif t=="it's":out.append('its')
         elif re.fullmatch('n+o+',t):out.append('no')
         else:out.append(t)
         i+=1
