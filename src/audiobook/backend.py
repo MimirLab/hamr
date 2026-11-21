@@ -126,7 +126,11 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None):
             if re.search(r'out.of.(?:device.|host.)?memory|failed to allocate|allocation failed|VK_ERROR_OUT_OF',text,re.I):
                 raise Error('insufficient_memory',f'{profile} could not allocate enough memory for startup.','Close memory-heavy applications, run hamr doctor, then try a smaller model (vulkan-q8, vulkan-q6, vulkan-q4), vulkan-q8-cpu-text-encoder, or cpu-q4. Previously active settings are preserved.') from exc
             if re.search(r'VK_ERROR_INCOMPATIBLE_DRIVER|no (?:vulkan|physical).*device|failed.*vulkan|libvulkan.*cannot open',text,re.I):
-                raise Error('vulkan_unavailable',f'{profile} could not start with the installed Vulkan driver.',f'Run hamr doctor and vulkaninfo --summary; check the Vulkan loader and vendor ICD. CPU execution (cpu-q4) avoids the GPU but still needs libvulkan.so.1. Startup details: {store.root / "runtime/backend.log"}') from exc
+                if windows:
+                    hint='Update the graphics driver and run hamr doctor. The processor-only option (cpu-q4) still uses the driver’s Vulkan loader.'
+                else:
+                    hint='Run hamr doctor and vulkaninfo --summary. The processor-only option (cpu-q4) still needs the Vulkan loader (libvulkan.so.1).'
+                raise Error('vulkan_unavailable',f'{profile} could not start with the installed Vulkan driver.',f'{hint} Startup details: {store.root / "runtime/backend.log"}') from exc
             raise Error(exc.code,exc.message,f'{exc.action} Profile: {profile}. Startup log: {store.root / "runtime/backend.log"}. Run hamr doctor for another starting choice.') from exc
         result={'schema_version':1,'profile':profile,'health':health,'identity':identity,'model_terms':str(terms),'runtime_platform':variant}
         if before_activate:

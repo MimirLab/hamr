@@ -56,7 +56,7 @@ jobs:
           & $hamr --version
           & $hamr --home 'preview state' voice sample nigel-thornberry --json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Render one checked Windows CPU control
+      - name: Render and recover Windows CPU controls
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[windows-speech]')
         timeout-minutes: 12
         shell: pwsh
@@ -86,3 +86,36 @@ jobs:
           ffprobe -v error -show_entries format=duration -of json $m4b
           $inspection = (& $hamr --home 'speech state' agent inspect $result.job --verify | Out-String) | ConvertFrom-Json
           if (-not $inspection.publication_verified) { throw 'Publication checksums did not verify.' }
+
+          Set-Content 'Recovery control.md' 'A small bird sang in the garden.'
+          $queued = (& $hamr --home 'speech state' queue 'Recovery control.md' --output 'published' --voice cast:nigel-thornberry --json | Out-String) | ConvertFrom-Json
+          $previousCount = @(Get-ChildItem 'speech state\clips' -Filter audio.pcm -File -Recurse).Count
+          $PSNativeCommandUseErrorActionPreference = $false
+          $env:AUDIOBOOK_FAULT = 'after_clip_rename'
+          try {
+            & $hamr --home 'speech state' resume $queued.job --json
+            $interruptedExit = $LASTEXITCODE
+          } finally {
+            Remove-Item Env:AUDIOBOOK_FAULT
+            $PSNativeCommandUseErrorActionPreference = $true
+          }
+          if ($interruptedExit -ne 86) { throw "Expected an interrupted render, got $interruptedExit." }
+          $committed = @(Get-ChildItem 'speech state\clips' -Filter audio.pcm -File -Recurse | ForEach-Object { Get-FileHash -LiteralPath $_.FullName })
+          if ($committed.Count -ne ($previousCount + 1)) { throw 'The interrupted render did not commit a take.' }
+
+          $PSNativeCommandUseErrorActionPreference = $false
+          $recovery = & $hamr --home 'speech state' resume $queued.job --json | Out-String
+          $recoveryExit = $LASTEXITCODE
+          $PSNativeCommandUseErrorActionPreference = $true
+          $recovered = $recovery | ConvertFrom-Json
+          if ($recoveryExit -ne 0 -or $recovered.status -ne 'ready') { throw "The interrupted control did not publish. $recovery" }
+          foreach ($take in $committed) {
+            if ((Get-FileHash -LiteralPath $take.Path).Hash -ne $take.Hash) { throw 'Resume changed committed audio.' }
+          }
+          ffmpeg -v error -nostdin -i (Join-Path $recovered.output 'book.m4b') -map '0:a:0' -f null -
+          & $hamr --home 'speech state' cleanup --apply --json
+          foreach ($publishedJob in @($result.job, $recovered.job)) {
+            $inspection = (& $hamr --home 'speech state' agent inspect $publishedJob --verify | Out-String) | ConvertFrom-Json
+            if (-not $inspection.publication_verified) { throw 'Cleanup did not preserve a ready book.' }
+          }
+          Write-Output 'Recovery kept committed audio hashes. Both books decoded or probed and verified after cleanup.'
