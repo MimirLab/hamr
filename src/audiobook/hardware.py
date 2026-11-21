@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import json
+from .runtime_catalog import runtime_key
 
 GIB = 1024 ** 3
 UPSTREAM = 'https://github.com/HoppouAI/Breeze-TTS-2.cpp/blob/4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6/README.md#weights'
@@ -18,7 +19,7 @@ UPSTREAM = 'https://github.com/HoppouAI/Breeze-TTS-2.cpp/blob/4110a9fff4e47d4d1b
 # GPU lower bounds follow the pinned upstream table. CPU offload is unmeasured.
 BUDGETS = {
     'vulkan-f16': ((7, 9), (4, 8), 'F16', 'Least weight compression; reference baseline.', 'Local speech/clone rendering on Radeon RX 6800 XT 16 GiB.'),
-    'vulkan-q8': ((4, 6), (3, 6), 'Q8', 'Smaller weights; often faster; compare your narrator.', 'Local short speech/clone controls on Radeon RX 6800 XT 16 GiB.'),
+    'vulkan-q8': ((4, 6), (3, 6), 'Q8', 'Smaller weights and lower memory use. Compresses parts of the depth decoder and codec.', 'Local matched speech/clone controls on Radeon RX 6800 XT 16 GiB.'),
     'vulkan-q6': ((3.5, 5), (3, 6), 'Q6', 'More compression; speed and quality need local comparison.', None),
     'vulkan-q4': ((3, 4.5), (3, 6), 'Q4', 'Smallest implemented GPU model; greater compression tradeoff.', None),
     'vulkan-q8-cpu-text-encoder': ((4, 6), (8, 12), 'Q8', 'Same Q8 weights; CPU text encoding can reduce GPU pressure and slow generation. Budget conservatively until measured.', None),
@@ -53,11 +54,14 @@ def _integer(path):
 
 def inspect_host(sysroot=Path('/sys'), procroot=Path('/proc'), command=_command):
     """No model/download; optional bounded vendor and Vulkan information tools."""
-    memory = {k: int(v) * 1024 for k, v in re.findall(r'^(MemTotal|MemAvailable):\s+(\d+)', _read(procroot / 'meminfo'), re.M)}
-    cpu = _read(procroot / 'cpuinfo')
+    system = platform.system()
+    linux = system == 'Linux'
+    meminfo = _read(procroot / 'meminfo') if linux else ''
+    memory = {k: int(v) * 1024 for k, v in re.findall(r'^(MemTotal|MemAvailable):\s+(\d+)', meminfo, re.M)}
+    cpu = _read(procroot / 'cpuinfo') if linux else ''
     flags = re.search(r'^flags\s*:\s*(.*)$', cpu, re.M)
     pci = {}
-    if shutil.which('lspci'):
+    if linux and shutil.which('lspci'):
         code, out, _ = command(['lspci', '-D', '-nn'])
         if code == 0:
             for row in out.splitlines():
@@ -66,7 +70,8 @@ def inspect_host(sysroot=Path('/sys'), procroot=Path('/proc'), command=_command)
                     pci[bus] = description
     gpus = []
     seen = set()
-    for card in sorted((sysroot / 'class/drm').glob('card[0-9]*')):
+    cards = sorted((sysroot / 'class/drm').glob('card[0-9]*')) if linux else []
+    for card in cards:
         if not re.fullmatch(r'card\d+', card.name) or not (card / 'device').exists():
             continue
         device = (card / 'device').resolve()
@@ -122,7 +127,7 @@ def inspect_host(sysroot=Path('/sys'), procroot=Path('/proc'), command=_command)
             vulkan.update(reason='vulkaninfo could not complete within its bounded probe; Vulkan support remains unknown.')
         else:
             vulkan.update(status='unavailable', reason='vulkaninfo failed to enumerate hardware devices. Check the Vulkan loader, vendor driver/ICD and device access.', diagnostic=(err or out)[-400:])
-    if platform.system() == 'Linux':
+    if system in ('Linux', 'Windows'):
         code, out, err = command([sys.executable, '-m', 'audiobook.vulkan_probe'])
         try:
             probe = json.loads(out) if code == 0 else None
@@ -150,25 +155,39 @@ def inspect_host(sysroot=Path('/sys'), procroot=Path('/proc'), command=_command)
                     gpu['memory_measurement'] = 'driver_budget'
         elif vulkan['status'] != 'available':
             vulkan.update(status='unknown', reason='The built-in Vulkan inventory did not complete. Run vulkaninfo --summary to inspect the driver; no model was loaded.', diagnostic=err[-240:])
-    return {'system': platform.system(), 'arch': platform.machine(), 'gpus': gpus,
-            'ram_total_bytes': memory.get('MemTotal'), 'ram_available_bytes': memory.get('MemAvailable'),
-            'cpu_avx2': 'avx2' in flags[1].split() if flags else None, 'vulkan': vulkan}
+    total, available = memory.get('MemTotal'), memory.get('MemAvailable')
+    avx2 = 'avx2' in flags[1].split() if flags else None
+    if system == 'Windows':
+        from .platform_support import windows_memory
+        total, available, avx2 = windows_memory()
+    return {'system': system, 'arch': platform.machine(), 'gpus': gpus,
+            'ram_total_bytes': total, 'ram_available_bytes': available, 'cpu_avx2': avx2, 'vulkan': vulkan}
 
 
-def profile_catalog(catalog):
-    runtime = catalog['runtimes']['hoppou']['linux_x86_64']
+def profile_catalog(catalog, host=None):
+    runtime_variants = catalog['runtimes']['hoppou']
+    variant = runtime_key(host['system'],host['arch']) if host else runtime_key()
+    runtime = runtime_variants.get(variant, runtime_variants['linux_x86_64'])
+    recipes = json.loads(Path(__file__).with_name('gguf_recipes.json').read_text(encoding='utf-8'))
     license_bytes = next(f['bytes'] for f in catalog['packages']['official']['files'] if f['path'] == 'LICENSE')
     result = []
     for entry in catalog['profiles']:
         row = {**entry, 'implemented': entry['runtime'] == 'hoppou' and entry['id'] in BUDGETS}
         if row['implemented']:
             vram, ram, precision, tradeoff, tested = BUDGETS[row['id']]
-            row.update(platforms=['Linux x86_64 with AVX2'], precision=precision,
+            package = entry['packages'][0]
+            recipe = recipes.get(package)
+            if recipe and recipe['model_sha256'] != catalog['packages'][package]['files'][0]['sha256']:
+                recipe = None
+            status = 'locally_tested' if tested else 'implemented_experimental'
+            if variant == 'windows_x86_64':
+                status, tested = 'implemented_experimental', None
+            row.update(platforms=['Linux x86_64 with AVX2','Windows x86_64 with AVX2 (preview)'], precision=precision,
                        estimated_peak_vram_gib=list(vram), estimated_peak_system_ram_gib=list(ram),
                        memory_basis='Planning estimates; upstream approximate GPU footprint plus transient headroom. System RAM/offload peaks unmeasured.',
                        download_bytes=runtime['bytes'] + sum(catalog['packages'][p]['payload_bytes'] for p in entry['packages']) + license_bytes,
-                       tradeoff=tradeoff, testing_status='locally_tested' if tested else 'implemented_experimental',
-                       testing_evidence=tested, memory_source=UPSTREAM)
+                       tradeoff=tradeoff, testing_status=status,
+                       testing_evidence=tested, memory_source=UPSTREAM, tensor_recipe=recipe)
         else:
             row.update(testing_status='catalog_only', availability='No setup adapter in this release.')
         result.append(row)
@@ -176,9 +195,9 @@ def profile_catalog(catalog):
 
 
 def advise(host, catalog):
-    profiles = profile_catalog(catalog)
+    profiles = profile_catalog(catalog,host)
     warnings = []
-    supported = host['system'] == 'Linux' and host['arch'].lower() in ('x86_64', 'amd64')
+    supported = runtime_key(host['system'],host['arch']) in catalog['runtimes']['hoppou']
     candidates = host['gpus']
     if host['vulkan']['status'] == 'available' and any(g.get('vulkan_device') for g in candidates):
         candidates = [g for g in candidates if g.get('vulkan_device')]
@@ -200,11 +219,12 @@ def advise(host, catalog):
         status = 'likely'
         needs_gpu = row['settings'].get('device') != 'cpu'
         if not supported:
-            status = 'unsupported'; reasons.append('This build ships only the Linux x86_64 Hoppou adapter. CUDA/MLX/Windows entries are not implemented setup routes.')
+            status = 'unsupported'; reasons.append('The packaged speech engine needs x86_64 Linux or Windows. Other engine families require their own adapter.')
         elif host['cpu_avx2'] is False:
             status = 'unsupported'; reasons.append('The prebuilt runtime requires an AVX2 CPU, including for GPU profiles.')
         elif host['vulkan'].get('loader_found') is False:
-            status = 'unavailable'; reasons.append('Install the Vulkan loader library (libvulkan.so.1). The shipped runtime links it even for CPU execution; CPU profiles do not require a Vulkan GPU.')
+            loader = 'vulkan-1.dll from a current graphics driver' if host['system']=='Windows' else 'libvulkan.so.1'
+            status = 'unavailable'; reasons.append(f'Install the Vulkan loader library ({loader}). The shipped runtime links it even for CPU execution.')
         elif needs_gpu and host['vulkan']['status'] == 'unavailable':
             status = 'unavailable'; reasons.append(host['vulkan']['reason'])
         else:
@@ -256,7 +276,9 @@ def advise(host, catalog):
         recommendation = {'profile': choice['id'], 'command': f'hamr setup --profile {choice["id"]}',
                           'confidence': 'tentative' if choice['compatibility'] != 'likely' or len(host['gpus']) > 1 else 'moderate',
                           'reasons': choice['reasons'], 'testing_status': choice['testing_status'],
-                          'uncertainty': 'Advisory estimates, not a model-load or speech test. Driver features, other applications, reference length and concurrency can change peak memory.'}
+                          'uncertainty': 'Fit estimate. Setup checks loading on this computer. Choosing the best sound requires a matched listening comparison.',
+                          'quality_basis': 'prefer reference precision when headroom permits; quality equivalence has not been established',
+                          'automatic_eligible': choice['compatibility'] == 'likely' and bool(choice['testing_evidence']) and len(host['gpus']) <= 1}
     else:
         recommendation = None
         warnings.append('No implemented profile has an established memory/platform fit. See profile reasons and the hardware guide.')

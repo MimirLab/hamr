@@ -69,7 +69,7 @@ def test_selected_variant_acquires_only_its_assets_and_activates_after_health(tm
             assert identity['settings'] == entry['settings']
             assert Path(identity['model']).read_bytes() == payloads[package['files'][0]['url']]
             assert Path(identity['binary']).is_file()
-            self.health = {'sample_rate': 24000, 'fixture': True}
+            self.health = {'sample_rate': 24000, 'actual_device': 'fixture', 'fixture': True}
         def __enter__(self): return self
         def __exit__(self, *_): pass
 

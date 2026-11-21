@@ -145,4 +145,4 @@ def test_guided_choice_retries_typo_then_cancels_without_assets(tmp_path, monkey
     with pytest.raises(Error) as failure:cli.choose_backend(store,False)
     assert failure.value.code=='setup_cancelled'
     assert list((store.root/'assets').iterdir())==[]
-    assert 'Please enter a listed' in capsys.readouterr().out
+    assert 'Press Enter to install' in capsys.readouterr().out

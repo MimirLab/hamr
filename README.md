@@ -103,9 +103,11 @@ man hamr
 
 The installer checks the wheel version and installs the command and Linux manual for your account. If you prefer to run directly from a source checkout, stay in that directory and use `uv run hamr` in place of `hamr`. For example, `uv run hamr setup` runs setup through the checkout’s environment and `uv run hamr open "/path/to/My book.epub" --voice cast:nigel-thornberry` makes a book. Use the installed command for work outside the checkout.
 
+Linux is the qualified platform. [Windows preview installation and engine research](docs/ENGINES.md) covers the other route and the evidence still needed for CUDA and Apple Silicon.
+
 ### Which profile should I choose?
 
-Start with **`hamr doctor`**. It reads GPU and memory information from the driver, then recommends a starting profile and explains the choice. It doesn't load a speech model. **`hamr setup`** offers that recommendation and lets you choose another profile if you prefer.
+Start with **`hamr doctor`**. It reads GPU and memory information from the driver, then recommends a starting profile and explains the choice. It doesn't load a speech model. **`hamr setup`** shows one choice in plain language. Press Enter to start, or use `hamr setup --choose` for the full list. Scripts can use `hamr setup --auto` when there is a well-established fit.
 
 **Vulkan** lets the speech engine use your GPU through its graphics driver. It supports AMD, NVIDIA and Intel hardware with a suitable driver. **F16** stores the model's weights at 16-bit precision. **Quantization** uses fewer bits: Q8, Q6 and Q4 need progressively less storage and memory, but may change the voice's detail and delivery. A smaller model can be faster, though that depends on the hardware.
 
@@ -123,13 +125,13 @@ Setup downloads the selected engine and its weights, then a separate CPU speech 
 | `cpu-q6` | CPU; no GPU execution | 0 | 7–11 GiB | 2.93 GiB | Intermediate RAM/precision choice. **Implemented, experimental.** |
 | `cpu-q4` | CPU; no GPU execution | 0 | 6–10 GiB | 2.43 GiB | Smallest CPU model; may generate much slower than playback. **Implemented, experimental.** |
 
-¹ All profiles require Linux x86_64 and AVX2. GPU profiles also need a working Vulkan driver. CPU profiles need the Vulkan loader (`libvulkan.so.1`) because the executable links it, even when running without a GPU.
+¹ All profiles require Linux x86_64 and AVX2. GPU profiles also need a working Vulkan driver. CPU profiles still need the Vulkan loader. The table covers Linux. [Windows preview](docs/ENGINES.md#what-hamr-can-use) uses the separate pinned Windows runtime.
 
 ² Memory figures are estimates for planning. GPU ranges use the [upstream footprints](https://github.com/HoppouAI/Breeze-TTS-2.cpp/blob/4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6/README.md#weights) with headroom; system RAM and CPU-offload peaks haven't been measured. Other applications, reference length and parallel generation affect what fits. Integrated graphics share system RAM.
 
 ³ Downloads include the runtime, selected weights and model terms, before cache reuse. Leave at least another 1 GiB for extraction and headroom. One GiB is 1,024³ bytes.
 
-F16 has been used for long narration on a Radeon RX 6800 XT with 16 GiB; Q8 has passed short controls on the same card. The other seven profiles are implemented but still experimental. CUDA, MLX and other research entries listed separately by `hamr profiles` have no setup adapter yet.
+F16 has been used for long narration on a Radeon RX 6800 XT with 16 GiB; Q8 has passed matched controls on the same card, including a continuous take over 45 seconds. The Q8, Q6 and Q4 files compress eligible tensors in the depth decoder and codec. [Exact tensor recipes and comparison method](docs/ENGINES.md#what-the-quantization-labels-mean). The other seven profiles are implemented but still experimental. CUDA, MLX and other research entries listed separately by `hamr profiles` have no setup adapter yet.
 
 As a rough starting point: **12–16 GiB GPU → F16**, **8 GiB → Q8**, **6 GiB → Q6**, **4 GiB → Q4**. F16 should have at least 9 GiB available; Q4 on a 4 GiB card will be tight. Start small on integrated graphics. Without usable GPU support, try `cpu-q4` if you have enough system RAM. Doctor checks current memory, so an open game or another model can change its recommendation.
 

@@ -12,6 +12,12 @@ from .cast import resolve_voice
 
 def rename_new(src,dst):
     # Linux atomic no-replace protects against a destination race, including empty directories.
+    if os.name == 'nt':
+        from .platform_support import windows_move
+        try: windows_move(src,dst,replace=False)
+        except FileExistsError as exc:
+            raise Error('output_collision','Destination already exists.','Choose another output parent; existing publication is preserved.') from exc
+        return
     libc=ctypes.CDLL(None,use_errno=True)
     if libc.renameat2(-100,os.fsencode(src),-100,os.fsencode(dst),1)!=0:
         e=ctypes.get_errno()

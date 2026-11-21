@@ -1,10 +1,12 @@
 from __future__ import annotations
-import contextlib,hashlib,http.client,json,os,platform,shutil,socket,subprocess,sys,tarfile,threading,time,urllib.request,wave
+import contextlib,hashlib,http.client,json,os,platform,shutil,socket,subprocess,sys,threading,time,urllib.request,wave
 from pathlib import Path
 import httpx,numpy as np
 from .core import Error,RATE,atomic,digest,filehash,key,loadjson,run,writejson
 from .deadlines import wall_budget
 from .setup_progress import size_text
+from .platform_support import spawn_owned,close_windows_job
+from .runtime_catalog import runtime_key,extract_hoppou
 
 CATALOG=Path(__file__).with_name('catalog.json')
 DOWNLOAD_STALL_SECONDS=90
@@ -13,7 +15,8 @@ DOWNLOAD_POLL_SECONDS=.1
 
 
 def transfer_asset(url,part,offset,size,*,progress=None,label=None):
-    process=subprocess.Popen([sys.executable,'-m','audiobook.asset_download',url,str(part),str(offset),str(size)],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
+    process,job=spawn_owned([sys.executable,'-m','audiobook.asset_download',url,str(part),str(offset),str(size)],
+                            parent_death=True,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
     started=last_activity=time.monotonic();observed=offset
     try:
         if progress: progress.transfer(label,offset,size)
@@ -32,6 +35,7 @@ def transfer_asset(url,part,offset,size,*,progress=None,label=None):
         if progress: progress.transfer(label,part.stat().st_size,size,complete=True)
     finally:
         if progress: progress.finish()
+        if job: close_windows_job(job)
         if process.poll() is None:
             process.terminate()
             try:process.wait(2)
@@ -73,9 +77,11 @@ def acquire(url,dst,expected,size,*,progress=None,label=None):
 def setup(store,profile,cache=None,*,progress=None,before_activate=None):
     c=loadjson(CATALOG); profiles={p['id']:p for p in c['profiles']}; p=profiles.get(profile)
     if not p or p['runtime']!='hoppou': raise Error('unsupported_profile',f'Backend profile {profile!r} is unknown or catalog-only in this build.','Run hamr profiles for the built-in CPU/Vulkan model choices; selecting one downloads its pinned runtime and weights.')
-    if platform.system()!='Linux' or platform.machine().lower() not in ('x86_64','amd64'): raise Error('unsupported_platform','This release installs the Linux x86_64 runtime.','Use a supported Linux x86_64 environment; native Windows, ARM and Apple MLX adapters are not implemented.')
+    variant=runtime_key(platform.system(),platform.machine())
+    if variant is None or variant not in c['runtimes']['hoppou']:
+        raise Error('unsupported_platform','This speech runtime is available for x86_64 Linux and Windows.','Run hamr profiles to see the supported builds and research candidates.')
     with store.lock():
-        r=c['runtimes']['hoppou']['linux_x86_64']; package=c['packages'][p['packages'][0]]; root=store.root/'assets'/profile; root.mkdir(exist_ok=True)
+        r=c['runtimes']['hoppou'][variant]; package=c['packages'][p['packages'][0]]; root=store.root/'assets'/profile; root.mkdir(exist_ok=True)
         files=[dict(r,path=r['filename']),*package['files']]
         required=sum(f['bytes'] for f in files if not (root/f['path']).exists())
         if shutil.disk_usage(root).free<required+1024**3: raise Error('disk_space','Insufficient asset acquisition headroom.','Free space on the state filesystem.')
@@ -86,26 +92,34 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None):
                 if src.stat().st_size!=f['bytes'] or filehash(src)!=f['sha256']: raise Error('asset_integrity','Cached candidate does not match catalog.')
                 shutil.copyfile(src,dst)
             acquire(f['url'],dst,f['sha256'],f['bytes'],**({'progress':progress} if progress else {}))
-        runtime=root/'runtime'
+        runtime=root/('runtime-windows' if variant=='windows_x86_64' else 'runtime')
         if not runtime.exists():
             if progress: progress.stage('Extracting the Breeze runtime')
-            stage=root/'runtime.partial'
+            stage=runtime.with_suffix('.partial')
             if stage.exists(): store.safe_remove(stage)
             stage.mkdir()
-            with tarfile.open(root/r['filename']) as t: t.extractall(stage,filter='data')
+            extract_hoppou(root/r['filename'],stage,variant)
             stage.rename(runtime)
-        candidates=list(runtime.rglob('breeze-server'))
+        windows=variant=='windows_x86_64'
+        candidates=list(runtime.rglob('breeze-server.exe' if windows else 'breeze-server'))
         if len(candidates)!=1: raise Error('runtime_layout','Expected one breeze-server executable.')
-        binary=candidates[0]; binary.chmod(0o755)
+        binary=candidates[0]
+        if not windows: binary.chmod(0o755)
         # Preserve executable/shared-library identities, and model terms locally.
         terms=root/'MODEL-LICENSE'
         license_file=next(f for f in c['packages']['official']['files'] if f['path']=='LICENSE')
         acquire(license_file['url'],terms,license_file['sha256'],license_file['bytes'],**({'progress':progress} if progress else {}))
-        identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':c['runtimes']['hoppou']['revision'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(root/package['files'][0]['path']),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{str(x.relative_to(runtime)):filehash(x) for x in runtime.rglob('*.so*') if x.is_file()}}
+        identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':c['runtimes']['hoppou']['revision'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(root/package['files'][0]['path']),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{x.relative_to(runtime).as_posix():filehash(x) for x in runtime.rglob('*.dll' if windows else '*.so*') if x.is_file()}}
+        if windows: identity['runtime_platform']=variant
         # A real startup proves activation before replacing known-working settings.
         try:
             if progress: progress.stage(f'Starting {profile} to check that it loads')
-            with Engine(store,identity) as e: health=e.health
+            with Engine(store,identity) as e:
+                health=e.health
+                if windows or health.get('actual_device') is None:
+                    if progress: progress.stage('Checking speech and the actual processing device')
+                    _,proof=e.speech('This is a short speech check.')
+                    health['actual_device']=proof['actual_device']
         except Error as exc:
             text=(store.root/'runtime/backend.log').read_text(errors='replace')[-12000:] if (store.root/'runtime/backend.log').exists() else ''
             import re
@@ -114,7 +128,7 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None):
             if re.search(r'VK_ERROR_INCOMPATIBLE_DRIVER|no (?:vulkan|physical).*device|failed.*vulkan|libvulkan.*cannot open',text,re.I):
                 raise Error('vulkan_unavailable',f'{profile} could not start with the installed Vulkan driver.',f'Run hamr doctor and vulkaninfo --summary; check the Vulkan loader and vendor ICD. CPU execution (cpu-q4) avoids the GPU but still needs libvulkan.so.1. Startup details: {store.root / "runtime/backend.log"}') from exc
             raise Error(exc.code,exc.message,f'{exc.action} Profile: {profile}. Startup log: {store.root / "runtime/backend.log"}. Run hamr doctor for another starting choice.') from exc
-        result={'schema_version':1,'profile':profile,'health':health,'identity':identity,'model_terms':str(terms)}
+        result={'schema_version':1,'profile':profile,'health':health,'identity':identity,'model_terms':str(terms),'runtime_platform':variant}
         if before_activate:
             result['speech_checks']=before_activate()
         writejson(store.root/'settings.json',identity)
@@ -165,6 +179,7 @@ class Engine:
     TERMINATE_SECONDS=10
     def __init__(self,store,identity=None):
         self.store=store; self.identity=identity or loadjson(store.root/'settings.json'); self.process=None;self._stop_lock=threading.Lock()
+        self._windows_job=None
     def __enter__(self):
         cfg=self.identity
         parallel=cfg.get('settings',{}).get('parallel',1)
@@ -181,14 +196,13 @@ class Engine:
         if cfg['settings'].get('text_encoder')=='cpu': args.append('--te-cpu')
         self.log=(self.store.root/'runtime'/'backend.log').open('wb')
         # No arbitrary transcript logs; upstream emits progress/length/settings by default.
-        env=os.environ.copy(); env['LD_LIBRARY_PATH']=str(runtime)+':'+str(runtime/'lib')
-        def child_setup():
-            import ctypes,signal
-            parent=os.getppid(); ctypes.CDLL(None).prctl(1,signal.SIGTERM)
-            if os.getppid()!=parent: os._exit(1)
-        self.process=subprocess.Popen(args,preexec_fn=child_setup,stdin=subprocess.DEVNULL,stdout=self.log,stderr=self.log,env=env,start_new_session=True)
-        self.client=httpx.Client(base_url=f'http://127.0.0.1:{self.port}',timeout=httpx.Timeout(300,connect=2),trust_env=False)
+        env=os.environ.copy()
+        if os.name != 'nt':
+            env['LD_LIBRARY_PATH']=os.pathsep.join((str(runtime),str(runtime/'lib')))
         try:
+            self.process,self._windows_job=spawn_owned(args,parent_death=True,stdin=subprocess.DEVNULL,
+                                                        stdout=self.log,stderr=self.log,env=env)
+            self.client=httpx.Client(base_url=f'http://127.0.0.1:{self.port}',timeout=httpx.Timeout(300,connect=2),trust_env=False)
             start=time.monotonic()
             with wall_budget(self.STARTUP_SECONDS,self._stop_backend,'backend_timeout','Breeze exceeded its startup wall-clock budget.'):
                 while time.monotonic()-start<self.STARTUP_SECONDS:
@@ -196,6 +210,9 @@ class Engine:
                     try:
                         r=self.client.get('/health',timeout=min(2,self.STARTUP_SECONDS)); r.raise_for_status(); self.health=r.json()
                         if self.health.get('sample_rate')!=RATE: raise Error('pcm_format','Unexpected backend sample rate.')
+                        # The pinned server may buffer this line until it writes
+                        # speech output. A model load alone cannot prove placement.
+                        self.health['actual_device']=self.verify_device(self.read_log(), allow_missing=True)
                         return self
                     except httpx.TransportError: time.sleep(.25)
                 raise Error('backend_timeout','Breeze did not become ready within its startup budget.')
@@ -206,6 +223,12 @@ class Engine:
         if not hasattr(self,'_stop_lock'):self._stop_lock=threading.Lock()
         with self._stop_lock:
             process=getattr(self,'process',None)
+            job=getattr(self,'_windows_job',None)
+            if job is not None:
+                self._windows_job=None
+                close_windows_job(job)
+                if process: process.wait(5)
+                return
             if process and process.poll() is None:
                 # This session was created by this Engine, never discovered by name.
                 with contextlib.suppress(ProcessLookupError):os.killpg(process.pid,signal.SIGTERM)
@@ -217,6 +240,17 @@ class Engine:
         self._stop_backend()
         if hasattr(self,'client'): self.client.close()
         if hasattr(self,'log'): self.log.close()
+    def read_log(self):
+        return (self.store.root/'runtime'/'backend.log').read_text(encoding='utf-8',errors='replace')
+    def verify_device(self,logtext,*,allow_missing=False):
+        import re
+        actual=re.search(r'^backend:\s*(\S+)',logtext,re.M)
+        if not actual and allow_missing:
+            return None
+        expected_cpu=self.identity['settings'].get('device')=='cpu'
+        if not actual or (expected_cpu and not actual[1].lower().startswith('cpu')) or (not expected_cpu and not actual[1].startswith('Vulkan')):
+            raise Error('device_unverified','Breeze did not prove the requested execution backend.','Check backend/device availability; unexpected CPU fallback is rejected.')
+        return actual[1].rstrip(',')
     def speech(self,text,voice=None,instruction=None,seed=42):
         validate_request(text,voice,instruction)
         logpath=self.store.root/'runtime'/'backend.log' if getattr(self,'store',None) is not None else None
@@ -238,7 +272,7 @@ class Engine:
                         data.extend(chunk)
                         if len(data)>RATE*2*125: raise Error('audio_limit','Breeze exceeded the bounded take duration.')
                 import re
-                logtext=(self.store.root/'runtime'/'backend.log').read_text(errors='replace')
+                logtext=self.read_log()
                 # Pinned Hoppou catches generation exceptions and still sends a
                 # normal chunked EOF. Such PCM must never become a good take.
                 # Parallel requests share this log: fail closed if attribution
@@ -249,11 +283,8 @@ class Engine:
                     if re.search(r'(?im)^\s*generation error:',new_log):
                         self._stop_backend()
                         raise Error('generation_failed','Breeze reported a generation failure despite a normally completed HTTP stream.','Inspect the owned backend log; committed prior takes are retained. Resume explicitly after resolving the failure.')
-                actual=re.search(r'^backend:\s*(\S+)',logtext,re.M)
-                expected_cpu=self.identity['settings'].get('device')=='cpu'
-                if not actual or (expected_cpu and not actual[1].lower().startswith('cpu')) or (not expected_cpu and not actual[1].startswith('Vulkan')):
-                    raise Error('device_unverified','Breeze did not prove the requested execution backend.','Check backend/device availability; unexpected CPU fallback is rejected.')
-                data,receipt=validate_pcm(bytes(data),text); receipt['actual_device']=actual[1]
+                actual=self.verify_device(logtext)
+                data,receipt=validate_pcm(bytes(data),text); receipt['actual_device']=actual
                 request={'transport':'hoppou-http','endpoint':'/v1/audio/speech','fields':dict(fields),
                          'reference_audio_sha256':voice['reference_sha256'] if voice else None,
                          'scope':'Exact logical request fields; encoding is checked independently, not a raw wire capture.'}

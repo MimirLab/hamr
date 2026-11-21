@@ -1,4 +1,12 @@
-# hamr 0.3.0
+# hamr 0.4 development
+
+`hamr setup` starts with one plain-language recommendation. `--choose` opens the advanced list. `--auto` accepts an eligible recommendation for scripted installs. The engine guide records the evidence and exact model recipes behind the choices. [Engine comparison and Windows preview](docs/ENGINES.md)
+
+The development preview includes a Windows x64 installer and the pinned Hoppou Windows runtime route. Windows Python under Wine passed the lock, no-replace move and cleanup checks, then synthesized a clone on CPU. The Windows Vulkan executable reached model startup and failed at queue submission under Wine. Native Windows GPU and CPU publication and interruption tests are pending. CUDA and Apple candidates have their own qualification plans in the engine guide.
+
+Three matching Radeon controls are available for blind listening: F16, stock Q8 and Q8 with original depth and codec tensors. Each has a real continuous take exceeding 45 seconds. The engine guide records the measured time and word checks. Model placement and audible quality are separate checks.
+
+## hamr 0.3.0
 
 [Install hamr and make a first book](README.md#epub-to-audiobook-in-three-commands). Run `man hamr` from the terminal for command help.
 

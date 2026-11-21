@@ -10,6 +10,7 @@ from .core import Error, filehash, loadjson, writejson
 
 
 LOCK = Path(__file__).with_name('asr.lock')
+WINDOWS_LOCK = LOCK.with_name('asr-windows.lock')
 ASSETS = Path(__file__).with_name('asr_assets.json')
 PROBE = """import sys
 from faster_whisper import WhisperModel
@@ -60,9 +61,10 @@ def provision(store, progress, cache=None):
     preflight()
     root = store.root / 'assets' / 'speech-checks'
     root.mkdir(exist_ok=True)
-    lock_hash = filehash(LOCK)
+    lock = WINDOWS_LOCK if os.name == 'nt' else LOCK
+    lock_hash = filehash(lock)
     env_dir = root / ('env-' + lock_hash[:16])
-    python = env_dir / 'bin/python'
+    python = env_dir / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
     ready = env_dir / '.hamr-ready'
     log = store.root / 'runtime/speech-checks.log'
     try:
@@ -73,7 +75,7 @@ def provision(store, progress, cache=None):
                 subprocess.run(['uv', 'venv', '--allow-existing', '--python', version, env_dir],
                                stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, check=True, timeout=600)
                 subprocess.run(['uv', '--no-config', 'pip', 'sync', '--python', python, '--require-hashes',
-                                '--only-binary', ':all:', LOCK], stdin=subprocess.DEVNULL,
+                                '--only-binary', ':all:', lock], stdin=subprocess.DEVNULL,
                                stdout=output, stderr=subprocess.STDOUT, check=True, timeout=1200)
         models = []
         for name, model in loadjson(ASSETS).items():

@@ -39,7 +39,8 @@ def print_doctor(result):
     if installation:=result.get('installation'):
         print(f'Running hamr {installation["version"]} · {installation["invoked_as"]}')
         print(f'Command on PATH: {installation["path_command"] or "unavailable"}')
-        print(f'Manual: {installation["manual"] or "unavailable on the manual path"}')
+        if host['system'] != 'Windows':
+            print(f'Manual: {installation["manual"] or "unavailable on the manual path"}')
         print(f'Speech checking: {"ready" if result["speech_checks_ready"] else "run hamr setup"}')
     for gpu in host['gpus']:
         memory=gpu.get('available_vram_bytes')
@@ -64,28 +65,68 @@ def print_doctor(result):
     print('\nRun hamr setup for a guided choice, or hamr profiles for all built-in variants.')
 
 
-def choose_backend(store, json_mode):
-    if json_mode or not sys.stdin.isatty():
-        raise Error('profile_required','Choose a backend profile before downloading.', 'Run hamr doctor, then hamr setup --profile PROFILE. Interactive hamr setup offers a guided choice.')
-    result=doctor(store);print_doctor(result)
-    rows=[r for r in result['profiles'] if r['implemented']]
-    print()
-    for i,row in enumerate(rows,1):
-        status=row['compatibility'].replace('_',' ')
-        testing='locally tested' if row['testing_status']=='locally_tested' else 'experimental'
-        print(f'{i:2d}. {row["id"]} · {row["download_bytes"]/1024**3:.2f} GiB download · {status} · {testing}')
-        print('    '+row['tradeoff'])
-    recommended=result['recommended_profile']
-    default=recommended['profile'] if recommended else None
+def choose_backend(store, json_mode, *, automatic=False, advanced=False, include_checks=True):
+    if not automatic and (json_mode or not sys.stdin.isatty()):
+        raise Error('profile_required','Select a speech model before downloading.',
+                    'Run hamr setup in a terminal, or use --auto or --profile PROFILE in a script.')
+    result = doctor(store)
+    choice = result['recommended_profile']
+    rows = [r for r in result['profiles'] if r['implemented']
+            and r['compatibility'] in ('likely', 'tentative')]
+    if automatic:
+        if choice and choice['automatic_eligible']:
+            return choice['profile']
+        raise Error('no_automatic_profile','There is no well-established automatic choice for this computer.',
+                    'Run hamr setup to choose interactively, or hamr doctor for the hardware details.')
+    if not rows:
+        print_doctor(result)
+        raise Error('no_compatible_profile','No packaged speech model fits the current setup.',
+                    'See the hardware and installation notes from hamr doctor.')
+    default = choice['profile'] if choice else None
+    if default and not advanced:
+        row = next(r for r in rows if r['id'] == default)
+        if row['settings'].get('device') == 'cpu':
+            label = 'Compact model, using your processor'
+            reason = 'This choice can make books without a supported graphics device. Rendering can take longer.'
+        elif row['precision'] == 'F16':
+            label = 'Full-precision model, using your graphics device'
+            reason = 'This computer appears to have room for the full model.'
+        else:
+            label = 'Compact model, using your graphics device'
+            reason = 'The smaller model leaves more room for other programs. Listen to a short passage if voice detail matters.'
+        print(f'Suggested starting choice: {label}')
+        print(reason)
+        if row['testing_status'] == 'implemented_experimental':
+            print('This choice is experimental on your platform. Setup will check that it starts.')
+        checking = ' Speech checking adds about 0.60 GiB of models plus runtime dependencies.' if include_checks else ''
+        print(f'First download: about {row["download_bytes"]/1024**3:.2f} GiB for speech.{checking}')
+        while True:
+            try: answer = input('Enter to install, a for model choices, or q to cancel: ').strip().lower()
+            except EOFError: answer = 'q'
+            if not answer:
+                return default
+            if answer in ('q', 'quit'):
+                raise Error('setup_cancelled','Setup cancelled before acquiring any assets.')
+            if answer == 'a':
+                break
+            print('Press Enter to install, a for choices, or q to cancel.')
+    else:
+        print_doctor(result)
+    for i, row in enumerate(rows, 1):
+        print(f'{i:2d}. {row["id"]} · {row["download_bytes"]/1024**3:.2f} GiB · {row["compatibility"]}')
+        print('    ' + row['tradeoff'])
     while True:
-        try:answer=input(f'\nChoose a profile number or ID{f" [{default}]" if default else ""}, or q to cancel: ').strip()
-        except EOFError:answer='q'
+        try: answer = input(f'Choose a number or model ID{f" [{default}]" if default else ""}, or q to cancel: ').strip()
+        except EOFError: answer = 'q'
         if answer.lower() in ('q','quit'):
-            raise Error('setup_cancelled','Setup cancelled before acquiring any assets.','Run hamr setup when ready to choose a model.')
-        if not answer and default:return default
-        if answer.isdigit() and 1<=int(answer)<=len(rows):return rows[int(answer)-1]['id']
-        if any(r['id']==answer for r in rows):return answer
-        print('Please enter a listed number or profile ID, or q to cancel.')
+            raise Error('setup_cancelled','Setup cancelled before acquiring any assets.')
+        if not answer and default:
+            return default
+        if answer.isdecimal() and len(answer) < 4 and 1 <= int(answer) <= len(rows):
+            return rows[int(answer)-1]['id']
+        if any(row['id'] == answer for row in rows):
+            return answer
+        print('Please enter a listed number or model ID, or q to cancel.')
 
 def add_source(p):
     p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile',dest='listening_profile',help='Saved listening defaults created with hamr profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
@@ -113,7 +154,12 @@ def parser():
         q=subs.add_parser(name,help=help); q.add_argument('--json',action='store_true',default=argparse.SUPPRESS); return q
     sub('doctor','Inspect host and dependencies without downloading')
     q=sub('profile','Save explicit reusable listening defaults'); q.add_argument('name'); q.add_argument('--mode',choices=['listen','study','procedure'],default='listen'); q.add_argument('--tables',choices=['speak','companion'],default='speak'); q.add_argument('--code',choices=['speak','companion']); q.add_argument('--references',choices=['speak','companion']); q.add_argument('--notes',choices=['after_paragraph','inline','companion']); q.add_argument('--pronounce',action='append',default=[]); q.add_argument('--section',action='append',default=[])
-    q=sub('setup','Choose, download and health-check a model'); q.add_argument('--profile',dest='backend_profile',help='Speech backend ID from hamr profiles; omit for guided selection'); q.add_argument('--cache',type=Path)
+    q=sub('setup','Download and check one speech model')
+    selection=q.add_mutually_exclusive_group()
+    selection.add_argument('--profile',dest='backend_profile',help='Choose a specific model from hamr profiles')
+    selection.add_argument('--auto',action='store_true',help='Install the recommendation if hardware fit and evidence support it')
+    selection.add_argument('--choose',action='store_true',help='Show advanced model choices')
+    q.add_argument('--cache',type=Path)
     scope=q.add_mutually_exclusive_group()
     scope.add_argument('--engine-only',action='store_true',help='Set up just the speech engine')
     scope.add_argument('--checks-only',action='store_true',help='Set up offline speech checking')
@@ -215,6 +261,10 @@ def discard_closed_output():
 
 
 def main(argv=None):
+    if os.name == 'nt':
+        for stream in (sys.stdout,sys.stderr):
+            if hasattr(stream,'reconfigure'):
+                stream.reconfigure(encoding='utf-8')
     try:
         return dispatch(argv)
     except BrokenPipeError:
@@ -240,7 +290,9 @@ def dispatch(argv=None):
         return 0
     a=p.parse_args(arguments); jm=a.json
     def interrupted(signum,frame): raise KeyboardInterrupt
-    signal.signal(signal.SIGTERM,interrupted); signal.signal(signal.SIGHUP,interrupted)
+    for name in ('SIGTERM','SIGHUP','SIGBREAK'):
+        if (handler:=getattr(signal,name,None)) is not None:
+            signal.signal(handler,interrupted)
     try:
         if a.command in ('agent','completion'):
             from .operator_cli import dispatch as operator_dispatch
@@ -280,12 +332,13 @@ def dispatch(argv=None):
             from .setup_progress import SetupProgress
             progress=SetupProgress()
             if a.checks_only:
-                if a.backend_profile:
-                    raise Error('setup_scope', '--checks-only does not take a speech engine profile.')
+                if a.backend_profile or a.auto or a.choose:
+                    raise Error('setup_scope', '--checks-only does not select a speech engine.')
                 with s.lock():
                     result={'schema_version':1,'speech_checks':provision(s,progress,a.cache)}
             else:
-                selected=a.backend_profile or choose_backend(s,jm)
+                selected=a.backend_profile or choose_backend(s,jm,automatic=a.auto,advanced=a.choose,
+                                                            include_checks=not a.engine_only)
                 if not a.engine_only: preflight()
                 stage=None if a.engine_only else lambda: provision(s,progress,a.cache)
                 result=setup(s,selected,a.cache,progress=progress,before_activate=stage)
@@ -373,7 +426,10 @@ def dispatch(argv=None):
         elif a.command=='worker':
             if a.detach:
                 args=[sys.executable,'-m','hamr','--home',str(s.root),'worker']+(['--once'] if a.once else [])
-                log=(s.root/'runtime'/'worker.log').open('ab'); child=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True); log.close(); emit({'schema_version':1,'pid':child.pid,'log':str(s.root/'runtime'/'worker.log'),'restart':f'hamr --home {s.root} worker --detach'},True)
+                from .platform_support import detached_flags
+                with (s.root/'runtime'/'worker.log').open('ab') as log:
+                    child=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=log,stderr=log,**detached_flags())
+                emit({'schema_version':1,'pid':child.pid,'log':str(s.root/'runtime'/'worker.log'),'restart':f'hamr --home {s.root} worker --detach'},True)
             else:
                 with s.lock('queue-worker'):
                     from .book_flow import finish_book

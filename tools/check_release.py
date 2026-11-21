@@ -21,6 +21,7 @@ PRIVATE_TEXT = (
     re.compile(rb'-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----'),
 )
 ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock', 'install.sh',
+              'install.ps1', 'tools/inspect_gguf.py', 'tools/compare_breeze.py', 'tools/mix_hoppou.py', 'docs/ENGINES.md',
               'PKG-INFO', '.gitignore', 'AGENTS.md', 'tools/check_release.py',
               'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md', 'docs/listen/manifest.json',
               'docs/art/hamr-storyforge.png', 'docs/art/hamr-listener.png',
@@ -66,7 +67,7 @@ def audit(path, version):
     for name, data in files.items():
         runtime = name.removeprefix(package) if name.startswith(package) else ''
         allowed_runtime = re.fullmatch(
-            r'audiobook/(?:[a-z_]+\.py|cast\.json|catalog\.json|asr_assets\.json|asr\.lock|agent_guide\.md|cast_assets/[a-z0-9-]+/(?:reference\.wav|voice\.json))'
+            r'audiobook/(?:[a-z_]+\.py|cast\.json|catalog\.json|asr_assets\.json|gguf_recipes\.json|asr(?:-windows)?\.lock|agent_guide\.md|cast_assets/[a-z0-9-]+/(?:reference\.wav|voice\.json))'
             r'|hamr/__(?:init|main)__\.py', runtime)
         allowed_metadata = wheel and name.startswith(metadata) and name.removeprefix(metadata) in (
             'METADATA', 'WHEEL', 'RECORD', 'entry_points.txt', 'licenses/LICENSE')

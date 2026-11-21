@@ -58,7 +58,8 @@ def function(lib, name, restype, *args):
 
 
 def probe():
-    lib = C.CDLL(ctypes.util.find_library('vulkan') or 'libvulkan.so.1')
+    import os
+    lib = C.WinDLL('vulkan-1.dll') if os.name=='nt' else C.CDLL(ctypes.util.find_library('vulkan') or 'libvulkan.so.1')
     version = U32(1 << 22)
     if hasattr(lib, 'vkEnumerateInstanceVersion'):
         function(lib, 'vkEnumerateInstanceVersion', C.c_int, C.POINTER(U32))(C.byref(version))

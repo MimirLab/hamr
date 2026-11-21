@@ -1,5 +1,5 @@
 from __future__ import annotations
-import contextlib,fcntl,hashlib,json,os,sqlite3,subprocess,tempfile,time
+import contextlib,hashlib,json,os,sqlite3,subprocess,tempfile,time
 from dataclasses import dataclass,asdict,field
 from pathlib import Path
 from typing import Any
@@ -17,17 +17,24 @@ def filehash(p:Path)->str:
     with p.open('rb') as f: return hashlib.file_digest(f,'sha256').hexdigest()
 def dumps(x): return json.dumps(x,ensure_ascii=False,indent=2)+'\n'
 def syncdir(p:Path):
-    fd=os.open(p,os.O_DIRECTORY); os.fsync(fd); os.close(fd)
+    if os.name != 'nt':
+        fd=os.open(p,os.O_DIRECTORY)
+        try: os.fsync(fd)
+        finally: os.close(fd)
 def atomic(p:Path,data:bytes):
     p.parent.mkdir(parents=True,exist_ok=True)
     fd,tmp=tempfile.mkstemp(prefix='.'+p.name,dir=p.parent)
     try:
         with os.fdopen(fd,'wb') as f: f.write(data); f.flush(); os.fsync(f.fileno())
-        os.replace(tmp,p); syncdir(p.parent)
+        if os.name=='nt':
+            from .platform_support import windows_move
+            windows_move(tmp,p,replace=True)
+        else:
+            os.replace(tmp,p); syncdir(p.parent)
     finally:
         if os.path.exists(tmp): os.unlink(tmp)
 def writejson(p:Path,data): atomic(p,dumps(data).encode())
-def loadjson(p:Path): return json.loads(p.read_text())
+def loadjson(p:Path): return json.loads(p.read_text(encoding='utf-8'))
 
 
 def check_revision(job, expected):
@@ -86,6 +93,8 @@ def state_root():
     for name in ('HAMR_HOME', 'AUDIOBOOK_HOME'):
         if os.environ.get(name):
             return Path(os.environ[name])
+    if os.name=='nt':
+        return Path(os.environ.get('LOCALAPPDATA') or (Path.home()/'AppData/Local'))/'hamr'
     base = Path.home() / '.local/share'
     current, legacy = base / 'hamr', base / 'audiobook'
     if not (current / '.audiobook-owned').is_file() and (legacy / '.audiobook-owned').is_file():
@@ -96,14 +105,14 @@ def state_root():
 class Store:
     def __init__(self,root:Path|None=None):
         self.root=Path(root if root is not None else state_root()).absolute()
-        if self.root.is_symlink(): raise Error('unsafe_path','App state root cannot be a symlink.')
+        if self.root.is_symlink() or self.root.is_junction(): raise Error('unsafe_path','App state root cannot be a symlink or junction.')
         self.root.mkdir(parents=True,exist_ok=True,mode=0o700)
         if not (self.root/'.audiobook-owned').exists():
             if any(self.root.iterdir()): raise Error('unowned_directory','State directory is not empty and has no ownership marker.')
             atomic(self.root/'.audiobook-owned',b'audiobook v1\n')
         for part in ('jobs','clips','voices','assets','runtime','extractions','profiles'):
             p=self.root/part
-            if p.is_symlink(): raise Error('unsafe_path','App directory cannot be a symlink.')
+            if p.is_symlink() or p.is_junction(): raise Error('unsafe_path','App directory cannot be a symlink or junction.')
             p.mkdir(exist_ok=True,mode=0o700)
         self.db=sqlite3.connect(self.root/'state.sqlite',timeout=10)
         self.db.execute('PRAGMA journal_mode=WAL'); self.db.execute('PRAGMA synchronous=FULL')
@@ -141,12 +150,19 @@ class Store:
     @contextlib.contextmanager
     def lock(self,name='writer',wait=False):
         p=self.root/'runtime'/(name+'.lock')
-        if p.is_symlink(): raise Error('unsafe_path','Lock cannot be a symlink.')
-        fd=os.open(p,os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600)
+        if p.is_symlink() or p.is_junction(): raise Error('unsafe_path','Lock cannot be a symlink or junction.')
+        fd=os.open(p,os.O_CREAT|os.O_RDWR|getattr(os,'O_NOFOLLOW',0),0o600)
         try:
-            try: fcntl.flock(fd,fcntl.LOCK_EX|(0 if wait else fcntl.LOCK_NB))
-            except BlockingIOError: raise Error('busy','Another managed writer owns the runtime.','Wait for it to finish, then retry.')
-            os.ftruncate(fd,0); os.write(fd,str(os.getpid()).encode())
+            if os.name=='nt':
+                from .platform_support import windows_lock
+                try: windows_lock(fd,wait)
+                except BlockingIOError as exc:
+                    raise Error('busy','Another managed writer owns the runtime.','Wait for it to finish, then retry.') from exc
+            else:
+                import fcntl
+                try: fcntl.flock(fd,fcntl.LOCK_EX|(0 if wait else fcntl.LOCK_NB))
+                except BlockingIOError: raise Error('busy','Another managed writer owns the runtime.','Wait for it to finish, then retry.')
+                os.ftruncate(fd,0); os.write(fd,str(os.getpid()).encode())
             yield
         finally: os.close(fd)
     def safe_remove(self,p:Path):
@@ -155,6 +171,10 @@ class Store:
         try: rel=p.relative_to(self.root)
         except ValueError: raise Error('unsafe_path','Cleanup target is outside app state.')
         if not rel.parts or '..' in rel.parts: raise Error('unsafe_path','Invalid cleanup path.')
+        if os.name=='nt':
+            from .windows_cleanup import remove_owned
+            remove_owned(self.root, rel)
+            return
         flags=os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW
         rootfd=os.open(self.root,flags); parents=[]
         def remove(parent,name):

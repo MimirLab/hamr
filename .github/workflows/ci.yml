@@ -39,3 +39,20 @@ jobs:
           hamr completion fish | fish --no-execute
           hamr agent capabilities > capabilities.json
           hamr --home "$run_dir/state" voice sample nigel-thornberry --json
+
+  windows-preview:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Validate Windows runtime contracts
+        run: |
+          uv sync --frozen --python 3.12 --extra test
+          uv run --no-sync python -m pytest -q tests/test_runtime_portability.py tests/test_profile_dispatch.py
+          uv build --wheel
+          ./install.ps1
+          $hamr = Join-Path $env:LOCALAPPDATA 'hamr-app\venv\Scripts\hamr.exe'
+          Set-Location $env:RUNNER_TEMP
+          & $hamr --version
+          & $hamr --home 'preview state' voice sample nigel-thornberry --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,0 +1,302 @@
+{
+  "hoppou-f16": {
+    "codec_groups": {
+      "codec.aq": {
+        "F16": 2,
+        "F32": 15
+      },
+      "codec.dblk": {
+        "F32": 112
+      },
+      "codec.dfin": {
+        "F32": 4
+      },
+      "codec.dhead": {
+        "F32": 2
+      },
+      "codec.downsample": {
+        "F32": 1
+      },
+      "codec.dpre": {
+        "F32": 2
+      },
+      "codec.dq": {
+        "F16": 2,
+        "F32": 16
+      },
+      "codec.dtf": {
+        "F16": 58,
+        "F32": 35
+      },
+      "codec.dup": {
+        "F16": 4,
+        "F32": 18
+      },
+      "codec.enc": {
+        "F32": 28
+      },
+      "codec.enct": {
+        "F16": 48,
+        "F32": 48
+      },
+      "codec.sq": {
+        "F16": 2,
+        "F32": 1
+      }
+    },
+    "model_sha256": "db740cd464d75f2635a891586f083c5b466fd63542bebd957fe7890324b04c35",
+    "revision": "e4fae6493ffb8bbeacc402d1b36f18dfa18fc8d5",
+    "stages": {
+      "audio_embd": {
+        "F16": 1
+      },
+      "bb": {
+        "F16": 197,
+        "F32": 113
+      },
+      "codec": {
+        "F16": 116,
+        "F32": 282
+      },
+      "dd": {
+        "F16": 85,
+        "F32": 26
+      },
+      "te": {
+        "F16": 184,
+        "F32": 157
+      }
+    },
+    "tensor_count": 1161,
+    "types": {
+      "F16": 583,
+      "F32": 578
+    }
+  },
+  "hoppou-q4": {
+    "codec_groups": {
+      "codec.aq": {
+        "F32": 15,
+        "Q4_K": 2
+      },
+      "codec.dblk": {
+        "F32": 112
+      },
+      "codec.dfin": {
+        "F32": 4
+      },
+      "codec.dhead": {
+        "F32": 2
+      },
+      "codec.downsample": {
+        "F32": 1
+      },
+      "codec.dpre": {
+        "F32": 2
+      },
+      "codec.dq": {
+        "F32": 16,
+        "Q4_K": 2
+      },
+      "codec.dtf": {
+        "F32": 35,
+        "Q4_K": 58
+      },
+      "codec.dup": {
+        "F32": 18,
+        "Q4_K": 4
+      },
+      "codec.enc": {
+        "F32": 28
+      },
+      "codec.enct": {
+        "F32": 48,
+        "Q4_K": 48
+      },
+      "codec.sq": {
+        "F32": 1,
+        "Q4_K": 2
+      }
+    },
+    "model_sha256": "483418fbbb438f5f1c08dbe2b017e42db0f1d126765cd3f772d8622a30a4915c",
+    "revision": "e4fae6493ffb8bbeacc402d1b36f18dfa18fc8d5",
+    "stages": {
+      "audio_embd": {
+        "Q8_0": 1
+      },
+      "bb": {
+        "F32": 113,
+        "Q4_K": 197
+      },
+      "codec": {
+        "F32": 282,
+        "Q4_K": 116
+      },
+      "dd": {
+        "F32": 26,
+        "Q4_K": 85
+      },
+      "te": {
+        "F32": 157,
+        "Q4_K": 52,
+        "Q8_0": 132
+      }
+    },
+    "tensor_count": 1161,
+    "types": {
+      "F32": 578,
+      "Q4_K": 450,
+      "Q8_0": 133
+    }
+  },
+  "hoppou-q6": {
+    "codec_groups": {
+      "codec.aq": {
+        "F32": 15,
+        "Q6_K": 2
+      },
+      "codec.dblk": {
+        "F32": 112
+      },
+      "codec.dfin": {
+        "F32": 4
+      },
+      "codec.dhead": {
+        "F32": 2
+      },
+      "codec.downsample": {
+        "F32": 1
+      },
+      "codec.dpre": {
+        "F32": 2
+      },
+      "codec.dq": {
+        "F32": 16,
+        "Q6_K": 2
+      },
+      "codec.dtf": {
+        "F32": 35,
+        "Q6_K": 58
+      },
+      "codec.dup": {
+        "F32": 18,
+        "Q6_K": 4
+      },
+      "codec.enc": {
+        "F32": 28
+      },
+      "codec.enct": {
+        "F32": 48,
+        "Q6_K": 48
+      },
+      "codec.sq": {
+        "F32": 1,
+        "Q6_K": 2
+      }
+    },
+    "model_sha256": "0eb51de6cbccd54b1c408198797254ac46b3cbd55ca1174c630eaac6d01064d3",
+    "revision": "e4fae6493ffb8bbeacc402d1b36f18dfa18fc8d5",
+    "stages": {
+      "audio_embd": {
+        "Q8_0": 1
+      },
+      "bb": {
+        "F32": 113,
+        "Q6_K": 197
+      },
+      "codec": {
+        "F32": 282,
+        "Q6_K": 116
+      },
+      "dd": {
+        "F32": 26,
+        "Q6_K": 85
+      },
+      "te": {
+        "F32": 157,
+        "Q6_K": 52,
+        "Q8_0": 132
+      }
+    },
+    "tensor_count": 1161,
+    "types": {
+      "F32": 578,
+      "Q6_K": 450,
+      "Q8_0": 133
+    }
+  },
+  "hoppou-q8": {
+    "codec_groups": {
+      "codec.aq": {
+        "F32": 15,
+        "Q8_0": 2
+      },
+      "codec.dblk": {
+        "F32": 112
+      },
+      "codec.dfin": {
+        "F32": 4
+      },
+      "codec.dhead": {
+        "F32": 2
+      },
+      "codec.downsample": {
+        "F32": 1
+      },
+      "codec.dpre": {
+        "F32": 2
+      },
+      "codec.dq": {
+        "F32": 16,
+        "Q8_0": 2
+      },
+      "codec.dtf": {
+        "F32": 35,
+        "Q8_0": 58
+      },
+      "codec.dup": {
+        "F32": 18,
+        "Q8_0": 4
+      },
+      "codec.enc": {
+        "F32": 28
+      },
+      "codec.enct": {
+        "F32": 48,
+        "Q8_0": 48
+      },
+      "codec.sq": {
+        "F32": 1,
+        "Q8_0": 2
+      }
+    },
+    "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+    "revision": "e4fae6493ffb8bbeacc402d1b36f18dfa18fc8d5",
+    "stages": {
+      "audio_embd": {
+        "Q8_0": 1
+      },
+      "bb": {
+        "F32": 113,
+        "Q8_0": 197
+      },
+      "codec": {
+        "F32": 282,
+        "Q8_0": 116
+      },
+      "dd": {
+        "F32": 26,
+        "Q8_0": 85
+      },
+      "te": {
+        "F32": 157,
+        "Q8_0": 184
+      }
+    },
+    "tensor_count": 1161,
+    "types": {
+      "F32": 578,
+      "Q8_0": 583
+    }
+  }
+}
