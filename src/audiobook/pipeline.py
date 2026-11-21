@@ -4,7 +4,7 @@ from contextlib import contextmanager,ExitStack
 import math,time
 from .core import Error,key,writejson,loadjson,filehash
 from . import jobs,qa,qa_cache
-from .speech_compare import comparison_tokens,quantities,negations,mathematical_markers
+from .speech_compare import comparison_tokens,quantities,negations,mathematical_markers,spoken_currency_observation
 
 
 def binding(job):
@@ -14,6 +14,7 @@ def binding(job):
 
 
 def critical(expected,observed,protected=None,reference=None):
+    observed=spoken_currency_observation(expected,observed)
     ref=comparison_tokens(expected);hyp=comparison_tokens(observed);result=set()
     if quantities(ref)!=quantities(hyp):result.add('quantity')
     if negations(ref)!=negations(hyp):result.add('negation')
@@ -30,6 +31,7 @@ def critical(expected,observed,protected=None,reference=None):
 def corroborated(expected,first,second,protected=None,reference=None):
     """Both observers must dispute the same expected quantity/marker site."""
     from difflib import SequenceMatcher
+    first,second=(spoken_currency_observation(expected,observed) for observed in (first,second))
     shared=critical(expected,first,protected,reference)&critical(expected,second,protected,reference)
     if 'quantity' in shared:
         expected_values=quantities(comparison_tokens(expected))

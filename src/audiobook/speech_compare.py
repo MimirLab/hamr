@@ -6,10 +6,10 @@ Homophones such as for/four and know/no are deliberately not equated.
 """
 from calendar import monthrange
 import re,unicodedata
-from .context_forms import MONTHS
+from .context_forms import MONTHS, money_words
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v27'
+POLICY='bounded-english-composed-scale-typed-v29'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -25,6 +25,27 @@ LITERAL_DIGIT_RUN=re.compile(
     r'([3-9]|1[012]|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+'
     r'([0-9][’\']?s|zero(?:e)?s|ones|twos|threes|fours|fives|sixes|sevens|eights|nines)\b',re.I)
 DIGIT_PLURALS={'zeroes':'0','sixes':'6',**{word+'s':str(i) for i,word in enumerate(SMALL[:10])}}
+PRINTED_AMOUNT=r'(?:[1-9][0-9]{0,2}(?:,[0-9]{3}){1,3}|[0-9]{1,12})(?:\.[0-9]{1,12})?'
+PRINTED_CURRENCY=re.compile(rf'(?<![\w$£€¥])([+−-]?)([£¥])[ \t]*({PRINTED_AMOUNT})(?!\w|[.,][0-9]|[$£€¥])')
+DOLLAR_BEFORE_YEN=re.compile(rf'(?<![\w$£€¥])\$[ \t]*({PRINTED_AMOUNT})(?=[ \t]+yen\b)',re.I)
+
+
+def spoken_currency_observation(expected, observed):
+    """Resolve ASR currency glyphs using the rendering they describe."""
+    labels={}
+    if '£' in observed and re.search(r'\bpounds?\b',expected,re.I) and not re.search(r'\bbritish\s+pounds?\b',expected,re.I):
+        labels['£']='GBP'
+    if ('¥' in observed or '$' in observed) and re.search(r'\byen\b',expected,re.I) and not re.search(r'\byuan\b',expected,re.I):
+        if '¥' in observed:labels['¥']='JPY'
+        # ASR may insert a currency glyph alongside the spoken unit, as in $700 yen.
+        observed=DOLLAR_BEFORE_YEN.sub(r'\1',observed)
+    if not labels:return observed
+
+    def read(match):
+        sign,symbol,amount=match.groups()
+        return money_words(sign+amount.replace(',',''),labels[symbol]) if symbol in labels else match[0]
+
+    return PRINTED_CURRENCY.sub(read,observed)
 
 
 def literal_digit_run(match):
@@ -310,7 +331,8 @@ def mathematical_markers(text):
     rates={'percent':r'\b(?:percent|per cent)\b|%', 'per_mille':r'\bper\s+mille\b|‰', 'basis_point':r'\bbasis\s+points?\b'}
     for label,pattern in rates.items():markers += ['rate:'+label]*len(re.findall(pattern,text))
     financial={'dollar sign':'unassigned-dollar','us dollar':'usd','canadian dollar':'cad','australian dollar':'aud',
-               'new zealand dollar':'nzd','euro':'eur','british pound':'gbp','dollar':'unassigned-dollar'}
+               'new zealand dollar':'nzd','euro':'eur','british pound':'gbp','dollar':'unassigned-dollar',
+               'yen':'jpy','yuan':'cny','penny':'gbp-minor','pence':'gbp-minor'}
     markers += ['currency:'+financial[m[1]] for m in re.finditer(r'\b('+'|'.join(financial)+r')s?\b',text)]
     # Inspect operators independently of matching numbers or aggregate WER.
     phrases={'greater than or equal to':'ge','less than or equal to':'le','greater than':'gt','less than':'lt'}

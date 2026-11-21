@@ -4,7 +4,7 @@ from difflib import SequenceMatcher
 from .core import Error,writejson,key,check_revision
 from .jobs import clip_key,valid_clip,summary,final_path,verify_publication,take_signature
 from .planner import count_words,SMALL,TENS,COUNT_RE
-from .speech_compare import POLICY,comparison_tokens,quantities,negations,mathematical_markers
+from .speech_compare import POLICY,comparison_tokens,quantities,negations,mathematical_markers,spoken_currency_observation
 
 
 def tokens(s):
@@ -131,7 +131,7 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             if row['utterance']!=u['id']: raise Error('asr_contract','ASR returned an unexpected utterance identity.')
             literal_ref=tokens(u['text']);literal_hyp=tokens(row['text']);literal_edits=distance(literal_ref,literal_hyp);raw_errors+=literal_edits;raw_words+=len(literal_ref)
             plausible=[s for s in row['segments'] if s['start']<row['audio_seconds']+.1]
-            comparison_text=' '.join(s['text'].strip() for s in plausible)
+            comparison_text=spoken_currency_observation(u['text'],' '.join(s['text'].strip() for s in plausible))
             ref=comparison_tokens(u['text']);hyp=comparison_tokens(comparison_text);edits=distance(ref,hyp);errors+=edits;words+=len(ref)
             expected_numbers=re.findall(r'(?<!\w)[+-]?\d+(?:[.,]\d+)*',u['text']); observed_numbers=re.findall(r'(?<!\w)[+-]?\d+(?:[.,]\d+)*',row['text'])
             flags=[]

@@ -81,3 +81,16 @@ def test_dotted_currency_names_keep_the_same_currency_in_the_audio_check():
     assert math('Pay one hundred U S dollars.')==math('Pay one hundred U.S. dollars.')
     assert math('Pay one hundred U.S. dollars.')!=math('Pay one hundred Canadian dollars.')
     assert math('Pay one hundred U.S. dollars.')!=math('Pay one hundred dollars.')
+
+
+def test_audio_check_resolves_asr_currency_glyphs_without_changing_amount_or_currency():
+    from audiobook.pipeline import critical
+
+    expected='Lunch cost twelve pounds and fifty pence. The last ferry was seven hundred yen.'
+    assert not critical(expected,'Lunch cost £12.50. The last ferry was ¥700.')
+    assert not critical(expected,'Lunch cost £12.50. The last ferry was $700 yen.')
+    assert 'quantity' in critical(expected,'Lunch cost £12.51. The last ferry was ¥700.')
+    assert 'quantity' in critical(expected,'Lunch cost £12.50. The last ferry was $701 yen.')
+    assert 'math_or_unit' in critical(expected,'Lunch cost €12.50. The last ferry was 700 yuan.')
+    assert 'math_or_unit' in critical(expected,'Lunch cost £12.50. The last ferry was 700 dollars yen.')
+    assert 'math_or_unit' in critical(expected,'Lunch cost twelve pounds and fifty cents. The last ferry was 700 yen.')
