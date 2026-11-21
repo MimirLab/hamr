@@ -25,11 +25,13 @@ def emit(value,json_mode=False):
 def print_profiles(rows):
     print('Built-in model choices — downloaded when selected')
     print(f'{"Profile":31} {"Download":>9}  {"VRAM estimate":>15}  Status')
+    labels = {'locally_tested': 'tested on RX 6800 XT', 'short_control_tested': 'short control tested',
+              'implemented_experimental': 'implemented; experimental'}
     for row in rows:
         if not row['implemented']: continue
         low,high=row['estimated_peak_vram_gib']
         memory='CPU only' if high==0 else f'{low:g}–{high:g} GiB'
-        label='tested on RX 6800 XT' if row['testing_status']=='locally_tested' else 'implemented; experimental'
+        label=labels[row['testing_status']]
         print(f'{row["id"]:31} {row["download_bytes"]/1024**3:6.2f} GiB  {memory:>15}  {label}')
 
 
@@ -87,7 +89,7 @@ def choose_backend(store, json_mode, *, automatic=False, advanced=False, include
         row = next(r for r in rows if r['id'] == default)
         if row['settings'].get('device') == 'cpu':
             label = 'Compact model, using your processor'
-            reason = 'This choice can make books without a supported graphics device. Rendering can take longer.'
+            reason = 'This choice can make books without a supported graphics device. Rendering may take much longer than playback.'
         elif row['precision'] == 'F16':
             label = 'Full-precision model, using your graphics device'
             reason = 'This computer appears to have room for the full model.'
@@ -98,6 +100,8 @@ def choose_backend(store, json_mode, *, automatic=False, advanced=False, include
         print(reason)
         if row['testing_status'] == 'implemented_experimental':
             print('This choice is experimental on your platform. Setup will check that it starts.')
+        elif row['testing_status'] == 'short_control_tested':
+            print('This choice passed a short book test. Long-book speed varies by processor.')
         checking = ' Speech checking adds about 0.60 GiB of models plus runtime dependencies.' if include_checks else ''
         print(f'First download: about {row["download_bytes"]/1024**3:.2f} GiB for speech.{checking}')
         while True:

@@ -9,8 +9,8 @@ The fit estimate uses the graphics driver and current available memory. Startup 
 | Host | Runtime and model | Evidence |
 | --- | --- | --- |
 | Linux x86_64 with Vulkan | Hoppou 0.1.7, one of F16, Q8, Q6 or Q4, plus Q8 with CPU text encoding | F16 long narration and matched F16/Q8 controls on RX 6800 XT. Q6, Q4 and CPU text encoding still need qualification. |
-| Linux x86_64 on CPU | The same pinned Hoppou formats via its CPU route | Implemented and selectable. Measure memory and turnaround before recommending for long books. |
-| Windows x86_64 with AVX2 | The upstream Hoppou Windows ZIP, same matched model files | Preview. Windows Python and the pinned binary produced a CPU clone under Wine. Vulkan loaded there but failed on the first Vulkan queue submission. Native Windows qualification is pending. |
+| Linux x86_64 on CPU | The same pinned Hoppou formats via its CPU route | Q8 short control passed real render, forced interruption, recovery, offline speech checking and playback. Long-book turnaround and other precisions need trials. |
+| Windows x86_64 with AVX2 | The upstream Hoppou Windows ZIP, same matched model files | Preview. Q8 CPU passed real setup, checked publication, forced interruption and recovery on native Windows. Native GPU qualification is pending. [Hosted run](https://github.com/MimirLab/hamr/actions/runs/44863152453) |
 | Apple Silicon | Swift/MLX BF16 and affine INT8 are first candidates | Research. Needs an owned Apple adapter and target-device trials. |
 | NVIDIA with a working Vulkan driver | The Hoppou route above | Native CUDA remains a separate comparison. |
 | AMD Strix Halo | Vulkan as available through Hoppou | Speakrail ROCm remains a separate comparison. |
@@ -18,7 +18,7 @@ The fit estimate uses the graphics driver and current available memory. Startup 
 Linux needs the Vulkan loader even when using the CPU profile. Windows uses the loader installed by the graphics driver. For the Windows preview use PowerShell with Git, uv, Python 3.12, FFmpeg and ffprobe available. mpv is used for playback.
 
 ```powershell
-git clone https://github.com/MimirLab/hamr.git
+git clone --branch breeze-engine-preview https://github.com/MimirLab/hamr.git
 cd hamr
 uv build --wheel
 .\install.ps1 -PersistPath
@@ -27,7 +27,27 @@ hamr setup
 hamr open "$HOME\Downloads\My book.epub" --voice cast:nigel-thornberry
 ```
 
-For isolated trials, put `--home DIRECTORY` before each hamr command. Windows defaults to `%LOCALAPPDATA%\hamr`. The Windows CPU clone smoke test produced 2.24 seconds of audio in about 23 seconds of generation under Wine. That does not measure native Windows performance. A small book that publishes on native Windows, then resumes after an interrupted render, is the next qualification gate. Verify the reported device after setup, the M4B checksums, chapter timings and playback. Repeat with a GPU and the CPU choice before widening recommendations.
+For isolated trials, put `--home DIRECTORY` before each hamr command. Windows defaults to `%LOCALAPPDATA%\hamr`. The Windows Q8 CPU control published a verified 2.43-second M4B. In a second render, hamr was forced to exit immediately after saving a take. `resume` preserved the take's checksum, checked the speech and published a second M4B. The recovered book decoded with FFmpeg, and both publications still verified after cleanup. [Native recovery run](https://github.com/MimirLab/hamr/actions/runs/44863152453)
+
+The Vulkan runtime loaded under Wine and failed at its first queue submission. To qualify Windows graphics on a physical PC, run this in PowerShell after installing the preview. Use `vulkan-q8` if `hamr doctor` recommends a smaller model.
+
+```powershell
+$trial = Join-Path $env:TEMP ('hamr-vulkan-' + [guid]::NewGuid())
+$output = Join-Path $trial 'books'
+$state = Join-Path $trial 'state'
+New-Item -ItemType Directory -Path $output -Force | Out-Null
+$control = Join-Path $trial 'Control.md'
+Set-Content -LiteralPath $control -Value 'Fifty-seven birds returned at dawn. Do not open the gate.'
+hamr --home $state doctor
+hamr --home $state setup --profile vulkan-f16 --json
+$book = hamr --home $state open $control --output $output --voice cast:nigel-thornberry --yes --json | ConvertFrom-Json
+hamr --home $state agent inspect $book.job --verify
+hamr --home $state play $book.job
+```
+
+Record `health.actual_device` from setup and `publication_verified` from inspection. Then repeat with a multi-chapter source. Interrupt during rendering, run `hamr --home $state resume JOB`, and listen across the recovered boundary. Inspect the chapter times and keep the test states isolated from your regular books.
+
+The Ryzen 7 5800X Linux Q8 CPU control produced 3.04 seconds of speech. The first `open` call took 38 seconds through startup, reference processing and durable audio commit. A forced exit after that commit left the PCM checksum intact. `resume` reused the take, passed offline speech checking and published a 3.39-second M4B that decoded in mpv.
 
 ## What the quantization labels mean
 
@@ -90,6 +110,14 @@ To compare it, copy the Q8 setup identity into a separate settings file. Set `pr
 | Stock Q8 | 53.84 s | 23.43 s | 0 / 1 |
 | Q8 with F16 depth and codec | 47.76 s | 28.35 s | 1 / 1 |
 
-Both recognizers recovered the tested quantities and negations for all three builds. The takes differ in duration. This is matched local throughput and word evidence. Blind listening still needs to establish whether the protected recipe improves timbre and delivery. The stock Q8 startup pass had GPU allocations left from the prior run, so that sample is unsuitable as a clean startup measurement.
+Both recognizers recovered the tested quantities and negations for all three builds. The takes differ in duration. Blind listening still needs to establish whether the protected recipe improves timbre and delivery.
+
+Each build also completed a short voice-design take without a reference. These cold engine starts began with 0.62–0.64 GiB of graphics memory in use. Peaks are total graphics memory on this machine, including the desktop, sampled every 0.2 seconds. Long passages and longer references can use more.
+
+| Build | Engine startup | Peak graphics memory during load | Peak during short design take |
+| --- | ---: | ---: | ---: |
+| Pinned F16 | 21.80 s | 6.46 GiB | 6.87 GiB |
+| Stock Q8 | 8.49 s | 3.95 GiB | 4.36 GiB |
+| Q8 with F16 depth and codec | 7.17 s | 4.30 GiB | 4.71 GiB |
 
 The protected recipe also passed hamr’s normal render, text check and M4B assembly for a three-passage narration control. The resulting M4B runs 53.53 seconds and decoded in mpv.

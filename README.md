@@ -109,6 +109,8 @@ Linux is the qualified platform. [Windows preview installation and engine resear
 
 Start with **`hamr doctor`**. It reads GPU and memory information from the driver, then recommends a starting profile and explains the choice. It doesn't load a speech model. **`hamr setup`** shows one choice in plain language. Press Enter to start, or use `hamr setup --choose` for the full list. Scripts can use `hamr setup --auto` when there is a well-established fit.
 
+With a compatible graphics device and enough free memory, setup offers the full model. If the graphics device needs more room, setup offers a smaller one. On processor-only systems it offers the short-tested Q8 model with at least 12 GiB of available system memory, or the smaller Q4 where memory is tighter. Processor-only audiobook rendering can take much longer than playback.
+
 **Vulkan** lets the speech engine use your GPU through its graphics driver. It supports AMD, NVIDIA and Intel hardware with a suitable driver. **F16** stores the model's weights at 16-bit precision. **Quantization** uses fewer bits: Q8, Q6 and Q4 need progressively less storage and memory, but may change the voice's detail and delivery. A smaller model can be faster, though that depends on the hardware.
 
 Setup downloads the selected engine and its weights, then a separate CPU speech checker. The checker models add about 605 MiB plus the Python runtime dependencies. Setup verifies the pinned files and checks that the models load.
@@ -121,7 +123,7 @@ Setup downloads the selected engine and its weights, then a separate CPU speech 
 | `vulkan-q4` | AMD / NVIDIA / Intel Vulkan GPU | 3–4.5 GiB | 3–6 GiB | 2.43 GiB | Smallest GPU model; more precision loss. **Implemented, experimental.** |
 | `vulkan-q8-cpu-text-encoder` | Vulkan GPU + CPU text encoding | 4–6 GiB | 8–12 GiB | 3.39 GiB | Same Q8 weights; moves text encoding to CPU, potentially saving VRAM at a speed cost. Savings unmeasured. **Implemented, experimental.** |
 | `cpu-f16` | CPU; no GPU execution | 0 | 10–16 GiB | 5.92 GiB | Least compression, largest RAM budget; potentially very slow. **Implemented, experimental.** |
-| `cpu-q8` | CPU; no GPU execution | 0 | 8–12 GiB | 3.39 GiB | Less compression than Q6/Q4, more RAM. **Implemented, experimental.** |
+| `cpu-q8` | CPU; no GPU execution | 0 | 8–12 GiB | 3.39 GiB | Less compression than Q6/Q4, more RAM. **Short control tested.** Long-book performance depends on the CPU. |
 | `cpu-q6` | CPU; no GPU execution | 0 | 7–11 GiB | 2.93 GiB | Intermediate RAM/precision choice. **Implemented, experimental.** |
 | `cpu-q4` | CPU; no GPU execution | 0 | 6–10 GiB | 2.43 GiB | Smallest CPU model; may generate much slower than playback. **Implemented, experimental.** |
 

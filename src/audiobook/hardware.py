@@ -182,6 +182,11 @@ def profile_catalog(catalog, host=None):
             status = 'locally_tested' if tested else 'implemented_experimental'
             if variant == 'windows_x86_64':
                 status, tested = 'implemented_experimental', None
+            if row['id'] == 'cpu-q8' and variant in ('linux_x86_64', 'windows_x86_64'):
+                status = 'short_control_tested'
+                tested = ('A short Linux control survived interruption and passed speech and M4B checks.'
+                          if variant == 'linux_x86_64' else
+                          'A short control passed speech and M4B checks on a native Windows runner.')
             row.update(platforms=['Linux x86_64 with AVX2','Windows x86_64 with AVX2 (preview)'], precision=precision,
                        estimated_peak_vram_gib=list(vram), estimated_peak_system_ram_gib=list(ram),
                        memory_basis='Planning estimates; upstream approximate GPU footprint plus transient headroom. System RAM/offload peaks unmeasured.',
@@ -256,11 +261,11 @@ def advise(host, catalog):
             if not needs_gpu:
                 reasons.append('CPU execution does not require a usable Vulkan GPU. The shipped binary still links the Vulkan loader.')
         row.update(compatibility=status, reasons=reasons)
-    order = ['vulkan-f16', 'vulkan-q8', 'vulkan-q6', 'vulkan-q4', 'cpu-q4']
+    order = ['vulkan-f16', 'vulkan-q8', 'vulkan-q6', 'vulkan-q4']
     by_id = {r['id']: r for r in profiles if r['implemented']}
     # Prefer headroom over an F16 model that only barely fits. Unknown probes
     # stay advisory; never activate settings based on these observations.
-    gpu_rows = [by_id[i] for i in order[:-1] if gpu is not None and i in by_id and by_id[i]['compatibility'] in ('likely', 'tentative')]
+    gpu_rows = [by_id[i] for i in order if gpu is not None and i in by_id and by_id[i]['compatibility'] in ('likely', 'tentative')]
     if free is None:
         gpu_rows.sort(key=lambda r: r['estimated_peak_vram_gib'][1])
     if gpu and gpu.get('memory_kind') == 'shared':
@@ -270,15 +275,21 @@ def advise(host, catalog):
             row['compatibility'] = 'tentative'
     roomy = [r for r in gpu_rows if free is not None and free >= r['estimated_peak_vram_gib'][1]*GIB]
     choice = next(iter(roomy), None) or min(gpu_rows, key=lambda r: r['estimated_peak_vram_gib'][1], default=None)
-    if choice is None and 'cpu-q4' in by_id and by_id['cpu-q4']['compatibility'] in ('likely', 'tentative'):
-        choice = by_id['cpu-q4']
+    if choice is None:
+        q8, q4 = by_id.get('cpu-q8'), by_id.get('cpu-q4')
+        if q8 and q8['compatibility'] == 'likely':
+            choice = q8
+        elif q4 and q4['compatibility'] in ('likely', 'tentative'):
+            choice = q4
     if choice:
+        cpu = choice['settings'].get('device') == 'cpu'
         recommendation = {'profile': choice['id'], 'command': f'hamr setup --profile {choice["id"]}',
                           'confidence': 'tentative' if choice['compatibility'] != 'likely' or len(host['gpus']) > 1 else 'moderate',
                           'reasons': choice['reasons'], 'testing_status': choice['testing_status'],
                           'uncertainty': 'Fit estimate. Setup checks loading on this computer. Choosing the best sound requires a matched listening comparison.',
-                          'quality_basis': 'prefer reference precision when headroom permits; quality equivalence has not been established',
-                          'automatic_eligible': choice['compatibility'] == 'likely' and bool(choice['testing_evidence']) and len(host['gpus']) <= 1}
+                          'quality_basis': ('prefer the tested Q8 CPU option when memory permits' if cpu else
+                                            'prefer reference precision when headroom permits; quality equivalence has not been established'),
+                          'automatic_eligible': choice['compatibility'] == 'likely' and choice['testing_status'] == 'locally_tested' and len(host['gpus']) <= 1}
     else:
         recommendation = None
         warnings.append('No implemented profile has an established memory/platform fit. See profile reasons and the hardware guide.')

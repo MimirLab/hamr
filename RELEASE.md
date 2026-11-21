@@ -2,7 +2,7 @@
 
 `hamr setup` starts with one plain-language recommendation. `--choose` opens the advanced list. `--auto` accepts an eligible recommendation for scripted installs. The engine guide records the evidence and exact model recipes behind the choices. [Engine comparison and Windows preview](docs/ENGINES.md)
 
-The development preview includes a Windows x64 installer and the pinned Hoppou Windows runtime route. Windows Python under Wine passed the lock, no-replace move and cleanup checks, then synthesized a clone on CPU. The Windows Vulkan executable reached model startup and failed at queue submission under Wine. Native Windows GPU and CPU publication and interruption tests are pending. CUDA and Apple candidates have their own qualification plans in the engine guide.
+The development preview includes a Windows x64 installer and the pinned Hoppou Windows runtime. A native hosted runner installed the wheel, downloaded and checked CPU Q8, then rendered, checked and verified a chaptered M4B. Windows and Linux CPU Q8 recovered from forced exits with the original committed audio hashes. Both Windows M4Bs still verified after cleanup. Native Windows GPU rendering remains unqualified. CUDA and Apple candidates have their own qualification plans in the engine guide. [Windows trial](https://github.com/MimirLab/hamr/actions/runs/44863152453)
 
 Three matching Radeon controls are available for blind listening: F16, stock Q8 and Q8 with original depth and codec tensors. Each has a real continuous take exceeding 45 seconds. The engine guide records the measured time and word checks. Model placement and audible quality are separate checks.
 
@@ -27,7 +27,7 @@ The [profile guide](README.md#which-profile-should-i-choose) lists supported pro
 
 ## Remaining qualification
 
-Q6, Q4, CPU text encoding and all four CPU-only choices are **implemented but experimental**: real startup, complete speech output, memory peaks and comparative listening remain to be qualified for each. RAM ranges in the guide are planning estimates; they are not measured peaks. CUDA/MLX and other research entries have no setup adapter. The [profile guide](README.md#which-profile-should-i-choose) distinguishes these states.
+Q6, Q4, CPU text encoding, and the F16, Q6 and Q4 processor-only choices are **implemented but experimental**. CPU Q8 has short-control evidence and needs long-book timing, memory and listening checks. RAM ranges in the guide are planning estimates. CUDA/MLX and other research entries need setup adapters. The [profile guide](README.md#which-profile-should-i-choose) distinguishes these states.
 
 To qualify an experimental profile without changing active book settings, select its ID in an isolated state. This example uses Q6; repeat with each experimental ID on hardware with sufficient memory:
 

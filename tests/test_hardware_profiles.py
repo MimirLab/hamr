@@ -17,7 +17,7 @@ def host(free=15, ram=24, vulkan='available', system='Linux', arch='x86_64', avx
             'ram_available_bytes': ram*hardware.GIB, 'vulkan': {'status': vulkan, 'reason': 'fixture'}}
 
 
-@pytest.mark.parametrize('free,expected', [(15,'vulkan-f16'), (7,'vulkan-q8'), (5,'vulkan-q6'), (3.5,'vulkan-q4'), (1,'cpu-q4')])
+@pytest.mark.parametrize('free,expected', [(15,'vulkan-f16'), (7,'vulkan-q8'), (5,'vulkan-q6'), (3.5,'vulkan-q4'), (1,'cpu-q8')])
 def test_starting_choice_uses_free_memory_and_headroom(free, expected):
     result = hardware.advise(host(free=free), catalog())
     recommendation = result['recommended_profile']
@@ -33,10 +33,12 @@ def test_unknown_memory_starts_small_and_does_not_claim_compatibility():
     assert result['uncertainties']
 
 
-def test_software_vulkan_or_missing_driver_offers_cpu():
-    data = host(vulkan='unavailable');data['gpus'] = []
+@pytest.mark.parametrize('ram,expected', [(24,'cpu-q8'), (10,'cpu-q4')])
+def test_software_vulkan_or_missing_driver_offers_cpu(ram, expected):
+    data = host(ram=ram, vulkan='unavailable');data['gpus'] = []
     result = hardware.advise(data, catalog())
-    assert result['recommended_profile']['profile'] == 'cpu-q4'
+    assert result['recommended_profile']['profile'] == expected
+    assert not result['recommended_profile']['automatic_eligible']
     assert all(p['compatibility']=='unavailable' for p in result['profiles'] if p['implemented'] and p['id'].startswith('vulkan-'))
 
 
@@ -49,7 +51,7 @@ def test_missing_linked_loader_does_not_suggest_cpu_will_fix_it():
 
 def test_no_identified_gpu_with_unknown_probe_prefers_cpu():
     data = host(vulkan='unknown'); data['gpus'] = []
-    assert hardware.advise(data, catalog())['recommended_profile']['profile'] == 'cpu-q4'
+    assert hardware.advise(data, catalog())['recommended_profile']['profile'] == 'cpu-q8'
 
 
 def test_shared_memory_starts_small_and_explains_uncertainty():
