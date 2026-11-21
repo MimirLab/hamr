@@ -338,7 +338,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         if rule_revision in SOURCE_STRUCTURE and action=='speak' and b.id not in overrides:
             from .pronunciation import unresolved
             from .epub_semantics import note_issues
-            hints=unresolved(b,doc.language)+note_issues(b,effective.get('notes','after_paragraph'))
+            hints=unresolved(b)+note_issues(b,effective.get('notes','after_paragraph'))
             if hints:action='unreadable';reason=' '.join(hints);text=''
         damaged=None
         if rule_revision in NORMALIZATION_TRACE and text:

@@ -338,7 +338,7 @@ class Resolver:
         return next((settings['ditto_marker'] for _,settings in reversed(scopes) if 'ditto_marker' in settings),None)
 
     def structural_evidence(self, block, cells, table_fragments):
-        return context_structure.observations(block,cells,table_fragments,source_digest=self.doc.source_sha256,language=self.doc.language)
+        return context_structure.observations(block,cells,table_fragments,source_digest=self.doc.source_sha256)
 
     def outcome(self, block, view, match, env, options):
         raw=match[0];event=grammar.EVENTS[match.lastgroup]

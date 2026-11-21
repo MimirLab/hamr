@@ -45,7 +45,7 @@ def annotate(source,spans,entries,default_language):
     return result
 
 
-def unresolved(block,default_language):
+def unresolved(block):
     spans=block.locator.get('inline_semantics',[]);messages=[]
     hidden=[s for s in spans if s['kind']=='hidden']
     for span in spans:
@@ -54,7 +54,4 @@ def unresolved(block,default_language):
         if span['kind']=='lexicon_hint' and not span.get('shadowed_by_inline'):
             peers=[s for s in spans if s['kind']=='lexicon_hint' and s['source_start']==span['source_start'] and s['source_end']==span['source_end'] and not s.get('shadowed_by_inline')]
             if not span.get('reading') or span.get('protected_overlap') or len({s.get('reading') for s in peers})>1:messages.append('Publisher lexicon pronunciation is ambiguous or unsupported; provide a verified occurrence reading.')
-        if span['kind']=='language' and span.get('source','').strip() and span['language'].split('-')[0].lower()!='en':messages.append('Marked non-English source needs a verified reading or explicit companion disposition for this English-qualified narrator.')
-    language=block.locator.get('language',default_language)
-    if language and language.split('-')[0].lower()!='en':messages.append('This source language is outside the qualified English narration mode; provide an explicit source-supported disposition.')
     return list(dict.fromkeys(messages))

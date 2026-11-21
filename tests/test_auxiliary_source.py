@@ -49,8 +49,8 @@ def test_note_structure_preserves_math_and_language_instead_of_flattening_it():
     body='<p>CLAIM<a role="doc-noteref" href="n.xhtml#math">1</a>.</p><p>FOREIGN<a role="doc-noteref" href="n.xhtml#foreign">2</a>.</p>'
     notes='<aside id="math">Value <math><msup><mn>10</mn><mn>3</mn></msup></math>.</aside><aside id="foreign" xml:lang="fr">le renard</aside>'
     d=epub(book({'c':body,'n':notes},['c']));p=plan(d)
-    assert '10 to the power of 3' in speech(p) and 'le renard' not in speech(p)
-    assert any('non-English' in i['reason'] or 'language' in i['reason'] for i in p['issues'])
+    assert '10 to the power of 3' in speech(p) and 'le renard' in speech(p)
+    assert not p['issues'] and d.blocks[1].links[0]['language']=='fr'
     companion=plan(d,{'notes':'companion'})
     assert not companion['issues'] and 'FOREIGN' in speech(companion) and 'le renard' not in speech(companion)
     link=d.blocks[0].links[0]

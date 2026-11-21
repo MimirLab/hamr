@@ -5,7 +5,7 @@ import unicodedata
 from .core import key
 from .abbreviations import PROTECTED
 
-EVENT_IDS = {'CR-N036','CR-L011','CR-L012','CR-L013','CR-L014','CR-L019','CR-L020','CR-L023',
+EVENT_IDS = {'CR-N036','CR-L011','CR-L014','CR-L019','CR-L020','CR-L023',
              'CR-L024','CR-L025','CR-L026','CR-L027','CR-L030','CR-L031','CR-L032','CR-L033','CR-L045','CR-L046','CR-L047'}
 BOUND_INLINE = {
     'emphasis': ('CR-L026','contrastive_emphasis'),
@@ -52,14 +52,6 @@ def inline_reading(block, span, raw):
                   and s['source_start']==span['source_start'] and s['source_end']==span['source_end'] and not s.get('shadowed_by_inline')}
         if len(readings)==1:
             return 'CR-L011','authored_alias',{'use_occurrence_alias':span['reading'],'retain_source_name':raw},()
-    if kind=='language' and raw.strip() and span.get('language'):
-        language=span['language']
-        qualified=language.split('-')[0].casefold()=='en'
-        prefix=block.source[max(0,span['source_start']-64):span['source_start']]
-        lexical_mention=qualified and re.search(r'\b(?:borrowed word|loanword)\s+["“\']?$',prefix,re.I)
-        candidate='borrowed_language_reading' if lexical_mention else 'configured_native_fallback'
-        return 'CR-L012',candidate,{'span_language':language,'retain_token':raw,'do_not_translate':True,
-                                   'qualified_speech':qualified},()
     if kind=='display_case' and raw.isascii():
         display=span['transform']
         if display=='uppercase' and raw!=raw.upper():
@@ -92,7 +84,7 @@ def inline_reading(block, span, raw):
     return None
 
 
-def observations(block, cells, table_fragments, *, source_digest, language):
+def observations(block, cells, table_fragments, *, source_digest):
     """Use exact spans or named cell locators. Existing source readings still render speech."""
     source=block.source
     spans=block.locator.get('inline_semantics',[])
@@ -144,12 +136,6 @@ def observations(block, cells, table_fragments, *, source_digest, language):
                 'source_objects':overlay['objects'],'rect':overlay['rect'],'evidence':overlay['evidence']}
         add('pdf_paint','verified_duplicate',{'source_span':[start,end],'source':overlay['text']},fields,
             ('CR-L033','collapse_duplicate_observation',fields,()))
-    lang=block.locator.get('language',language)
-    if lang and lang.split('-')[0].casefold()=='ar' and re.search(r'[\u0620-\u064a]',source):
-        fields={'span_language':lang,'preserve_unvocalized_source':True,'qualified_speech':False}
-        add('source_language','unqualified_script',{'source_span':[0,len(source)],'source':source},fields,
-            ('CR-L013','native_fallback',fields,()))
-
     if block.role=='body' and re.search(r'[^\W\d_]\.($|["”])',source[-3:]):
         stop=source.rfind('.')
         if not any(span['source_start']<=stop<span['source_end'] for span in spans if span['kind'] in ('hidden','literal')):

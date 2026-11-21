@@ -298,7 +298,7 @@ def epub(data:bytes)->Document:
                     note_block=block(note,note_loc,'note',chapter)
                     from .epub_semantics import reading as note_reading
                     from .pronunciation import unresolved
-                    note_problems=[uncertainty(note_spans),*style_issues(n),*vars(soup(np)).get('_audiobook_lexicon_problems',[]),*unresolved(note_block,lang[0] if lang else 'en')]
+                    note_problems=[uncertainty(note_spans),*style_issues(n),*vars(soup(np)).get('_audiobook_lexicon_problems',[]),*unresolved(note_block)]
                     if any(not any(hidden(a) for a in [obj,*obj.parents]) for obj in n.find_all(EMBEDDED)):
                         note_problems.append('This EPUB note contains embedded content that needs a verified reading.')
                     if n.find('a',attrs={'role':'doc-noteref'}) or any('noteref' in str(a.get('epub:type','')).split() for a in n.find_all('a')):note_problems.append('Nested linked notes require a verified reading; recursive note expansion is not inferred.')
@@ -638,7 +638,6 @@ def inspect(path:Path)->Document:
     if len(data)>MAX_INPUT: raise Error('input_limit','Input exceeds 200 MiB limit.')
     d=input_adapter(path)(data)
     if not d.blocks: raise Error('empty_document','Document contains no narratable material.')
-    if not d.language.lower().startswith('en'): d.warnings.append('Only English is currently a qualification target.')
     return d
 
 IMPORT_REVISION='import-23'
@@ -675,7 +674,6 @@ def cached_inspect(path:Path,cache:Path)->Document:
     adapter=input_adapter(path)
     doc=adapter(data,ocr_cache=cache/'pdf-observations',ocr_config=ocr_config) if path.suffix.lower()=='.pdf' else adapter(data)
     if not doc.blocks: raise Error('empty_document','Document contains no narratable material.')
-    if not doc.language.lower().startswith('en'): doc.warnings.append('Only English is currently a qualification target.')
     payload=doc.json()
     if reusable_extraction:writejson(target,{'document_sha256':key(payload),'document':payload,'import_revision':IMPORT_REVISION,'dependencies':dependencies,'implementation':implementation})
     return doc
