@@ -64,3 +64,13 @@ def test_exact_decimal_repeats_and_formula_attachments():
     assert math('lambda bar subscript capital C')!=math('lambda subscript capital C')
     assert math('subscript capital C')!=math('subscript C')
     assert math('numerator one and denominator twelve')!=math('numerator twelve and denominator one')
+
+
+def test_named_currency_symbol_keeps_exact_repeated_digits_in_literal_reading():
+    expected='Type dollar sign, followed by three twos.'
+    assert c(expected)==c('Type dollar sign followed by 3 2s.')
+    assert quantities(c(expected))==['2','2','2']
+    assert quantities(c(expected))!=quantities(c('Type dollar sign followed by three threes.'))
+    assert quantities(c(expected))!=quantities(c('Type dollar sign followed by four twos.'))
+    assert c(expected)!=c('Type $2.22.')
+    assert c('I drew three twos.')!=c('I drew two two two.')

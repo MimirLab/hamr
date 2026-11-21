@@ -89,6 +89,11 @@ def literal_notation(raw):
     fields={'reading_mode':'characters','exact_characters':raw,'metalinguistic':True}
     if '$' in raw:
         fields['dollar_sign_is_named']=True
+    if repeated:=re.fullmatch(r'([$£€])([0-9])\2{2,}',raw):
+        sign,digit=repeated.groups()
+        word=identifier(digit)
+        plural=word+('es' if word=='six' else 's')
+        return literal(raw,f'{LITERAL_SIGNS[sign]}, followed by {number(len(raw)-1)} {plural}',fields=fields)
     pieces=re.findall(r'[^\W\d_]+|[^\s]',raw)
     return literal(raw,' '.join(identifier(c) if c.isascii() and c.isdigit() else LITERAL_SIGNS.get(c,c)
                                 for c in pieces),fields=fields)

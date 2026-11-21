@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v25'
+POLICY='bounded-english-composed-scale-typed-v26'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -20,6 +20,20 @@ SCALES={'thousand':1000,'million':10**6,'billion':10**9}
 UNPARSED_SCALES={'hundred',*SCALES,'trillion','quadrillion','quintillion','sextillion','septillion','octillion','nonillion','decillion'}
 FRACTIONS={'half','halves','quarter','quarters',*(word for word in ORDINALS if 3<=ORDINALS[word]<=20),*(word+'s' for word in ORDINALS if 3<=ORDINALS[word]<=20)}
 MONTH_LIMITS={name.lower():monthrange(2000,index)[1] for index,name in enumerate(MONTHS) if name}
+LITERAL_DIGIT_RUN=re.compile(
+    r'\b((?:dollar|euro|pound) sign)\s*,?\s+followed by\s+'
+    r'([3-9]|1[012]|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+'
+    r'([0-9][’\']?s|zero(?:e)?s|ones|twos|threes|fours|fives|sixes|sevens|eights|nines)\b',re.I)
+DIGIT_PLURALS={'zeroes':'0','sixes':'6',**{word+'s':str(i) for i,word in enumerate(SMALL[:10])}}
+
+
+def literal_digit_run(match):
+    sign,count,surface=match.groups()
+    count=count.lower()
+    width=int(count) if count.isdigit() else SMALL_VALUES[count]
+    surface=surface.lower()
+    digit=surface[0] if surface[0].isdigit() else DIGIT_PLURALS[surface]
+    return sign+' '+' '.join([digit]*width)
 
 
 def numeric_literal(token):
@@ -212,7 +226,7 @@ def money_tokens(tokens):
 def comparison_tokens(text):
     from .abbreviations import expand
     from .linguistic import comparison_text
-    text=comparison_text(text)
+    text=comparison_text(LITERAL_DIGIT_RUN.sub(literal_digit_run,text))
     text,_,_=expand(text)
     text=text.lower().replace('’',"'").replace('±',' plus or minus ')
     ts=[];end=0

@@ -60,9 +60,11 @@ def test_quoted_numeric_symbols_are_voiced_as_characters_in_a_literal_instructio
     assert literal_amount['fields']['exact_characters']=='$222' and literal_amount['fields']['dollar_sign_is_named']
     assert cost['kind']=='money_symbol'
     assert speech(result)==('The string "three slash four" contains three characters. '
-                            'Type "dollar sign two two two" exactly, including the dollar sign. '
+                            'Type "dollar sign, followed by three twos" exactly, including the dollar sign. '
                             'Pay two hundred twenty two dollars.')
     assert result['decisions'][0]['source']==source and not result['issues']
+    assert 'pound sign, followed by four sixes' in speech(reading('Type "£6666" exactly.'))
+    assert 'euro sign one two three' in speech(reading('Type "€123" exactly.'))
 
 
 def test_authored_vocal_markers_are_read_as_words_and_keep_original_punctuation():
