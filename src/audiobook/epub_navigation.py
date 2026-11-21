@@ -37,7 +37,7 @@ def route(blocks,entries,soup):
         for entry in pending:
             offset=starts.get(entry['anchor'])
             if offset is None or not 0<offset<base_length:continue
-            protected=any(s['kind'] in ('mathml','note_reference','pronunciation_hint') and s['source_start']<offset<s['source_end'] for s in spans)
+            protected=any(s['kind'] in ('mathml','note_reference','pronunciation_hint','ruby') and s['source_start']<offset<s['source_end'] for s in spans)
             in_word=block.source[offset-1].isalnum() and block.source[offset].isalnum()
             if block.role not in ('body','heading','caption') or protected or in_word:
                 boundary_ranks[0]=max(boundary_ranks[0],entry['rank'])

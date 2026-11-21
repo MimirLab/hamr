@@ -5,6 +5,10 @@ from bs4 import NavigableString
 
 EMBEDDED = ('audio', 'canvas', 'embed', 'iframe', 'object', 'video')
 AUDIT_SPANS={'hyperlink','title_style','emphasis','display_case','math_script','math_vector','abbreviation_label'}
+HAN_NAMES=('CJK UNIFIED IDEOGRAPH','CJK COMPATIBILITY IDEOGRAPH')
+KANA_NAMES=('HIRAGANA LETTER','KATAKANA LETTER')
+KANA_MARKS={'KATAKANA-HIRAGANA PROLONGED SOUND MARK','HIRAGANA ITERATION MARK','HIRAGANA VOICED ITERATION MARK',
+            'KATAKANA ITERATION MARK','KATAKANA VOICED ITERATION MARK'}
 
 def noteref(node):
     return getattr(node,'attrs',None) is not None and ('noteref' in str(node.get('epub:type','')) or node.get('role')=='doc-noteref')
@@ -65,6 +69,40 @@ def accessible_label(node):
     return ''
 
 
+def ruby_pronunciation(node):
+    """Recognize an unambiguous authored kana reading for each base group."""
+    if node.find(['ruby','rtc','br']) or any(parent.name in ('ruby','code','kbd','samp') for parent in node.parents):
+        return None
+    if any(child.name in ('code','kbd','samp') or hidden(child) or noteref(child) for child in node.find_all(True)):
+        return None
+    base=[]; readings=[]
+    for child in node.children:
+        if child.name=='rp':continue
+        if child.name!='rt':
+            base.append(str(child) if isinstance(child,NavigableString) else child.get_text())
+            continue
+        if child.get('role')=='definition':
+            return None
+        names=[unicodedata.name(c,'') for c in unicodedata.normalize('NFC',''.join(base).strip())]
+        if not any(name.startswith(HAN_NAMES) for name in names) or not all(
+                name.startswith(HAN_NAMES+KANA_NAMES) or name in KANA_MARKS or name=='IDEOGRAPHIC ITERATION MARK' for name in names):
+            return None
+        reading=child.get_text().strip()
+        names=[unicodedata.name(c,'') for c in unicodedata.normalize('NFC',reading)]
+        if not any(name.startswith(KANA_NAMES) for name in names) or not all(
+                name.startswith(KANA_NAMES) or name in KANA_MARKS for name in names):
+            return None
+        readings.append(reading)
+        base.clear()
+    return ''.join(readings) if readings and not ''.join(base).strip() else None
+
+
+def ruby_base(node):
+    if node.name in ('rt','rp','rtc','script','style') or hidden(node):
+        return ''
+    return ''.join(str(child) if isinstance(child,NavigableString) else ruby_base(child) for child in node.children)
+
+
 def describe(node,resolve_asset=None,cover_assets=()):
     pieces=[];spans=[];position=0
     def visit(n):
@@ -94,11 +132,12 @@ def describe(node,resolve_asset=None,cover_assets=()):
         elif n.name in ('code','kbd','samp'):
             spans.append({**data,'kind':'literal'})
         elif n.name=='ruby':
-            base=''.join(str(c) for c in n.descendants if isinstance(c,NavigableString) and not any(a.name in ('rt','rp') for a in c.parents))
+            base=ruby_base(n)
             annotation=' '.join(t.get_text(' ',strip=True) for t in n.find_all('rt'))
-            glosses=' '.join(t.get_text(' ',strip=True) for t in n.find_all('rt',role='definition'))
+            glosses=' '.join(t.get_text(' ',strip=True) for t in n.find_all('rt',role='definition') if not hidden(t))
             spans.append({**data,'kind':'ruby','base':base,'reading':base+(', meaning '+glosses if glosses else ''),
                           'annotation':annotation,'origin':'Authored ruby base and annotation'})
+            if pronunciation:=ruby_pronunciation(n):spans[-1]['pronunciation']=pronunciation
         else:
             from .epub_styles import properties
             alignment=properties(n).get('vertical-align',{}).get('value')
@@ -182,7 +221,7 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False):
         elif kind=='object_label':
             if any(s['source_start']<=a and s['source_end']>=b for s in references):continue
             edits.append((a,b,'' if span.get('cover') or span.get('decorative') else ' '+span.get('reading','')+' '))
-        elif kind=='ruby':edits.append((a,b,span['reading']))
+        elif kind=='ruby':edits.append((a,b,span.get('pronunciation',span['reading'])))
         elif kind=='generated_label':
             if not any(s['source_start']<=a and s['source_end']>=b for s in references):edits.append((a,a,' '+span['reading']+' '))
         elif kind=='task_status' and span.get('checked') is not None:edits.append((a,a,'Checked. ' if span['checked'] else 'Unchecked. '))

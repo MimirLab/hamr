@@ -45,8 +45,10 @@ def inline_reading(block, span, raw):
             return 'CR-L031','spoken_destination',{'retain_exact_destination':raw,'href':href},()
         return 'CR-L031','visible_link_label',{'label':raw,'href':href,'retain_target_in_companion':True},()
     if kind=='ruby':
-        return 'CR-L014','base_reading',{'base':span.get('base',span['reading']),'annotation':span['annotation'],
-                                         'reading':span['reading'],'speak_once':True},()
+        pronunciation=span.get('pronunciation')
+        return 'CR-L014','ruby_reading' if pronunciation else 'base_reading',{
+            'base':span.get('base',span['reading']),'annotation':span['annotation'],
+            'reading':pronunciation or span['reading'],'speak_once':True},()
     if kind=='lexicon_hint' and span.get('reading') and not (span.get('shadowed_by_inline') or span.get('protected_overlap')):
         readings={s.get('reading') for s in block.locator.get('inline_semantics',[]) if s['kind']=='lexicon_hint'
                   and s['source_start']==span['source_start'] and s['source_end']==span['source_end'] and not s.get('shadowed_by_inline')}

@@ -323,7 +323,7 @@ def epub(data:bytes)->Document:
             if any(a.get('id') in ('pg-header','pg-footer','project-gutenberg-license') for a in [node,*node.parents] if hasattr(a,'get')): role='reference'
             elif text.strip()=='[Illustration]': role='placeholder'
             loc={'format':'epub','occurrence':occurrence,'path':path,'anchor':node.get('id'),'element':idx,'dom_rank':ranks[id(node)],'base_text_length':len(base_text)}
-            identity_spans=[{k:v for k,v in s.items() if k!='base' or s['kind']!='ruby'}
+            identity_spans=[{k:v for k,v in s.items() if s['kind']!='ruby' or k not in ('base','pronunciation')}
                             for s in semantics if s['kind'] not in AUDIT_SPANS]
             if identity_spans:
                 loc['inline_semantics']=identity_spans;loc['exact']=str(node)
@@ -344,6 +344,17 @@ def epub(data:bytes)->Document:
                 loc['row_header_columns']={i:[j for j,cell in enumerate(row)
                                              if cell.name=='th' and cell.get('scope')=='row']
                                            for i,row in enumerate(table_cells[1:],1)}
+                from .epub_semantics import reading
+                ruby_cells=[]
+                for i,row in enumerate(table_cells):
+                    for j,cell in enumerate(row):
+                        if not cell.find('ruby'):continue
+                        source,spans=describe(cell)
+                        if source!=rows[i][j]:continue
+                        inline=[span for span in spans if span['kind'] in ('ruby','hidden')]
+                        spoken=reading(block(source,{'inline_semantics':inline}))
+                        if spoken!=source:ruby_cells.append({'row':i,'column':j,'source':source,'reading':spoken})
+                if ruby_cells:loc['ruby_cells']=ruby_cells
             # Append asset evidence after identity creation to preserve existing img locators.
             if image_resource:
                 out[-1].locator['image_resource']=image_resource
