@@ -40,7 +40,7 @@ def stacked_digits(rect, glyphs):
             above.append(index)
         if 0 <= bottom-y1 <= 2:
             below.append(index)
-    return above + below if above and below else []
+    return {'above':above,'below':below} if above and below else None
 
 
 def vertical_runs(segments):
@@ -100,7 +100,8 @@ def classify(images, glyphs):
         if touched:
             overlays[index] = {'rect':rect, 'native_characters':touched, 'relation':'overlapping_paint'}
         elif axis == 'horizontal' and rect[2]-rect[0] < 18 and (stacked := stacked_digits(rect, glyphs)):
-            overlays[index] = {'rect':rect, 'native_characters':stacked, 'relation':'stacked_digits'}
+            overlays[index] = {'rect':rect,'native_characters':stacked['above']+stacked['below'],
+                               **stacked,'relation':'stacked_digits'}
         else:
             (horizontal if axis == 'horizontal' else vertical)[index] = rect
     panels, rules = framed_panels(vertical, horizontal)

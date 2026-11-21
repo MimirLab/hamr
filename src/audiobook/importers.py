@@ -622,7 +622,7 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
             for idx,s in enumerate(segments):
                 locator={'format':'pdf','page':n+1,'rect':s['rect'],'line':idx,**s.get('locator',{})}
                 local_issue=issue or s.get('issue')
-                if not local_issue and marks and s['rect'] and not s.get('locator'):
+                if not local_issue and marks and not s.get('locator',{}).get('ruled_panel'):
                     l,b,r,t=s['rect']
                     if any(x1>l and x0<r and y1>b and y0<t for x0,y0,x1,y1 in (m['rect'] for m in marks)):
                         local_issue='A raster mark overlaps this native line. Verify the original before speech.'

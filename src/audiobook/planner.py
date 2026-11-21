@@ -162,6 +162,9 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 raise Error('document_policy_verification','A pause override must bind an exact source scene marker; words cannot be replaced by a pause.')
             if override.get('announce') not in (None,'table','figure'):
                 raise Error('document_policy_verification','Companion announcements support only a table or figure.')
+    if 'pdf_glyph_aliases' in document_policy:
+        from .pdf_table_readings import apply_glyph_aliases
+        doc=apply_glyph_aliases(doc,document_policy['pdf_glyph_aliases'])
     resolver=None
     if rule_revision==RULES:
         from .contextual import Resolver
@@ -278,6 +281,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             effective={**section_defaults,'code':'speak' if section['mode']=='procedure' else 'companion','references':'speak' if section['mode']=='study' else 'companion',**section}
         action='speak'; reason='Preserve authored content and qualifiers.'; text=spoken_paragraph(b); connector=False;force_pause=False;cells=();prepared_spans=None
         table_fragments=[]
+        if resolver and b.locator.get('pdf_equation'):
+            prepared_spans=[(0,len(text))]
         if rule_revision in MODERN and b.locator.get('inline_semantics'):
             from .epub_semantics import reading
             if resolver:
@@ -326,6 +331,10 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                     if resolver:
                         from .contextual import table_view
                         text,cells=table_view(rows)
+                        rendered={(cell['row'],cell['column']) for cell in b.locator.get('pdf_cell_readings',())}
+                        if rendered:
+                            prepared_text=text
+                            prepared_spans=[(start,end) for start,end,row,column,*_ in cells if (row,column) in rendered]
                     else:text='Table. '+' '.join('; '.join(f'{h}: {v}' for h,v in zip(headers,row))+'.' for row in rows[1:])
                     reason='Speak every row with explicit header labels; keep exact table in companion.'
         if effective['references']=='companion' and re.search(r'^(bibliography|references|works cited|index)$',block_chapter,re.I):

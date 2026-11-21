@@ -106,6 +106,14 @@ def mark_folios(blocks, inventory):
 def spoken_paragraph(block):
     text = block.source
     if block.locator.get('format') == 'pdf':
+        if block.role=='heading' and block.locator.get('ruled_panel') and text[-1:] not in '.!?':
+            return text+'.'
+        equation = block.locator.get('pdf_equation')
+        if equation and equation['fields']['notation']==text:
+            return equation['reading']
+        inline = block.locator.get('pdf_inline_formula')
+        if inline and inline['source']==text:
+            return inline['reading']
         return apply_line_wraps(text,block.locator.get('line_wrap_joins',[]))
     return text
 

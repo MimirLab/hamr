@@ -5,7 +5,7 @@ import unicodedata
 from .core import key
 from .abbreviations import PROTECTED
 
-EVENT_IDS = {'CR-N004','CR-N018','CR-N034','CR-N036','CR-N051','CR-L011','CR-L014','CR-L019','CR-L020','CR-L023',
+EVENT_IDS = {'CR-N004','CR-N017','CR-N018','CR-N034','CR-N035','CR-N036','CR-N051','CR-L011','CR-L014','CR-L019','CR-L020','CR-L023',
              'CR-L024','CR-L025','CR-L026','CR-L027','CR-L030','CR-L031','CR-L032','CR-L033','CR-L045','CR-L046','CR-L047'}
 BOUND_INLINE = {
     'emphasis': ('CR-L026','contrastive_emphasis'),
@@ -115,6 +115,18 @@ def observations(block, cells, table_fragments, *, source_digest):
     for link in block.links:
         if link['kind']=='hyperlink' and not any(span['kind']=='hyperlink' for span in spans):
             add('source_link','hyperlink',{}, {'target':link['href'],'label':link.get('label')})
+    if (equation:=block.locator.get('pdf_equation')) and equation['fields']['notation']==source:
+        fields={**equation['fields'],'native_ranges':block.locator['native_ranges'],
+                'panel_row':block.locator['panel_row'],'panel_column':block.locator['panel_column']}
+        add('pdf_equation_cell','source_equation',{'source_span':[0,len(source)],'source':source},fields,
+            ('CR-N035','equation',fields,('CR-N051',) if fields['value'].get('exponent') else ()))
+    if (inline:=block.locator.get('pdf_inline_formula')) and inline['source']==source:
+        for item in inline['formulas']:
+            start,end=item['span']
+            if source[start:end]==item['source']:
+                fields={'script':item['script'],'reading':item['reading']}
+                add('pdf_inline','superscript',{'source_span':[start,end],'source':item['source']},fields,
+                    ('CR-L030','mathematical_superscript',fields,()))
 
     logical_input=block.locator.get('format') in ('epub','markdown','text')
     if logical_input:

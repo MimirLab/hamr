@@ -20,6 +20,7 @@ def rebase(previous,fresh,repairs,policy=None):
     targets={r['block'] for r in edits}
     if policy:
         targets.update(policy.get('blocks',{}))
+        targets.update(policy.get('pdf_glyph_aliases',{}))
         structure=policy.get('structure',{})
         targets.update(structure.get('title',{}).get('source_blocks',[]))
         targets.update(r['source_block'] for r in structure.get('chapters',[]))
@@ -53,6 +54,8 @@ def rebase(previous,fresh,repairs,policy=None):
     new_policy=deepcopy(policy)
     if new_policy:
         new_policy['blocks']={mapped[k]:v for k,v in new_policy.get('blocks',{}).items()}
+        if 'pdf_glyph_aliases' in new_policy:
+            new_policy['pdf_glyph_aliases']={mapped[k]:v for k,v in new_policy['pdf_glyph_aliases'].items()}
         structure=new_policy.get('structure',{})
         if structure.get('title'):structure['title']['source_blocks']=[mapped[k] for k in structure['title']['source_blocks']]
         for chapter in structure.get('chapters',[]):chapter['source_block']=mapped[chapter['source_block']]

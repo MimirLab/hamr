@@ -8,7 +8,7 @@ from audiobook.importers import pdf
 from audiobook.planner import plan
 
 
-def ruled_pdf(*, declaration=True, extra_image=False):
+def ruled_pdf(*, declaration=True, extra_image=False,unaccented_value='4.51'):
     data = BytesIO()
     canvas = Canvas(data, pagesize=(440, 360), invariant=True)
     rule = ImageReader(Image.new('RGB', (1, 1)))
@@ -26,7 +26,7 @@ def ruled_pdf(*, declaration=True, extra_image=False):
     for y, name, symbol, value, unit in (
         (251, 'Sample mass', 'm', '1.234 50(07) × 10', 'kg'),
         (225, 'Measured time', 't', '1 234 (exact)', 's'),
-        (199, 'Other mass', 'm', '4.51', 'kg'),
+        (199, 'Other mass', 'm', unaccented_value, 'kg'),
     ):
         canvas.setFont('Helvetica',10)
         for x, text in zip(columns,(name,symbol,value,unit)):
@@ -83,3 +83,10 @@ def test_uncertainty_needs_its_source_convention_and_images_keep_ocr(monkeypatch
     d = pdf(ruled_pdf(extra_image=True))
     assert len(called)==1 and d.inventory[0]['route']=='visual_ocr'
     assert len(d.inventory[0]['raster_content_regions'])==1
+
+
+def test_prepared_scientific_digits_share_a_sentence_with_their_unit():
+    d=pdf(ruled_pdf(unaccented_value='0.99999999987'))
+    take,=[u for u in plan(d)['utterances'] if u['text'].startswith('Table. Quantity: Other mass')]
+    assert 'nine nine nine nine nine nine nine nine nine eight seven' in take['text']
+    assert 'Unit: kilogram.' in take['text'] and take['delivery_boundary']=='sentence'
