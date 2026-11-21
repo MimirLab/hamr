@@ -143,6 +143,21 @@ def test_dotted_meridiem_owns_the_clock_without_breaking_before_the_zone():
     assert critical('Launch was nine thirty two A M EDT.','Launch was 9:32 p.m. EDT.')
 
 
+def test_qa_compares_recognized_calendar_notation_and_exact_clock_fields():
+    expected='Launch was July sixteenth, nineteen sixty nine; nine thirty two A M EDT.'
+    assert not critical(expected,'Launch was July 16, 1969, 9.32 AM EDT.')
+    assert 'quantity' in critical(expected,'Launch was July 17, 1969, 9.32 AM EDT.')
+    assert 'quantity' in critical(expected,'Launch was July 16, 1968, 9.32 AM EDT.')
+    assert 'quantity' in critical(expected,'Launch was July 16, 1969, 9.33 AM EDT.')
+    assert 'math_or_unit' in critical(expected,'Launch was July 16, 1969, 9.32 PM EDT.')
+    compact='Landing was July twenty fourth, nineteen sixty nine; twelve fifty P M EDT.'
+    assert not critical(compact,'Landing was July 24, 1969, 1250 PM EDT.')
+    assert not critical('Flight date was June first sixty nine.','Flight date was June 1st, 69.')
+    assert 'quantity' in critical('Flight date was June first sixty nine.','Flight date was June 1st, 1969.')
+    assert not critical('Flight date was June first oh nine.','Flight date was June 1st, 09.')
+    assert 'quantity' in critical('A reading of 9.32 in the AM block.','A reading of 9:32 A M.')
+
+
 def test_dates_use_a_whole_named_date_or_a_source_bound_chronology():
     source=('May 25, 1961, was windy. The launch was July 16, 1969.\n\n'
             '## Milestones\n\n11/21/68 – Integrated test\n\n1/18/69 – Docking\n\n6/1/69 – Readiness test\n\n'

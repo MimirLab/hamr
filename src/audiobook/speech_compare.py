@@ -4,10 +4,12 @@ Bounded cardinal, negation and contextual abbreviation readings are
 canonicalized. Decimal/version strings and leading zeros remain distinct.
 Homophones such as for/four and know/no are deliberately not equated.
 """
+from calendar import monthrange
 import re,unicodedata
+from .context_forms import MONTHS
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v19'
+POLICY='bounded-english-composed-scale-typed-v20'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -17,6 +19,7 @@ ORDINALS.update(thirtieth=30,fortieth=40,fiftieth=50,sixtieth=60,seventieth=70,e
 SCALES={'thousand':1000,'million':10**6,'billion':10**9}
 UNPARSED_SCALES={'hundred',*SCALES,'trillion','quadrillion','quintillion','sextillion','septillion','octillion','nonillion','decillion'}
 FRACTIONS={'half','halves','quarter','quarters',*(word for word in ORDINALS if 3<=ORDINALS[word]<=20),*(word+'s' for word in ORDINALS if 3<=ORDINALS[word]<=20)}
+MONTH_LIMITS={name.lower():monthrange(2000,index)[1] for index,name in enumerate(MONTHS) if name}
 
 
 def numeric_literal(token):
@@ -109,6 +112,40 @@ def cardinal(ts,i):
         if digits:value+='.'+''.join(digits);end=position
     return value,end
 
+
+def calendar_date(tokens,start):
+    """Align a named calendar date's date words and ASR date notation."""
+    if start+2>=len(tokens):
+        return None
+    read_day=ordinal(tokens,start+1)
+    if read_day is None:
+        plain=integer_value(tokens[start+1])
+        if plain is None or tokens[start+2]!='|number-boundary|':
+            return None
+        read_day=plain,start+2
+    day,index=read_day
+    if not 1<=day<=MONTH_LIMITS[tokens[start]]:
+        return None
+    if tokens[index:index+1]==['|number-boundary|']:
+        index+=1
+    if tokens[index:index+1]==['oh'] and index+1<len(tokens) and tokens[index+1] in SMALL_VALUES:
+        digit=SMALL_VALUES[tokens[index+1]]
+        if digit<10:return [tokens[start],'#ordinal:'+str(day),'#0'+str(digit)],index+2
+    year=cardinal(tokens,index)
+    if not year or not year[0].isdigit():
+        return None
+    value,end=year
+    if 11<=int(value)<=20 and tokens[index] in SMALL_VALUES:
+        tail=end+1 if tokens[end:end+1]==['oh'] else end
+        remainder=cardinal(tokens,tail)
+        if remainder and remainder[0].isdigit() and int(remainder[0])<100:
+            value+=remainder[0].zfill(2)
+            end=remainder[1]
+    if len(value) not in (2,4):
+        return None
+    return [tokens[start],'#ordinal:'+str(day),'#'+value],end
+
+
 MONEY_UNITS = {
     ('us','dollar'): ('us','dollars'),
     ('canadian','dollar'): ('canadian','dollars'),
@@ -173,6 +210,8 @@ def comparison_tokens(text):
     while i<len(ts):
         t=ts[i]
         if t=='|number-boundary|':i+=1;continue
+        date=calendar_date(ts,i) if t in MONTH_LIMITS else None
+        if date:out.extend(date[0]);i=date[1];continue
         ordered=ordinal(ts,i,out[-1] if out else None)
         if ordered:out.append('#ordinal:'+str(ordered[0]));i=ordered[1];continue
         if t in ('minus','negative','plus','positive'):
