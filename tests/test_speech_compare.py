@@ -94,3 +94,14 @@ def test_audio_check_resolves_asr_currency_glyphs_without_changing_amount_or_cur
     assert 'math_or_unit' in critical(expected,'Lunch cost €12.50. The last ferry was 700 yuan.')
     assert 'math_or_unit' in critical(expected,'Lunch cost £12.50. The last ferry was 700 dollars yen.')
     assert 'math_or_unit' in critical(expected,'Lunch cost twelve pounds and fifty cents. The last ferry was 700 yen.')
+
+
+def test_unqualified_elapsed_pair_accepts_printed_fields_without_guessing_units():
+    from audiobook.pipeline import critical
+
+    expected='Elapsed time: three twenty.'
+    assert not critical(expected,'Elapsed time, 3.20.')
+    assert not critical(expected,'Elapse time, 03:20.')
+    assert 'quantity' in critical(expected,'Elapsed time, 3.21.')
+    assert 'quantity' in critical('Elapsed time: three minutes twenty seconds.','Elapsed time, 3.20.')
+    assert 'quantity' in critical('Reference three twenty.','Reference 3.20.')

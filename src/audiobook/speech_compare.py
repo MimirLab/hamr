@@ -6,10 +6,10 @@ Homophones such as for/four and know/no are deliberately not equated.
 """
 from calendar import monthrange
 import re,unicodedata
-from .context_forms import MONTHS, money_words
+from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v29'
+POLICY='bounded-english-composed-scale-typed-v30'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -28,6 +28,21 @@ DIGIT_PLURALS={'zeroes':'0','sixes':'6',**{word+'s':str(i) for i,word in enumera
 PRINTED_AMOUNT=r'(?:[1-9][0-9]{0,2}(?:,[0-9]{3}){1,3}|[0-9]{1,12})(?:\.[0-9]{1,12})?'
 PRINTED_CURRENCY=re.compile(rf'(?<![\w$£€¥])([+−-]?)([£¥])[ \t]*({PRINTED_AMOUNT})(?!\w|[.,][0-9]|[$£€¥])')
 DOLLAR_BEFORE_YEN=re.compile(rf'(?<![\w$£€¥])\$[ \t]*({PRINTED_AMOUNT})(?=[ \t]+yen\b)',re.I)
+ELAPSED_PAIR=re.compile(r'(\belapsed?[ \t]+time[ \t]*[:,]?[ \t]+)([0-9]{1,3})[.:]([0-5][0-9])(?!\w|[.:][0-9])',re.I)
+
+
+def notation_observation(expected, observed):
+    """Resolve ASR formatting that represents the chosen spoken reading."""
+    observed=spoken_currency_observation(expected,observed)
+    if 'elapsed time' not in expected.casefold():return observed
+
+    def elapsed(match):
+        spoken=duration_pair(match[2],match[3])
+        if re.search(r'\belapsed time[ \t]*:[ \t]*'+re.escape(spoken)+r'(?=[ \t]*[.,;!?]|[ \t]*$)',expected,re.I):
+            return 'elapsed time '+spoken
+        return match[0]
+
+    return ELAPSED_PAIR.sub(elapsed,observed)
 
 
 def spoken_currency_observation(expected, observed):
