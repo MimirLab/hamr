@@ -14,11 +14,11 @@ jobs:
       - name: Install Linux command dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg mpv groff man-db zsh fish
+          sudo apt-get install -y ffmpeg mpv groff man-db zsh fish tesseract-ocr tesseract-ocr-eng
       - name: Test and check archives
         run: |
           uv sync --frozen --python 3.12 --extra test
-          uv run --no-sync pytest -q
+          uv run --no-sync pytest -q --tb=short
           uv build
           uv run --no-sync python tools/check_release.py
       - name: Test installed command, manual and completion outside the checkout

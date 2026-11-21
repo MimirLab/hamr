@@ -12,7 +12,9 @@ import audiobook.qa_cache as cache
 def case(tmp_path,monkeypatch):
     s=Store(tmp_path/'state'); source=tmp_path/'book.md'
     source.write_text('# First\n\nThere are students (57) and faculty (four).\n\n# Second\n\nDo not lose this condition.\n')
-    j=s.get(create(s,source)['job']);j['backend']={'test':'not a real runtime'};j['voice']={'name':'test'};s.save(j)
+    output = tmp_path / 'books'
+    output.mkdir()
+    j=s.get(create(s,source,output=output)['job']);j['backend']={'test':'not a real runtime'};j['voice']={'name':'test'};s.save(j)
     def clips():
         j=s.get(jid)
         for u in j['plan']['utterances']:
