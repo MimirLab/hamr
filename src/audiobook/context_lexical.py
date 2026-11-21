@@ -3,8 +3,16 @@ import re
 import unicodedata
 
 from . import boundaries
-from .context_candidate import Candidate, literal
+from .context_candidate import Candidate, Component, literal
 from .linguistic import LIGATURES
+from .spoken_forms import identifier
+
+EMAIL = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}"
+PATH = r'(?<![\w)])(?:\.{0,2}/|[A-Za-z]:\\)[^\s<>"“”]+?(?=$|[\s<>"“”]|[,.!?;:](?=$|\s))'
+FILENAME = r'[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?:md|txt|pdf|epub|csv|json|toml|py|html|yaml|wav|m4b|zip)'
+OPAQUE_PATTERNS = {'email':('CR-L035',EMAIL),'path':('CR-L036',PATH)}
+OPAQUE = re.compile('|'.join(f'(?P<{kind}>{pattern})' for kind,(_,pattern) in OPAQUE_PATTERNS.items()))
+PICTOGRAPH = r'[\U0001F300-\U0001FAFF]\ufe0f?[\U0001F3FB-\U0001F3FF]?'
 
 PATTERNS = {
     'corporate': ('CR-L003', r'(?i:Inc\.|Corp\.|Ltd\.)(?!\w)'),
@@ -14,18 +22,25 @@ PATTERNS = {
     'apostrophe': ('CR-L007', r"[A-Za-z]+['’]s"),
     'heteronym': ('CR-L008', r'(?:read|record)'),
     'grapheme': ('CR-L015', r'[^\W\d_]\u0300*[\u0300-\u036f]+'),
+    'mixed_script': ('CR-L016',r'(?=[A-Za-z\u0400-\u052f0-9]{0,63}[\u0400-\u052f])'
+                              r'(?=[A-Za-z\u0400-\u052f0-9]{0,63}[A-Za-z])[A-Za-z\u0400-\u052f0-9]{2,64}'),
     'ligature': ('CR-L017', '['+''.join(map(chr,LIGATURES))+']'),
     'elision': ('CR-L018', r"[Oo]['’]er|['’]twas|['’]tis"),
     'ellipsis': ('CR-L021', r'\[…\]|\[\.\.\.\]|…'),
     'interruption': ('CR-L022', r'—'),
+    'period': ('CR-L020', r'(?<=\s)\.(?![.\w])'),
     'annotation': ('CR-L029', r'\[sic\]'),
     'ampersand': ('CR-L034', r'&'),
     'shell_token': ('CR-L037', r'\$[A-Z_][A-Z_0-9]*|--[a-zA-Z][a-zA-Z0-9-]*'),
     'implication': ('CR-L038', r'[A-Z]\s*→\s*[A-Z]'),
     'citation': ('CR-L041', r'et al\.'),
+    'pictograph': ('CR-L042',PICTOGRAPH+r'(?:\u200d'+PICTOGRAPH+r'){0,8}(?!\u200d)'),
     'censoring': ('CR-L043', r"[A-Za-z]\*{2,8}|(?i:\[redacted\])"),
     'stage_direction': ('CR-L044', r'(?i:\((?:sigh|laugh|gasp|chuckle|cry|cough)\)|\[(?:sighs|laughs|cries|gasps|chuckles|coughs)\])'),
     'indexed_symbol': ('CR-L049', r'[A-Za-z][_^][A-Za-z0-9]{1,8}'),
+    'chess_move': ('CR-L040', r'[KQRBN][a-h][1-8]'),
+    'unknown_symbol': ('CR-L048', r'[\u27c0-\u27ef\u2980-\u29ff]'),
+    'filename': ('CR-L036',FILENAME),
 }
 
 
@@ -33,7 +48,7 @@ def expressions(left, right, abbreviations):
     for kind, (_, pattern) in PATTERNS.items():
         if kind=='acronym':
             pattern='(?:'+'|'.join(map(re.escape,abbreviations)) + ')' if abbreviations else r'(?!)'
-        if kind in ('grapheme','ligature','interruption','ellipsis','ampersand','annotation','stage_direction','censoring'):
+        if kind in ('grapheme','ligature','interruption','ellipsis','ampersand','annotation','stage_direction','censoring','pictograph'):
             yield kind, left+pattern+right if kind=='censoring' else pattern
         else:
             yield kind, left+pattern+right
@@ -54,6 +69,10 @@ def literal_candidate(kind,raw,env):
         return Candidate('literal_bracket_text',{'retain_brackets':True},raw,('governor',))
     if kind=='ampersand':
         return Candidate('named_character',{'character_name':'ampersand'},'ampersand',('governor',))
+    if kind=='period':
+        return Candidate('named_character',{'character_name':'period'},'period',('governor',))
+    if kind=='chess_move':
+        return Candidate('literal_identifier',{'retain_identifier':raw,'do_not_infer_a_chess_move':True},raw,('governor',))
     return literal(raw)
 
 
@@ -65,7 +84,8 @@ def candidates(kind,raw,env):
         if form=='word':
             return [Candidate('acronym_word',{'retain_name':raw},raw,('syntax',))]
         letters=list(raw)
-        return [Candidate('initialism_letters',{'letters':letters},' '.join(letters),('syntax',))]
+        parts=(Component('CR-L019','lexical_initialism',(0,len(raw)),{'letters':letters}),) if raw=='US' else ()
+        return [Candidate('initialism_letters',{'letters':letters},' '.join(letters),('syntax',),parts)]
     if kind=='corporate':
         following=boundaries.following(env.continuation)
         stops=not env.continuation.strip() or following in boundaries.STARTERS
@@ -77,9 +97,9 @@ def candidates(kind,raw,env):
     if kind=='contraction':
         subject=re.split("['’]",raw)[0]
         if env.cue('had_verb',side='right'):
-            return [Candidate('had_contraction',{'expansion':subject+' had'},None,('governor',))]
+            return contraction(raw,subject+' had','had_contraction',env)
         if env.cue('would_verb',side='right'):
-            return [Candidate('would_contraction',{'expansion':subject+' would'},None,('governor',))]
+            return contraction(raw,subject+' would','would_contraction',env)
         return []
     if kind=='apostrophe':
         if env.cue('present_participle',side='right'):
@@ -92,6 +112,14 @@ def candidates(kind,raw,env):
     if kind=='grapheme':
         glyph=unicodedata.normalize('NFC',raw)
         return [Candidate('canonical_equivalent_text',{'normalized_grapheme':glyph,'retain_original_span':True},None,('syntax',))]
+    if kind=='mixed_script':
+        parts=[]
+        for index,c in enumerate(raw):
+            if '\u0400'<=c<='\u052f':
+                fields={'retain_character':c,'script':'Cyrillic','unicode':f'U+{ord(c):04X}'}
+                parts.append(Component('CR-L016','retain_authored_characters',(index,index+1),fields))
+        fields={'scripts':['Cyrillic','Latin'],'exact_identifier':raw}
+        return [Candidate('retain_authored_characters',fields,raw,('syntax',),tuple(parts))]
     if kind=='ligature':
         return [Candidate('targeted_ligature_reading',{'letter_sequence':raw.translate(LIGATURES),'retain_source_mapping':True},None,('syntax',))]
     if kind=='elision':
@@ -108,11 +136,21 @@ def candidates(kind,raw,env):
         return [Candidate('conjunction',{'spoken_relation':'and'},'and',('syntax',))]
     if kind=='shell_token':
         variable=raw.startswith('$')
+        component=() if variable else (Component('CR-L022','literal_cli_syntax',(0,2),{'retain_two_hyphens':True}),)
         return [Candidate('shell_variable' if variable else 'cli_option',
                           {'exact_identifier':raw,**({'do_not_interpret_as_money':True} if variable else {'retain_two_hyphens':True})},
-                          raw,('syntax',))]
+                          raw,('syntax',),component)]
     if kind=='citation':
         return [Candidate('citation_shorthand',{'retain_citation_identity':True},None,('syntax',))]
+    if kind=='pictograph' and env.setting('emoji_speech'):
+        fields={'sequence':raw,'retain_complete_sequence':True,'do_not_infer_author_emotion':True}
+        # Unicode names apply to individual symbols. A sequence can have a
+        # meaning that cannot be derived from its component names.
+        symbol=raw.removesuffix('\ufe0f')
+        name=unicodedata.name(symbol,'').lower() if len(symbol)==1 else ''
+        if env.setting('emoji_speech')=='localized_name' and name:
+            return [Candidate('localized_symbol_name',{**fields,'name':name,'language':'en'},name,('convention',))]
+        return [literal(raw,kind='literal_sequence',fields=fields)]
     if kind=='censoring':
         return [Candidate(('redaction_marker' if raw=='[REDACTED]' else 'literal_marker_text') if raw.startswith('[') else 'authored_censoring',
                           {'retain_brackets':raw.startswith('['),'hidden_word_not_reconstructed':True},raw,('syntax',))]
@@ -120,19 +158,71 @@ def candidates(kind,raw,env):
         fields={'do_not_execute_unapproved_control':True,'must_not_trigger_vocal_event':True}
         return [Candidate('narrated_stage_direction' if raw.startswith('[') and not env.before.strip() else 'literal_control_like_text',
                           fields, raw,('syntax',))]
-    if kind=='implication' and env.cue('implication'):
+    if kind=='implication' and (env.cue('implication') or env.setting('notation')=='propositional_implication'):
         left,right=map(str.strip,raw.split('→'))
-        return [Candidate('logical_expression',{'retain_direction':left+'_to_'+right,'do_not_reverse_operands':True},left+' implies '+right,('governor',))]
+        evidence='convention' if env.setting('notation')=='propositional_implication' else 'governor'
+        return [Candidate('logical_expression',{'retain_direction':left+'_to_'+right,'do_not_reverse_operands':True},left+' implies '+right,(evidence,))]
     if kind=='indexed_symbol':
         op='_' if '_' in raw else '^'
         base,argument=raw.split(op)
         if env.cue('identifier') or env.cue('configuration',side='right'):
-            return [Candidate('machine_identifier',{'exact_identifier':raw,'do_not_insert_subscript_semantics':True},raw,('governor',))]
-        if env.cue('notation') or env.cue('index_description',side='right'):
+            fields={'exact_identifier':raw,'retain_exact_identifier':True,'do_not_insert_subscript_semantics':True}
+            if env.cue('code_language'):
+                code_cue=next(s[2] for s in sorted(env.governors) if s[0]=='code_language')
+                fields.update(exact_characters=raw,source_language=code_cue.split()[0].casefold())
+            parts=(Component('CR-L001','literal_character_sequence',(0,len(raw)),dict(fields)),)
+            return [Candidate('machine_identifier',fields,raw,('governor',),parts)]
+        notation='ASCII_subscript' if op=='_' else 'ASCII_power'
+        if env.cue('notation') or env.cue('index_description',side='right') or env.setting('notation')==notation:
             field,relation=('subscript',' subscript ') if op=='_' else ('power',' to the power of ')
-            return [Candidate('math_expression',{'base':base,field:argument,'do_not_drop_index':True,'do_not_drop_power':True},
-                              base+relation+argument,('governor',))]
+            fields={'base':base,field:argument,'do_not_drop_index':True,'do_not_drop_power':True}
+            parts=()
+            if env.cue('tex'):
+                parts=(Component('CR-L038','mathematical_expression',(0,len(raw)),
+                                 {'base_symbol':base,field+'_symbol':argument,'source_language':'tex'}),)
+            evidence='convention' if env.setting('notation')==notation else 'governor'
+            return [Candidate('math_expression',fields,base+relation+argument,(evidence,),parts)]
+    if kind=='chess_move':
+        if env.setting('notation')=='inventory' or env.cue('identifier'):
+            return [Candidate('literal_identifier',{'retain_identifier':raw,'do_not_infer_a_chess_move':True},raw,('governor',))]
+        if env.setting('notation')=='chess' or env.cue('chess'):
+            piece={'K':'king','Q':'queen','R':'rook','B':'bishop','N':'knight'}[raw[0]]
+            fields={'piece':piece,'destination':raw[1:],'do_not_calculate_new_move':True}
+            evidence='convention' if env.setting('notation')=='chess' else 'governor'
+            return [Candidate('chess_move',fields,piece+' '+raw[1]+' '+raw[2],(evidence,))]
+    if kind=='unknown_symbol' and env.cue('unclassified_symbol'):
+        return [literal(raw,kind='literal_fallback',fields={'retain_original_symbol':raw,'record_unsupported_reading':True})]
+    if kind=='filename' and env.cue('filename'):
+        stem,extension=raw.rsplit('.',1)
+        fields={'exact_identifier':raw,'retain_extension':extension}
+        return [Candidate('filename',fields,stem+' dot '+' '.join(extension),('governor',))]
     return []
+
+
+def opaque_reading(kind, raw, env):
+    fields={'exact_identifier':raw}
+    if kind=='path':
+        if env.cue('path'):
+            return Candidate('filesystem_path',fields,raw,('governor',))
+        return None
+    if env.cue('literal_tail',side='right') or env.literal_mention():
+        return Candidate('literal_identifier',{**fields,'spell_policy':'characters'},raw,('governor',))
+    if env.cue('email_address'):
+        punctuation={'.':'dot','_':'underscore','-':'hyphen','+':'plus','@':'at'}
+        fragments=re.split(r'([._+@-])',raw)
+        spoken=' '.join(punctuation.get(part,identifier(part) if part.isascii() and part.isdigit() else part)
+                        for part in fragments if part)
+        return Candidate('email_reading',{**fields,'punctuation_owned_by_identifier':True},spoken,('governor',))
+    return None
+
+
+def contraction(raw, expansion, kind, env):
+    fields={'expansion':expansion,'source_contraction_preserved':True,'optional_expansion_if_requested':expansion}
+    choice=env.setting('expand_contractions')
+    source_form=Component('CR-L006','preserved_contraction',(0,len(raw)),dict(fields))
+    if choice is False:
+        return [Candidate('preserved_contraction',fields,None,('governor','convention'))]
+    return [Candidate(kind,fields,expansion if choice else None,('governor','convention') if choice else ('governor',),(source_form,))]
 
 
 def heteronym(raw,env):

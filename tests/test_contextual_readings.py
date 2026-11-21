@@ -44,7 +44,8 @@ def test_owned_occurrences_keep_distinct_numeric_roles_and_literal_scope():
 
 def test_literal_scopes_do_not_expand_machine_syntax_or_abbreviation():
     result=reading('Type `Dr. $222 and 1/4`. Read /tmp/v1.2.3.txt. Open https://example.net/?fee=$222.')
-    assert not result['issues'] and not events(result)
+    assert not result['issues']
+    assert [selected(event)['fields']['exact_identifier'] for event in events(result)]==['/tmp/v1.2.3.txt']
     assert 'Dr. $222 and 1/4' in speech(result)
     assert 'https://example.net/?fee=$222.' in speech(result)
     assert 'open parenthesis sigh close parenthesis' in speech(reading('This says `(sigh)`.'))
@@ -58,7 +59,7 @@ def test_nearby_words_support_a_date_without_guessing_date_order():
     assert date['field_status']['month']=='unspecified'
     assert {c['fields']['date_order'] for c in date['candidates'] if 'date_order' in c['fields']}=={'MD','DM'}
     assert any(item['kind']=='nearby' for item in date['evidence'])
-    assert selected(fraction)['fields']=={'numerator':'3','denominator':'4'}
+    assert selected(fraction)['fields']=={'numerator':'3','denominator':'4','bound_unit':'cup'}
     result=reading(source,conventions={'date_order':'DM'})
     assert 'April third' in speech(result) and 'three quarters cup' in speech(result)
     assert selected(events(result)[0])['fields']['year'] is None
@@ -256,4 +257,95 @@ def test_authored_epub_edit_does_not_disable_context_around_literal():
     assert [event['source'] for event in events(result)]==['007']
     assert events(result)[0]['view']['kind']=='prepared_reading'
     observed=[row for entry in result['decisions'] for row in entry.get('context_structure',[])]
-    assert {row['kind'] for row in observed}=={'ruby','literal'}
+    assert {row['kind'] for row in observed}=={'ruby','literal','sentence_stop'}
+
+
+def test_component_ids_keep_the_written_owner_and_do_not_materialize_twice():
+    result=reading('Water is H₂O. Evaluate 8−5. The train departs at 3:20PM.')
+    chosen=[(event,selected(event)) for event in events(result)]
+    parts={part['event_id']:(event,part) for event,candidate in chosen for part in candidate.get('components',[])}
+    chemical,subscript=parts['CR-N036']
+    assert chemical['source']=='H₂O' and subscript['source']=='₂'
+    assert subscript['fields']=={'element':'H','atom_count':'2'}
+    assert parts['CR-N006'][1]['source']=='−5' and parts['CR-N006'][1]['fields']['operator']=='subtract'
+    assert parts['CR-N016'][1]['source']=='3:20' and parts['CR-N016'][1]['fields']['meridiem']=='PM'
+    assert speech(result)=='Water is H two O. Evaluate eight minus five. The train departs at three twenty P M.'
+
+
+def test_marked_scope_selects_layout_and_named_conventions_without_rewriting_raw_symbols():
+    result=reading('The count is 三. The notation is 12¤abc. The estimate is two million. The song title is Two Million.')
+    chosen=[selected(event) for event in events(result)]
+    assert [entry['kind'] for entry in chosen]==['numeral','unknown_numeric_form','lexical_quantity','name']
+    assert 'count is three' in speech(result) and '12¤abc' in speech(result)
+    assert chosen[2]['fields']['exact_value']=='2000000'
+    assert 'song title is Two Million' in speech(result)
+    assert '🙂' in speech(reading('The glyph is 🙂.',conventions={'emoji_speech':'literal'}))
+    assert any('🙂' in d['source'] for d in reading('🙂',conventions={'emoji_speech':'localized_name'})['decisions'])
+    assert speech(reading('🙂',conventions={'emoji_speech':'localized_name'}))=='slightly smiling face'
+    assert speech(reading('Nf3',conventions={'notation':'chess'}))=='knight f 3'
+    assert speech(reading('Nf3',conventions={'notation':'inventory'}))=='Nf3'
+    assert speech(reading('A→B',conventions={'notation':'propositional_implication'}))=='A implies B'
+
+
+def test_email_and_path_keep_exact_identifier_boundaries():
+    message='Contact help@example.org for details. Write help@example.org character by character. Open ./notes/chapter.md.'
+    result=reading(message)
+    readings=[selected(e) for e in events(result)]
+    assert [r['kind'] for r in readings]==['email_reading','literal_identifier','filesystem_path']
+    assert [r['fields']['exact_identifier'] for r in readings]==['help@example.org','help@example.org','./notes/chapter.md']
+    assert 'Contact help at example dot org for details.' in speech(result)
+    assert 'Write help@example.org character by character.' in speech(result)
+    assert 'Open ./notes/chapter.md.' in speech(result)
+    assert not critical('Contact help at example dot org for details.','Contact help at example.org for details.')
+    assert 'math_or_unit' in critical('The train departs at three twenty P M.','The train departs at 3.20 a.m.')
+    assert not critical('The train departs at three twenty P M.','The train departs at 3.20pm.')
+    assert 'quantity' in critical('The distance is 3.20 pm.','The distance is three twenty P M.')
+
+
+def test_epub_markup_records_author_roles_with_exact_source_spans():
+    from audiobook.importers import epub
+    from test_upstream_epub import book
+    markup=('<p>They asked <span style="text-transform: uppercase">us</span> to keep <em>not</em> in the sentence. '
+            '<cite>The Voyage</cite> is <a href="#appendix">here</a>.</p>'
+            '<p>Claim<a epub:type="noteref" href="#n1">¹</a>. '
+            'The formula is <math><msup><mi>x</mi><mn>2</mn></msup></math>. '
+            'The vector is <math><mi intent=":vector">v</mi></math>.</p>'
+            '<p id="appendix">Appendix text.</p><aside epub:type="footnote" id="n1">Remember the full claim.</aside>')
+    result=plan(epub(book({'c':markup},['c'])))
+    annotated=[(decision,entry) for decision in result['decisions'] for entry in decision.get('context_structure',[])
+               if 'event_id' in entry]
+    by_kind={entry['selected_reading']['kind']:entry for _,entry in annotated}
+    assert {'underlying_word_reading','contrastive_emphasis','title_style','visible_link_label',
+            'note_reference','mathematical_superscript','vector_symbol'}<=by_kind.keys()
+    for decision, entry in annotated:
+        first,last=entry['source_span']
+        assert decision['source'][first:last]==entry['source']
+    assert by_kind['note_reference']['selected_reading']['fields']['marker_value']=='1'
+    assert 'They asked us to keep not in the sentence.' in speech(result)
+    assert 'x to the power of 2' in speech(result)
+    assert speech(result).count('Remember the full claim.')==1
+
+
+def test_ditto_and_scale_keep_table_coordinates_and_header_lineage():
+    source='| Site | Revenue ($ millions) |\n| --- | --- |\n| Paris | 222 |\n| " | 333 |'
+    doc=markdown(source.encode())
+    table=next(b.id for b in doc.blocks if b.role=='table')
+    source_policy={'source_sha256':doc.source_sha256,'context':{'tables':{table:{'ditto_marker':'double_quote'}}}}
+    policies={'context':{'conventions':{'dollar_currency':'USD'}},'document':source_policy}
+    result=plan(doc,policies)
+    assert 'Site: Paris; Revenue' in speech(result) and 'Site: "; Revenue' not in speech(result)
+    note=next(entry for decision in result['decisions'] for entry in decision.get('context_structure',[]) if entry['kind']=='inherited_cell')
+    assert note['fields']['value']=='Paris' and note['fields']['antecedent']=={'table':table,'row':1,'column':0}
+    money=next(selected(event) for event in events(result) if event['source']=='222')['components'][0]
+    assert money['fields']['header_source']=={'block':table,'row':0,'column':1}
+    assert money['fields']['scale_multiplier']=='1000000' and money['fields']['currency']=='USD'
+    assert 'Site: "; Revenue' in speech(plan(doc))
+
+
+def test_mixed_script_occurrence_retains_codepoints():
+    result=reading('The exact name is pаypal. The comparison token is paypal.')
+    event,=events(result)
+    candidate=selected(event)
+    character,=candidate['components']
+    assert character['fields']=={'retain_character':'а','script':'Cyrillic','unicode':'U+0430'}
+    assert 'pаypal' in speech(result) and 'paypal' in speech(result)

@@ -3,14 +3,16 @@ from datetime import date
 import re
 
 from . import abbreviations, boundaries, context_forms, context_lexical
-from .context_candidate import Candidate, exact_components, literal, number_spoken, numeric_fields
+from .context_candidate import Candidate, Component, exact_components, literal, number_spoken, numeric_fields
 from .context_forms import CURRENCIES, MONTHS, SYMBOLS, UNIT_NAMES
 from .linguistic import UNITS as TECHNICAL_UNITS
 from .spoken_forms import identifier, number, ordinal
+from .typed_readings import clock_words
 
 LEFT = r'(?<![\w./:@#$£€+-])(?<![0-9],)'
 RIGHT = r'(?!\w|[.,:/@-]\w|[$£€])'
 AMOUNT = r'[+−-]?[0-9]{1,12}(?:[.,][0-9]{1,12})?'
+CLOCK = re.compile(r'([0-9]{1,3}):([0-9]{1,3})(?:[ \t]*(UTC|GMT|AM|PM))?')
 UNITS = {**TECHNICAL_UNITS, **UNIT_NAMES}
 COMPOSITES = context_forms.patterns(LEFT, RIGHT, MONTHS)
 PATTERNS = {
@@ -19,7 +21,7 @@ PATTERNS = {
     'money_modifier': LEFT + r'[$£€][0-9]{1,12}(?:\.[0-9]{1,12})?[ \t]+(?i:{price_nouns})' + RIGHT,
     'money': LEFT + r'(?:[+−-]?[$£€][ \t]*[0-9]{1,12}(?:[.,][0-9]{1,12})?)' + RIGHT,
     'slash': LEFT + r'[0-9]{1,2}/[0-9]{1,2}(?:/[0-9]{4})?' + RIGHT,
-    'colon': LEFT + r'[0-9]{1,3}:[0-9]{1,3}(?:[ \t]+(?:(?:UTC|GMT)(?![+−-][0-9])|AM|PM))?' + RIGHT,
+    'colon': LEFT + r'[0-9]{1,3}:[0-9]{1,3}(?:[ \t]*(?:(?:UTC|GMT)(?![+−-][0-9])|AM|PM))?' + RIGHT,
     'parentheses': r'\([ \t]*[0-9]{1,9}(?:[.,][0-9]{1,12})?[ \t]*\)',
     'measurement': LEFT + AMOUNT + r'(?:[ \t]+(?:'+context_forms.UNIT_PATTERN+r')|[ \t]*(?:' + '|'.join(map(re.escape, TECHNICAL_UNITS)) + '))' + RIGHT,
     'separators': LEFT + r'[+−-]?[0-9]{1,12}[.,][0-9]{1,12}' + RIGHT,
@@ -37,29 +39,34 @@ def expressions(lexicon, initialisms, price_nouns):
     return re.compile('|'.join(f'(?P<{kind}>{pattern})' for kind, pattern in fields.items()))
 
 
-EVENTS = {**{name: event for name, (event, _) in (COMPOSITES|context_lexical.PATTERNS).items()}, 'money':'CR-N012', 'money_modifier':'CR-N041', 'date_iso':'CR-N023', 'slash':'CR-N008', 'colon':'CR-N021',
+EVENTS = {**{name: event for name, (event, _) in (COMPOSITES|context_lexical.PATTERNS|context_lexical.OPAQUE_PATTERNS).items()}, 'money':'CR-N012', 'money_modifier':'CR-N041', 'date_iso':'CR-N023', 'slash':'CR-N008', 'colon':'CR-N021',
           'parentheses':'CR-N007', 'measurement':'CR-N017', 'separators':'CR-N004',
           'abbreviation':'CR-L002', 'integer':'CR-N001'}
-PROTECTED_PATH = re.compile(r'(?<![\w)])(?:\.{0,2}/|[A-Za-z]:\\)[^\s<>]+')
+PROTECTED_PATH = re.compile(context_lexical.PATH)
 KIND_EVENTS = {'explicit_cardinal':'CR-N003','signed_quantity':'CR-N006','ratio':'CR-N016',
                'year':'CR-N024','address_component':'CR-N028','version':'CR-N029',
                'money_modifier':'CR-N041','literal_character_sequence':'CR-L001','noun_stress':'CR-L009',
                'verb_stress':'CR-L009','literal_cli_syntax':'CR-L022'}
-RELATED_EVENTS = {'CR-N003','CR-N005','CR-N006','CR-N016','CR-N025','CR-N038','CR-N040','CR-N047','CR-N052'}
+RELATED_EVENTS = {'CR-N003','CR-N005','CR-N006','CR-N010','CR-N016','CR-N024','CR-N025','CR-N029','CR-N038','CR-N040','CR-N047','CR-N052'}
+COMPONENT_EVENTS = {'CR-N006','CR-N016','CR-N036','CR-N038','CR-N050','CR-L001','CR-L006','CR-L019','CR-L022','CR-L038'}
 
 
 def related_events(kind,raw,env,selected):
     form,fields=selected['kind'], selected['fields']
     events={KIND_EVENTS[form]} if form in KIND_EVENTS else set()
     if kind=='integer' and len(raw)>1 and raw.startswith('0'):events.add('CR-N003')
-    if kind=='separators' and '.' in raw:events.add('CR-N005')
-    if form=='binary_operation' and fields['operator']=='subtract':events.add('CR-N006')
+    if kind=='separators' and '.' in raw:
+        events.update(('CR-N005','CR-N029'))
+    if form=='binary_operation' and fields['operator']=='subtract':
+        events.add('CR-N006')
+        if '-' in raw:events.add('CR-N010')
     if form=='clock_time' and fields.get('meridiem'):events.add('CR-N016')
     if kind=='slash' and form=='identifier':events.add('CR-N025')
     if kind=='integer' and env.header and (form=='money' or env.header_cue('identifier')):events.add('CR-N038')
     if fields.get('reading_mode')=='characters' and kind in ('money','money_modifier','slash'):events.add('CR-N040')
     if fields.get('origin')=='header' and 'scale' in fields:events.add('CR-N047')
     if form=='measurement' and fields.get('unit')=='kelvin':events.add('CR-N052')
+    if kind=='integer' and len(raw)==4 and form=='cardinal_quantity':events.add('CR-N024')
     return sorted(events-{EVENTS[kind]})
 
 
@@ -75,6 +82,19 @@ def date_candidate(fields, order, evidence):
     if year is not None:
         said += ' '+number_spoken(year)
     return Candidate('date',{'components':fields,'date_order':order,'month':month,'day':day,'year':year},said,evidence)
+
+
+def scoped_date(candidate, raw, env):
+    if len({value for _,value in env.date_conventions})<2:
+        return candidate
+    lineage=env.date_conventions
+    scope=env.origins.get('date_order')
+    precedence={'chapter policy':'explicit_section_over_book_default','table policy':'explicit_table_convention',
+                'document policy':'explicit_document_convention'}[scope]
+    fields={'selected_date_order':candidate.fields['date_order'],'evidence_precedence':precedence,
+            'preserve_source':raw,'date_order_lineage':lineage}
+    part=Component('CR-N050','best_supported_candidate',(0,len(raw)),fields)
+    return Candidate(candidate.kind,candidate.fields,candidate.spoken,candidate.evidence,(part,))
 
 
 def monetary(raw, env):
@@ -145,7 +165,8 @@ def candidates(kind, raw, env):
             numerator,denominator=map(int,fields)
             units={2:('half','halves'),3:('third','thirds'),4:('quarter','quarters'),8:('eighth','eighths')}
             said=number(numerator)+' '+units[denominator][numerator!=1] if denominator in units else number(numerator)+' divided by '+number(denominator)
-            options.append(Candidate('fraction',{'numerator':fields[0],'denominator':fields[1]},said,('governor',)))
+            unit=next(cue[2] for cue in env.governors if cue[0]=='fraction_unit')
+            options.append(Candidate('fraction',{'numerator':fields[0],'denominator':fields[1],'bound_unit':unit},said,('governor',)))
         quote=env.quoted_date_order()
         nearby_date=env.cue('date_link') and env.nearby('date_topic')
         if env.cue('date') or env.header_cue('date_column') or nearby_date or quote:
@@ -164,28 +185,31 @@ def candidates(kind, raw, env):
                 supports=(role, *(('convention',) if order==value else ()), *(('anchors',) if inferred==value else ()))
                 if len(valid)==1:
                     supports += ('syntax',)
-                options.append(date_candidate(fields,value,supports))
+                options.append(scoped_date(date_candidate(fields,value,supports),raw,env))
         return options
     if kind=='colon':
-        pieces=raw.split()
-        first,second=pieces[0].split(':')
+        clock=CLOCK.fullmatch(raw)
+        first,second,suffix=clock.groups()
+        numeric=raw[:clock.end(2)]
         base={'components':[first,second],'separator':':'}
-        fallback=literal(raw,exact_components(pieces[0],':','colon')+(' '+' '.join(pieces[1]) if len(pieces)>1 else ''),fields=base)
+        fallback=literal(raw,exact_components(numeric,':','colon')+((' '+suffix) if suffix else ''),fields=base)
         if env.cue('ratio') or env.cue('ratio',side='right'):
             return [Candidate('ratio',{'left':first,'right':second},number_spoken(first)+' to '+number_spoken(second),('governor',))]
         if env.cue('reference'):
             return [Candidate('reference',base,fallback.spoken,('governor',))]
         if env.cue('duration') or env.header_cue('duration'):
             duration=env.setting('duration_fields')
-            if duration and int(second)<60 and len(pieces)==1:
+            if duration and int(second)<60 and suffix is None:
                 units=('minutes','seconds') if duration=='minutes_seconds' else ('hours','minutes')
                 return [Candidate('duration',{**base,'field_order':duration},number(int(first))+' '+units[0]+' '+number(int(second))+' '+units[1],('convention',))]
             return [Candidate('duration',base,fallback.spoken,('governor',))]
-        suffix=pieces[1] if len(pieces)>1 else None
         if (suffix or env.cue('clock')) and len(second)==2 and int(first)<24 and int(second)<60 and (suffix not in ('AM','PM') or 1<=int(first)<=12):
-            # Leave known Breeze clock formatting to the existing renderer.
             fields={'hour':first,'minute':second,'zone':suffix if suffix in ('UTC','GMT') else None}
-            if suffix in ('AM','PM'):fields['meridiem']=suffix
+            if suffix in ('AM','PM'):
+                fields['meridiem']=suffix
+                part=Component('CR-N016','clock_time',(0,len(numeric)),dict(fields))
+                return [Candidate('clock_time',fields,clock_words(first,second)+' '+' '.join(suffix),('syntax',),(part,))]
+            # The existing formatter still owns unsuffixed clocks and UTC/GMT.
             return [Candidate('clock_time',fields,None,('syntax',))]
         return [fallback]
     if kind=='parentheses':
@@ -207,7 +231,8 @@ def candidates(kind, raw, env):
         if separator=='.' and not sign and env.cue('version'):
             said=number_spoken(first)+' point '+(identifier(second) if second.startswith('0') else number_spoken(second))
             fields={'components':[first,second],'role':'version','preserve_component_zeroes':True}
-            return [Candidate('version',fields,said,('governor',))]
+            kind='version' if env.cue('version_label') else 'component_identifier'
+            return [Candidate(kind,fields,said,('governor',))]
         locale=env.setting('number_locale')
         decimal_separator='.' if locale in ('en-US','en-GB') else ',' if locale else None
         option=Candidate('decimal_quantity',{'whole':first,'fraction':second,'integer_digits':first,'fraction_digits':second,
@@ -233,8 +258,10 @@ def candidates(kind, raw, env):
         if scale:
             currency,word,multiplier=scale
             fields={'coefficient':raw,'coefficient_digits':raw,'scale':word,'scale_multiplier':multiplier,
-                    'currency':currency,'origin':'header','header':env.header}
-            return [Candidate('scaled_quantity',fields,number_spoken(raw)+' '+word+((' '+CURRENCIES[currency]+'s') if currency else ''),('column',))]
+                    'currency':currency,'origin':'header','header':env.header,'header_source':env.header_source}
+            components=(Component('CR-N038','money',(0,len(raw)),dict(fields)),) if currency else ()
+            return [Candidate('scaled_quantity',fields,number_spoken(raw)+' '+word+((' '+CURRENCIES[currency]+'s') if currency else ''),
+                              ('column',),components)]
         if env.header and env.finance() and env.currency_label:
             return [Candidate('money',{'amount':raw,'currency':env.currency_label,'currency_origin':'column_header'},
                               number_spoken(raw)+' '+CURRENCIES[env.currency_label]+('' if raw=='1' else 's'),('column',))]

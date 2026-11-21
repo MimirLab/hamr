@@ -3,6 +3,7 @@ import re
 import tinycss2
 
 SEMANTIC={'display','visibility','content','vertical-align','speak','speak-as'}
+AUDIT_ONLY={'text-transform'}
 ATTRIBUTE=r'''\[\s*[\w:-]+(?:\s*[~|^$*]?=\s*(?:"[^"]*"|'[^']*'|[\w:-]+)\s*(?:[is])?)?\]'''
 SIMPLE=r'(?:\*|[A-Za-z][\w-]*)?(?:[.#][\w-]+|'+ATTRIBUTE+r')*'
 SELECTOR=re.compile(SIMPLE+r'(?:\s*(?:>|\s)\s*'+SIMPLE+r')*')
@@ -23,7 +24,8 @@ def apply(document,load):
     """
     body=document.find('body') or document;entries=[];warnings=[];order=0
     def problem(message):body.__dict__.setdefault('_audiobook_css_issues',[]).append(message)
-    def declarations(value):return [d for d in tinycss2.parse_declaration_list(value,skip_comments=True,skip_whitespace=True) if d.type=='declaration' and d.lower_name in SEMANTIC]
+    def declarations(value):return [d for d in tinycss2.parse_declaration_list(value,skip_comments=True,skip_whitespace=True)
+                                    if d.type=='declaration' and d.lower_name in SEMANTIC|AUDIT_ONLY]
     for node in document.find_all(['link','style']):
         try:
             if node.name=='link':
@@ -47,9 +49,12 @@ def apply(document,load):
                 match=re.search(r'::?(before|after)$',selector)
                 if match:pseudo=match[1];selector=selector[:match.start()].strip()
                 if not selector or not SELECTOR.fullmatch(selector) or any(not part.strip() for part in selector.split('>')):
-                    problem('Semantic CSS uses a selector outside the qualified static subset.');continue
+                    if any(d.lower_name in SEMANTIC for d in ds):problem('Semantic CSS uses a selector outside the qualified static subset.')
+                    continue
                 try:nodes=document.select(selector)
-                except Exception:problem('Semantic CSS selector could not be resolved.');continue
+                except Exception:
+                    if any(d.lower_name in SEMANTIC for d in ds):problem('Semantic CSS selector could not be resolved.')
+                    continue
                 attributes=re.findall(ATTRIBUTE,selector);plain=re.sub(ATTRIBUTE,'',selector)
                 specificity=(0,plain.count('#'),plain.count('.')+len(attributes),len(re.findall(r'(?:^|[ >])([A-Za-z][\w-]*)',plain)))
                 for n in nodes:

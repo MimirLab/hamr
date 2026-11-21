@@ -13,7 +13,12 @@ CONVENTIONS = {
     'dollar_currency': {'USD', 'CAD', 'AUD', 'NZD'},
     'accounting_parentheses': {True, False},
     'duration_fields': {'minutes_seconds', 'hours_minutes'},
+    'notation': {'propositional_implication','ASCII_subscript','ASCII_power','chess','inventory'},
+    'emoji_speech': {'literal','localized_name'},
+    'ditto_marker': {'double_quote','ditto'},
+    'expand_contractions': {True,False},
 }
+BOOLEAN_CONVENTIONS={'accounting_parentheses','expand_contractions'}
 
 
 def invalid(message):
@@ -35,7 +40,7 @@ def conventions(value):
     if not isinstance(value, dict) or value.keys() - CONVENTIONS.keys():
         invalid('Unknown context convention.')
     for name, option in value.items():
-        if type(option) is not (bool if name == 'accounting_parentheses' else str) or option not in CONVENTIONS[name]:
+        if type(option) is not (bool if name in BOOLEAN_CONVENTIONS else str) or option not in CONVENTIONS[name]:
             invalid(f'Unsupported value for {name}.')
     return dict(value)
 
@@ -96,5 +101,6 @@ def scopes(value):
 
 def implementation():
     return key({name: filehash(Path(__file__).with_name(name))
-                for name in ('context_config.py','contextual.py','context_grammar.py','context_candidate.py','context_forms.py','context_lexical.py','context_rules.json',
-                             'abbreviations.py','boundaries.py','epub_semantics.py','spoken_forms.py','typed_readings.py')})
+                for name in ('context_config.py','contextual.py','context_grammar.py','context_candidate.py','context_forms.py','context_lexical.py',
+                             'context_structure.py','context_rules.json','abbreviations.py','boundaries.py','epub_semantics.py','epub_styles.py',
+                             'markdown_notes.py','spoken_forms.py','table_readings.py','typed_readings.py')})

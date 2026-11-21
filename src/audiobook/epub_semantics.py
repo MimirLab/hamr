@@ -1,8 +1,10 @@
 """Preserve explicit XHTML roles before plain-text concatenation loses them."""
 import re
+import unicodedata
 from bs4 import NavigableString
 
 EMBEDDED = ('audio', 'canvas', 'embed', 'iframe', 'object', 'video')
+AUDIT_SPANS={'hyperlink','title_style','emphasis','display_case','math_script','math_vector','abbreviation_label'}
 
 def noteref(node):
     return getattr(node,'attrs',None) is not None and ('noteref' in str(node.get('epub:type','')) or node.get('role')=='doc-noteref')
@@ -21,7 +23,10 @@ def math_reading(node,depth=0):
     if depth>16:raise ValueError('Math nesting exceeds the supported subset')
     children=[c for c in node.children if getattr(c,'name',None)]
     name=node.name
-    if name in ('mn','mi'):return node.get_text()
+    if name=='mn':
+        text=node.get_text()
+        return ''.join(str(unicodedata.digit(c)) if c.isdigit() else c for c in text)
+    if name=='mi':return node.get_text()
     if name=='mo':
         value=node.get_text().strip()
         return {'+':'plus','−':'minus','-':'minus','=':'equals','×':'times','·':'times','/':'divided by',
@@ -66,7 +71,7 @@ def describe(node,resolve_asset=None,cover_assets=()):
         nonlocal position
         if isinstance(n,NavigableString):pieces.append(str(n));position+=len(str(n));return
         if n.name in ('script','style'):return
-        start=position
+        start=position;first_piece=len(pieces)
         if n.name=='br':
             pieces.append('\n');position+=1
             spans.append({'source_start':start,'source_end':position,'kind':'line_break','origin':'Authored XHTML br element'})
@@ -92,11 +97,32 @@ def describe(node,resolve_asset=None,cover_assets=()):
             base=''.join(str(c) for c in n.descendants if isinstance(c,NavigableString) and not any(a.name in ('rt','rp') for a in c.parents))
             annotation=' '.join(t.get_text(' ',strip=True) for t in n.find_all('rt'))
             glosses=' '.join(t.get_text(' ',strip=True) for t in n.find_all('rt',role='definition'))
-            spans.append({**data,'kind':'ruby','reading':base+(', meaning '+glosses if glosses else ''),'annotation':annotation,'origin':'Authored ruby base and annotation'})
+            spans.append({**data,'kind':'ruby','base':base,'reading':base+(', meaning '+glosses if glosses else ''),
+                          'annotation':annotation,'origin':'Authored ruby base and annotation'})
         else:
             from .epub_styles import properties
             alignment=properties(n).get('vertical-align',{}).get('value')
             if alignment in ('super','sub'):spans.append({**data,'kind':'superscript' if alignment=='super' else 'subscript','origin':'Authored CSS vertical alignment'})
+        if n.name=='a' and n.get('href') and not noteref(n):
+            spans.append({**data,'kind':'hyperlink','href':n['href']})
+        if n.name=='abbr' and n.get('title'):
+            spans.append({**data,'kind':'abbreviation_label','expansion':n['title']})
+        if n.name in ('em','strong','cite'):
+            spans.append({**data,'kind':'title_style' if n.name=='cite' else 'emphasis','element':n.name})
+        from .epub_styles import properties
+        transform=properties(n).get('text-transform',{})
+        if transform.get('value') in ('uppercase','lowercase','capitalize'):
+            spans.append({**data,'kind':'display_case','transform':transform['value'],'origin':transform['origin']})
+        if n.name in ('msup','msub') and n.find_parent('math'):
+            children=[child for child in n.children if getattr(child,'name',None)]
+            if len(children)==2 and children[1].name in ('mn','mi'):
+                symbol=children[1].get_text()
+                if symbol and symbol==symbol.strip() and ''.join(pieces[first_piece:]).endswith(symbol):
+                    spans.append({'source_start':end-len(symbol),'source_end':end,'kind':'math_script',
+                                  'relation':'power' if n.name=='msup' else 'index','base':children[0].get_text(),
+                                  'value':math_reading(children[1])})
+        if n.name=='mi' and n.find_parent('math') and n.get('intent') in ('vector',':vector'):
+            spans.append({**data,'kind':'math_vector','intent':n['intent']})
         from .pronunciation import attribute
         if attribute(n,'ph'):
             spans.append({**data,'kind':'pronunciation_hint','phoneme':attribute(n,'ph'),'alphabet':attribute(n,'alphabet',inherit=True),'language':language(n),'origin':'inline ssml:ph','applied':False})

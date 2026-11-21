@@ -2,7 +2,7 @@
 from collections import Counter, defaultdict
 import re
 
-from . import context_config, context_grammar as grammar, context_lexical
+from . import context_config, context_grammar as grammar, context_lexical, context_structure
 from .abbreviations import PROTECTED
 from .core import Error, digest, key
 from .linguistic import literal_cues
@@ -78,22 +78,23 @@ def column_anchors(cells, date_headers, originals):
 
 
 class Evidence:
-    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id):
+    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column):
         self.resolver = resolver
         self.before = text[max(0,start-96):start].rsplit('\n',1)[-1]
         self.continuation=text[end:end+96]
         self.after = self.continuation.split('\n',1)[0]
         self.before_start,self.after_start=start-len(self.before),end
         self.header, self.anchors = header,anchors
+        self.header_source = {'block':table_id,'row':0,'column':column} if table_id is not None else None
         self.inferred_order = next(iter(anchors)) if len(anchors)==1 and len({row['surface'].strip() for row in next(iter(anchors.values()))})>=2 else None
-        local = resolver.chapters.get(chapter_id,resolver.chapters.get(chapter,{}))
-        table = resolver.tables.get(table_id,{})
         self.settings = {}
         self.origins = {}
-        for origin, settings in (('listening settings',resolver.config['conventions']),
-                                 ('document policy',resolver.document_conventions),('chapter policy',local),('table policy',table)):
+        self.date_conventions = []
+        for origin, settings in resolver.scoped_conventions(chapter,chapter_id,table_id):
             self.settings.update(settings)
             self.origins.update(dict.fromkeys(settings,origin))
+            if 'date_order' in settings:
+                self.date_conventions.append((origin,settings['date_order']))
         self.governors = set()
         self.neighbors = set()
         self.definitions=[]
@@ -173,12 +174,12 @@ class Evidence:
     def details(self, family):
         if family=='governor':return {'cues':sorted(self.governors),'origin':'adjacent source wording'}
         if family=='nearby':return {'cues':sorted(self.neighbors),'origin':'bounded source clause with an adjacent governing word'}
-        if family=='column':return {'header':self.header,'origin':'same table column'}
+        if family=='column':return {'header':self.header,'source':self.header_source,'origin':'same table column'}
         if family=='anchors':return {'date_order':self.inferred_order,'anchors':self.anchors,'origin':'valid unambiguous source dates'}
         if family=='definition':
             if self.date_definition:return {'definition':self.date_definition,'origin':'explicit date order inside the same quotation'}
             return {'definitions':self.definitions,'origin':'explicit source definition in this chapter'}
-        if family=='convention':return {'values':self.settings,'origins':self.origins}
+        if family=='convention':return {'values':self.settings,'origins':self.origins,'date_order_lineage':self.date_conventions}
         if family=='syntax':return {'origin':'source spelling and expression grammar'}
         return {'origin':'preserve surface without assigning additional meaning'}
 
@@ -272,28 +273,17 @@ class Resolver:
     def scope(block):
         return block.locator.get('chapter_id') or (block.locator.get('occurrence'),block.chapter)
 
-    @staticmethod
-    def structural_evidence(block, cells):
-        source=block.source;records=[]
-        spans=block.locator.get('inline_semantics',[])
-        for span in spans:
-            a,b=span['source_start'],span['source_end']
-            kind=span['kind']
-            if kind in ('anchor','hidden') or any(h['kind']=='hidden' and h['source_start']<=a<=b<=h['source_end'] for h in spans):
-                continue
-            if not 0<=a<=b<=len(source) or source[a:b]!=span.get('source',source[a:b]):
-                continue
-            records.append({'provider':'inline_source','source_span':[a,b],'kind':kind,
-                            'fields':{k:v for k,v in span.items() if k not in ('source_start','source_end','source','kind')}})
-        for link in block.links:
-            if link['kind']=='hyperlink':
-                records.append({'provider':'source_link','kind':'hyperlink','fields':{'target':link['href'],'label':link.get('label')}})
-        rows=block.locator.get('rows',[])
-        for _,_,row,column,header,value in cells:
-            if rows[row][column].strip()=='〃' and rows[row][column]!=value:
-                records.append({'provider':'table_relation','kind':'inherited_cell','row':row,'column':column,
-                                'fields':{'header':header,'source_marker':rows[row][column],'value':value,'antecedent':[row-1,column]}})
-        return records
+    def scoped_conventions(self, chapter, chapter_id, table_id):
+        return (('listening settings',self.config['conventions']),('document policy',self.document_conventions),
+                ('chapter policy',self.chapters.get(chapter_id,self.chapters.get(chapter,{}))),
+                ('table policy',self.tables.get(table_id,{})))
+
+    def table_ditto(self, block, chapter, chapter_id):
+        scopes=self.scoped_conventions(chapter,chapter_id,block.id)
+        return next((settings['ditto_marker'] for _,settings in reversed(scopes) if 'ditto_marker' in settings),None)
+
+    def structural_evidence(self, block, cells):
+        return context_structure.observations(block,cells,source_digest=self.doc.source_sha256,language=self.doc.language)
 
     def outcome(self, block, view, match, env, options):
         raw=match[0];event=grammar.EVENTS[match.lastgroup]
@@ -313,6 +303,10 @@ class Resolver:
                 references.append(facts[family]['id']);score+=facts[family]['weight']
             rows.append({'id':key([occurrence,self.identity,option.kind,option.fields,references]),'kind':option.kind,
                          'fields':option.fields,'spoken':option.spoken,'evidence_ids':references,'score':score})
+            if option.components:
+                rows[-1]['components']=[{'event_id':child.event_id,'kind':child.kind,'fields':child.fields,
+                                         'span':[span[0]+i for i in child.span],
+                                         'source':raw[child.span[0]:child.span[1]]} for child in option.components]
         ranked=sorted(rows,key=lambda c:-c['score'])
         winner=ranked[0]
         margin=winner['score']-ranked[1]['score'] if len(ranked)>1 else None
@@ -320,7 +314,7 @@ class Resolver:
         unclear=margin is not None and margin<self.config['minimum_margin'] or conflict
         if unclear and margin==0:
             winner=next((c for c in ranked if c['kind'] in ('literal','money_symbol') or c['fields'].get('day_month_order')=='retain_alternatives_if_not_established' or c['fields'].get('sense',False) is None),winner)
-        route=('literal_fallback' if winner['kind'] in ('literal','money_symbol') or winner['fields'].get('day_month_order')=='retain_alternatives_if_not_established' else
+        route=('literal_fallback' if winner['kind'] in ('literal','literal_fallback','money_symbol','unknown_numeric_form') or winner['fields'].get('day_month_order')=='retain_alternatives_if_not_established' else
                'automatic_best_guess' if unclear else 'code_resolved')
         row={'event_id':event,'occurrence_id':occurrence,'source_digest':self.doc.source_sha256,'view':view,
              'seed_span':seed,'expression_span':span,'offset_basis':'half-open Unicode code points',
@@ -372,14 +366,27 @@ class Resolver:
         aliases=[m.span() for m in self.aliases.finditer(text)] if self.aliases else []
         anchors=column_anchors(cells,self.config['cues']['date_column'],block.locator.get('rows',[])) if cells else {}
         views=cells or [(0,len(text),None,None,None,text)]
+        guard_slots={(a,b):i for i,(a,b,_,_) in enumerate(slots)}
         for start,_,row,column,header,value in views:
             view=({'kind':'table_cell','row':row,'column':column,'header':header,'input':value} if row is not None else
                   {'kind':'block_source' if value==block.source else 'prepared_reading'})
             view['text_sha256']=digest(value.encode())
+            for match in context_lexical.OPAQUE.finditer(value):
+                a,b=start+match.start(),start+match.end()
+                if (a,b) not in guard_slots or any(a<end and b>begin for begin,end in literal_spans+aliases):
+                    continue
+                env=Evidence(self,value,match.start(),match.end(),header,anchors.get(column,{}),chapter,chapter_id,
+                             block.id if row is not None else None,column)
+                option=context_lexical.opaque_reading(match.lastgroup,match[0],env)
+                if option is not None:
+                    result,spoken=self.outcome(block,view,match,env,[option])
+                    records.append(result)
+                    slots[guard_slots[a,b]]=(a,b,spoken,result)
             for match in self.expressions.finditer(value):
                 a,b=start+match.start(),start+match.end()
                 if any(a<end and b>begin for begin,end in protected+aliases):continue
-                env=Evidence(self,value,match.start(),match.end(),header,anchors.get(column,{}),chapter,chapter_id,block.id if row is not None else None)
+                env=Evidence(self,value,match.start(),match.end(),header,anchors.get(column,{}),chapter,chapter_id,
+                             block.id if row is not None else None,column)
                 if match.lastgroup=='abbreviation':
                     env.definitions=self.definitions.get((self.scope(block),match[0].casefold()),[])
                 defines=any(item['block']==block.id and item['token_span']==[a,b] for item in env.definitions)
@@ -396,6 +403,8 @@ class Resolver:
                 result,spoken=self.outcome(block,view,match,env,options)
                 records.append(result)
                 if spoken is not None:slots.append((a,b,spoken,result))
+        if guard_slots and records:
+            records.sort(key=lambda row:(row['view'].get('row',0),row['view'].get('column',0),row['expression_span']))
         return Projection(text,slots,block.id),records
 
     def report(self, events):

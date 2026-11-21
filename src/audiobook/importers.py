@@ -228,7 +228,7 @@ def epub(data:bytes)->Document:
                 if src and label:
                     target,anchor=archive_path(posixpath.dirname(path),src[0]); chapter_labels[(target,anchor)]=label[0]
                     navigation.append({'path':target,'anchor':anchor,'label':label[0],'origin':path})
-    from .epub_semantics import EMBEDDED,describe,language,uncertainty,hidden,accessible_label,note_container
+    from .epub_semantics import AUDIT_SPANS,EMBEDDED,describe,language,uncertainty,hidden,accessible_label,note_container
     out=[]; inventory=[]; chapter='Opening';linked_targets={}
     for occurrence,item in enumerate(opf.xpath('//*[local-name()="spine"]/*'),1):
         if item.get('linear')=='no': continue
@@ -323,16 +323,27 @@ def epub(data:bytes)->Document:
             if any(a.get('id') in ('pg-header','pg-footer','project-gutenberg-license') for a in [node,*node.parents] if hasattr(a,'get')): role='reference'
             elif text.strip()=='[Illustration]': role='placeholder'
             loc={'format':'epub','occurrence':occurrence,'path':path,'anchor':node.get('id'),'element':idx,'dom_rank':ranks[id(node)],'base_text_length':len(base_text)}
-            if semantics:
-                loc['inline_semantics']=semantics;loc['exact']=str(node)
-                if any(s['kind']=='line_break' for s in semantics):loc['authored_line_breaks']=True
-                issue=issue or uncertainty(semantics)
+            identity_spans=[{k:v for k,v in s.items() if k!='base' or s['kind']!='ruby'}
+                            for s in semantics if s['kind'] not in AUDIT_SPANS]
+            if identity_spans:
+                loc['inline_semantics']=identity_spans;loc['exact']=str(node)
+                if any(s['kind']=='line_break' for s in identity_spans):loc['authored_line_breaks']=True
+                issue=issue or uncertainty(identity_spans)
             if language(node):loc['language']=language(node)
             if role=='table':
-                rows=[[html_text(c).strip() for c in r.find_all(['th','td'])] for r in node.find_all('tr')]
+                table_cells=[r.find_all(['th','td']) for r in node.find_all('tr')]
+                rows=[[html_text(c).strip() for c in row] for row in table_cells]
                 loc['rows']=rows
                 if node.find(attrs={'rowspan':True}) or node.find(attrs={'colspan':True}): issue='Merged table header associations require review.'
             out.append(block(text,loc,role,chapter,['EPUB spine occurrence and DOM element'],issue,links)); found+=1
+            if semantics:
+                loc['inline_semantics']=semantics
+                if 'exact' not in loc:loc['exact']=str(node)
+            if role=='table' and table_cells:
+                loc['header_ids']=[cell.get('id') for cell in table_cells[0]]
+                loc['row_header_columns']={i:[j for j,cell in enumerate(row)
+                                             if cell.name=='th' and cell.get('scope')=='row']
+                                           for i,row in enumerate(table_cells[1:],1)}
             # Append asset evidence after identity creation to preserve existing img locators.
             if image_resource:
                 out[-1].locator['image_resource']=image_resource

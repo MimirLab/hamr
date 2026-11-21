@@ -3,9 +3,19 @@
 
 def inline(token, inline_sources):
     """Return visible inline text and exact note and literal spans."""
-    pieces, spans = [], []
+    pieces, spans, marks = [], [], []
     position = 0
     for child in token.children or ():
+        if child.type in ('em_open','strong_open','link_open'):
+            kind='hyperlink' if child.type=='link_open' else 'emphasis'
+            marks.append((position,len(pieces),kind,child.attrGet('href') if kind=='hyperlink' else None))
+            continue
+        if child.type in ('em_close','strong_close','link_close'):
+            start,first_piece,kind,href=marks.pop()
+            record={'kind':kind,'source_start':start,'source_end':position,'source':''.join(pieces[first_piece:])}
+            if href is not None:record['href']=href
+            spans.append(record)
+            continue
         if child.type == 'footnote_ref':
             label = child.meta.get('label')
             value = f'[^{label}]' if label is not None else '^[' + inline_sources.get(child.meta['id'], '') + ']'
@@ -21,6 +31,8 @@ def inline(token, inline_sources):
             value = 'Figure. ' + child.content
         elif child.type in ('softbreak', 'hardbreak'):
             value = '\n' if child.type == 'hardbreak' else ' '
+            spans.append({'kind':'line_break' if child.type=='hardbreak' else 'soft_wrap',
+                          'source_start':position,'source_end':position+1,'source':value,'authored_surface':'\n'})
         else:
             continue
         pieces.append(value)

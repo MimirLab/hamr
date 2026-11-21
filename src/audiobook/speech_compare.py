@@ -7,7 +7,7 @@ Homophones such as for/four and know/no are deliberately not equated.
 import re,unicodedata
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v17'
+POLICY='bounded-english-composed-scale-typed-v18'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -201,4 +201,7 @@ def mathematical_markers(text):
         if t=='subscript' and i+1<len(ts) and ts[i+1].startswith('#'):markers.append('subscript:'+ts[i+1][1:])
         if t=='to' and i and i+1<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#'):markers.append('numeric-range')
         if t=='by' and i and i+2<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#') and re.fullmatch(units,ts[i+2]):markers.append('dimension-axis')
+        if t in ('a','p') and i and ts[i+1:i+2]==['m']:
+            previous=ts[i-1] if ts[i-1]!="o'clock" or i<2 else ts[i-2]
+            if previous.startswith('#'):markers.append('meridiem:'+t)
     return dict(sorted(Counter(markers).items()))

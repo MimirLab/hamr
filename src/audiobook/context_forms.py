@@ -3,8 +3,8 @@ import re
 
 from calendar import monthrange
 
-from .context_candidate import Candidate, exact_components, literal, number_spoken
-from .spoken_forms import identifier, ordinal, roman
+from .context_candidate import Candidate, Component, exact_components, literal, number_spoken
+from .spoken_forms import DIGITS as DIGIT_WORDS, ONES, TENS, identifier, ordinal, roman
 
 CURRENCIES = {'USD': 'U S dollar', 'CAD': 'Canadian dollar', 'AUD': 'Australian dollar',
               'NZD': 'New Zealand dollar', 'EUR': 'euro', 'GBP': 'British pound'}
@@ -28,6 +28,15 @@ UNIT_NAMES = {'kg':'kilograms','g':'grams','mg':'milligrams','km':'kilometers','
 UNIT_PATTERN = '|'.join(map(re.escape, sorted(UNIT_NAMES,key=len,reverse=True)))
 NAMED_CURRENCIES = r'USD|CAD|AUD|NZD|EUR|GBP'
 ELEMENT = r'Na|Cl|Mg|Ca|Fe|Cu|Zn|Si|He|Ne|Ar|Li|Al|K|I|F|H|B|C|N|O|P|S'
+ATOMS = re.compile(r'('+ELEMENT+r')([0-9₀-₉]{0,3})')
+SUBSCRIPT_DIGITS = str.maketrans('₀₁₂₃₄₅₆₇₈₉','0123456789')
+HAN_DIGITS = dict(zip('零一二三四五六七八九','0123456789'))
+SCALE_WORDS = {'thousand':1000,'million':10**6,'billion':10**9,'trillion':10**12}
+SMALL_WORDS = {word:i for i,word in enumerate(ONES)}
+TENS_WORDS = {word:i*10 for i,word in enumerate(TENS) if word}
+COEFFICIENT = ('(?:a|'+'|'.join(ONES[1:])+'|(?:'+'|'.join(TENS_WORDS)+
+               r')(?:[ -](?:'+'|'.join(DIGIT_WORDS[1:])+'))?)')
+OPERATION = re.compile('('+DECIMAL+r')\s*([+−×÷-])\s*('+DECIMAL+r')(?:\s*=\s*('+SIGNED+'))?')
 
 
 def patterns(left,right,months):
@@ -53,7 +62,9 @@ def patterns(left,right,months):
         ('compound_unit','CR-N018',SIGNED+r'[ \t]*'+units+r'/'+units),
         ('range','CR-N010',DECIMAL+r'\s*[–—]\s*'+DECIMAL),
         ('bound','CR-N011',r'(?:>=|<=|≥|≤|>|<|≈)[ \t]*'+SIGNED),
-        ('formula','CR-N035',DECIMAL+r'\s*[+−×÷-]\s*'+DECIMAL+r'(?:\s*=\s*'+SIGNED+r')?'),
+        ('formula','CR-N035',OPERATION.pattern),
+        ('missing','CR-N037',r'N/A'),
+        ('symbolic_fraction','CR-N035',r'[A-Za-z]/[A-Za-z]'),
         ('tuple','CR-N046',r'[\[(]\s*'+SIGNED+r'\s*,\s*'+SIGNED+r'\s*[\])]'),
         ('mixed_fraction','CR-N009',r'(?:[0-9]{1,9}[ \t]+[0-9]{1,2}/[0-9]{1,2}|[0-9]{0,9}[½¼¾⅓⅔⅛⅜⅝⅞])'),
         ('temperature','CR-N020',SIGNED+r'[ \t]*°[CF]?'),
@@ -66,7 +77,9 @@ def patterns(left,right,months):
         ('scale_suffix','CR-N052',DECIMAL+r'[KMB]'),
         ('signed','CR-N006',r'[+−-]'+DECIMAL),
         ('roman','CR-N031',r"[IVXLCDM]{1,12}(?!['’][A-Za-z])"),
-        ('missing','CR-N037',r'N/A'),
+        ('lexical_scale','CR-N048',r'(?i:'+COEFFICIENT+r'[ \t]+(?:'+'|'.join(SCALE_WORDS)+'))'),
+        ('unknown_number','CR-N049',DIGITS+r'¤(?:[A-Za-z0-9]+)?'),
+        ('han_digit','CR-N053','['+''.join(HAN_DIGITS)+']'),
     )
     return {name:(event,left+pattern+right) for name,event,pattern in entries}
 
@@ -156,12 +169,14 @@ def expand(kind, raw, env):
     if kind=='chemical':
         if not env.cue('formula'):
             return []
-        normalized=raw.translate(str.maketrans('₀₁₂₃₄₅₆₇₈₉','0123456789'))
-        parts=re.findall(r'([A-Z][a-z]?)([0-9]*)',normalized)
+        atoms=list(ATOMS.finditer(raw))
+        parts=[(atom[1],atom[2].translate(SUBSCRIPT_DIGITS)) for atom in atoms]
         if len({symbol for symbol,_ in parts})!=len(parts):return [literal(raw)]
         spoken=' '.join(' '.join(symbol.upper())+(' '+identifier(digits) if digits else '') for symbol,digits in parts)
+        counts=tuple(Component('CR-N036','chemical_count',atom.span(2),{'element':atom[1],'atom_count':count})
+                     for atom,(_,count) in zip(atoms,parts) if count and atom[2]!=count)
         return [Candidate('chemical_formula',{'source_formula':raw,'atom_counts':{symbol:digits or '1' for symbol,digits in parts},
-                                     'replace_with_common_name':False},spoken,('governor',))]
+                                     'replace_with_common_name':False},spoken,('governor',),counts)]
     if kind=='scale_suffix':
         if env.cue('count',side='right'):
             scale={'K':'thousand','M':'million','B':'billion'}[raw[-1]]
@@ -171,6 +186,24 @@ def expand(kind, raw, env):
         return [literal(raw)]
     if kind=='missing':
         return [Candidate('missing_value',{'missing':True,'source_marker':raw,'equals_zero':False},'N A',('governor',))] if env.cue('result') else [literal(raw)]
+    if kind=='symbolic_fraction' and env.cue('math'):
+        numerator,denominator=raw.split('/')
+        return [Candidate('formula',{'numerator':numerator,'denominator':denominator,'correct_source':False},
+                          numerator+' divided by '+denominator,('governor',))]
+    if kind=='lexical_scale':
+        if env.cue('work_title'):
+            return [Candidate('name',{'exact':raw,'rewrite_source_words':False},None,('governor',))]
+        *words,scale=raw.casefold().replace('-',' ').split()
+        value=1 if words==['a'] else sum(SMALL_WORDS.get(word,TENS_WORDS.get(word,0)) for word in words)
+        if raw[0].islower() or env.cue('quantity'):
+            return [Candidate('lexical_quantity',{'coefficient':str(value),'scale':scale,
+                              'exact_value':str(value*SCALE_WORDS[scale]),'rewrite_source_words':False},None,('syntax',))]
+    if kind=='unknown_number' and not owns_identifier:
+        return [literal(raw,kind='unknown_numeric_form',fields={'raw':raw,'preserve_source':True})]
+    if kind=='han_digit' and (env.cue('numeral_role') or env.header_cue('numeral_role')):
+        value=HAN_DIGITS[raw]
+        return [Candidate('numeral',{'system':'han_decimal','value':value,'source':raw},number_spoken(value),
+                          ('column' if env.header else 'governor',))]
     return []
 
 
@@ -208,14 +241,18 @@ def lab_forms(kind,raw,env):
         amount=parts[-1];operator=raw[:raw.rfind(amount)].strip();relation,words=BOUNDS[operator]
         return [Candidate('bound',{'relation':relation,'value':amount},words+' '+number_spoken(amount) if operator=='≈' else None,learned)]
     if kind=='formula':
-        a,operator,b,rhs=re.fullmatch('('+DECIMAL+r')\s*([+−×÷-])\s*('+DECIMAL+r')(?:\s*=\s*('+SIGNED+'))?',raw).groups()
+        operation=OPERATION.fullmatch(raw)
+        a,operator,b,rhs=operation.groups()
         if not rhs and operator=='-' and not env.cue('math'):
             return [literal(raw,exact_components(raw,'-','dash') if raw.replace('-','').isdigit() else raw)]
         verb={'+':'add','−':'subtract','-':'subtract','×':'multiply','÷':'divide'}[operator]
         fields={'left':a,'right':b,'left_integer':a,'right_integer':b,'operator':verb}
         spoken=number_spoken(a)+' '+OPERATORS[operator]+' '+number_spoken(b)
         if rhs:fields.update(operands=[a,b],equality_rhs=rhs,correct_source=False);spoken+=' equals '+number_spoken(rhs)
-        return [Candidate('formula' if rhs else 'binary_operation',fields,spoken,learned)]
+        parts=()
+        if operator in ('-','−') and operation.end(2)==operation.start(3):
+            parts=(Component('CR-N006','binary_operation',(operation.start(2),operation.end(3)),dict(fields)),)
+        return [Candidate('formula' if rhs else 'binary_operation',fields,spoken,learned,parts)]
     if kind=='tuple':
         a,b=parts
         if env.cue('interval'):

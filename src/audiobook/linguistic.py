@@ -58,6 +58,19 @@ def technical(text,preserve_lines=False):
 def comparison_text(text):
     from .spoken_forms import expand
     from .typed_readings import clock_observation, expand as interpret
+    from .typed_readings import clock_words
+    meridiem=re.compile(r'(?<![\w.,])([0-9]{1,2})([.:])([0-9]{2})\s*([AP])(?:\.\s*|[ \t]*)M(?!\w)',re.I)
+    clock_context=re.compile(r'\b(?:departs at|arrives at|departure|arrival|clock reads|time is|starts at|opens at|closes at)\s*[:=]?\s*$',re.I)
+    def clock_with_meridiem(match):
+        hour,delimiter,minute,period=match.groups()
+        if not 1<=int(hour)<=12 or int(minute)>=60:
+            return match[0]
+        if delimiter=='.' and not clock_context.search(text[max(0,match.start()-48):match.start()]):
+            return match[0]
+        return clock_words(hour,minute)+' '+period.upper()+' M'
+    text=meridiem.sub(clock_with_meridiem,text)
+    text=re.sub(r'(?i)\bat[ \t]+([\w-]+(?:\.[\w-]+)*\.(?:com|org|net|edu|gov))\b',
+                lambda match:'at '+match[1].replace('.',' dot '),text)
     # Compact clock digits need both a clock label and a timezone. Bare
     # identifiers remain distinct; no expected script is supplied to ASR.
     def compact_clock(m):

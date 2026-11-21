@@ -5,11 +5,20 @@ from .spoken_forms import identifier
 from .typed_readings import decimal
 
 @dataclass(frozen=True)
+class Component:
+    event_id: str
+    kind: str
+    span: tuple[int, int]
+    fields: dict
+
+
+@dataclass(frozen=True)
 class Candidate:
     kind: str
     fields: dict
     spoken: str | None
     evidence: tuple = ()
+    components: tuple[Component, ...] = ()
 
 
 def literal(raw, spoken=None, *, fields=None, kind='literal'):

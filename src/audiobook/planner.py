@@ -305,7 +305,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
             elif rows:
                 if rule_revision in SOURCE_STRUCTURE:
                     from .table_readings import rows_for_speech
-                    rows,table_issue=rows_for_speech(rows,table_context)
+                    marker=resolver.table_ditto(b,block_chapter,block_chapter_id) if resolver else None
+                    rows,table_issue=rows_for_speech(rows,table_context,marker=marker)
                     if table_issue:action='unreadable';reason=table_issue;text='';rows=[]
             if rows and action=='speak':
                 headers=rows[0]
