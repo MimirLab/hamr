@@ -20,7 +20,7 @@ PATTERNS = {
     'acronym': ('CR-L004', r'{acronyms}'),
     'contraction': ('CR-L006', r"(?:I|you|he|she|we|they)['’]d"),
     'apostrophe': ('CR-L007', r"[A-Za-z]+['’]s"),
-    'heteronym': ('CR-L008', r'(?:read|record)'),
+    'heteronym': ('CR-L008', r'(?:[Rr]ead|record)'),
     'native_name': ('CR-L010', r'{names}'),
     'grapheme': ('CR-L015', r'[^\W\d_]\u0300*[\u0300-\u036f]+'),
     'mixed_script': ('CR-L016',r'(?=[A-Za-z\u0400-\u052f0-9]{0,63}[\u0400-\u052f])'
@@ -234,6 +234,38 @@ COORDINATOR = re.compile(r'\band\s+$',re.I)
 RELATIVE_ASIDE = re.compile(r',\s+(?:who|whose|which)\b[^,]+$',re.I)
 CLAUSE_SHIFT = re.compile(r'\b(?:to|when|while|unless|because|if|after|before|who|whose|which|that)\b',re.I)
 NOUN_MODIFIER = re.compile(r'\b(?:a|an|the|my|your|his|her|our|their|its|this|that)\s+(?:[A-Za-z]+ly\s+)?$',re.I)
+CLAUSE_OPEN = r'(?:^|[.!?;:]["”’)]*|["“‘])\s*(?:(?:and|or|but|then|again)\s+)?'
+INVERTED_AUXILIARY = re.compile(CLAUSE_OPEN+r'(?P<cue>[A-Za-z]+)\s+(?:i|you|he|she|it|we|they|ye)$',re.I)
+THIRD_PERSON = re.compile(r'(?:'+CLAUSE_OPEN+r'|\b(?:when|while|as|before|after|until)\s+)(?P<cue>he|she|it)$',re.I)
+CONTRACTED_HAVE = re.compile(r"(?P<cue>\b(?:i|you|we|they)['’]ve)$",re.I)
+OBJECT_PRONOUN = re.compile(r'^\s+(?:it|them|this|that|all)\b',re.I)
+VERB_COMPLEMENT = re.compile(r'^\s+(?:it|them|this|that|on|aloud|through|off|to)\b',re.I)
+
+
+def locally_governed_read(env):
+    prefix=env.before.rstrip()
+    for _ in range(2):
+        modifier=env.resolver.cues['read_aux_modifier']['left'].search(prefix)
+        if not modifier:
+            break
+        prefix=prefix[:modifier.start()].rstrip()
+    inverted=INVERTED_AUXILIARY.search(prefix)
+    for group,sense in (('read_participle','past_read'),('read_base','present_read')):
+        cue=env.resolver.cues[group]['left'].search(prefix)
+        if cue is None and inverted and inverted['cue'].casefold() in env.resolver.config['cues'][group]:
+            a,b=inverted.span('cue')
+        elif cue:
+            a,b=cue.span()
+        else:
+            continue
+        env.governors.add((group,'left',prefix[a:b],env.before_start+a,env.before_start+b))
+        return sense
+    known=CONTRACTED_HAVE.search(prefix) or THIRD_PERSON.search(prefix)
+    if known:
+        a,b=known.span('cue')
+        env.governors.add(('finite_or_perfect_read','left',prefix[a:b],env.before_start+a,env.before_start+b))
+        return 'past_read'
+    return None
 
 
 def coordinated_read(env):
@@ -274,9 +306,13 @@ def heteronym(raw,env):
         if env.cue('verbal_record'):
             return [Candidate('verb_stress',{'part_of_speech':'verb','source_spelling_unchanged':True},None,('governor',))]
         return []
-    for group,sense in (('read_participle','past_read'),('read_base','present_read')):
-        if env.cue(group):
-            return [Candidate('contextual_pronunciation',{'sense':sense,'written_token_unchanged':True},None,('governor',))]
+    if raw=='Read':
+        if re.search(CLAUSE_OPEN+'$',env.before,re.I) and OBJECT_PRONOUN.match(env.after):
+            return [Candidate('contextual_pronunciation',{'sense':'present_read','written_token_unchanged':True},None,('syntax',))]
+        return []
+    sense=locally_governed_read(env)
+    if sense:
+        return [Candidate('contextual_pronunciation',{'sense':sense,'written_token_unchanged':True},None,('governor',))]
     sense=coordinated_read(env)
     if sense:
         fields={'sense':sense,'written_token_unchanged':True,'syntax_context':'coordinated_verb'}
@@ -284,10 +320,12 @@ def heteronym(raw,env):
     before=re.split(r'[.!?;:"“”\n]',env.before)[-1]
     after=re.split(r'[.!?;:"“”\n]',env.after)[0]
     window=' '.join((before,after)).strip().split()
-    if len(window)>12 or any(word.casefold() in ('not','never') for word in window):
+    verb_phrase=VERB_COMPLEMENT.match(env.after)
+    if not verb_phrase and (len(window)>12 or any(word.casefold() in ('not','never') for word in window)):
         return []
     options=[Candidate('contextual_pronunciation',{'sense':None,'written_token_unchanged':True},None,('fallback',))]
     for group,sense in (('past_read','past_read'),('habitual_read','present_read')):
-        if env.nearby(group,side='either'):
-            options.append(Candidate('contextual_pronunciation',{'sense':sense,'written_token_unchanged':True},None,('nearby',)))
+        evidence=('nearby',) if env.nearby(group,side='either') else ()
+        if evidence or verb_phrase:
+            options.append(Candidate('contextual_pronunciation',{'sense':sense,'written_token_unchanged':True},None,evidence))
     return options

@@ -363,6 +363,21 @@ def test_coordinated_read_keeps_the_verb_form_of_its_own_phrase():
     assert not any(selected(e)['fields'].get('sense')=='past_read' for e in events(infinitive))
 
 
+def test_reading_sense_uses_auxiliaries_and_leaves_plain_ambiguity_open():
+    source=('She had evidently read the note. It does not read like him. “May I read it?” She then read it. '
+            'When she read it, she smiled. “Read it aloud.” I’ve already read it. They insist that she read it.')
+    result=reading(source)
+    found=[row for row in events(result) if row['source'].casefold()=='read']
+    assert [selected(row)['fields']['sense'] for row in found]==[
+        'past_read','present_read','present_read','past_read','past_read','present_read','past_read',None]
+    assert len(result['contextual_resolution']['review_requests'])==1 and not result['issues']
+    final=found[-1]
+    assert {c['fields']['sense'] for c in final['candidates']}=={None,'past_read','present_read'}
+    assert speech(result)==source
+    assert reading('I read it.',mode='strict')['issues']
+    assert not [row for row in events(reading('Ms. Read inspected the order.')) if row['source']=='Read']
+
+
 def test_authored_epub_edit_does_not_disable_context_around_literal():
     from audiobook.importers import epub
     from test_upstream_epub import book
