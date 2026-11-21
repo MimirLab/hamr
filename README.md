@@ -56,7 +56,7 @@ e6ff67e457854bb6 · ready · Ravens in Winter
 /tmp/hamr-demo/Audiobooks/e6ff67e457854bb6-r1/book.m4b
 ```
 
-Use the same command with a PDF, Markdown or `.txt` file. If interrupted, run `hamr resume JOB` with the printed job ID. For an unattended command, add `--yes`. If a passage needs review, `hamr show JOB --content` points to the issue.
+Use the same command with a PDF, Markdown, or `.txt` file. For scanned PDFs, install Tesseract and run `hamr setup --ocr-only`. If interrupted, run `hamr resume JOB` with the printed job ID. Add `--yes` for unattended conversion. If publication is on hold, `hamr status JOB` shows the planned output path and your next step.
 
 ## Listen
 

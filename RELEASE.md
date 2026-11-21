@@ -1,5 +1,15 @@
 # hamr 0.4 development
 
+### Scanned PDFs and clearer recovery
+
+Hamr can now OCR a scan inset without replacing the surrounding native text. It reads simple two-column scans in column order, keeps the source positions of captions and recognized labels, and reuses completed OCR observations after an interruption. For English scanned PDFs, run `hamr setup --ocr-only` with Tesseract installed. Dense historical layouts still need broader qualification. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr)
+
+`hamr status JOB` shows where the M4B will be written and whether a saved book is awaiting an automatic check or a particular source or listening review. Ordinary `hamr render` runs through speech checking and publication, as does `hamr resume`. If a recording needs listening, the status gives a command to export the first flagged passage. [Recovery and repair](docs/USAGE.md#recovery-and-repair)
+
+The Linux suite passed 771 tests with one Windows-only test skipped. An installed build resumed an interrupted scan, rendered two passages with Breeze, and verified the chaptered M4B after cleanup.
+
+### Speech engine setup
+
 `hamr setup` starts with one plain-language recommendation. `--choose` opens the advanced list. `--auto` accepts an eligible recommendation for scripted installs. The engine guide records the evidence and exact model recipes behind the choices. [Engine comparison and Windows preview](docs/ENGINES.md)
 
 The development preview includes a Windows x64 installer and the pinned Hoppou Windows runtime. A native hosted runner installed the wheel, downloaded and checked CPU Q8, then rendered, checked and verified a chaptered M4B. Windows and Linux CPU Q8 recovered from forced exits with the original committed audio hashes. Both Windows M4Bs still verified after cleanup. Native Windows GPU rendering remains unqualified. CUDA and Apple candidates have their own qualification plans in the engine guide. [Windows trial](https://github.com/MimirLab/hamr/actions/runs/44863152453)
