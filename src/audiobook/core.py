@@ -29,6 +29,12 @@ def atomic(p:Path,data:bytes):
 def writejson(p:Path,data): atomic(p,dumps(data).encode())
 def loadjson(p:Path): return json.loads(p.read_text())
 
+
+def check_revision(job, expected):
+    if expected is not None and job['revision'] != expected:
+        raise Error('revision_changed', f'Job revision is {job["revision"]}, expected {expected}.',
+                    f'Inspect the current job with hamr status {job["id"]} --json.')
+
 def require_matching_cli(cli:Path):
     """Qualification scripts must check the installed app before opening state."""
     from . import __version__

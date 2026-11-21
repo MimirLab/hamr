@@ -1,0 +1,148 @@
+.TH HAMR 1 "2026-11-20" "hamr 0.3.0" "User Commands"
+.SH NAME
+hamr \- turn EPUB, PDF and Markdown documents into local audiobooks
+.SH SYNOPSIS
+.B hamr
+.RI [ global-options ] " command " [ arguments ]
+.SH DESCRIPTION
+.B hamr
+reads a document, renders narration using Breeze TTS2, checks the speech
+locally, and assembles a chaptered M4B with a source companion.
+An unresolved source or speech finding holds publication for review.
+The packaged speech engine targets Linux x86-64 with AVX2.
+.SH OPTIONS
+.TP
+.BI \-\-home " DIRECTORY"
+Use this app state directory. Place this option before the command.
+.TP
+.B \-\-json
+Print versioned structured results. Supply explicit selections when
+a command would otherwise prompt. Progress appears on standard error.
+.TP
+.B \-\-version
+Print the installed version.
+.TP
+.B \-\-help
+Show commands. Use
+.BI "hamr " "command " \-\-help
+for command-specific options.
+.SH COMMANDS
+.TP
+.B "setup"
+Choose a recommended profile and download the speech engine and offline
+speech checks. Use
+.BI \-\-profile " PROFILE"
+for explicit selection,
+.B \-\-checks-only
+to add speech checks, or
+.B \-\-engine-only
+to configure just speech generation.
+.TP
+.B "doctor, profiles"
+Describe this installation and hardware, or list speech profiles.
+.TP
+.B "voice cast, voice sample, voice select"
+List the cast, preview an included introduction, or save a narrator
+for new books. Use
+.B "voice sample CHARACTER \-\-play"
+to listen. Breeze uses the original reference recordings and transcripts.
+.B "voice list, voice clone, voice design"
+manage custom voices.
+.TP
+.BI "open " DOCUMENT
+Review the plan, render, check and assemble a book.
+Use
+.BI \-\-voice " cast:CHARACTER"
+to select a voice for this book,
+.B \-\-yes
+to confirm in advance, and
+.B \-\-play
+to play the finished book. Omit
+.BI \-\-output " DIRECTORY"
+to write under ~/Audiobooks.
+.TP
+.B "plan, profile, queue, worker"
+Inspect a proposed reading, save reading preferences, create a queued
+job, or process the queue.
+.TP
+.BI "resume " JOB
+Continue a saved job using verified takes and speech observations.
+.B "render"
+runs the lower-level render stage.
+.B "run"
+exposes pipeline options.
+.TP
+.B "status, show, preview, excerpt, play"
+Inspect jobs or source locations, audition a passage, export saved
+takes, or play a ready book.
+.TP
+.B "repair, qa, review"
+Apply a scoped correction, compare speech to the plan, or record and
+resolve a listening finding.
+.TP
+.B "pause, cancel, cleanup"
+Mark an idle job paused or cancelled, or inspect unreferenced data.
+Cleanup previews changes unless
+.B \-\-apply
+is supplied. Published output is kept.
+.TP
+.BI "completion " SHELL
+Print completion for Bash, Zsh or Fish.
+.SH EXIT STATUS
+.TP
+.B 0
+Command completed. Use
+.B "hamr status JOB"
+to check the state of a saved job.
+.TP
+.B 2
+Command or input error.
+.TP
+.B 3
+The book needs review.
+.TP
+.B 130
+Interrupted. Committed work can be resumed.
+.SH ENVIRONMENT
+.TP
+.B HAMR_HOME
+Default app state directory. The legacy
+.B AUDIOBOOK_HOME
+also works. Explicit
+.B \-\-home
+takes priority.
+.SH FILES
+.TP
+.I ~/.local/share/hamr
+Default state, including models, snapshots and verified takes.
+Existing owned legacy installations can use
+.IR ~/.local/share/audiobook .
+.TP
+.I ~/Audiobooks/JOB-rREV/book.m4b
+Default published audiobook path. The folder also contains
+the source and companion files.
+.SH EXAMPLES
+Set up once. Accept the recommended profile at the prompt.
+.PP
+.nf
+hamr setup
+hamr voice sample nigel-thornberry \-\-play
+hamr open "$HOME/Downloads/My book.epub" \e
+  \-\-voice cast:nigel-thornberry
+.fi
+.PP
+If interrupted, use the job ID printed by hamr.
+.PP
+.nf
+hamr status
+hamr resume JOB
+hamr play JOB
+.fi
+.SH SEE ALSO
+.BR ffmpeg (1),
+.BR ffprobe (1),
+.BR mpv (1)
+.PP
+.UR https://github.com/MimirLab/hamr
+Project and full usage guide
+.UE

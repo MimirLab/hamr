@@ -24,7 +24,7 @@ hamr voice select nigel-thornberry
 hamr open 'My book.epub' --voice cast:cave-johnson --output ~/Audiobooks
 ```
 
-Existing books keep their saved voices when you change the default.
+Existing books keep their saved voices when you change the default. Follow the [first-book steps](../README.md#epub-to-audiobook-in-three-commands) to turn a document into an M4B.
 
 ## For the curious
 
@@ -504,4 +504,4 @@ Relentless helpfulness for cheerful dystopias. He is delighted to be involved.
 
 Different books make different demands. You might want a voice that disappears into the telling, or one that makes the most ordinary sentence an event. Try a few. The right choice is the one that makes you want another chapter.
 
-[Back to hamr](../README.md) · [Making your first book](../README.md#your-first-book) · [The field guide](USAGE.md)
+[Back to hamr](../README.md) · [Making your first book](../README.md#epub-to-audiobook-in-three-commands) · [The field guide](USAGE.md)

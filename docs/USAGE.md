@@ -1,41 +1,42 @@
 # Using hamr
 
-Local audiobooks from EPUB, Markdown and PDF, with a built-in character cast, source review and recoverable Breeze rendering. The current release is **hamr 0.2.3**. Read [release notes](../RELEASE.md) for measured checks and remaining qualifications.
+## Make your first book
 
-Unsupported phonemes/languages and ambiguous source structure require review. QA preserves signs, precision, units and identifier values; publication approvals bind the comparison policy, plan and physical recordings.
+[Install hamr](../README.md#install-on-linux), then run these commands with a terminal. Replace the EPUB path with your file. PDF and Markdown work with the same command.
 
-Use `--notes after_paragraph|inline|companion` to select a linked-note reading policy. `--chapters '5,2-3,2'` selects source chapter occurrences2,3,5 in their original order; unselected source stays in the companion. `hamr repair JOB --chapters all` restores the full selection. Preflight groups related authored pronunciation leads without extending a correction or listening approval to other occurrences.
+```sh
+hamr setup
+hamr voice sample nigel-thornberry --play
+hamr open "$HOME/Downloads/Ravens in Winter.epub" --voice cast:nigel-thornberry
+```
+
+Accept the suggested profile during setup and enter `y` after checking the book plan. The second command is an optional listening sample. Once the narration passes its checks, hamr prints the job ID and M4B path. The folder under `~/Audiobooks` also contains the original source, a timed companion and a report. Use `hamr play JOB` to listen or `hamr resume JOB` to continue an interrupted book.
 
 ## Install and setup
 
-Python 3.12+ and FFmpeg/ffprobe are required for rendering; mpv is used for playback. Import/planning needs no GPU or model. Dependencies are pinned in `uv.lock`. While a book is rendering, keep its installed environment fixed; use a separate installation for candidate checks and stop at a durable checkpoint before upgrading. For a fresh installation, including from a directory outside this checkout:
+The [installation commands](../README.md#install-on-linux) build and install the app for your account. Run `hamr --version` and `man hamr` to check discovery. The installer uses locked dependencies. A source checkout can also run `uv run hamr` from the project directory. The installer accepts `./install.sh APP_DIRECTORY COMMAND_DIRECTORY` for a separate installation. Set `HAMR_MAN_DIR` to choose its manual hierarchy, then use `man -M "$HAMR_MAN_DIR" hamr` if needed.
+
+Use [the profile guide](../README.md#which-profile-should-i-choose) if you need a different model. Setup downloads the selected engine and two offline speech recognition models and checks that they load. Setup keeps verified partial downloads for retry. `--cache DIRECTORY` accepts verified engine files by filename and checker files in `base.en/` and `small.en/`. Run `hamr setup --checks-only` after upgrading an installation that already has a working engine. Use `--engine-only` when configuring speech generation for a separate manual QA workflow.
 
 ```sh
-uv sync --frozen --extra test
-uv build --wheel
-./install.sh
 hamr doctor
-hamr setup
-```
-
-Start with [Which profile should I choose?](../README.md#which-profile-should-i-choose) for the hardware, memory, download and testing table. The application includes every F16/Q8/Q6/Q4 choice for both CPU and Vulkan, plus Q8 with CPU text encoding. Large weights are downloaded only after selection. Native CUDA/MLX and other research catalog entries have no setup adapter. The shipped adapter requires Linux x86_64, AVX2 and the Vulkan loader library; GPU profiles also require a working vendor Vulkan driver.
-
-`hamr doctor` inventories the resident GPU/driver and available memory, then explains a suggested starting profile. Its built-in Vulkan probe creates no logical device and submits no GPU work. Optional `vulkaninfo` and `nvidia-smi` add diagnostics when installed. Unknown memory, shared integrated memory, multiple GPUs and failed probes are reported as uncertainty. Advice is based on planning estimates, not a speech benchmark or a promise that every allocation will fit. `hamr doctor --json` includes the observations, per-profile compatibility reasons, download sizes, testing status and recommendation; it does not activate a profile.
-
-Interactive `hamr setup` offers the recommendation and all implemented choices. Select by number or ID, or press Enter to accept the suggestion. Scripts and noninteractive shells must specify a profile, for example:
-
-```sh
 hamr setup --profile vulkan-q8
 hamr profiles --json
 ```
 
-Setup downloads one catalog-pinned runtime/model, verifies size/SHA-256, retains model terms and performs real startup before activating settings. Other installed profiles and job pins survive a setup failure. Repeating the command resumes matching partial downloads; `--cache DIRECTORY` accepts matching, verified asset filenames already on disk. A memory error suggests smaller models/CPU offload; Vulkan startup errors identify the driver/loader check and startup log. CPU profiles need the loader library but not a working Vulkan GPU. **Only combinations listed in RELEASE.md have real rendering evidence**; the remaining implemented choices are experimental. Breeze model/output terms are separate from this application's MIT license: personal research/noncommercial use is the initial scope.
+Backend profiles choose model precision and execution hardware. A saved listening profile chooses document reading rules. For example, save `hamr profile technical --mode study`, then apply it with `hamr plan book.epub --profile technical`.
 
-Backend profiles (`hamr setup --profile vulkan-q8`) select model precision and execution hardware. Saved listening profiles (`hamr profile technical --mode study`, then `hamr plan book.epub --profile technical`) store document-reading preferences. They have separate command dispatch; a missing saved profile reports its exact path.
+Fresh installs use `~/.local/share/hamr` for jobs, models and cache. Prepend `--home PATH` before the command or set `HAMR_HOME` to use an isolated state directory on a local filesystem. Upgrades retain owned legacy state and pinned paths. Keep the installed environment fixed during rendering and upgrade at a stopped checkpoint.
 
-Fresh installs store app state, config, cache and locks in `~/.local/share/hamr`, with the installed environment in `~/.local/share/hamr-app/venv`. Use `--home PATH` or `HAMR_HOME` for an isolated profile. Use a local filesystem supporting SQLite WAL. The CLI never downloads a model during ordinary planning, rendering or recovery. `setup` acquires model assets. Models and references are pinned to each job.
+To upgrade an existing checkout, run the following from that checkout.
 
-Upgrades reuse existing owned `~/.local/share/audiobook` state and the active `audiobook-app/venv` in place, preserving saved jobs, recordings and absolute model/reference paths. `hamr` is the primary command; `audiobook` and `python -m audiobook` remain compatibility entry points. `python -m hamr` is also supported. State selection is explicit `--home`, then `HAMR_HOME`, then `AUDIOBOOK_HOME`, then an existing hamr state, then an existing legacy state, otherwise a fresh hamr state. No automatic data move or re-render occurs.
+```sh
+git pull --ff-only
+uv build --wheel
+./install.sh
+hamr --version
+hamr setup --checks-only
+```
 
 ## Everyday commands
 
@@ -62,6 +63,8 @@ hamr play JOB
 
 Listen mode preserves claims/qualifiers, speaks tables with explicit headers, inserts linked notes beside their claim, and keeps exact code in the companion. Study mode also speaks reference sections. Procedure mode speaks literal blocks. Explicit category choices override mode defaults. These deterministic modes do not summarize or infer content. Exact-heading section policies are available; sophisticated note placement and bibliography recognition beyond labeled sections remain limited.
 
+Use `--notes after_paragraph|inline|companion` to control linked notes. `--chapters '5,2-3,2'` selects chapters 2, 3 and 5 in source order. Use `hamr repair JOB --chapters all` to restore the complete selection.
+
 A preview is stored beside the job snapshot and never placed in ready output. The preview command returns exact source locations. JSON diagnostics use exit 2 for failures, 3 for needs-review, 130 for interruption; normal success is 0. Source/script export requires `show --content`; ordinary diagnostics omit transcripts.
 
 ## Built-in character cast
@@ -82,7 +85,7 @@ To add a character, put its ID, display name, description, and language in `src/
 
 ## Unattended speech and verification
 
-The standalone pipeline alternates bounded synthesis sessions with offline CPU ASR, checkpoints committed PCM and observations, runs complete required QA, and assembles only when source and speech gates pass:
+The ordinary book workflow already renders, checks speech and assembles the book. Use `hamr run JOB` when you want control over batch sizes, pauses or the choice of checker. For example, to use a separate offline speech recognition environment:
 
 ```sh
 hamr run JOB --asr-python ~/.local/share/audiobook-tools/asr/bin/python \
@@ -90,7 +93,7 @@ hamr run JOB --asr-python ~/.local/share/audiobook-tools/asr/bin/python \
   --second-model ~/.local/share/audiobook-tools/asr-model --json
 ```
 
-ASR assets must already be installed. The default is one new take per engine session. `--max-new-takes 1` limits one invocation; repeat the same command to continue. `--prepare-clear` prepares accounted speech while unresolved source regions remain publication holds. The optional second observer can corroborate critical-content discrepancies for bounded seed retakes: at most two per exact text/source requirement and eight across the job by default. No acceptance is added automatically. Nonverbal artifacts and unsupported source recovery remain research work; a matching transcript cannot clear a recorded listening finding.
+The explicit Python and model paths must refer to an installed local checker. The low-level `run` default is one new take per engine session. `--max-new-takes 1` limits one invocation; repeat the same command to continue. `--prepare-clear` prepares accounted speech while unresolved source regions remain publication holds. The optional second observer can corroborate critical-content discrepancies for bounded seed retakes: at most two per exact text/source requirement and eight across the job by default. No acceptance is added automatically. Nonverbal artifacts and unsupported source recovery remain research work; a matching transcript cannot clear a recorded listening finding.
 
 Add `--resident --batch-takes 1 --batch-rest-seconds 10` to retain one owned model across batches, CPU recognition and generation rests. The model loads lazily when speech is actually missing. A batch of one bounds generation to one whole narration block at a time even when the backend supports more parallel requests. Larger batches reuse the same model and follow the saved parallel limit. All text, voice, seed, cache identities and source/speech gates stay pinned. Cancellation, failure or pipeline completion closes the owned engine; there is no automatic restart of a failed resident server.
 
@@ -141,7 +144,7 @@ hamr cleanup --purge-job JOB --apply
 
 Active, paused and retained jobs pin their verified speech. Saved voices, models, source snapshots and published results survive ordinary cleanup. Explicit job purge removes that job's durable data, then future cleanup may remove its unreferenced clips. Cleanup refuses symlinks; it never follows them or deletes outside app state. Published output is intentionally never removed by cleanup.
 
-To uninstall the app, remove its `~/.local/bin/hamr` and `~/.local/bin/audiobook` links and the environment they point into (`hamr-app/venv`, or `audiobook-app/venv` on an upgraded installation). App data, voice originals, models and published output remain until intentionally removed. Keep state backed up before upgrades. Reinstalling the wheel leaves state unchanged.
+To uninstall the app, remove the owned `hamr.1` and `audiobook.1` links under `~/.local/share/man/man1` (or the custom manual directory), its `~/.local/bin/hamr` and `~/.local/bin/audiobook` links and the environment they point into (`hamr-app/venv`, or `audiobook-app/venv` on an upgraded installation). Your app data, models and published books live separately from these installed files. Keep state backed up before upgrades. Reinstalling the wheel leaves state unchanged.
 
 ## Development and qualification
 
@@ -161,13 +164,13 @@ hamr review JOB --flag u00003 --reason 'Clipped ending at 01:03:52' --json
 hamr review JOB --accept u00003 --reason 'Checked the complete replacement passage' --json
 ```
 
-Release archives contain the engine, final character references, installer, locked dependencies, public documentation and the release-content checker. Each character contributes one `reference.wav` and one transcript/metadata file. Review candidates, generated auditions, rejected clips, book files, job state, research logs and Git history are excluded. They remain in the development workspace.
-
-Build and inspect the exact release artifacts:
+Release archives include the program, voice references, approved listening samples, Linux manual and required installation inputs. The [release notes](../RELEASE.md) record what has been qualified.
 
 ```sh
 uv build
 python3 tools/check_release.py
 ```
 
-The checker verifies archive membership, all reference hashes, transcript metadata and known private-path/key patterns. Create a public repository from the checked source archive with fresh Git history. The existing development workspace/history is not a publication source. See [release notes](../RELEASE.md) for measured checks and remaining qualifications.
+The checker validates archive membership and asset identities. Keep private book and job material in app state.
+
+For shell completion, load the output of `hamr completion bash`, `hamr completion zsh` or `hamr completion fish` using your shell's usual completion setup. For a one-session Bash example, use `source <(hamr completion bash)`.

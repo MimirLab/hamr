@@ -35,6 +35,10 @@ if sys.argv[1] == 'venv':
         command.chmod(0o755)
 if sys.argv[1:3] == ['pip', 'sync']:
     Path(os.environ['INSTALL_TEST_UV_LOG'] + '.requirements').write_text(Path(sys.argv[-1]).read_text())
+    pages = Path(sys.argv[sys.argv.index('--python')+1]).parents[1] / 'share/man/man1'
+    pages.mkdir(parents=True, exist_ok=True)
+    (pages / 'hamr.1').write_text('.TH HAMR 1\\n')
+    (pages / 'audiobook.1').write_text('.so man1/hamr.1\\n')
 if sys.argv[1] == 'export' and os.environ.get('INSTALL_TEST_EXPORT_FAIL'):
     sys.exit(1)
 ''')
@@ -69,6 +73,7 @@ def test_installer_selects_project_version_among_older_artifacts(tmp_path):
     assert 'local_audiobook' not in requirements
     for name in ('hamr', 'audiobook'):
         assert (commands / name).resolve() == app / 'venv/bin' / name
+        assert (commands.parent / 'share/man/man1' / (name + '.1')).resolve() == app / ('venv/share/man/man1/' + name + '.1')
     assert result.stdout.strip() == 'hamr 0.9.9'
 
 
@@ -114,3 +119,16 @@ def test_upgrade_retains_owned_legacy_link_and_is_repeatable(tmp_path):
         assert result.returncode == 0, result.stderr
         assert os.readlink(legacy) == target
         assert (commands / 'hamr').resolve() == app / 'venv/bin/hamr'
+
+
+def test_existing_manual_is_preserved_before_environment_mutation(tmp_path):
+    project, app, commands, log, env = installer_project(tmp_path)
+    root = tmp_path / 'custom manual'
+    env['HAMR_MAN_DIR'] = str(root)
+    page = root / 'man1/hamr.1'
+    page.parent.mkdir(parents=True)
+    page.write_text('unrelated manual\n')
+    result = run_install(project, app, commands, env)
+    assert result.returncode == 2 and 'Existing manual' in result.stderr
+    assert page.read_text() == 'unrelated manual\n'
+    assert not log.exists() and not app.exists()

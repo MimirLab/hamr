@@ -7,12 +7,12 @@ from audiobook import cli
 
 def test_backend_profile_reaches_setup_without_saved_profile_file(tmp_path, monkeypatch, capsys):
     seen = []
-    def setup(store, profile, cache):
+    def setup(store, profile, cache, **kwargs):
         seen.append((store.root, profile, cache))
         return {'profile': profile, 'reached_backend_setup': True}
     monkeypatch.setattr(cli, 'setup', setup)
     home = tmp_path / 'new installation'
-    assert cli.main(['--home', str(home), 'setup', '--profile', 'vulkan-f16', '--json']) == 0
+    assert cli.main(['--home', str(home), 'setup', '--profile', 'vulkan-f16', '--engine-only', '--json']) == 0
     assert seen == [(home, 'vulkan-f16', None)]
     assert not (home / 'profiles/vulkan-f16.json').exists()
     assert json.loads(capsys.readouterr().out)['reached_backend_setup']

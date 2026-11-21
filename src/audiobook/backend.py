@@ -4,6 +4,7 @@ from pathlib import Path
 import httpx,numpy as np
 from .core import Error,RATE,atomic,digest,filehash,key,loadjson,run,writejson
 from .deadlines import wall_budget
+from .setup_progress import size_text
 
 CATALOG=Path(__file__).with_name('catalog.json')
 DOWNLOAD_STALL_SECONDS=90
@@ -11,22 +12,26 @@ DOWNLOAD_TOTAL_SECONDS=7200
 DOWNLOAD_POLL_SECONDS=.1
 
 
-def transfer_asset(url,part,offset,size):
+def transfer_asset(url,part,offset,size,*,progress=None,label=None):
     process=subprocess.Popen([sys.executable,'-m','audiobook.asset_download',url,str(part),str(offset),str(size)],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
-    started=progress=time.monotonic();observed=offset
+    started=last_activity=time.monotonic();observed=offset
     try:
+        if progress: progress.transfer(label,offset,size)
         while process.poll() is None:
             current=part.stat().st_size if part.exists() else 0;now=time.monotonic()
-            if current!=observed:observed=current;progress=now
+            if current!=observed:observed=current;last_activity=now
+            if progress: progress.transfer(label,current,size)
             if now-started>DOWNLOAD_TOTAL_SECONDS:raise Error('download_timeout','Asset transfer exceeded its total wall-clock budget.','Repeat setup to resume the bound partial.')
-            if now-progress>DOWNLOAD_STALL_SECONDS:raise Error('download_stalled','Asset transfer stopped making byte progress.','Repeat setup to resume the bound partial.')
+            if now-last_activity>DOWNLOAD_STALL_SECONDS:raise Error('download_stalled','Asset transfer stopped making byte progress.','Repeat setup to resume the bound partial.')
             time.sleep(DOWNLOAD_POLL_SECONDS)
         output=process.communicate()[0]
         if process.returncode:
             try:failure=json.loads(output)
             except (ValueError,TypeError):failure={'code':'download_failed','message':'Owned asset-transfer worker exited before completion.'}
             raise Error(failure['code'],failure['message'],'Check connectivity and disk space; repeat setup to resume.')
+        if progress: progress.transfer(label,part.stat().st_size,size,complete=True)
     finally:
+        if progress: progress.finish()
         if process.poll() is None:
             process.terminate()
             try:process.wait(2)
@@ -35,13 +40,20 @@ def transfer_asset(url,part,offset,size):
 
 def doctor(store):
     from .hardware import inspect_host,advise
+    from .checks_setup import configured
+    from .installation import inspect as inspect_installation
     host=inspect_host();advice=advise(host,loadjson(CATALOG))
     dependencies={x:shutil.which(x) for x in ['ffmpeg','ffprobe','mpv','tesseract']}
     issues=[{'code':'missing_dependency','executable':x,'action':f'Install {x} in user space before rendering.'} for x in ('ffmpeg','ffprobe') if not dependencies[x]]
-    return {'schema_version':1,'issues':issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup downloads only the selected profile and validates real startup before activation.','hardware':host,**advice}
+    installation,installation_issues=inspect_installation()
+    if not dependencies['mpv']:
+        issues.append({'code':'missing_player','executable':'mpv','action':'Install mpv to use hamr playback commands.'})
+    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,**advice}
 
-def acquire(url,dst,expected,size):
+def acquire(url,dst,expected,size,*,progress=None,label=None):
+    label=label or dst.name
     if dst.exists():
+        if progress: progress.stage(f'Checking cached {label} ({size_text(size)})')
         if dst.stat().st_size==size and filehash(dst)==expected: return
         raise Error('asset_corrupt','Installed candidate asset failed checksum.','Remove only this failed candidate and run setup again.')
     part=dst.with_suffix(dst.suffix+'.part'); identity=part.with_suffix(part.suffix+'.json')
@@ -51,12 +63,14 @@ def acquire(url,dst,expected,size):
     if part.exists() and part.stat().st_size>=size: part.unlink()
     writejson(identity,wanted); offset=part.stat().st_size if part.exists() else 0
     try:
-        transfer_asset(url,part,offset,size)
+        options={'progress':progress,'label':label} if progress else {}
+        transfer_asset(url,part,offset,size,**options)
+        if progress: progress.stage(f'Verifying {label}')
         if part.stat().st_size!=size or filehash(part)!=expected: raise Error('download_integrity','Downloaded asset does not match pinned size/digest.','Run setup again; the partial will be revalidated.')
         os.replace(part,dst); identity.unlink(missing_ok=True)
     except (OSError,http.client.HTTPException) as e: raise Error('download_failed',f'Asset acquisition failed ({type(e).__name__}).','Check connectivity and disk space; repeat setup to resume.') from e
 
-def setup(store,profile,cache=None):
+def setup(store,profile,cache=None,*,progress=None,before_activate=None):
     c=loadjson(CATALOG); profiles={p['id']:p for p in c['profiles']}; p=profiles.get(profile)
     if not p or p['runtime']!='hoppou': raise Error('unsupported_profile',f'Backend profile {profile!r} is unknown or catalog-only in this build.','Run hamr profiles for the built-in CPU/Vulkan model choices; selecting one downloads its pinned runtime and weights.')
     if platform.system()!='Linux' or platform.machine().lower() not in ('x86_64','amd64'): raise Error('unsupported_platform','This release installs the Linux x86_64 runtime.','Use a supported Linux x86_64 environment; native Windows, ARM and Apple MLX adapters are not implemented.')
@@ -71,10 +85,13 @@ def setup(store,profile,cache=None):
                 src=Path(cache)/f['path']
                 if src.stat().st_size!=f['bytes'] or filehash(src)!=f['sha256']: raise Error('asset_integrity','Cached candidate does not match catalog.')
                 shutil.copyfile(src,dst)
-            acquire(f['url'],dst,f['sha256'],f['bytes'])
+            acquire(f['url'],dst,f['sha256'],f['bytes'],**({'progress':progress} if progress else {}))
         runtime=root/'runtime'
         if not runtime.exists():
-            stage=root/'runtime.partial'; stage.mkdir(exist_ok=True)
+            if progress: progress.stage('Extracting the Breeze runtime')
+            stage=root/'runtime.partial'
+            if stage.exists(): store.safe_remove(stage)
+            stage.mkdir()
             with tarfile.open(root/r['filename']) as t: t.extractall(stage,filter='data')
             stage.rename(runtime)
         candidates=list(runtime.rglob('breeze-server'))
@@ -83,10 +100,11 @@ def setup(store,profile,cache=None):
         # Preserve executable/shared-library identities, and model terms locally.
         terms=root/'MODEL-LICENSE'
         license_file=next(f for f in c['packages']['official']['files'] if f['path']=='LICENSE')
-        acquire(license_file['url'],terms,license_file['sha256'],license_file['bytes'])
+        acquire(license_file['url'],terms,license_file['sha256'],license_file['bytes'],**({'progress':progress} if progress else {}))
         identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':c['runtimes']['hoppou']['revision'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(root/package['files'][0]['path']),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{str(x.relative_to(runtime)):filehash(x) for x in runtime.rglob('*.so*') if x.is_file()}}
         # A real startup proves activation before replacing known-working settings.
         try:
+            if progress: progress.stage(f'Starting {profile} to check that it loads')
             with Engine(store,identity) as e: health=e.health
         except Error as exc:
             text=(store.root/'runtime/backend.log').read_text(errors='replace')[-12000:] if (store.root/'runtime/backend.log').exists() else ''
@@ -96,8 +114,11 @@ def setup(store,profile,cache=None):
             if re.search(r'VK_ERROR_INCOMPATIBLE_DRIVER|no (?:vulkan|physical).*device|failed.*vulkan|libvulkan.*cannot open',text,re.I):
                 raise Error('vulkan_unavailable',f'{profile} could not start with the installed Vulkan driver.',f'Run hamr doctor and vulkaninfo --summary; check the Vulkan loader and vendor ICD. CPU execution (cpu-q4) avoids the GPU but still needs libvulkan.so.1. Startup details: {store.root / "runtime/backend.log"}') from exc
             raise Error(exc.code,exc.message,f'{exc.action} Profile: {profile}. Startup log: {store.root / "runtime/backend.log"}. Run hamr doctor for another starting choice.') from exc
+        result={'schema_version':1,'profile':profile,'health':health,'identity':identity,'model_terms':str(terms)}
+        if before_activate:
+            result['speech_checks']=before_activate()
         writejson(store.root/'settings.json',identity)
-        return {'schema_version':1,'profile':profile,'health':health,'identity':identity,'model_terms':str(terms)}
+        return result
 
 def validate_request(text,voice=None,instruction=None):
     if not any(c.isalnum() for c in text):raise Error('unspeakable_text','Speech input contains only punctuation.','Upgrade the narration rules or repair this passage into a pause before rendering.')

@@ -1,7 +1,7 @@
 from __future__ import annotations
 import re,time,unicodedata
 from difflib import SequenceMatcher
-from .core import Error,writejson,key
+from .core import Error,writejson,key,check_revision
 from .jobs import clip_key,valid_clip,summary,final_path,verify_publication,take_signature
 from .planner import count_words,SMALL,TENS,COUNT_RE
 from .speech_compare import POLICY,comparison_tokens,quantities,negations,mathematical_markers
@@ -160,10 +160,11 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
         return {'schema_version':1,'status':j['status'],'job':jid,'clips_checked':len(rows),'wer':report['wer'],'flagged_passages':report['flagged_passages'],'report':str(dest),'device':'cpu','prompt':None}
 
 
-def accept(store,jid,utterance,reason):
+def accept(store,jid,utterance,reason,*,expect_revision=None):
     if not reason.strip(): raise Error('review_reason','Record what you checked before accepting a speech reading.')
     with store.lock():
         j=store.get(jid)
+        check_revision(j,expect_revision)
         if j.get('audio_gate_checked_plan')!=j['plan']['plan_sha256']: raise Error('review_changed','The plan changed since the last complete required QA pass.','Run qa --all --require-review on the current plan before accepting individual readings.')
         if j.get('speech_contract',1)>=2 and j.get('audio_gate_checked_comparison_policy')!=POLICY:raise Error('review_changed','The speech comparison policy changed since required QA.','Run qa --all --require-review with this application before accepting a reading.')
         if not j.get('audio_gate_checked_takes') or j['audio_gate_checked_takes']!=take_signature(store,j):raise Error('review_changed','The physical takes changed since required QA.','Run qa --all --require-review before accepting a reading.')
@@ -186,11 +187,13 @@ def accept(store,jid,utterance,reason):
         store.save(j); return summary(store,j)
 
 
-def flag(store,jid,utterance,reason):
+def flag(store,jid,utterance,reason,*,expect_revision=None):
     """Record human audio evidence independently of what ASR recognizes."""
     if not reason.strip():raise Error('review_reason','Record the audible problem and source/time context.')
     with store.lock():
-        j=store.get(jid);u=next((u for u in j['plan']['utterances'] if u['id']==utterance),None)
+        j=store.get(jid)
+        check_revision(j,expect_revision)
+        u=next((u for u in j['plan']['utterances'] if u['id']==utterance),None)
         if u is None:raise Error('unknown_utterance','Listening finding names no current source occurrence.')
         k=clip_key(u,j);receipt=valid_clip(store,k)
         if not receipt:raise Error('review_missing_clip','A listening finding requires a committed verified take.')

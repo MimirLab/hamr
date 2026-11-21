@@ -21,9 +21,10 @@ PRIVATE_TEXT = (
     re.compile(rb'-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----'),
 )
 ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock', 'install.sh',
-              'PKG-INFO', '.gitignore', 'tools/check_release.py',
+              'PKG-INFO', '.gitignore', 'AGENTS.md', 'tools/check_release.py',
               'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md', 'docs/listen/manifest.json',
-              'docs/art/hamr-storyforge.png', 'docs/art/hamr-listener.png'}
+              'docs/art/hamr-storyforge.png', 'docs/art/hamr-listener.png',
+              'docs/man/hamr.1', 'docs/man/audiobook.1'}
 
 
 def read_archive(path):
@@ -65,20 +66,29 @@ def audit(path, version):
     for name, data in files.items():
         runtime = name.removeprefix(package) if name.startswith(package) else ''
         allowed_runtime = re.fullmatch(
-            r'audiobook/(?:[a-z_]+\.py|cast\.json|catalog\.json|cast_assets/[a-z0-9-]+/(?:reference\.wav|voice\.json))'
+            r'audiobook/(?:[a-z_]+\.py|cast\.json|catalog\.json|asr_assets\.json|asr\.lock|agent_guide\.md|cast_assets/[a-z0-9-]+/(?:reference\.wav|voice\.json))'
             r'|hamr/__(?:init|main)__\.py', runtime)
         allowed_metadata = wheel and name.startswith(metadata) and name.removeprefix(metadata) in (
             'METADATA', 'WHEEL', 'RECORD', 'entry_points.txt', 'licenses/LICENSE')
         allowed_preview = wheel and re.fullmatch(r'audiobook/cast_previews/(?:manifest\.json|[a-z0-9-]+\.mp3)', name)
+        allowed_manual = wheel and name in {f'hamr-{version}.data/data/share/man/man1/{p}.1' for p in ('hamr','audiobook')}
         allowed_source = not wheel and (name in ROOT_FILES or re.fullmatch(r'tests/[a-z0-9_]+\.py', name)
                                        or re.fullmatch(r'docs/listen/[a-z0-9-]+\.mp3', name)
                                        or name == 'fixtures/technical.md')
-        if not (allowed_runtime or allowed_metadata or allowed_source or allowed_preview):
+        if not (allowed_runtime or allowed_metadata or allowed_source or allowed_preview or allowed_manual):
             raise ReleaseError(f'Unexpected release file: {name}')
         if not name.endswith('/reference.wav'):
             for pattern in PRIVATE_TEXT:
                 if pattern.search(data):
                     raise ReleaseError(f'Private path or key pattern found in {name}')
+    if package + 'audiobook/book_flow.py' in files:
+        manual = f'hamr-{version}.data/data/share/man/man1/' if wheel else 'docs/man/'
+        required = {manual + 'hamr.1', manual + 'audiobook.1',
+                    *(package + 'audiobook/' + name for name in ('asr.lock', 'asr_assets.json', 'agent_guide.md'))}
+        if not required <= files.keys():
+            raise ReleaseError('Missing manual, speech checker inputs or operator guide.')
+        if not files[manual + 'hamr.1'].startswith(b'.TH HAMR 1 ') or files[manual + 'audiobook.1'] != b'.so man1/hamr.1\n':
+            raise ReleaseError('Invalid manual title or alias.')
     try:
         cast_document = json.loads(files[package + 'audiobook/cast.json'])
         cast = cast_document['characters']

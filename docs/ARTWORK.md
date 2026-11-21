@@ -18,7 +18,7 @@ These images were made for hamr using OpenAI's built-in image-generation tool. T
 | [hamr-storyforge.png](art/hamr-storyforge.png) | Wide, opaque storybook illustration at the top of the README. |
 | [hamr-listener.png](art/hamr-listener.png) | Transparent raven vignette at the end of the page. |
 
-The art belongs to the documentation. Runtime wheels retain only the voice references and metadata needed by the engine; these illustrations travel in source archives and the repository.
+The art belongs to the documentation. These illustrations ship with the source archive and the repository. The application wheel includes the separate audio previews and voice references.
 
 ## Generation prompts
 

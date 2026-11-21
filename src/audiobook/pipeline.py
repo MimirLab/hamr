@@ -48,7 +48,7 @@ def corroborated(expected,first,second,protected=None,reference=None):
     return shared
 
 
-def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,prepare_clear=False,max_new_takes=None,resident=False,batch_rest_seconds=0,overlap_batch_rest=False):
+def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,prepare_clear=False,max_new_takes=None,resident=False,batch_rest_seconds=0,overlap_batch_rest=False,report_progress=False):
     if type(batch_takes) is not int or not 1<=batch_takes<=4096 or not 0<=max_retakes<=32:raise Error('pipeline_budget','Invalid batch or retake budget.')
     if max_new_takes is not None and (type(max_new_takes) is not int or max_new_takes<1):raise Error('pipeline_budget','The run take limit must be positive.')
     if type(resident) is not bool or type(batch_rest_seconds) not in (int,float) or not math.isfinite(batch_rest_seconds) or not 0<=batch_rest_seconds<=600:
@@ -77,7 +77,15 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
         state.update(observer_sha256=key(observer),observer_options={'python':str(python),'model':str(model),'second_model':str(second_model) if second_model else None})
         state.update(binding=owner,job=jid,plan_sha256=job['plan']['plan_sha256'],phase='starting',error=None,resident_model=resident)
         state['runs'].append({'revision':job['revision'],'started':time.time(),'batch_takes':batch_takes,'max_retakes':max_retakes,'prepare_clear':prepare_clear,'resident':resident,'batch_rest_seconds':batch_rest_seconds,'overlap_batch_rest':overlap_batch_rest})
+        last_phase = None
         def progress(phase,**fields):
+            nonlocal last_phase
+            labels = {'observing': 'Checking rendered speech', 'required_QA': 'Checking the full narration',
+                      'assembling': 'Assembling the audiobook'}
+            if report_progress and phase != last_phase and phase in labels:
+                import sys
+                print(f'{jid}: {labels[phase]}', file=sys.stderr, flush=True)
+            last_phase = phase
             state.update(phase=phase,updated=time.time(),elapsed_seconds_this_run=time.monotonic()-started,
                          new_takes_this_run=generated,**fields)
             if engine_session is not None:state['resident_engine_starts']=engine_session.starts

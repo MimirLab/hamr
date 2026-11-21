@@ -13,9 +13,12 @@ def emit(value,json_mode=False):
     if json_mode: print(dumps(value),end=''); return
     if isinstance(value,dict) and 'job' in value:
         print(f'{value["job"]} · {value["status"]} · {value.get("title","")}')
-        if value.get('output'): print(value['output'])
+        if value.get('output'): print(Path(value['output']) / 'book.m4b')
         if value.get('needs_review'): print(f'{len(value["needs_review"])} unresolved locations; inspect with hamr show {value["job"]} --content')
         if value.get('error'): print(value['error']['message']); print(value['error']['action'])
+    elif isinstance(value,dict) and 'jobs' in value:
+        if not value['jobs']: print('No audiobook jobs yet. Run hamr open DOCUMENT.')
+        for job in value['jobs']: emit(job)
     else: print(dumps(value),end='')
 
 
@@ -33,6 +36,11 @@ def print_profiles(rows):
 def print_doctor(result):
     host=result['hardware']
     print(f'hamr doctor · {host["system"]} {host["arch"]}')
+    if installation:=result.get('installation'):
+        print(f'Running hamr {installation["version"]} · {installation["invoked_as"]}')
+        print(f'Command on PATH: {installation["path_command"] or "unavailable"}')
+        print(f'Manual: {installation["manual"] or "unavailable on the manual path"}')
+        print(f'Speech checking: {"ready" if result["speech_checks_ready"] else "run hamr setup"}')
     for gpu in host['gpus']:
         memory=gpu.get('available_vram_bytes')
         detail=f'{memory/1024**3:.1f} GiB available budget/free memory' if memory is not None else 'shared or unknown memory'
@@ -100,31 +108,38 @@ def policy(a):
 def parser():
     p=argparse.ArgumentParser(prog='hamr',description='hamr — local audiobooks with character voices, source review and recoverable rendering. Models acquired only by setup.'); p.add_argument('--version',action='version',version=__version__)
     p.add_argument('--home',type=Path,help='Private app state (or HAMR_HOME; AUDIOBOOK_HOME is also supported)'); p.add_argument('--json',action='store_true',help='Versioned JSON, no prompts')
-    subs=p.add_subparsers(dest='command',required=True)
+    subs=p.add_subparsers(dest='command',required=True,metavar='COMMAND')
     def sub(name,help):
         q=subs.add_parser(name,help=help); q.add_argument('--json',action='store_true',default=argparse.SUPPRESS); return q
     sub('doctor','Inspect host and dependencies without downloading')
     q=sub('profile','Save explicit reusable listening defaults'); q.add_argument('name'); q.add_argument('--mode',choices=['listen','study','procedure'],default='listen'); q.add_argument('--tables',choices=['speak','companion'],default='speak'); q.add_argument('--code',choices=['speak','companion']); q.add_argument('--references',choices=['speak','companion']); q.add_argument('--notes',choices=['after_paragraph','inline','companion']); q.add_argument('--pronounce',action='append',default=[]); q.add_argument('--section',action='append',default=[])
     q=sub('setup','Choose, download and health-check a model'); q.add_argument('--profile',dest='backend_profile',help='Speech backend ID from hamr profiles; omit for guided selection'); q.add_argument('--cache',type=Path)
+    scope=q.add_mutually_exclusive_group()
+    scope.add_argument('--engine-only',action='store_true',help='Set up just the speech engine')
+    scope.add_argument('--checks-only',action='store_true',help='Set up offline speech checking')
     sub('profiles','Show pinned candidate catalog and implemented profiles')
     for name in ['plan','queue','open']:
         q=sub(name,{'plan':'Inspect and plan without model setup','queue':'Persist a headless job','open':'Review and start a document'}[name]); add_source(q)
         if name!='plan': q.add_argument('--voice',help='Saved voice name or cast:CHARACTER'); q.add_argument('--output',type=Path); q.add_argument('--parallel',type=int,choices=range(1,5),default=1,help='Concurrent generation streams; default 1'); q.add_argument('--label',help='Publication label appended to title, for example AI-generated comparison')
-        if name=='open': q.add_argument('--yes',action='store_true')
+        if name=='open':
+            q.add_argument('--yes',action='store_true')
+            q.add_argument('--play',action='store_true',help='Play the M4B after publication')
     for name in ['render','resume']:
         q=sub(name,'Run or recover a saved job'); q.add_argument('job'); q.add_argument('--output',type=Path);q.add_argument('--no-synthesis',action='store_true',help='Use verified cached takes only; never start the speech backend');q.add_argument('--max-new-takes',type=int,help='Stop at a durable checkpoint after this many new unique takes')
-    q=sub('run','Run the durable speech/CPU-QA/review/publication pipeline');q.add_argument('job');q.add_argument('--asr-python',type=Path,required=True);q.add_argument('--asr-model',type=Path,required=True);q.add_argument('--second-model',type=Path);q.add_argument('--batch-takes',type=int,default=1);q.add_argument('--max-retakes',type=int,default=8);q.add_argument('--max-new-takes',type=int);q.add_argument('--prepare-clear',action='store_true',help='Prepare accounted speech while source issues still hold publication');q.add_argument('--resident',action='store_true',help='Retain the owned model across render batches, CPU review and batch rests');q.add_argument('--batch-rest-seconds',type=float,default=0,help='Pause new generation between resident batches while retaining the model')
+    q=sub('run','Run the durable speech/CPU-QA/review/publication pipeline');q.add_argument('job');q.add_argument('--asr-python',type=Path);q.add_argument('--asr-model',type=Path);q.add_argument('--second-model',type=Path);q.add_argument('--batch-takes',type=int,default=1);q.add_argument('--max-retakes',type=int,default=8);q.add_argument('--max-new-takes',type=int);q.add_argument('--prepare-clear',action='store_true',help='Prepare accounted speech while source issues still hold publication');q.add_argument('--resident',action='store_true',help='Retain the owned model across render batches, CPU review and batch rests');q.add_argument('--batch-rest-seconds',type=float,default=0,help='Pause new generation between resident batches while retaining the model')
     q.add_argument('--overlap-batch-rest',action='store_true',help='Count CPU review after a committed render batch toward its minimum rest interval')
     q=sub('status','List jobs or reconcile ready output'); q.add_argument('job',nargs='?')
     q=sub('show','Inspect saved plan and exact unresolved locations'); q.add_argument('job'); q.add_argument('--content',action='store_true',help='Explicitly export source/script content')
     q=sub('repair','Change only a scoped pronunciation, verified passage or saved voice'); q.add_argument('job'); q.add_argument('--pronounce'); q.add_argument('--repackage',action='store_true'); q.add_argument('--reimport',action='store_true'); q.add_argument('--upgrade-rules',action='store_true'); q.add_argument('--retake'); q.add_argument('--block'); q.add_argument('--text-file',type=Path); q.add_argument('--voice'); q.add_argument('--document-policy',type=Path);q.add_argument('--metadata',type=Path,help='Source-preserving publication metadata overrides as JSON; null clears, inherit resets')
     q.add_argument('--chapters',help='Replace source chapter occurrence selection; all restores complete source order.')
+    q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
     for state in ['pause','cancel']:
         q=sub(state,'Mark a non-running job '+state+'d'); q.add_argument('job')
     q=sub('cleanup','Report or remove unreferenced owned scratch/cache'); q.add_argument('--apply',action='store_true'); q.add_argument('--purge-job')
     q=sub('worker','Process the durable queue; failed/review jobs do not block others'); q.add_argument('--once',action='store_true'); q.add_argument('--detach',action='store_true')
     q=sub('review','Record or resolve an exact-take listening finding'); q.add_argument('job');action=q.add_mutually_exclusive_group(required=True);action.add_argument('--accept',dest='accept_utterance');action.add_argument('--flag',dest='flag_utterance');q.add_argument('--reason',required=True)
-    q=sub('qa','Run unprompted offline CPU ASR against approved speech'); q.add_argument('job'); q.add_argument('--asr-python',type=Path,required=True); q.add_argument('--asr-model',type=Path,required=True); q.add_argument('--all',action='store_true'); q.add_argument('--require-review',action='store_true')
+    q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
+    q=sub('qa','Run unprompted offline CPU ASR against approved speech'); q.add_argument('job'); q.add_argument('--asr-python',type=Path); q.add_argument('--asr-model',type=Path); q.add_argument('--all',action='store_true'); q.add_argument('--require-review',action='store_true')
     q=sub('excerpt','Export consecutive committed takes while a render continues'); q.add_argument('job'); q.add_argument('--start',default='u00001'); q.add_argument('--count',type=int,default=4); q.add_argument('--output',type=Path,required=True)
     q=sub('preview','Audition an actual planned passage outside ready output'); q.add_argument('job'); q.add_argument('--utterance',default='u00001'); q.add_argument('--play',action='store_true')
     q=sub('play','Open ready M4B in the real target player'); q.add_argument('job'); q.add_argument('--start',type=float,default=0)
@@ -144,6 +159,9 @@ def parser():
     for mode in ['design','clone']:
         z=v.add_parser(mode); z.add_argument('--json',action='store_true',default=argparse.SUPPRESS); z.add_argument('name'); z.add_argument('--no-default',action='store_true',help='Keep the current default narrator'); z.add_argument('--transcript-file',type=Path,required=True); z.add_argument('--description',default='A calm, clear English audiobook narrator with a natural, steady delivery.')
         if mode=='clone': z.add_argument('--reference',type=Path,required=True)
+    sub('completion','Print shell completion').add_argument('shell',choices=('bash','zsh','fish'))
+    from .operator_cli import add_commands
+    add_commands(subs)
     return p
 
 
@@ -197,10 +215,36 @@ def discard_closed_output():
 
 
 def main(argv=None):
-    a=parser().parse_args(argv); jm=a.json
+    try:
+        return dispatch(argv)
+    except BrokenPipeError:
+        discard_closed_output()
+        return 0
+
+
+def emit_error(error, json_mode):
+    if json_mode:
+        emit({'schema_version':1,'error':{'code':error.code,'message':error.message,'action':error.action}},True)
+    else:
+        print(f'hamr: {error.message}', file=sys.stderr)
+        if error.action: print(error.action, file=sys.stderr)
+    return 2
+
+
+def dispatch(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    p = parser()
+    if arguments == ['--help-json']:
+        from .operator_cli import capabilities
+        emit(capabilities(p), True)
+        return 0
+    a=p.parse_args(arguments); jm=a.json
     def interrupted(signum,frame): raise KeyboardInterrupt
     signal.signal(signal.SIGTERM,interrupted); signal.signal(signal.SIGHUP,interrupted)
     try:
+        if a.command in ('agent','completion'):
+            from .operator_cli import dispatch as operator_dispatch
+            return operator_dispatch(p,a)
         s=Store(a.home)
         if getattr(a,'listening_profile',None):
             import re
@@ -232,12 +276,33 @@ def main(argv=None):
             value={'schema_version':1,'name':a.name,'policy':policy(a),'aliases':aliases}
             writejson(s.root/'profiles'/(a.name+'.json'),value); emit(value,True)
         elif a.command=='setup':
-            selected=a.backend_profile or choose_backend(s,jm)
-            if not jm:print(f'Preparing {selected}; downloading only its pinned runtime/model assets as needed.',file=sys.stderr)
-            emit(setup(s,selected,a.cache),jm)
-        elif a.command=='plan': emit(plan(cached_inspect(a.source,s.root/'extractions'),policy(a),a.aliases),True)
+            from .checks_setup import preflight, provision
+            from .setup_progress import SetupProgress
+            progress=SetupProgress()
+            if a.checks_only:
+                if a.backend_profile:
+                    raise Error('setup_scope', '--checks-only does not take a speech engine profile.')
+                with s.lock():
+                    result={'schema_version':1,'speech_checks':provision(s,progress,a.cache)}
+            else:
+                selected=a.backend_profile or choose_backend(s,jm)
+                if not a.engine_only: preflight()
+                stage=None if a.engine_only else lambda: provision(s,progress,a.cache)
+                result=setup(s,selected,a.cache,progress=progress,before_activate=stage)
+            if jm: emit(result,True)
+            else:
+                if result.get('profile'): print(f'Speech engine ready: {result["profile"]}')
+                if result.get('speech_checks'): print('Offline speech checking ready.')
+                print('Next: hamr open "My book.epub" --voice cast:nigel-thornberry')
+        elif a.command=='plan':
+            from .book_flow import check_source
+            check_source(a.source)
+            emit(plan(cached_inspect(a.source,s.root/'extractions'),policy(a),a.aliases),True)
         elif a.command in ('queue','open'):
+            from .book_flow import check_source, finish_book, play_output, preflight
+            check_source(a.source)
             pref=s.root/'preferences.json'; voice=a.voice or (loadjson(pref).get('voice') if pref.exists() else None)
+            if a.command=='open': preflight(s,voice,a.output,a.play)
             if a.command=='open' and not a.yes:
                 if jm or not sys.stdin.isatty(): raise Error('confirmation_required','Headless open requires --yes with explicit/saved settings.','Use plan to inspect, then open --yes or queue.')
                 doc=cached_inspect(a.source,s.root/'extractions')
@@ -250,21 +315,30 @@ def main(argv=None):
                         print(f'Keep exact tables in companion: estimated speech delta {alternative["estimated_minutes"]-p["estimated_minutes"]:+.1f} minutes. Enter t to change.',file=sys.stderr)
                     if counts['code']: print(f'{counts["code"]} literal blocks: {p["policy"]["code"]}. Exact commands remain in the timed companion. Enter c to change.',file=sys.stderr)
                     print(f'{len(p["issues"])} locations need review.',file=sys.stderr)
-                    answer=input('Start recommended? [y/N, t tables, c literals] ').strip().lower()
+                    try: answer=input('Start recommended? [y/N, t tables, c literals] ').strip().lower()
+                    except EOFError: return 0
                     if answer=='t' and counts['table']: a.tables='companion' if p['policy']['tables']=='speak' else 'speak'; continue
                     if answer=='c' and counts['code']: a.code='companion' if p['policy']['code']=='speak' else 'speak'; continue
                     if answer not in ('y','yes'): return 0
                     break
             result=create(s,a.source,voice,policy(a),a.output,a.aliases,label=a.label,parallel=a.parallel)
-            if a.command=='open': result=render(s,result['job'])
-            emit(result,jm)
+            if a.command=='open': result=finish_book(s,result['job'],announce=not jm)
+            if not jm: emit(result)
+            if a.command=='open' and a.play and result['status']=='ready': play_output(result,quiet=jm)
+            if jm: emit(result,True)
             if result['status']=='needs_review': return 3
         elif a.command in ('render','resume'):
-            result=render(s,a.job,a.output,allow_synthesis=not a.no_synthesis,max_new_takes=a.max_new_takes); emit(result,jm)
+            if a.command=='resume' and not a.no_synthesis and a.max_new_takes is None:
+                from .book_flow import finish_book
+                result=finish_book(s,a.job,output=a.output,announce=not jm)
+            else: result=render(s,a.job,a.output,allow_synthesis=not a.no_synthesis,max_new_takes=a.max_new_takes)
+            emit(result,jm)
             if result['status']=='needs_review': return 3
         elif a.command=='run':
+            from .checks_setup import observer
             from .pipeline import run as run_pipeline
-            result=run_pipeline(s,a.job,a.asr_python,a.asr_model,a.second_model,a.batch_takes,a.max_retakes,a.prepare_clear,a.max_new_takes,resident=a.resident,batch_rest_seconds=a.batch_rest_seconds,overlap_batch_rest=a.overlap_batch_rest);emit(result,jm)
+            python,model,second=observer(s,a.asr_python,a.asr_model,a.second_model)
+            result=run_pipeline(s,a.job,python,model,second,a.batch_takes,a.max_retakes,a.prepare_clear,a.max_new_takes,resident=a.resident,batch_rest_seconds=a.batch_rest_seconds,overlap_batch_rest=a.overlap_batch_rest,report_progress=not jm);emit(result,jm)
             if result['status']=='needs_review':return 3
         elif a.command=='status':
             result=summary(s,s.get(a.job)) if a.job else {'schema_version':1,'jobs':[summary(s,j) for j in s.jobs()]}; emit(result,jm)
@@ -273,7 +347,7 @@ def main(argv=None):
         elif a.command=='repair':
             if a.block and not a.text_file: raise Error('repair_text','--block requires --text-file containing a verified reading.')
             if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters]): raise Error('repair_required','Specify a scoped repair, --document-policy, --metadata or --chapters.')
-            emit(repair(s,a.job,a.pronounce,a.block,a.text_file.read_text() if a.text_file else None,a.voice,a.retake,a.reimport,a.upgrade_rules,loadjson(a.document_policy) if a.document_policy else None,loadjson(a.metadata) if a.metadata else None,chapters=a.chapters),jm)
+            emit(repair(s,a.job,a.pronounce,a.block,a.text_file.read_text() if a.text_file else None,a.voice,a.retake,a.reimport,a.upgrade_rules,loadjson(a.document_policy) if a.document_policy else None,loadjson(a.metadata) if a.metadata else None,chapters=a.chapters,expect_revision=a.expect_revision),jm)
         elif a.command in ('pause','cancel'):
             with s.lock():
                 j=s.get(a.job); j['status']='paused' if a.command=='pause' else 'cancelled'
@@ -302,19 +376,25 @@ def main(argv=None):
                 log=(s.root/'runtime'/'worker.log').open('ab'); child=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True); log.close(); emit({'schema_version':1,'pid':child.pid,'log':str(s.root/'runtime'/'worker.log'),'restart':f'hamr --home {s.root} worker --detach'},True)
             else:
                 with s.lock('queue-worker'):
+                    from .book_flow import finish_book
+                    from .checks_setup import observer
                     while True:
                         queued=[j for j in s.jobs() if j['status']=='queued']
+                        if queued: observer(s)
                         for j in queued:
-                            try: render(s,j['id'])
+                            try: finish_book(s,j['id'],announce=True)
                             except Error as e: print(dumps({'job':j['id'],'error':e.code}),file=sys.stderr)
                         if a.once: break
                         time.sleep(2)
         elif a.command=='review':
             from .qa import accept,flag
-            emit(flag(s,a.job,a.flag_utterance,a.reason) if a.flag_utterance else accept(s,a.job,a.accept_utterance,a.reason),True)
+            review=flag if a.flag_utterance else accept
+            emit(review(s,a.job,a.flag_utterance or a.accept_utterance,a.reason,expect_revision=a.expect_revision),True)
         elif a.command=='qa':
             from .qa import check
-            result=check(s,a.job,a.asr_python,a.asr_model,a.all,a.require_review); emit(result,True)
+            from .checks_setup import observer
+            python,model,_=observer(s,a.asr_python,a.asr_model,use_second=False)
+            result=check(s,a.job,python,model,a.all,a.require_review); emit(result,True)
             if result['status']=='needs_review': return 3
         elif a.command=='excerpt': emit(excerpt(s,a.job,a.start,a.count,a.output),True)
         elif a.command=='preview':
@@ -330,19 +410,23 @@ def main(argv=None):
         elif a.command=='play':
             j=s.get(a.job); result=summary(s,j)
             if result['status']!='ready': raise Error('not_ready','Only a verified ready output can be played.','Resume or repair the job first.')
-            from .core import run
-            subprocess.run(['mpv','--no-video',f'--start={a.start}',str(Path(result['output'])/'book.m4b')],check=True)
+            from .book_flow import play_output
+            play_output(result,a.start,quiet=jm)
+        sys.stdout.flush()
+        return 0
+    except BrokenPipeError:
+        discard_closed_output()
         return 0
     except Error as e:
-        emit({'schema_version':1,'error':{'code':e.code,'message':e.message,'action':e.action}},True); return 2
+        return emit_error(e,jm or a.command=='agent')
     except KeyboardInterrupt:
         try:
             emit({'schema_version':1,'status':'paused','action':'Run hamr status, then resume JOB.'},True); sys.stdout.flush()
         except OSError: discard_closed_output()
         return 130
     except FileNotFoundError as e:
-        emit({'schema_version':1,'error':{'code':'local_io','message':f'File not found: {e.filename or str(e)}','action':'Check the named path and repeat the command.'}},True); return 2
+        return emit_error(Error('local_io',f'File not found: {e.filename or str(e)}','Check the named path and repeat the command.'),jm or a.command=='agent')
     except (OSError,ValueError,KeyError) as e:
-        emit({'schema_version':1,'error':{'code':'local_io','message':f'Local operation failed ({type(e).__name__}).','action':'Check app/output paths, permissions and free space. Run doctor and resume.'}},True); return 2
+        return emit_error(Error('local_io',f'Local operation failed ({type(e).__name__}).','Check app/output paths, permissions and free space. Run doctor and resume.'),jm or a.command=='agent')
 
 if __name__=='__main__': sys.exit(main())

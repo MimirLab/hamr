@@ -1,0 +1,41 @@
+name: Linux checks
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install Linux command dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg mpv groff man-db zsh fish
+      - name: Test and check archives
+        run: |
+          uv sync --frozen --python 3.12 --extra test
+          uv run --no-sync pytest -q
+          uv build
+          uv run --no-sync python tools/check_release.py
+      - name: Test installed command, manual and completion outside the checkout
+        shell: bash
+        run: |
+          run_dir=$(mktemp -d)
+          ./install.sh "$run_dir/app" "$run_dir/bin"
+          export PATH="$run_dir/bin:$PATH"
+          export MANPATH="$run_dir/share/man:"
+          cd "$run_dir"
+          hamr --version
+          hamr setup --help
+          man -w 1 hamr
+          man -w 1 audiobook
+          groff -ww -Tutf8 -man "$run_dir/share/man/man1/hamr.1" > hamr.txt
+          hamr completion bash | bash -n
+          hamr completion zsh | zsh -n
+          hamr completion fish | fish --no-execute
+          hamr agent capabilities > capabilities.json
+          hamr --home "$run_dir/state" voice sample nigel-thornberry --json

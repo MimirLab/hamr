@@ -362,9 +362,12 @@ def publish(store,j):
     if not verify_publication(final,j): raise Error('publication_validation','Published directory failed checksum validation.')
 
 
-def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None):
+def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None):
     with store.lock():
-        j=store.get(jid); doc=document(j); aliases=dict(j['plan']['aliases'])
+        from .core import check_revision
+        j=store.get(jid)
+        check_revision(j,expect_revision)
+        doc=document(j); aliases=dict(j['plan']['aliases'])
         old_plan=j['plan']['plan_sha256'];old_voice=j['voice'];old_output=final_path(j)
         previous={'audio':str(old_output/'book.m4b'),'sha256':filehash(old_output/'book.m4b'),'plan_sha256':old_plan} if verify_publication(old_output,j) else None
         if metadata is not None:

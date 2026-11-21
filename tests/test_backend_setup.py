@@ -43,7 +43,7 @@ def assets(tmp_path, monkeypatch):
     monkeypatch.setattr(backend.platform, 'machine', lambda: 'x86_64')
     transfers = []
 
-    def transfer(url, part, offset, size):
+    def transfer(url, part, offset, size, **kwargs):
         transfers.append(url)
         content = payloads[url]
         assert size == len(content)
@@ -74,7 +74,7 @@ def test_selected_variant_acquires_only_its_assets_and_activates_after_health(tm
         def __exit__(self, *_): pass
 
     monkeypatch.setattr(backend, 'Engine', Healthy)
-    assert cli.main(['--home', str(home), 'setup', '--profile', profile, '--json']) == 0
+    assert cli.main(['--home', str(home), 'setup', '--profile', profile, '--engine-only', '--json']) == 0
     result = json.loads(capsys.readouterr().out)
     expected = {catalog['runtimes']['hoppou']['linux_x86_64']['url'],
                 *(f['url'] for f in package['files']),

@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="#your-first-book">Make a book</a> ·
+  <a href="#epub-to-audiobook-in-three-commands">Make a book</a> ·
   <a href="#listen">Meet the cast</a> ·
   <a href="docs/USAGE.md">The field guide</a> ·
   <a href="https://github.com/MimirLab/hamr/releases/latest">Downloads</a>
@@ -25,6 +25,38 @@
 Give Nigel Thornberry a nature book or Carl Sagan an astronomy text. Cave Johnson will read the safety manual too, if you're feeling brave.
 
 You can inspect the narration before rendering, resume after an interruption, and retake a bad passage without starting the whole book again. Each finished book comes with its source and a timed companion for following along or tracking down a mistake.
+
+## EPUB to audiobook in three commands
+
+Once hamr is installed, replace the example filename and run this from any directory.
+
+```sh
+# First run only. Press Enter to choose the recommended profile.
+hamr setup
+
+# Optional. Hear Nigel before making the book.
+hamr voice sample nigel-thornberry --play
+
+# Review the plan and enter y to start.
+hamr open "$HOME/Downloads/Ravens in Winter.epub" --voice cast:nigel-thornberry
+```
+
+hamr renders the narration, checks the speech locally and prints the finished `book.m4b` path. The default is `~/Audiobooks/JOB-r1/`, alongside the original document and companion files. Pass `--output DIRECTORY` to use an existing folder or `--play` to listen as soon as the book is ready.
+
+Here is a successful run with a separate output folder and some progress lines omitted.
+
+```text
+Ravens in Winter · 2 chapters · about 0.3 minutes
+Recommended: listen. Narrator: cast:nigel-thornberry.
+0 locations need review.
+Start recommended? [y/N, t tables, c literals] y
+e6ff67e457854bb6: Checking the full narration
+e6ff67e457854bb6: Assembling the audiobook
+e6ff67e457854bb6 · ready · Ravens in Winter
+/tmp/hamr-demo/Audiobooks/e6ff67e457854bb6-r1/book.m4b
+```
+
+Use the same command with a PDF or Markdown file. If interrupted, run `hamr resume JOB` with the printed job ID. For an unattended command, add `--yes`. If a passage needs review, `hamr show JOB --content` points to the issue.
 
 ## Listen
 
@@ -55,26 +87,21 @@ To use your own voice, supply a clean 2–30 second recording and its exact tran
 hamr voice clone my-narrator --reference clean.wav --transcript-file exact.txt
 ```
 
-## Your first book
+## Install on Linux
 
-You'll need Python 3.12+, [uv](https://docs.astral.sh/uv/getting-started/installation/), FFmpeg/ffprobe and mpv. The speech backend currently supports Linux x86_64 with an AVX2 CPU. You can plan a book and listen to voice previews before setting up a speech model.
-
-**1. Install hamr.**
+You'll need Git, Python 3.12 or newer, [uv](https://docs.astral.sh/uv/getting-started/installation/), FFmpeg with ffprobe, and mpv for playback. The speech engine runs on Linux x86_64 with an AVX2 CPU and the Vulkan loader. A GPU profile also needs a working Vulkan driver.
 
 ```sh
 git clone https://github.com/MimirLab/hamr.git
 cd hamr
 uv build --wheel
 ./install.sh
-hamr doctor
+export PATH="$HOME/.local/bin:$PATH"
+hamr --version
+man hamr
 ```
 
-**2. Choose a narrator.**
-
-```sh
-hamr voice sample nigel-thornberry --play
-hamr voice select nigel-thornberry
-```
+The installer checks the wheel version and installs the command and Linux manual for your account. If you prefer to run directly from a source checkout, stay in that directory and use `uv run hamr` in place of `hamr`. For example, `uv run hamr setup` runs setup through the checkout’s environment and `uv run hamr open "/path/to/My book.epub" --voice cast:nigel-thornberry` makes a book. Use the installed command for work outside the checkout.
 
 ### Which profile should I choose?
 
@@ -82,7 +109,7 @@ Start with **`hamr doctor`**. It reads GPU and memory information from the drive
 
 **Vulkan** lets the speech engine use your GPU through its graphics driver. It supports AMD, NVIDIA and Intel hardware with a suitable driver. **F16** stores the model's weights at 16-bit precision. **Quantization** uses fewer bits: Q8, Q6 and Q4 need progressively less storage and memory, but may change the voice's detail and delivery. A smaller model can be faster, though that depends on the hardware.
 
-All nine profiles are built in. Setup downloads the selected runtime and model from pinned sources and checks their sizes and SHA-256 hashes.
+Setup downloads the selected engine and its weights, then a separate CPU speech checker. The checker models add about 605 MiB plus the Python runtime dependencies. Setup verifies the pinned files and checks that the models load.
 
 | Profile | Supported hardware¹ | Approx. peak VRAM² | System RAM budget² | Fresh download³ | Quality / speed and testing |
 | --- | --- | ---: | ---: | ---: | --- |
@@ -119,7 +146,7 @@ nvidia-smi                        # Optional: NVIDIA hardware
 
 If setup runs out of memory, close other GPU-heavy applications or step down from Q8 to Q6 to Q4. Q8 with CPU text encoding may help when system RAM is plentiful; CPU Q4 avoids GPU allocation. If Vulkan is unavailable, check the loader, vendor driver/ICD and device access with `hamr doctor` and `vulkaninfo --summary`. Repeating setup resumes matching partial downloads. A failed setup leaves your active settings and existing books in place.
 
-### 3. Set up the speech engine
+### Select a profile explicitly
 
 ```sh
 hamr setup
@@ -129,26 +156,16 @@ hamr setup --profile vulkan-f16
 
 Setup checks that the model starts before activating it. In scripts, supply `--profile`; the chooser needs a terminal. More detail is in the [setup guide](docs/USAGE.md#install-and-setup).
 
-### 4. Check the text and make the book
+### Optional checks before rendering
 
 ```sh
 hamr plan 'My book.epub' --json
-mkdir -p ~/Audiobooks
-hamr open 'My book.epub' --output ~/Audiobooks
-```
-
-`open` uses your selected narrator, shows the plan and asks before rendering. Pay particular attention to PDFs: captions, tables and page layouts can make text extraction awkward. If hamr flags a source or speech problem, the book stays held for review.
-
-For unattended work, use `queue` or `open --yes`. [The field guide](docs/USAGE.md) covers document policies, offline speech recognition and review.
-
-### 5. Listen
-
-```sh
+hamr voice select nigel-thornberry
 hamr status
 hamr play JOB
 ```
 
-Replace `JOB` with the job ID shown by hamr. Copy `book.m4b` from the ready folder to your audiobook player. The folder also contains the original source, timed companion, source lookup, report and checksums.
+`voice select` saves a default for new books. A per-book `--voice` takes priority. PDFs with scans or difficult layouts may need source review. See the [usage guide](docs/USAGE.md) for OCR, reading policies, review and unattended queues.
 
 ## Resume and repair
 
@@ -191,7 +208,7 @@ uv build
 python3 tools/check_release.py
 ```
 
-[Open an issue](https://github.com/MimirLab/hamr/issues/new) · [Command guide](docs/USAGE.md) · [Cast guide](docs/CAST.md)
+[Open an issue](https://github.com/MimirLab/hamr/issues/new) · [Command guide](docs/USAGE.md) · [Linux manual](docs/man/hamr.1) · [Cast guide](docs/CAST.md)
 
 <p align="center">
   <img src="docs/art/hamr-listener.png" width="215" alt="A raven in copper headphones perches on a book." />
