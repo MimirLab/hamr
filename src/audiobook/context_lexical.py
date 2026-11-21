@@ -21,6 +21,7 @@ PATTERNS = {
     'contraction': ('CR-L006', r"(?:I|you|he|she|we|they)['’]d"),
     'apostrophe': ('CR-L007', r"[A-Za-z]+['’]s"),
     'heteronym': ('CR-L008', r'(?:read|record)'),
+    'native_name': ('CR-L010', r'{names}'),
     'grapheme': ('CR-L015', r'[^\W\d_]\u0300*[\u0300-\u036f]+'),
     'mixed_script': ('CR-L016',r'(?=[A-Za-z\u0400-\u052f0-9]{0,63}[\u0400-\u052f])'
                               r'(?=[A-Za-z\u0400-\u052f0-9]{0,63}[A-Za-z])[A-Za-z\u0400-\u052f0-9]{2,64}'),
@@ -44,10 +45,12 @@ PATTERNS = {
 }
 
 
-def expressions(left, right, abbreviations):
+def expressions(left, right, abbreviations, native_names=()):
     for kind, (_, pattern) in PATTERNS.items():
         if kind=='acronym':
             pattern='(?:'+'|'.join(map(re.escape,abbreviations)) + ')' if abbreviations else r'(?!)'
+        if kind=='native_name':
+            pattern='(?:'+'|'.join(map(re.escape,sorted(native_names,key=lambda value:(-len(value),value))))+')' if native_names else r'(?!)'
         if kind in ('grapheme','ligature','interruption','ellipsis','ampersand','annotation','stage_direction','censoring','pictograph'):
             yield kind, left+pattern+right if kind=='censoring' else pattern
         else:
@@ -109,6 +112,8 @@ def candidates(kind,raw,env):
         return []
     if kind=='heteronym':
         return heteronym(raw,env)
+    if kind=='native_name':
+        return [Candidate('backend_native_fallback',{'name':raw,'keep_complete_token':True},None,('convention',))]
     if kind=='grapheme':
         glyph=unicodedata.normalize('NFC',raw)
         return [Candidate('canonical_equivalent_text',{'normalized_grapheme':glyph,'retain_original_span':True},None,('syntax',))]

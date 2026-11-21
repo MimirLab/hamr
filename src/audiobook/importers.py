@@ -503,7 +503,7 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
                 if not issue and any(float(x[10])<70 and re.search(r'\d',x[11]) for x in words): issue='Low-confidence numeric OCR requires verification.'
                 entry.update(route='visual_ocr',ocr_confidence=conf,native_observation=native,ocr_observation=text,raw_OCR_reused=reused,ocr_words=[{'text':x[11],'confidence':float(x[10]),'rect_pixels':[int(v) for v in x[6:10]],'group':[int(v) for v in x[1:5]]} for x in words])
                 from .pdf_layout import paragraphs
-                parts=paragraphs(words,native,n+1,w,h,None if critical_disputes else issue)
+                parts=paragraphs(words,n+1,h,None if critical_disputes else issue)
                 from .pdf_regions import localize,glyph_reader
                 box=page.get_bbox();media=page.get_mediabox()
                 geometry=page.get_rotation()==0 and all(abs(a-b)<.01 for a,b in zip(box,(0,0,w,h))) and all(abs(a-b)<.01 for a,b in zip(box,media))
@@ -517,7 +517,10 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
                     if damaged_regnal_glyph(part['text']):
                         reason='Visual OCR shows an unmatched bracket in a possible regnal numeral. Verify the printed reading before synthesis.'
                         part['issue']=' '.join(filter(None,(part['issue'],reason)))
-                    out.append(block(part['text'],part['locator'],'body',chapter,['Independent raster inventory','Tesseract paragraph geometry','Native text retained as competing observation'],part['issue']))
+                    locator=part['locator']
+                    joins=locator.pop('line_wrap_joins',None)
+                    out.append(block(part['text'],locator,'body',chapter,['Independent raster inventory','Tesseract paragraph geometry','Native text retained as competing observation'],part['issue']))
+                    if joins:locator['line_wrap_joins']=joins
             except Error as e:
                 out.append(block(native,{'format':'pdf','page':n+1,'rect':[0,0,w,h]},'unreadable',chapter,['Raster inventory'],e.message))
             except (subprocess.SubprocessError,OSError):
@@ -525,18 +528,21 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
             finally: bitmap.close()
         else:
             # Build glyph lines, then use a large central gutter only with bilateral evidence.
-            from .pdf_geometry import crop_glyphs
+            from .pdf_geometry import crop_glyphs,glyph_baseline
+            from .pdf_overlays import verified_overlays
+            overlays=verified_overlays(page,tp) if entry['native_geometry_qualified'] else []
+            if overlays:entry['duplicate_paint_observations']=overlays
             chars,outside,clipped=crop_glyphs(tp,box)
             visible_native=''.join(ch for ch,_,_ in chars)
             entry.update(excluded_crop_glyphs=outside,visible_native_observation=visible_native,clipped_visible_glyphs=clipped)
             if page.get_rotation()==0:entry['native_geometry_qualified']=True
             lines=[]
             for ch,rect,index in chars:
-                l,b,r,t=rect; cy=(b+t)/2
-                # Small punctuation has a very different box centre from a
-                # capital on the same baseline. Its bottom remains aligned.
-                target=next((x for x in lines if abs(x['baseline']-b)<3.5),None)
-                if target is None: target={'y':cy,'baseline':b,'chars':[]}; lines.append(target)
+                l,b,r,t=rect
+                baseline=glyph_baseline(tp,index,box[1],b)
+                # A descender's box reaches below the baseline of its word.
+                target=next((x for x in lines if abs(x['y']-baseline)<3.5),None)
+                if target is None: target={'y':baseline,'chars':[]}; lines.append(target)
                 target['chars'].append((l,r,ch,rect,index))
             segments=[]
             for line in sorted(lines,key=lambda a:-a['y']):
@@ -575,7 +581,18 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
             if clipped:issue='A meaningful glyph crosses the visible CropBox edge; verify the original source before narration.'
             if page.get_rotation()!=0:issue='Rotated native PDF text needs a verified visible reading and order; this geometry path is not qualified.'
             entry['glyph_character_coverage']='exact' if not issue else 'disputed'
-            for idx,s in enumerate(segments):out.append(block(s['text'],{'format':'pdf','page':n+1,'rect':s['rect'],'line':idx},'body',chapter,['PDF glyph geometry',entry['route'],'Native whitespace and punctuation retained'],issue))
+            for idx,s in enumerate(segments):
+                locator={'format':'pdf','page':n+1,'rect':s['rect'],'line':idx}
+                out.append(block(s['text'],locator,'body',chapter,['PDF glyph geometry',entry['route'],'Native whitespace and punctuation retained'],issue))
+                if issue:continue
+                l,b,r,t=s['rect']
+                observations=[]
+                for overlay in overlays:
+                    x,y,x1,y1=overlay['rect']
+                    if l<=x+.02 and b<=y+.02 and x1<=r+.02 and y1<=t+.02 and s['text'].count(overlay['text'])==1:
+                        start=s['text'].index(overlay['text'])
+                        observations.append({**overlay,'source_span':[start,start+len(overlay['text'])]})
+                if observations:locator['duplicate_paint_observations']=observations
             if not segments and native.strip():out.append(block('',{'format':'pdf','page':n+1,'rect':[0,0,w,h]},'unreadable',chapter,issue='Native glyphs fall outside the visible crop; verify whether the visible page is blank.'))
         tp.close(); page.close()
     doc.close()

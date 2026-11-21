@@ -1,7 +1,7 @@
 import pytest
 
 from audiobook.core import Block,Document,Error,digest
-from audiobook.pdf_layout import mark_folios,paragraphs
+from audiobook.pdf_layout import line_wrap_readings,mark_folios,paragraphs
 from audiobook.planner import plan
 
 
@@ -31,11 +31,46 @@ def test_folio_geometry_and_recurrence_do_not_remove_body_number():
     assert all(b.role=='furniture' for b in blocks[:-1]) and body.role=='body'
 
 
-def test_only_native_soft_wrap_evidence_joins_a_visual_line_break():
+def test_matching_native_words_distinguish_discretionary_and_lexical_wraps():
     def word(line,text):return ['5','1','1','1',str(line),'1','20',str(40*line),'100','20','95',text]
-    rows=paragraphs([word(1,'under-'),word(2,'standing')],'under¬\nstanding',1,600,800)
+    rows=paragraphs([word(1,'under-'),word(2,'standing')],1,800)
     assert rows[0]['text']=='under-\nstanding'
+    rows[0]['locator']['line_wrap_joins']=line_wrap_readings(rows[0]['text'],'under¬\nstanding')
     b=Block('b',rows[0]['text'],rows[0]['locator'])
     p=plan(Document('D','pdf','s',[b]));assert p['utterances'][0]['text']=='understanding'
-    rows=paragraphs([word(1,'long-'),word(2,'term')],'long-term',1,600,800)
-    assert not rows[0]['locator'].get('line_wrap_joins')
+    assert not line_wrap_readings('Please re-\nsign the form.','Please resign the form.')
+    assert line_wrap_readings('Please re-\nsign the form.','Please re-sign the form.')[0]['spoken']=='re-sign'
+
+
+def test_identical_wrapped_spellings_have_independent_source_evidence():
+    from audiobook.pdf_layout import apply_line_wraps
+    visual='Please re-\nsign. The puzzle says re-\nsign.'
+    joins=line_wrap_readings(visual,'Please re-sign. The puzzle says re¬\nsign.')
+    assert [row['kind'] for row in joins]==['lexical','discretionary']
+    assert apply_line_wraps(visual,joins)=='Please re-sign. The puzzle says resign.'
+    assert apply_line_wraps(visual,joins[1:])=='Please re-\nsign. The puzzle says resign.'
+
+
+def test_actual_pdf_distinguishes_duplicate_paint_from_separate_words():
+    import io
+    from reportlab.pdfgen.canvas import Canvas
+    from audiobook.importers import pdf
+    stream=io.BytesIO()
+    canvas=Canvas(stream,pagesize=(420,280))
+    canvas.setFont('Helvetica',18)
+    canvas.drawString(35,200,'Echo')
+    canvas.drawString(35,200,'Echo')
+    canvas.drawString(35,150,'Echo Echo')
+    canvas.drawString(35,100,'Again')
+    canvas.drawString(115,100,'Again')
+    canvas.save()
+    d=pdf(stream.getvalue())
+    result=plan(d)
+    assert [b.source for b in d.blocks]==['Echo','Echo Echo','Again','Again']
+    records=[entry for row in result['decisions'] for entry in row.get('context_structure',[])]
+    overlay,=[entry for entry in records if entry['kind']=='verified_duplicate']
+    assert overlay['source']=='Echo' and overlay['fields']['observations']==['Echo','Echo']
+    assert overlay['fields']['source_objects']==[0,1]
+    authored,=[entry for entry in records if entry['kind']=='authored_repetition']
+    assert authored['source']=='Echo Echo'
+    assert not result['issues']

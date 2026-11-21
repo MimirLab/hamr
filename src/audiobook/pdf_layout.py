@@ -2,13 +2,65 @@
 from collections import Counter, OrderedDict
 import re
 from .core import Error
+from .linguistic import safe_unicode
 
 
-def paragraphs(words, native, page, width, height, page_issue=None):
+WORD = r"[^\W\d_]+(?:['’][^\W\d_]+)*"
+VISUAL_TOKENS = re.compile(r'(?P<wrap>[A-Za-z]+-\n[ \t]*[a-z]+)|(?P<hard>[A-Za-z]+-[a-z]+)|'+WORD)
+NATIVE_TOKENS = re.compile(r'(?P<soft>[A-Za-z]+[\u00ad\u00ac]\s*[a-z]+)|(?P<hard>[A-Za-z]+-[a-z]+)|'+WORD)
+
+
+def line_wrap_readings(text, native_region):
+    """Corroborate a wrap against the corresponding native paragraph."""
+    if '-\n' not in text:
+        return []
+    visual=list(VISUAL_TOKENS.finditer(text))
+    native=list(NATIVE_TOKENS.finditer(native_region))
+    if len(visual)!=len(native):
+        return []
+    joins=[]
+    for printed, encoded in zip(visual,native):
+        if printed.lastgroup!='wrap':
+            if safe_unicode(printed[0]).replace('’',"'")!=safe_unicode(encoded[0]).replace('’',"'"):
+                return []
+            continue
+        left,right=map(str.strip,printed[0].split('-\n',1))
+        kind=encoded.lastgroup
+        joined=left+right if kind=='soft' else left+'-'+right
+        observed=re.sub(r'[\u00ad\u00ac]\s*','',encoded[0]) if kind=='soft' else encoded[0]
+        if kind not in ('soft','hard') or joined!=observed:
+            return []
+        joins.append({'original':printed[0],'spoken':joined,'source_span':list(printed.span()),
+                      'native_region_span':list(encoded.span()),'native':encoded[0],
+                      'kind':'discretionary' if kind=='soft' else 'lexical',
+                      'evidence':'Matching native text and visual line fragments in the same paragraph.'})
+    return joins
+
+
+def apply_line_wraps(text, joins):
+    """Change only the bound occurrence, including in paragraphs with repeats."""
+    spans=[]
+    for join in joins:
+        original=join['original']
+        if 'source_span' in join:
+            a,b=join['source_span']
+            if not (0<=a<b<=len(text) and text[a:b]==original):
+                continue
+        elif text.count(original)==1:
+            a=text.index(original)
+            b=a+len(original)
+        else:
+            continue
+        spans.append((a,b,join['spoken']))
+    for a,b,spoken in sorted(spans,reverse=True):
+        text=text[:a]+spoken+text[b:]
+    return text
+
+
+def paragraphs(words, page, height, page_issue=None):
     groups = OrderedDict()
     for word in words:
         groups.setdefault(tuple(word[1:4]), []).append(word)
-    soft_words = {a.lower() + b.lower() for a, b in re.findall(r'([A-Za-z]+)[¬\u00ad]\s*([A-Za-z]+)', native)}
     result = []
     for index, group in enumerate(groups.values()):
         lines = OrderedDict()
@@ -27,16 +79,8 @@ def paragraphs(words, native, page, width, height, page_issue=None):
             issue = 'Low-confidence numeric OCR requires verification.'
         if page_issue and page_issue.startswith('Native and visual'):
             issue = page_issue
-        joins = []
-        for match in re.finditer(r'([A-Za-z]+)-\n([a-z]+)', text):
-            joined = match[1] + match[2]
-            if joined.lower() in soft_words:
-                joins.append({'original': match[0], 'spoken': joined,
-                              'evidence': 'Visual line break matches native soft-hyphen word.'})
         locator = {'format': 'pdf', 'page': page, 'rect': [left, height-bottom, right, height-top],
                    'paragraph': index, 'ocr_confidence': confidence}
-        if joins:
-            locator['line_wrap_joins'] = joins
         result.append({'text': text, 'locator': locator, 'issue': issue})
     return result
 
@@ -62,8 +106,7 @@ def mark_folios(blocks, inventory):
 def spoken_paragraph(block):
     text = block.source
     if block.locator.get('format') == 'pdf':
-        for join in block.locator.get('line_wrap_joins', []):
-            text = text.replace(join['original'], join['spoken'])
+        return apply_line_wraps(text,block.locator.get('line_wrap_joins',[]))
     return text
 
 

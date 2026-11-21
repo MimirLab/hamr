@@ -28,14 +28,14 @@ def rename_new(src,dst):
 def document(j):
     d=j['document']; return Document(d['title'],d['format'],d['source_sha256'],[Block(**b) for b in d['blocks']],d['language'],d['inventory'],d['warnings'],d.get('metadata',{}))
 
-def create(store,source,voice=None,policy=None,output=None,aliases=None,label=None,parallel=1):
+def create(store,source,voice=None,policy=None,output=None,aliases=None,label=None,parallel=1,*,context_reviewer=None):
     source=Path(source).absolute()
     jid=uuid.uuid4().hex[:16]; path=store.root/'jobs'/jid; path.mkdir(mode=0o700)
     try:
         with source.open('rb') as f: data=f.read(200*1024*1024+1)
         if len(data)>200*1024*1024: raise Error('input_limit','Input exceeds 200 MiB.')
         snapshot=path/('source'+source.suffix.lower()); atomic(snapshot,data); snapshot.chmod(0o400)
-        doc=cached_inspect(snapshot,store.root/'extractions'); p=plan(doc,policy,aliases)
+        doc=cached_inspect(snapshot,store.root/'extractions'); p=plan(doc,policy,aliases,context_reviewer=context_reviewer)
         if p.get('document_title'):doc.title=p['document_title']
         saved_voice=resolve_voice(store,voice) if voice else None
         j={'schema_version':1,'id':jid,'status':'queued','revision':1,'snapshot':str(snapshot),'source_name':source.name,'publication_label':label,'document':doc.json(),'plan':p,'voice':saved_voice,'backend':loadjson(store.root/'settings.json') if (store.root/'settings.json').exists() else None,'output_parent':str(Path(output or Path.home()/'Audiobooks').absolute()),'clips':{},'repairs':[],'error':None,'created':time.time(),'speech_contract':2,'audio_gate':True}
@@ -368,7 +368,7 @@ def publish(store,j):
     if not verify_publication(final,j): raise Error('publication_validation','Published directory failed checksum validation.')
 
 
-def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None,context=None,context_review=None):
+def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None,context=None,context_review=None,context_reviewer=None):
     with store.lock():
         from .core import check_revision
         j=store.get(jid)
@@ -404,7 +404,7 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             identity=key({'text':target['text'],'sources':target['sources']}); takes[identity]=target.get('seed',42)+1
             j['repairs'].append({'kind':'retake','utterance':retake,'seed':takes[identity]})
         j['retakes']=takes
-        refresh=upgrade_rules or context is not None or context_review is not None and j['plan']['rule_revision']!=RULES
+        refresh=upgrade_rules or context is not None or (context_review is not None or context_reviewer is not None) and j['plan']['rule_revision']!=RULES
         revision=RULES if refresh else j['plan']['rule_revision']
         if refresh: j['repairs'].append({'kind':'rules_upgrade','from':j['plan']['rule_revision'],'to':revision})
         selected_policy=dict(j['plan']['policy'])
@@ -412,7 +412,9 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         if context is not None:
             selected_policy['context']=context
             selected_policy.pop('context_review',None)
-        if context_review is not None:selected_policy['context_review']=context_review
+        if context_review is not None:
+            selected_policy.pop('context_review_receipt',None)
+            selected_policy['context_review']=context_review
         if chapters is not None:
             from .selection import parse
             selected=parse(chapters)
@@ -421,7 +423,7 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         if document_policy is not None:
             selected_policy['document']=document_policy
             j['repairs'].append({'kind':'document_policy','policy_sha256':key(document_policy),'source_sha256':doc.source_sha256})
-        j['document']=doc.json(); j['plan']=plan(doc,selected_policy,aliases,rule_revision=revision)
+        j['document']=doc.json(); j['plan']=plan(doc,selected_policy,aliases,rule_revision=revision,context_reviewer=context_reviewer)
         if j['plan'].get('document_title'):j['document']['title']=j['plan']['document_title']
         for u in j['plan']['utterances']:
             seed=takes.get(key({'text':u['text'],'sources':u['sources']}))

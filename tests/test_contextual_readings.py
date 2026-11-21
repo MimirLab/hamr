@@ -363,3 +363,29 @@ def test_natural_narration_and_opt_in_technical_readouts_keep_the_same_fields():
     assert 'quantity' in critical('This costs twelve euros and fifty cents.','This costs €12.00.')
     assert 'math_or_unit' in critical('This costs twelve euros and fifty cents.','This costs $12.50.')
     assert 'quantity' in critical('The depth is 2.50 meters.','The depth is 2.5 meters.')
+
+
+def test_fraction_like_fragments_in_two_cells_get_a_companion_disposition():
+    table='| Left | Right |\n| --- | --- |\n| 3 | /4 |'
+    result=reading(table)
+    decision,=result['decisions']
+    assert decision['action']=='companion'
+    assert '3 | /4' in decision['source']
+    observation,=decision['context_structure']
+    assert observation['selected_reading']['kind']=='companion_object'
+    assert observation['fields']['fragments']==[{'row':1,'columns':[0,1],'values':['3','/4']}]
+    assert 'The full table is available in the companion.' in speech(result)
+    assert not events(result) and not result['issues']
+    assert 'three quarters of a cup' in speech(reading('Add 3/4 cup of flour.'))
+
+
+def test_native_name_watch_list_preserves_the_word_and_allows_a_verified_alias():
+    source='Zhalorin entered the hall. Maralin followed.'
+    assert not events(reading(source))
+    result=reading(source,native_names=['Zhalorin'])
+    artifact,=events(result)
+    assert selected(artifact)['kind']=='backend_native_fallback'
+    assert artifact['realization']=='existing_renderer'
+    assert speech(result)==source and not result['issues']
+    verified=plan(markdown(source.encode()),{'context':{'native_names':['Zhalorin']}},aliases={'Zhalorin':'Zalorin'})
+    assert not events(verified) and 'Zalorin entered' in speech(verified)

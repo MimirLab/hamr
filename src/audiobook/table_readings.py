@@ -2,6 +2,14 @@
 import re
 
 
+def split_cell_fractions(rows):
+    """Locate fraction-like fragments whose source cells must stay separate."""
+    return [{'row':index,'columns':[column,column+1],'values':[first,second]}
+            for index,row in enumerate(rows[1:],1)
+            for column,(first,second) in enumerate(zip(row,row[1:]))
+            if re.fullmatch(r'[0-9]+',first.strip()) and re.fullmatch(r'/\s*[0-9]+',second.strip())]
+
+
 def rows_for_speech(rows,context, *, marker=None):
     if not rows or not rows[0] or any(not str(h).strip() for h in rows[0]):return None,'Table headers need verified column labels.'
     defined=bool(re.search(r'''〃[”"’']?\s+(?:means|denotes)\s+[“"‘']?same as above''',context,re.I))

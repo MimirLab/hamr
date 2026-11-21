@@ -247,7 +247,8 @@ class Resolver:
         if self.tables.keys()-table_ids:
             context_config.invalid('A context table policy names an unknown source table.')
         self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
-        self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],self.config['cues']['price_noun'])
+        self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],
+                                             self.config['cues']['price_noun'],self.config['native_names'])
         self.definitions=defaultdict(list)
         for block in doc.blocks:
             match=DEFINITION.match(block.source) if block.role=='body' and not block.issue else None
@@ -282,8 +283,8 @@ class Resolver:
         scopes=self.scoped_conventions(chapter,chapter_id,block.id)
         return next((settings['ditto_marker'] for _,settings in reversed(scopes) if 'ditto_marker' in settings),None)
 
-    def structural_evidence(self, block, cells):
-        return context_structure.observations(block,cells,source_digest=self.doc.source_sha256,language=self.doc.language)
+    def structural_evidence(self, block, cells, table_fragments):
+        return context_structure.observations(block,cells,table_fragments,source_digest=self.doc.source_sha256,language=self.doc.language)
 
     def outcome(self, block, view, match, env, options):
         raw=match[0];event=grammar.EVENTS[match.lastgroup]
@@ -411,8 +412,12 @@ class Resolver:
         if self.review is not None:
             self.policy['context_review']=self.accepted_answers
         visible={event['occurrence_id'] for event in events}
-        return {'configuration_sha256':self.identity,'score_kind':'heuristic',
+        result={'configuration_sha256':self.identity,'score_kind':'heuristic',
                 'routes':dict(Counter(event['route'] for event in events)),
                 'review_requests':[row for row in self.requests if row['occurrence_id'] in visible],
                 'review_requests_omitted':max(0,self.request_count-REVIEW_LIMIT),
                 'unmatched_reviewer_occurrences':len(self.answers.keys()-self.used_answers)}
+        receipt=self.policy.get('context_review_receipt')
+        if isinstance(receipt,dict) and receipt.get('configuration_sha256')==self.identity and receipt.get('source_sha256')==self.doc.source_sha256:
+            result['review_provider']=receipt
+        return result

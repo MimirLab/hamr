@@ -136,7 +136,13 @@ def add_source(p):
     p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile',dest='listening_profile',help='Saved listening defaults created with hamr profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
     p.add_argument('--chapters',help='Source chapter occurrences, e.g.5,2-3,2; original order is retained. Use all to reset.')
     p.add_argument('--context',type=Path,help='Context cue weights, conventions and review mode as JSON')
-    p.add_argument('--context-review',type=Path,help='Local JSON array of replies to source-bound context review requests')
+    add_context_review(p)
+
+
+def add_context_review(p):
+    group=p.add_mutually_exclusive_group()
+    group.add_argument('--context-review',type=Path,help='Local JSON array of replies to source-bound context review requests')
+    group.add_argument('--context-review-endpoint',help='Explicit loopback HTTP candidate reviewer for this command')
 
 def policy(a):
     selected={**getattr(a,'saved_policy',{}),**{k:getattr(a,k) for k in ('mode','tables','code','references','notes') if getattr(a,k,None) is not None}}
@@ -190,7 +196,7 @@ def parser():
     q=sub('status','List jobs or reconcile ready output'); q.add_argument('job',nargs='?')
     q=sub('show','Inspect saved plan and exact unresolved locations'); q.add_argument('job'); q.add_argument('--content',action='store_true',help='Explicitly export source/script content')
     q=sub('repair','Change only a scoped pronunciation, verified passage or saved voice'); q.add_argument('job'); q.add_argument('--pronounce'); q.add_argument('--repackage',action='store_true'); q.add_argument('--reimport',action='store_true'); q.add_argument('--upgrade-rules',action='store_true'); q.add_argument('--retake'); q.add_argument('--block'); q.add_argument('--text-file',type=Path); q.add_argument('--voice'); q.add_argument('--document-policy',type=Path);q.add_argument('--metadata',type=Path,help='Source-preserving publication metadata overrides as JSON; null clears, inherit resets')
-    q.add_argument('--context',type=Path,help='Replace contextual reading settings and replan'); q.add_argument('--context-review',type=Path,help='Apply source-bound context review replies and replan')
+    q.add_argument('--context',type=Path,help='Replace contextual reading settings and replan'); add_context_review(q)
     q.add_argument('--chapters',help='Replace source chapter occurrence selection; all restores complete source order.')
     q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
     for state in ['pause','cancel']:
@@ -364,7 +370,7 @@ def dispatch(argv=None):
         elif a.command=='plan':
             from .book_flow import check_source
             check_source(a.source)
-            emit(plan(cached_inspect(a.source,s.root/'extractions'),policy(a),a.aliases),True)
+            emit(plan(cached_inspect(a.source,s.root/'extractions'),policy(a),a.aliases,context_reviewer=a.context_review_endpoint),True)
         elif a.command in ('queue','open'):
             from .book_flow import check_source, finish_book, play_output, preflight
             check_source(a.source)
@@ -388,7 +394,8 @@ def dispatch(argv=None):
                     if answer=='c' and counts['code']: a.code='companion' if p['policy']['code']=='speak' else 'speak'; continue
                     if answer not in ('y','yes'): return 0
                     break
-            result=create(s,a.source,voice,policy(a),a.output,a.aliases,label=a.label,parallel=a.parallel)
+            result=create(s,a.source,voice,policy(a),a.output,a.aliases,label=a.label,parallel=a.parallel,
+                          context_reviewer=a.context_review_endpoint)
             if a.command=='open': result=finish_book(s,result['job'],announce=not jm)
             if not jm: emit(result)
             if a.command=='open' and a.play and result['status']=='ready': play_output(result,quiet=jm)
@@ -413,10 +420,11 @@ def dispatch(argv=None):
             j=s.get(a.job); emit({'schema_version':1,'job':j['id'],'plan':j['plan']} if a.content else summary(s,j),True)
         elif a.command=='repair':
             if a.block and not a.text_file: raise Error('repair_text','--block requires --text-file containing a verified reading.')
-            if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters,a.context,a.context_review]): raise Error('repair_required','Specify a scoped repair, --document-policy, --context, --metadata or --chapters.')
+            if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters,a.context,a.context_review,a.context_review_endpoint]): raise Error('repair_required','Specify a scoped repair, --document-policy, --context, --metadata or --chapters.')
             from .context_config import read as read_context
             emit(repair(s,a.job,a.pronounce,a.block,a.text_file.read_text() if a.text_file else None,a.voice,a.retake,a.reimport,a.upgrade_rules,loadjson(a.document_policy) if a.document_policy else None,loadjson(a.metadata) if a.metadata else None,chapters=a.chapters,expect_revision=a.expect_revision,
-                        context=read_context(a.context) if a.context else None,context_review=read_context(a.context_review) if a.context_review else None),jm)
+                        context=read_context(a.context) if a.context else None,context_review=read_context(a.context_review) if a.context_review else None,
+                        context_reviewer=a.context_review_endpoint),jm)
         elif a.command in ('pause','cancel'):
             with s.lock():
                 j=s.get(a.job); j['status']='paused' if a.command=='pause' else 'cancelled'

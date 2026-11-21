@@ -89,6 +89,14 @@ is supplied. Published output is kept.
 .TP
 .BI "completion " SHELL
 Print completion for Bash, Zsh or Fish.
+.SH CONTEXT REVIEW
+Ambiguous readings use the automatic policy by default.
+Use
+.BI \-\-context\-review " FILE"
+to supply a local array of candidate replies, or
+.BI \-\-context\-review\-endpoint " URL"
+to request a review from a loopback HTTP service.
+Accepted choices are saved with the job.
 .SH EXIT STATUS
 .TP
 .B 0

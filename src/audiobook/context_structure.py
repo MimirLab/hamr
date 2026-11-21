@@ -54,8 +54,12 @@ def inline_reading(block, span, raw):
             return 'CR-L011','authored_alias',{'use_occurrence_alias':span['reading'],'retain_source_name':raw},()
     if kind=='language' and raw.strip() and span.get('language'):
         language=span['language']
-        return 'CR-L012','configured_native_fallback',{'span_language':language,'retain_token':raw,'do_not_translate':True,
-                                                     'qualified_speech':language.split('-')[0].casefold()=='en'},()
+        qualified=language.split('-')[0].casefold()=='en'
+        prefix=block.source[max(0,span['source_start']-64):span['source_start']]
+        lexical_mention=qualified and re.search(r'\b(?:borrowed word|loanword)\s+["“\']?$',prefix,re.I)
+        candidate='borrowed_language_reading' if lexical_mention else 'configured_native_fallback'
+        return 'CR-L012',candidate,{'span_language':language,'retain_token':raw,'do_not_translate':True,
+                                   'qualified_speech':qualified},()
     if kind=='display_case' and raw.isascii():
         display=span['transform']
         if display=='uppercase' and raw!=raw.upper():
@@ -88,7 +92,7 @@ def inline_reading(block, span, raw):
     return None
 
 
-def observations(block, cells, *, source_digest, language):
+def observations(block, cells, table_fragments, *, source_digest, language):
     """Use exact spans or named cell locators. Existing source readings still render speech."""
     source=block.source
     spans=block.locator.get('inline_semantics',[])
@@ -118,12 +122,14 @@ def observations(block, cells, *, source_digest, language):
         if link['kind']=='hyperlink' and not any(span['kind']=='hyperlink' for span in spans):
             add('source_link','hyperlink',{}, {'target':link['href'],'label':link.get('label')})
 
-    if block.locator.get('format') in ('epub','markdown','text'):
+    logical_input=block.locator.get('format') in ('epub','markdown','text')
+    if logical_input:
         directions={unicodedata.bidirectional(c) for c in source} if not source.isascii() else set()
         if 'L' in directions and directions & {'R','AL'}:
             fields={'logical_order_retained':True,'do_not_reverse_entire_line':True}
             add('source_order','bidirectional',{'source_span':[0,len(source)],'source':source},fields,
                 ('CR-L047','source_logical_order',fields,()))
+    if logical_input or block.locator.get('format')=='pdf' and 'line' in block.locator and not block.issue:
         literal=[(span['source_start'],span['source_end']) for span in spans if span['kind']=='literal']
         for match in re.finditer(r"(?<!\w)([^\W\d_][\w’']*)[ \t]+(\1)(?!\w)",source):
             if block.role!='body' or any(match.start()<b and a<match.end() for a,b in hidden+literal):
@@ -131,6 +137,13 @@ def observations(block, cells, *, source_digest, language):
             fields={'two_authored_occurrences':True,'occurrences':[list(match.span(1)),list(match.span(2))]}
             add('source_order','authored_repetition',{'source_span':list(match.span()),'source':match[0]},fields,
                 ('CR-L033','retain_authored_repetition',fields,()))
+    for overlay in block.locator.get('duplicate_paint_observations',[]):
+        start,end=overlay['source_span']
+        if source[start:end]!=overlay['text']:continue
+        fields={'visible_occurrence_count':1,'observations':[overlay['text']]*2,
+                'source_objects':overlay['objects'],'rect':overlay['rect'],'evidence':overlay['evidence']}
+        add('pdf_paint','verified_duplicate',{'source_span':[start,end],'source':overlay['text']},fields,
+            ('CR-L033','collapse_duplicate_observation',fields,()))
     lang=block.locator.get('language',language)
     if lang and lang.split('-')[0].casefold()=='ar' and re.search(r'[\u0620-\u064a]',source):
         fields={'span_language':lang,'preserve_unvocalized_source':True,'qualified_speech':False}
@@ -145,12 +158,18 @@ def observations(block, cells, *, source_digest, language):
                 add('source_boundary','sentence_stop',{'source_span':[stop,stop+1],'source':'.'},fields,
                     ('CR-L020','sentence_boundary',fields,()))
 
-    joins={join['original']:join for join in block.locator.get('line_wrap_joins',[])}
+    joins={tuple(join['source_span']):join for join in block.locator.get('line_wrap_joins',[]) if 'source_span' in join}
     if block.locator.get('format')=='pdf':
-        for match in re.finditer(r'[A-Za-z]+-\n[a-z]+',source):
-            join=joins.get(match[0])
-            fields={'derived_word':join['spoken'],'preserve_join_trace':True,'evidence':join['evidence']} if join else {'retained_hyphen':True}
-            candidate='source_evidenced_wrap_join' if join else 'retain_lexical_hyphen'
+        for match in re.finditer(r'[A-Za-z]+-\n[ \t]*[a-z]+',source):
+            join=joins.get(match.span())
+            if join:
+                retained=join['kind']=='lexical'
+                fields={'derived_word':join['spoken'],'preserve_join_trace':True,'evidence':join['evidence'],
+                        'retained_hyphen':retained,'native_region_span':join['native_region_span']}
+                candidate='retain_lexical_hyphen' if retained else 'source_evidenced_wrap_join'
+            else:
+                fields={'retained_hyphen':True}
+                candidate='literal_line_break'
             add('print_layout','hyphen_wrap',{'source_span':list(match.span()),'source':match[0]},fields,
                 ('CR-L023',candidate,fields,()))
 
@@ -176,4 +195,8 @@ def observations(block, cells, *, source_digest, language):
         fields={'cell_boundaries_preserved':True,'cross_cell_fraction_not_manufactured':True}
         add('table_relation','table',{}, {'row_count':len(row_counts),'column_count':max(row_counts.values())},
             ('CR-L045','table_relational_narration',fields,()))
+    if table_fragments:
+        fields={'cell_boundaries_preserved':True,'cross_cell_fraction_not_manufactured':True}
+        add('table_relation','table_fragments',{}, {'fragments':table_fragments},
+            ('CR-L045','companion_object',fields,()))
     return records

@@ -2,6 +2,7 @@
   "schema_version": 1,
   "mode": "automatic",
   "minimum_margin": 2,
+  "native_names": [],
   "conventions": {},
   "lexicon": {
     "dr.": {

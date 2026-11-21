@@ -135,7 +135,10 @@ def split(text,words=65,rule_revision=RULES):
             i+=1
     return pieces
 
-def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
+def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_reviewer=None):
+    if context_reviewer is not None:
+        from .context_reviewer import reviewed_plan
+        return reviewed_plan(doc,policy,aliases,rule_revision,context_reviewer)
     if rule_revision not in KNOWN_RULES:raise Error('newer_rules','This narration rule revision is not supported by this build.','Use the matching or newer application; the saved job and approved plan are retained.')
     selected=policy or {}; mode=selected.get('mode','listen')
     if selected.get('notes','after_paragraph') not in ('after_paragraph','inline','companion'):raise Error('note_policy','Notes must be after_paragraph, inline or companion.')
@@ -163,7 +166,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
     if rule_revision==RULES:
         from .contextual import Resolver
         resolver=Resolver(doc,policy,document_policy,aliases or {})
-    section_defaults={k:v for k,v in policy.items() if k not in ('document','context','context_implementation','context_review')}
+    section_defaults={k:v for k,v in policy.items() if k not in ('document','context','context_implementation','context_review','context_review_receipt')}
     from .pdf_layout import structure_policy,spoken_paragraph
     document_title,pdf_chapters=structure_policy(doc,document_policy,by_source=rule_revision in SOURCE_STRUCTURE)
     source_positions={b.id:i for i,b in enumerate(doc.blocks)}
@@ -274,6 +277,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
         if 'mode' in section:
             effective={**section_defaults,'code':'speak' if section['mode']=='procedure' else 'companion','references':'speak' if section['mode']=='study' else 'companion',**section}
         action='speak'; reason='Preserve authored content and qualifiers.'; text=spoken_paragraph(b); connector=False;force_pause=False;cells=();prepared_spans=None
+        table_fragments=[]
         if rule_revision in MODERN and b.locator.get('inline_semantics'):
             from .epub_semantics import reading
             if resolver:
@@ -301,7 +305,13 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
             text='Literal block. '+b.source; reason='Follow a procedure: speak the exact literal block by explicit policy.'; connector=True
         elif b.role=='table':
             rows=b.locator.get('rows',[])
+            if resolver and rows:
+                from .table_readings import split_cell_fractions
+                table_fragments=split_cell_fractions(rows)
             if effective['tables']=='companion': action='companion'; reason='User explicitly selected table lookup in companion.'; text='The full table is available in the companion.'; connector=True
+            elif table_fragments:
+                action='companion';reason='The table contains fraction-like fragments in separate cells.'
+                text='The full table is available in the companion.';connector=True
             elif rows:
                 if rule_revision in SOURCE_STRUCTURE:
                     from .table_readings import rows_for_speech
@@ -373,7 +383,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES):
         if context_events:
             decisions[-1]['context_events']=context_events
             if any(row['view']['kind']=='prepared_reading' for row in context_events):decisions[-1]['context_input']=text
-        if resolver and (structure:=resolver.structural_evidence(b,cells)):
+        if resolver and (structure:=resolver.structural_evidence(b,cells,table_fragments if action=='companion' else ())):
             decisions[-1]['context_structure']=structure
         if damaged:decisions[-1]['source_characters']=damaged
         if (optional_reference or continuous and b.role=='furniture') and b.issue:decisions[-1]['source_warning']=b.issue

@@ -30,8 +30,8 @@ PATTERNS = {
     'integer': LEFT + r'[0-9]{1,12}' + RIGHT,
 }
 
-def expressions(lexicon, initialisms, price_nouns):
-    fields=dict(context_lexical.expressions(LEFT,RIGHT,initialisms))
+def expressions(lexicon, initialisms, price_nouns, native_names=()):
+    fields=dict(context_lexical.expressions(LEFT,RIGHT,initialisms,native_names))
     # A dash between two numbers belongs to the numeric expression.
     fields={'date_iso':PATTERNS['date_iso'], **PATTERNS, **fields}
     fields['abbreviation']=PATTERNS['abbreviation'].format(lexicon='|'.join(map(re.escape,lexicon)))

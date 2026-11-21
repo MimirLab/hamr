@@ -1,4 +1,14 @@
 """Visible unrotated CropBox geometry; unsupported rotations abstain."""
+from ctypes import byref, c_double
+
+from pypdfium2 import raw
+
+
+def glyph_baseline(textpage,index,crop_bottom,fallback):
+    x,y=c_double(),c_double()
+    if raw.FPDFText_GetCharOrigin(textpage,index,byref(x),byref(y)):
+        return y.value-crop_bottom
+    return fallback
 
 
 def crop_glyphs(textpage,box):

@@ -83,8 +83,13 @@ def effective(value=None):
             not isinstance(token,str) or not re.fullmatch(r'[A-Z]{2,10}',token) or style not in ('word','letters')
             for token,style in initialisms.items())):
         invalid('Context initialisms must map uppercase tokens to word or letters.')
+    native_names=config['native_names']
+    if not isinstance(native_names,list) or len(native_names)>128 or any(
+            not isinstance(name,str) or not re.fullmatch(r"[^\W\d_][^\W\d_ '\u2019-]{0,79}",name)
+            for name in native_names):
+        invalid('Context native_names must contain short exact names.')
     return {**config, 'weights': {**DEFAULT['weights'], **weights}, 'cues': merged_cues, 'lexicon':merged_lexicon,
-            'conventions': conventions(config['conventions'])}
+            'conventions': conventions(config['conventions']), 'native_names': sorted(set(native_names))}
 
 
 def scopes(value):
@@ -103,5 +108,5 @@ def scopes(value):
 def implementation():
     return key({name: filehash(Path(__file__).with_name(name))
                 for name in ('context_config.py','contextual.py','context_grammar.py','context_candidate.py','context_forms.py','context_lexical.py',
-                             'context_structure.py','context_rules.json','abbreviations.py','boundaries.py','epub_semantics.py','epub_styles.py',
-                             'markdown_notes.py','spoken_forms.py','table_readings.py','typed_readings.py')})
+                             'context_structure.py','context_reviewer.py','context_rules.json','abbreviations.py','boundaries.py','epub_semantics.py','epub_styles.py',
+                             'markdown_notes.py','pdf_geometry.py','pdf_layout.py','pdf_overlays.py','pdf_words.py','spoken_forms.py','table_readings.py','typed_readings.py')})
