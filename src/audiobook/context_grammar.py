@@ -4,7 +4,7 @@ import re
 
 from . import abbreviations, boundaries, context_forms, context_lexical, context_numbers
 from .context_candidate import Candidate, Component, exact_components, literal, number_spoken, numeric_fields
-from .context_forms import CURRENCIES, MONTHS, SYMBOLS, UNIT_NAMES, money_words
+from .context_forms import MONTHS, SYMBOLS, UNIT_NAMES, currency_name, money_words
 from .linguistic import UNITS as TECHNICAL_UNITS
 from .spoken_forms import identifier, number, ordinal
 from .typed_readings import clock_words
@@ -156,7 +156,7 @@ def money_modifier(raw, env):
     options=[]
     for option in monetary(amount,env):
         if noun_phrase and (option.kind=='money' or option.kind=='money_symbol' and env.setting('narration_style')!='technical'):
-            label=CURRENCIES.get(option.fields['currency'],'dollar')
+            label=currency_name(option.fields['currency'],env.setting('narration_style')=='technical')
             fields={**option.fields,'noun':noun,'currency_grammar':'attributive_singular'}
             spoken=number_spoken(option.fields['source_amount'])+' '+label+' '+noun
             options.append(Candidate('money_modifier' if option.kind=='money' else 'money_symbol',fields,spoken,option.evidence))
@@ -353,11 +353,12 @@ def candidates(kind, raw, env):
             fields={'coefficient':raw,'coefficient_digits':raw,'scale':word,'scale_multiplier':multiplier,
                     'currency':currency,'origin':'header','header':env.header,'header_source':env.header_source}
             components=(Component('CR-N038','money',(0,len(raw)),dict(fields)),) if currency else ()
-            return [Candidate('scaled_quantity',fields,number_spoken(raw)+' '+word+((' '+CURRENCIES[currency]+'s') if currency else ''),
+            unit=currency_name(currency,env.setting('narration_style')=='technical',plural=True) if currency else ''
+            return [Candidate('scaled_quantity',fields,' '.join(s for s in (number_spoken(raw),word,unit) if s),
                               ('column',),components)]
         if env.header and env.finance() and env.currency_label:
             return [Candidate('money',{'amount':raw,'currency':env.currency_label,'currency_origin':'column_header'},
-                              number_spoken(raw)+' '+CURRENCIES[env.currency_label]+('' if raw=='1' else 's'),('column',))]
+                              money_words(raw,env.currency_label,env.setting('narration_style')=='technical'),('column',))]
         if env.header_cue('identifier'):
             role=env.header.casefold().strip().replace(' ','_')
             return [Candidate('identifier',{'digits':raw,'role':role},identifier(raw),('column',))]

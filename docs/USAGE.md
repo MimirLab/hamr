@@ -116,6 +116,8 @@ An EPUB expression split by inline markup can have multiple `source_leaves` in t
 
 In an instruction to copy `"$222"` exactly, Hamr reads the dollar sign and digits as characters. The same amount in ordinary prose reads as money. Recognized vocal markers such as `[laughs]` and `(clears throat)` are read as text. Their original spelling and punctuation remain in the companion.
 
+Normal narration reads `$100` as “one hundred dollars,” `£100` as “one hundred pounds,” and `JPY 100` as “one hundred yen.” The plan keeps the currency code when it is known. Technical narration can speak the full currency label.
+
 English narration passes through mixed-language text such as scientific names and short quotations. EPUB language tags remain in the source and help match a publisher’s pronunciation lexicon. Speech QA still checks the rendered audio, and an unresolved publisher pronunciation instruction can be repaired for its exact occurrence.
 
 HAMR reads a complete EPUB ruby annotation written in kana for its ideographic base once. In other ruby markup, it reads the base and any explicitly authored definition. The companion retains the original markup. The default narration and speech checks are qualified for English.

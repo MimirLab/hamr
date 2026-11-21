@@ -118,7 +118,7 @@ def comparison_text(text):
     currencies={'€':'euros','£':'British pounds'}
     text=re.sub(r'(?<![\w$£€])([€£])\s*([0-9]{1,12}(?:\.[0-9]{1,12})?)(?!\w|[.,]\d|[€£$])',
                 lambda m:m[2]+' '+currencies[m[1]],text)
-    text=re.sub(r'\b(?:U\s+S|US) dollars?\b','US dollars',text,flags=re.I)
+    text=re.sub(r'\b(?:U\s+S|U\.\s*S\.?|US)\s+dollars?\b','US dollars',text,flags=re.I)
     text=expand(text)
     text=technical(text)
     # These are notation variants, not homophone or approximate-value rules.

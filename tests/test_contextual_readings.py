@@ -67,6 +67,26 @@ def test_quoted_numeric_symbols_are_voiced_as_characters_in_a_literal_instructio
     assert 'euro sign one two three' in speech(reading('Type "€123" exactly.'))
 
 
+def test_normal_currency_readings_use_familiar_names_with_codes_kept_in_the_plan():
+    source='It cost $100. The fee is $12.50. Expect $90–$110. It includes a $100 fee. The deposit is USD 100.'
+    natural=reading(source,conventions={'dollar_currency':'USD'})
+    assert speech(natural)==('It cost one hundred dollars. The fee is twelve dollars and fifty cents. '
+                             'Expect ninety to one hundred ten dollars. It includes a one hundred dollar fee. '
+                             'The deposit is one hundred dollars.')
+    assert [selected(event)['fields']['currency'] for event in events(natural)]==['USD']*5
+    technical=reading(source,conventions={'dollar_currency':'USD','narration_style':'technical'})
+    assert 'It cost one hundred U S dollars.' in speech(technical)
+    assert 'ninety to one hundred ten U S dollars' in speech(technical)
+    assert 'Canadian dollars' in speech(reading('Pay CAD 100.'))
+    assert 'U S dollars' in speech(reading('Pay one hundred U S dollars.'))
+    source='Lunch cost £12.50. The train fare was JPY 700.'
+    result=reading(source)
+    assert speech(result)=='Lunch cost twelve pounds and fifty pence. The train fare was seven hundred yen.'
+    assert [selected(event)['fields']['currency'] for event in events(result)]==['GBP','JPY']
+    assert 'twelve point five zero British pounds' in speech(reading(source,conventions={'narration_style':'technical'}))
+    assert 'one point two five yen' in speech(reading('The accounting balance was JPY 1.25.'))
+
+
 def test_authored_vocal_markers_are_read_as_words_and_keep_original_punctuation():
     source='The word [laughs] appears in the transcript. The guide prints (clears throat).'
     result=reading(source)
@@ -602,13 +622,13 @@ def test_epub_table_header_references_do_not_borrow_an_unowned_column():
     options={'context':{'conventions':{'dollar_currency':'USD'}}}
     result=plan(epub(book({'c':markup},['c'])),options)
     assert not result['issues']
-    assert 'Revenue: two hundred twenty two million U S dollars' in speech(result)
+    assert 'Revenue: two hundred twenty two million dollars' in speech(result)
     assert 'Code: three three three' in speech(result)
     scaled=next(event for event in events(result) if event['source']=='222')
     assert scaled['scale_format']['source']==' ($ millions)'
     assert scaled['scale_format']['rendered_as']=='spoken_scale_and_currency'
     technical={'context':{'conventions':{'dollar_currency':'USD','narration_style':'technical'}}}
-    assert 'Revenue ($ millions)' in speech(plan(epub(book({'c':markup},['c'])),technical))
+    assert 'Revenue ($ millions): two hundred twenty two million U S dollars' in speech(plan(epub(book({'c':markup},['c'])),technical))
     assert 'Revenue ($ millions)' in speech(plan(epub(book({'c':markup},['c']))))
     for broken in ('missing','a b'):
         release=plan(epub(book({'c':markup.replace('headers="b"',f'headers="{broken}"')},['c'])),options)

@@ -2,7 +2,7 @@
 from collections import Counter, defaultdict
 import re
 
-from . import context_config, context_grammar as grammar, context_lexical, context_numbers, context_structure
+from . import context_config, context_forms, context_grammar as grammar, context_lexical, context_numbers, context_structure
 from .abbreviations import PROTECTED
 from .core import Error, digest, key
 from .linguistic import literal_cues
@@ -11,7 +11,7 @@ REVIEW_LIMIT = 32
 REVIEW_CONTEXT = {'neighbors', 'table_header', 'chapter'}
 DEFINITION=re.compile(r'^In this chapter +([A-Za-z]{1,10}\.) +(?:means|stands for) +([A-Za-z]+(?: [A-Za-z]+){0,5})\.',re.I)
 QUOTED_DATE_ORDER=re.compile(r'(?<!\w)(?:uses|date order(?: is)?)\s+(DD/MM|MM/DD)(?:/YYYY)?\s*:\s*$',re.I)
-SCALE_HEADER=re.compile(r'\((USD|CAD|AUD|NZD|EUR|GBP|\$|£|€)\s+(thousands|millions|billions)\)$')
+SCALE_HEADER=re.compile(r'\(('+context_forms.NAMED_CURRENCIES+r'|\$|£|€)\s+(thousands|millions|billions)\)$')
 CHRONOLOGY_ENTRY=re.compile(r'(?P<date>'+grammar.SLASH_DATE+r')[ \t]+[–—][ \t]+(?=\w)')
 
 
@@ -180,7 +180,7 @@ class Evidence:
 
     def finance(self):
         label=self.header if self.header else self.before.rstrip(' \t:')
-        match=re.search(r'\((USD|CAD|AUD|NZD|EUR|GBP)\)$',label)
+        match=re.search(r'\(('+context_forms.NAMED_CURRENCIES+r')\)$',label)
         self.currency_label=match[1] if match else None
         words=label[:match.start()].rstrip() if match else label
         valid=self.header_cue('finance') if self.header else self.resolver.cues['finance']['left'].search(words) is not None

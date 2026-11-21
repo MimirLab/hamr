@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v26'
+POLICY='bounded-english-composed-scale-typed-v27'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}

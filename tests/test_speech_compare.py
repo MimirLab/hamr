@@ -74,3 +74,10 @@ def test_named_currency_symbol_keeps_exact_repeated_digits_in_literal_reading():
     assert quantities(c(expected))!=quantities(c('Type dollar sign followed by four twos.'))
     assert c(expected)!=c('Type $2.22.')
     assert c('I drew three twos.')!=c('I drew two two two.')
+
+
+def test_dotted_currency_names_keep_the_same_currency_in_the_audio_check():
+    assert c('Pay one hundred U S dollars.')==c('Pay one hundred U.S. dollars.')
+    assert math('Pay one hundred U S dollars.')==math('Pay one hundred U.S. dollars.')
+    assert math('Pay one hundred U.S. dollars.')!=math('Pay one hundred Canadian dollars.')
+    assert math('Pay one hundred U.S. dollars.')!=math('Pay one hundred dollars.')

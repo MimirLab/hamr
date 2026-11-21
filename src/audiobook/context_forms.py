@@ -8,7 +8,8 @@ from .context_candidate import Candidate, Component, exact_components, literal, 
 from .spoken_forms import DIGITS as DIGIT_WORDS, ONES, TENS, identifier, ordinal, roman
 
 CURRENCIES = {'USD': 'U S dollar', 'CAD': 'Canadian dollar', 'AUD': 'Australian dollar',
-              'NZD': 'New Zealand dollar', 'EUR': 'euro', 'GBP': 'British pound'}
+              'NZD': 'New Zealand dollar', 'EUR': 'euro', 'GBP': 'British pound', 'JPY': 'yen'}
+NATURAL_CURRENCY_NAMES = {'USD':'dollar', 'GBP':'pound'}
 SYMBOLS = {'$': 'dollar sign', '€': 'euro sign', '£': 'pound sign'}
 MONTHS = ('', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
           'September', 'October', 'November', 'December')
@@ -29,7 +30,7 @@ UNIT_NAMES = {'kg':'kilograms','g':'grams','mg':'milligrams','km':'kilometers','
 UNIT_PATTERN = '|'.join(map(re.escape, sorted(UNIT_NAMES,key=len,reverse=True)))
 UNCERTAINTY = re.compile(rf'({context_numbers.MEASUREMENT_AMOUNT})\(([0-9]{{1,6}})\)'
                          rf'(?:[^\S\r\n]+({UNIT_PATTERN})(?![\w/·^²³]))?')
-NAMED_CURRENCIES = r'USD|CAD|AUD|NZD|EUR|GBP'
+NAMED_CURRENCIES = '|'.join(CURRENCIES)
 ELEMENT = r'Na|Cl|Mg|Ca|Fe|Cu|Zn|Si|He|Ne|Ar|Li|Al|K|I|F|H|B|C|N|O|P|S'
 ATOMS = re.compile(r'('+ELEMENT+r')([0-9₀-₉]{0,3})')
 SUBSCRIPT_DIGITS = str.maketrans('₀₁₂₃₄₅₆₇₈₉','0123456789')
@@ -42,19 +43,24 @@ COEFFICIENT = ('(?:a|'+'|'.join(ONES[1:])+'|(?:'+'|'.join(TENS_WORDS)+
 OPERATION = re.compile('('+DECIMAL+r')\s*([+−×÷-])\s*('+DECIMAL+r')(?:\s*=\s*('+SIGNED+'))?')
 
 
+def currency_name(currency, technical=False, *, plural=False):
+    name=CURRENCIES.get(currency,'dollar')
+    if not technical:name=NATURAL_CURRENCY_NAMES.get(currency,name)
+    return name+'s' if plural and currency!='JPY' else name
+
+
 def money_words(amount, currency, technical=False):
-    primary=CURRENCIES.get(currency,'dollar')
     singular=amount.lstrip('+−-')=='1'
     major,point,minor=amount.partition('.')
-    if not technical and point and len(minor)==2:
+    if not technical and currency!='JPY' and point and len(minor)==2:
         singular=major.lstrip('+−-')=='1'
-        spoken=number_spoken(major)+' '+primary+('' if singular else 's')
+        spoken=number_spoken(major)+' '+currency_name(currency,plural=not singular)
         cents=int(minor)
         if cents:
             small=('penny' if cents==1 else 'pence') if currency=='GBP' else ('cent' if cents==1 else 'cents')
             spoken+=' and '+number_spoken(str(cents))+' '+small
         return spoken
-    return number_spoken(amount)+' '+primary+('' if singular else 's')
+    return number_spoken(amount)+' '+currency_name(currency,technical,plural=not singular)
 
 
 def year_words(year, technical=False):
@@ -140,16 +146,16 @@ def expand(kind, raw, env):
         if second and first!=second:
             return [literal(raw)]
         currency={'€':'EUR','£':'GBP'}.get(first) or env.setting('dollar_currency')
-        label=CURRENCIES[currency]+'s' if currency else SYMBOLS[first]
+        technical=env.setting('narration_style')=='technical'
         amount=number_spoken(start)+' to '+number_spoken(end)
-        spoken=(amount+' '+label if currency else label+' '+amount)
-        if env.setting('narration_style')!='technical':
+        if technical and currency is None:
+            spoken=SYMBOLS[first]+' '+amount
+        elif not technical and ('.' in start or '.' in end):
             # One unit can serve both whole endpoints. State both monetary
             # amounts when minor units need their own words.
-            if '.' in start or '.' in end:
-                spoken=money_words(start,currency)+' to '+money_words(end,currency)
-            else:
-                spoken=amount+' '+CURRENCIES.get(currency,'dollar')+'s'
+            spoken=money_words(start,currency)+' to '+money_words(end,currency)
+        else:
+            spoken=amount+' '+currency_name(currency,technical,plural=True)
         fields={'start':start,'end':end,'currency':currency,'shared_currency':not bool(second),'currency_symbol':first}
         if denominator:
             unit={'h':'hour','hr':'hour','min':'minute','s':'second'}[denominator]
