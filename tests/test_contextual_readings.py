@@ -198,6 +198,45 @@ def test_same_colon_shape_has_clock_reference_and_duration_owners():
     assert speech(result)=='Departure time, three twenty. Reference zero three colon two zero. Elapsed time: three minutes twenty seconds.'
 
 
+def test_duration_separates_the_class_from_its_units():
+    source='Elapsed time: 03:20. Duration (hh:mm): 01:01. The second run took 1h01m01s.'
+    result=reading(source)
+    plain,declared,suffixed=events(result)
+    assert not result['issues'] and plain['route']=='automatic_best_guess'
+    assert plain['field_status']['hours']==plain['field_status']['seconds']=='unspecified'
+    assert {c['fields']['field_order'] for c in plain['candidates']}=={None,'minutes_seconds','hours_minutes'}
+    assert selected(declared)['fields']['hours']==selected(declared)['fields']['minutes']=='01'
+    assert declared['duration_format']['source']==' (hh:mm)'
+    assert 'Duration: one hour one minute.' in speech(result)
+    assert selected(suffixed)['fields']=={'hours':'1','minutes':'01','seconds':'01'}
+    assert 'one hour one minute one second' in speech(result)
+    assert reading('Elapsed time: 03:20.',mode='strict')['issues'][0]['reason_code']=='ambiguous_context'
+    source='| Duration (mm:ss) | Duration (hh:mm) |\n|---|---|\n|01:01|01:01|'
+    table=reading(source,conventions={'duration_fields':'hours_minutes'})
+    assert [selected(event)['fields']['field_order'] for event in events(table)]==['minutes_seconds','hours_minutes']
+    assert 'one minute one second' in speech(table) and 'one hour one minute' in speech(table)
+    assert '(mm:ss)' not in speech(table) and '(hh:mm)' not in speech(table)
+    technical=reading(source,conventions={'narration_style':'technical'})
+    assert '(mm:ss)' in speech(technical) and '(hh:mm)' in speech(technical)
+
+
+def test_uncertainty_claims_its_unit_without_losing_precision_or_identifier_scope():
+    source='The measured length is −1.2340(05) m. The product code is 1.234(5).'
+    result=reading(source)
+    measurement,label=events(result)
+    fields=selected(measurement)['fields']
+    assert fields['coefficient']=='−1.2340' and fields['coefficient_digits']=='-1.2340'
+    assert (fields['decimal_places'],fields['uncertainty_last_digits'],fields['unit'])==(4,'05','m')
+    a,b=measurement['seed_span']
+    assert source[a:b]=='−1.2340(05)' and measurement['source']=='−1.2340(05) m'
+    assert 'minus one point two three four zero meters with an uncertainty of zero five in the final digits' in speech(result)
+    assert selected(label)['kind']=='label' and selected(label)['fields']['exact']=='1.234(5)'
+    comma='The measured length is 1,234(5)\u00a0m.'
+    assert selected(events(reading(comma))[0])['kind']=='literal'
+    france=reading(comma,conventions={'number_locale':'fr-FR'})
+    assert 'one point two three four meters with an uncertainty of five' in speech(france)
+
+
 def test_dotted_meridiem_owns_the_clock_without_breaking_before_the_zone():
     source='Launch was 9:32 a.m. EDT. Landing was at 12:50 p.m. Then we went home.'
     result=reading(source)

@@ -35,7 +35,7 @@
     "count": ["books", "visitors", "people", "copies", "birds", "units", "votes", "items", "subscribers", "objects", "records"],
     "finance": ["loss", "balance", "profit", "net income", "net loss", "debit", "credit", "expense", "amount", "cash flow"],
     "clock": ["departure", "arrival", "departure time", "arrival time", "departure is at", "arrival is at", "clock reads", "scheduled for", "local time", "departs at", "arrives at"],
-    "duration": ["elapsed time", "elapsed", "duration", "running time"],
+    "duration": ["elapsed time", "elapsed", "duration", "running time", "lap time"],
     "reference": ["verse", "chapter", "reference", "section"],
     "literal": ["type", "enter exactly", "write exactly", "spell", "literal", "exact notation", "password is", "print the literal token", "literal text", "spell the literal", "as printed", "write the token", "name the glyph", "name the symbol", "name the character", "print the characters", "the code sample prints", "mention the token", "example text", "literal token", "print the literal", "literal formula", "literal glyph", "discussing the character string", "the characters", "literal string", "exact characters", "literal label", "exact label", "printed token", "read the label", "format string contains", "the code printed"],
     "literal_tail": ["individually", "character by character", "exactly as printed", "exactly as written"],

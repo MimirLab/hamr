@@ -105,6 +105,7 @@ class Evidence:
         self.date_definition=None
         self.currency_label=None
         self.number_anchors={}
+        self.duration_label=None
 
     def setting(self, name):
         return self.settings.get(name)
@@ -128,7 +129,7 @@ class Evidence:
         if match:
             origin=self.before_start if side=='left' else self.after_start+len(self.after)-len(text)
             self.governors.add((group,side,match[0],origin+match.start(),origin+match.end()))
-        return match is not None
+        return match[0] if match else None
 
     def literal_mention(self):
         quoted=self.before.strip().endswith(('“','"')) and self.after.lstrip().startswith(('”','"'))
@@ -227,9 +228,10 @@ class Projection:
                 raise Error('context_projection','A contextual reading was modified during formatting. Inspect the source and aliases.')
             value=raw if original else spoken
             pieces.extend((text[cursor:a],value))
-            protected.append((a+offset,a+offset+len(value)))
+            output_span=(a+offset,a+offset+len(value))
+            if value:protected.append(output_span)
             if event is not None and not original:
-                event['output_span']=list(protected[-1])
+                event['output_span']=list(output_span)
             cursor=a+len(marker);offset+=len(value)-len(marker)
             shifts.append((cursor,offset))
         return ''.join((*pieces,text[cursor:])),shifts,protected
@@ -301,7 +303,7 @@ class Resolver:
                     {'block':block.id,'token_span':list(match.span(1)),'reading_span':list(match.span(2)),'reading':match[2]})
             if block.role=='body' and not block.issue and ('.' in block.source or ',' in block.source):
                 excluded=[(span['source_start'],span['source_end']) for span in block.locator.get('inline_semantics',[])
-                          if span['kind'] in ('literal','hidden','hyperlink','language')]
+                          if span['kind'] in ('literal','hidden','hyperlink','language','ruby')]
                 excluded.extend(match.span() for match in context_numbers.QUOTATIONS.finditer(block.source))
                 if block.locator.get('format')=='markdown' and block.locator.get('exact','').lstrip().startswith('>'):
                     excluded=[(0,len(block.source))]
@@ -346,6 +348,8 @@ class Resolver:
             event='CR-N040'
         span=[match.start(),match.end()]
         seed=[span[0],span[0]+1] if match.lastgroup=='money' and raw[0] in grammar.SYMBOLS else span
+        if match.lastgroup=='uncertainty':
+            seed=[span[0],span[0]+raw.index(')')+1]
         occurrence=key([self.doc.source_sha256,block.id,view,span,raw,event])
         facts={}
         rows=[]
@@ -447,7 +451,7 @@ class Resolver:
                 inferred=self.chronologies.get(self.scope(block),{}) if chronology else anchors.get(column,{})
                 env=Evidence(self,value,match.start(),match.end(),header,inferred,chapter,chapter_id,
                              block.id if row is not None else None,column,chronology)
-                if (match.lastgroup in ('separators','measurement') and value==block.source and row is None
+                if (match.lastgroup in ('separators','measurement','uncertainty') and value==block.source and row is None
                         and not any(a<end and begin<b for begin,end in self.number_exclusions.get(block.id,()))):
                     env.number_anchors=self.number_anchors.get(self.scope(block),{})
                 if match.lastgroup=='abbreviation':
@@ -465,7 +469,18 @@ class Resolver:
                 if not options:continue
                 result,spoken=self.outcome(block,view,match,env,options)
                 records.append(result)
-                if spoken is not None:slots.append((a,b,spoken,result))
+                if spoken is not None:
+                    if env.duration_label and env.setting('narration_style')!='technical' and not result.get('hold'):
+                        selected=next(candidate for candidate in result['candidates'] if candidate['id']==result['selected'])
+                        if selected['fields'].get('field_order'):
+                            first,last=env.duration_label
+                            origin=start-len(header)-2 if header is not None else start
+                            label_start,label_end=origin+first,origin+last
+                            if not any(label_start<end and begin<label_end for begin,end,_,_ in slots):
+                                slots.append((label_start,label_end,'',None))
+                                result['duration_format']={'span':[first,last],'scope':'table_header' if header is not None else view['kind'],
+                                                           'source':text[label_start:label_end],'rendered_as':'spoken_duration_units'}
+                    slots.append((a,b,spoken,result))
         if guard_slots and records:
             records.sort(key=lambda row:(row['view'].get('row',0),row['view'].get('column',0),row['expression_span']))
         return Projection(text,slots,block.id),records

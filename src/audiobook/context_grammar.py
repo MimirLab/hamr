@@ -24,6 +24,10 @@ MEASUREMENT_PEER = re.compile(rf'^[ \t]*,[ \t]*{context_numbers.MEASUREMENT_AMOU
                               '(?:' + '|'.join(context_numbers.SI_SYMBOLS) + '|°[CF])' + RIGHT)
 MEASUREMENT_PREVIOUS = re.compile(LEFT + context_numbers.MEASUREMENT_AMOUNT + r'[^\S\r\n]+(?:m|' +
                                   '|'.join(context_numbers.SI_SYMBOLS) + r'|°[CF])[ \t]*,[ \t]*(?:and[ \t]+)?$')
+DURATION_UNITS = {'minutes_seconds':('minutes','seconds'),'hours_minutes':('hours','minutes')}
+DURATION_FIELDS = {'mm:ss':'minutes_seconds','minutes:seconds':'minutes_seconds',
+                   'hh:mm':'hours_minutes','hours:minutes':'hours_minutes'}
+DURATION_DECLARATION = re.compile(r'[ \t]+\(('+'|'.join(DURATION_FIELDS)+r')\)$',re.I)
 PATTERNS = {
     'date_iso': LEFT + r'[0-9]{4}-[0-9]{2}-[0-9]{2}' + RIGHT,
     **{name: expression for name, (_, expression) in COMPOSITES.items() if name!='signed'},
@@ -157,20 +161,16 @@ def measurement(raw, env):
     joined = any(c in context_numbers.SPACES for c in raw[len(amount):])
     expanded = unit in ('m','K') or bool(peer or previous or local or joined)
     reading = UNITS[unit]
-    unit_name = reading.replace('degrees ', 'degree ').removesuffix('s')
+    unit_name = context_forms.singular_unit(reading)
     if peer:
         env.governors.add(('measurement_peer','right',peer[0],env.after_start+peer.start(),env.after_start+peer.end()))
     if previous:
         env.governors.add(('measurement_peer','left',previous[0],env.before_start+previous.start(),env.before_start+previous.end()))
 
-    def render(value):
-        singular = re.fullmatch(r'[+−-]?1(?:\.0+)?', value)
-        return number_spoken(value) + ' ' + (unit_name if singular else reading)
-
     base = {'amount': amount, 'value': amount, 'unit': unit_name, 'case': unit, 'reading': reading}
     unit_evidence = 'governor' if local or peer or previous else 'syntax'
     if not re.search(r'[.,\u00a0\u2009\u202f]', amount):
-        return [Candidate('measurement', base, render(amount) if expanded else None, (unit_evidence,))]
+        return [Candidate('measurement', base, context_forms.quantity_words(amount,reading) if expanded else None, (unit_evidence,))]
     options=[]
     for choice in context_numbers.candidates(amount, env, measurement=True):
         if choice.kind == 'literal':
@@ -182,9 +182,36 @@ def measurement(raw, env):
         evidence = (*choice.evidence, unit_evidence) if choice.evidence else ()
         legacy = (unit=='mL' and choice.kind=='decimal_quantity' and choice.fields['decimal_separator']=='.'
                   and choice.fields.get('group_separator') in (None, ',') and not env.setting('number_locale'))
-        spoken = render(fields['value']) if not legacy and (expanded or fields['value']!=amount or env.setting('number_locale')) else None
+        spoken = context_forms.quantity_words(fields['value'],reading) if not legacy and (expanded or fields['value']!=amount or env.setting('number_locale')) else None
         options.append(Candidate('measurement', fields, spoken, evidence, (part,)))
     return options
+
+
+def colon_duration(first, second, base, fallback, env):
+    label=env.header if env.header is not None else env.before.rstrip(' \t:')
+    match=DURATION_DECLARATION.search(label)
+    declared=None
+    if match and env.resolver.cues['duration']['left'].search(label[:match.start()]):
+        declared=DURATION_FIELDS[match[1].casefold()]
+        if env.header is None:
+            env.governors.add(('duration_field_order','left',match[1],
+                               env.before_start+match.start(1),env.before_start+match.end(1)))
+        env.duration_label=(env.before_start+match.start(),env.before_start+match.end()) if env.header is None else match.span()
+    origin = ('column' if env.header is not None else 'governor') if declared else (
+        'column' if env.header_cue('duration') else 'governor' if env.cue('duration') else None)
+    if not origin:
+        return []
+    neutral=Candidate('duration',{**base,'field_order':None},fallback.spoken,(origin,))
+    if int(second)>=60:
+        return [neutral]
+    convention=env.setting('duration_fields')
+    supported = {declared:origin} if declared else {convention:'convention'} if convention else {}
+    options = []
+    for order in supported or DURATION_UNITS:
+        units = dict(zip(DURATION_UNITS[order],(first,second)))
+        options.append(Candidate('duration',{**base,'field_order':order,**units},
+                                 context_forms.duration_words(units),(supported.get(order,origin),)))
+    return options if len(supported)==1 else [neutral,*options]
 
 
 def candidates(kind, raw, env):
@@ -199,7 +226,7 @@ def candidates(kind, raw, env):
     if kind=='date_iso':
         year,month,day=raw.split('-')
         if env.cue('identifier'):
-            return [Candidate('component_identifier',{'components':[year,month,day]},
+            return [Candidate('component_identifier',{'components':[year,month,day],'exact':raw},
                               exact_components(raw,'-','dash'),('governor',))]
         reading = date_candidate([month,day,year],'MD',('syntax',))
         fields = {'components':[year,month,day],'date_order':'YMD','year':year,'month':month,'day':day,
@@ -216,11 +243,10 @@ def candidates(kind, raw, env):
         if env.cue('identifier'):
             return [Candidate('identifier',{'components':fields,'separator':'/','exact':raw},fallback.spoken,('governor',))]
         options=[fallback]
-        if len(fields)==2 and int(fields[1])>0 and env.cue('fraction_unit', side='right'):
+        if len(fields)==2 and int(fields[1])>0 and (unit:=env.cue('fraction_unit', side='right')):
             numerator,denominator=map(int,fields)
             units={2:('half','halves'),3:('third','thirds'),4:('quarter','quarters'),8:('eighth','eighths')}
             said=number(numerator)+' '+units[denominator][numerator!=1] if denominator in units else number(numerator)+' divided by '+number(denominator)
-            unit=next(cue[2] for cue in env.governors if cue[0]=='fraction_unit')
             if 1<numerator<denominator and denominator in units and not unit.casefold().endswith('s') and env.setting('narration_style')!='technical':
                 said+=' of an' if unit[0].casefold() in 'aeiou' else ' of a'
             options.append(Candidate('fraction',{'numerator':fields[0],'denominator':fields[1],'bound_unit':unit},said,('governor',)))
@@ -259,12 +285,8 @@ def candidates(kind, raw, env):
             return [Candidate('ratio',{'left':first,'right':second},number_spoken(first)+' to '+number_spoken(second),('governor',))]
         if env.cue('reference'):
             return [Candidate('reference',base,fallback.spoken,('governor',))]
-        if env.cue('duration') or env.header_cue('duration'):
-            duration=env.setting('duration_fields')
-            if duration and int(second)<60 and suffix is None:
-                units=('minutes','seconds') if duration=='minutes_seconds' else ('hours','minutes')
-                return [Candidate('duration',{**base,'field_order':duration},number(int(first))+' '+units[0]+' '+number(int(second))+' '+units[1],('convention',))]
-            return [Candidate('duration',base,fallback.spoken,('governor',))]
+        if suffix is None and (durations:=colon_duration(first,second,base,fallback,env)):
+            return durations
         if (suffix or env.cue('clock')) and len(second)==2 and int(first)<24 and int(second)<60 and (suffix not in ('AM','PM') or 1<=int(first)<=12):
             fields={'hour':first,'minute':second,'zone':suffix if suffix in ('UTC','GMT') else None}
             if suffix in ('AM','PM'):
@@ -282,7 +304,10 @@ def candidates(kind, raw, env):
         if ',' in amount:
             return [literal(raw)]
         if env.setting('accounting_parentheses') is True and env.finance():
-            return [Candidate('accounting_negative',{'amount':amount,'sign':'negative','notation':'parentheses','currency':env.currency_label},'minus '+number_spoken(amount),('convention','column' if env.header else 'governor'))]
+            fields={**numeric_fields(amount),'amount':amount,'sign':'negative','notation':'parentheses',
+                    'currency':env.currency_label,'accounting_convention':'parentheses_negative'}
+            fields['integer_digits'],_,fields['fraction_digits']=amount.partition('.')
+            return [Candidate('accounting_negative',fields,'minus '+number_spoken(amount),('convention','column' if env.header else 'governor'))]
         return [Candidate('parenthetical_quantity',{'amount':amount,'integer_digits':amount if amount.isdigit() else None,'aside':True,'sign':'not_negative'},None,('syntax',))]
     if kind=='measurement':
         return measurement(raw,env)
@@ -323,8 +348,8 @@ def candidates(kind, raw, env):
         if env.cue('identifier') or raw.startswith('0') and len(raw)>1:
             role=next((cue[2].casefold() for cue in sorted(env.governors) if cue[0]=='identifier'),None)
             return [Candidate('identifier',{'digits':raw,'role':role},identifier(raw),('governor' if role else 'syntax',))]
-        if env.cue('count', side='right'):
-            return [Candidate('cardinal_quantity',{'integer_digits':raw},None,('governor',))]
+        if noun:=env.cue('count', side='right'):
+            return [Candidate('cardinal_quantity',{'integer_digits':raw,'noun':noun},None,('governor',))]
         return []
     if kind=='abbreviation':
         word=raw.casefold()

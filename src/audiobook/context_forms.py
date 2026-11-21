@@ -3,6 +3,7 @@ import re
 
 from calendar import monthrange
 
+from . import context_numbers
 from .context_candidate import Candidate, Component, exact_components, literal, number_spoken
 from .spoken_forms import DIGITS as DIGIT_WORDS, ONES, TENS, identifier, ordinal, roman
 
@@ -26,6 +27,8 @@ UNIT_NAMES = {'kg':'kilograms','g':'grams','mg':'milligrams','km':'kilometers','
               'MB':'megabytes','Mb':'megabits','kB':'kilobytes','kb':'kilobits','V':'volts','mV':'millivolts',
               'µV':'microvolts','μV':'microvolts','kPa':'kilopascals'}
 UNIT_PATTERN = '|'.join(map(re.escape, sorted(UNIT_NAMES,key=len,reverse=True)))
+UNCERTAINTY = re.compile(rf'({context_numbers.MEASUREMENT_AMOUNT})\(([0-9]{{1,6}})\)'
+                         rf'(?:[^\S\r\n]+({UNIT_PATTERN})(?![\w/·^²³]))?')
 NAMED_CURRENCIES = r'USD|CAD|AUD|NZD|EUR|GBP'
 ELEMENT = r'Na|Cl|Mg|Ca|Fe|Cu|Zn|Si|He|Ne|Ar|Li|Al|K|I|F|H|B|C|N|O|P|S'
 ATOMS = re.compile(r'('+ELEMENT+r')([0-9₀-₉]{0,3})')
@@ -65,6 +68,22 @@ def year_words(year, technical=False):
     return number_spoken(year)
 
 
+def singular_unit(label):
+    if label.startswith('degrees '):
+        return label.replace('degrees ', 'degree ', 1)
+    head, sep, tail = label.partition(' per ')
+    return head.removesuffix('s') + sep + tail
+
+
+def quantity_words(value, unit):
+    singular = re.fullmatch(r'[+−-]?1(?:\.0+)?', value)
+    return number_spoken(value) + ' ' + (singular_unit(unit) if singular else unit)
+
+
+def duration_words(fields):
+    return ' '.join(quantity_words(str(int(value)), unit) for unit, value in fields.items())
+
+
 def patterns(left,right,months):
     """Order wider owners ahead of their numeric or lexical children."""
     units='(?:'+UNIT_PATTERN+')'
@@ -79,7 +98,7 @@ def patterns(left,right,months):
         ('telephone','CR-N027',r'[0-9]{3}-[0-9]{3}-[0-9]{4}(?:[ \t]+(?:ext\.?|extension)[ \t]+[0-9]{1,6})?'),
         ('date_range','CR-N044',month+r'[ \t]+[0-9]{1,2}\s*[–—-]\s*[0-9]{1,2}'),
         ('named_date','CR-N025',month+r'[ \t]+[0-9]{1,2}(?:st|nd|rd|th)?(?:,[ \t]+[1-9][0-9]{3})?'),
-        ('uncertainty','CR-N034',DECIMAL+r'\([0-9]{1,6}\)'),
+        ('uncertainty','CR-N034',UNCERTAINTY.pattern),
         ('scientific','CR-N051',SIGNED+r'[eE][+−-]?[0-9]{1,4}'),
         ('duration_units','CR-N022',r'[0-9]{1,5}h[0-9]{1,2}m(?:[0-9]{1,2}s)?'),
         ('coordinate','CR-N033',SIGNED+r'°[NSEW]'),
@@ -112,7 +131,7 @@ def patterns(left,right,months):
 
 def expand(kind, raw, env):
     """Interpret an admitted form using a source-bound role or explicit convention."""
-    owns_identifier=env.cue('identifier')
+    owns_identifier=env.cue('identifier') or kind=='uncertainty' and env.header_cue('identifier')
     if owns_identifier and kind in ('telephone','uncertainty','scientific','date_time','mixed_fraction','chemical','version'):
         return [Candidate('label' if kind=='uncertainty' else 'identifier',{'exact':raw},None,('governor',))] if kind=='uncertainty' else [Candidate('identifier',{'exact':raw},raw,('governor',))]
     if kind in ('money_range','money_rate'):
@@ -216,9 +235,9 @@ def expand(kind, raw, env):
         return [Candidate('chemical_formula',{'source_formula':raw,'atom_counts':{symbol:digits or '1' for symbol,digits in parts},
                                      'replace_with_common_name':False},spoken,('governor',),counts)]
     if kind=='scale_suffix':
-        if env.cue('count',side='right'):
+        if noun:=env.cue('count',side='right'):
             scale={'K':'thousand','M':'million','B':'billion'}[raw[-1]]
-            return [Candidate('scaled_quantity',{'coefficient':raw[:-1],'scale':scale},number_spoken(raw[:-1])+' '+scale,('governor',))]
+            return [Candidate('scaled_quantity',{'coefficient':raw[:-1],'scale':scale,'scope':noun},number_spoken(raw[:-1])+' '+scale,('governor',))]
         if raw.endswith('K') and env.cue('temperature'):
             return [Candidate('measurement',{'value':raw[:-1],'unit':'kelvin'},number_spoken(raw[:-1])+' kelvin',('governor',))]
         return [literal(raw)]
@@ -286,7 +305,10 @@ def lab_forms(kind,raw,env):
         verb={'+':'add','−':'subtract','-':'subtract','×':'multiply','÷':'divide'}[operator]
         fields={'left':a,'right':b,'left_integer':a,'right_integer':b,'operator':verb}
         spoken=number_spoken(a)+' '+OPERATORS[operator]+' '+number_spoken(b)
-        if rhs:fields.update(operands=[a,b],equality_rhs=rhs,correct_source=False);spoken+=' equals '+number_spoken(rhs)
+        if rhs:
+            fields.update(operands=[a,b],equality_rhs=rhs,correct_source=False,
+                          ordered_operands=[a,b,rhs],operators=[operator,'='],preserve_authored_claim=True)
+            spoken+=' equals '+number_spoken(rhs)
         parts=()
         if operator in ('-','−') and operation.end(2)==operation.start(3):
             parts=(Component('CR-N006','binary_operation',(operation.start(2),operation.end(3)),dict(fields)),)
@@ -306,14 +328,12 @@ def lab_forms(kind,raw,env):
     if kind=='duration_units':
         units={'h':'hours','m':'minutes','s':'seconds'}
         fields={units[k]:v for v,k in re.findall(r'([0-9]+)([hms])',raw)}
-        return [Candidate('duration',fields,' '.join(number_spoken(v)+' '+k for k,v in fields.items()),learned)]
+        return [Candidate('duration',fields,duration_words(fields),learned)]
     if kind=='scientific':
         value,exponent=re.split('[eE]',raw)
         return [Candidate('scientific_quantity',{'mantissa':value,'exponent':exponent,'base':'10'},number_spoken(value)+' times ten to the power of '+number_spoken(exponent),learned)]
     if kind=='uncertainty':
-        a,b=parts
-        return [Candidate('measurement_with_uncertainty',{'coefficient':a,'parenthesized_digits':b,'uncertainty_scale':'final_digits'},
-                  number_spoken(a)+' with uncertainty '+identifier(b)+' in the final digits',('governor',))] if env.cue('measurement') or env.header_cue('measurement') else [literal(raw)]
+        return uncertainty(raw,env)
     if kind=='mixed_fraction':
         from .linguistic import FRACTIONS, technical
         if raw[-1] in FRACTIONS:
@@ -324,3 +344,33 @@ def lab_forms(kind,raw,env):
         fraction=number_spoken(a)+' '+words[b][a!='1'] if b in words else number_spoken(a)+' divided by '+number_spoken(b)
         return [Candidate('fraction',{'whole':whole,'numerator':a,'denominator':b},number_spoken(whole)+' and '+fraction,learned)]
     return []
+
+
+def uncertainty(raw, env):
+    amount, digits, unit = UNCERTAINTY.fullmatch(raw).groups()
+    role = 'column' if env.header_cue('measurement') else 'governor' if env.cue('measurement') else None
+    if role is None:
+        return [literal(raw)]
+    options = []
+    fallback = False
+    choices = ([Candidate('integer_quantity', {'value':amount}, None, ('syntax',))]
+               if amount.lstrip('+−-').isdigit() else context_numbers.candidates(amount, env, measurement=True))
+    for choice in choices:
+        if choice.kind == 'literal':
+            fallback = True
+            continue
+        evidence = choice.evidence
+        # In this English scientific notation a plain decimal point is the
+        # default. A scoped locale or witnessed separator takes precedence.
+        if (choice.kind == 'decimal_quantity' and not evidence and not env.setting('number_locale')
+                and not env.number_separator() and context_numbers.PLAIN_POINT.fullmatch(amount)):
+            evidence = ('syntax',)
+        value = choice.fields['value']
+        fields = {'coefficient':amount,'coefficient_digits':value,'parenthesized_digits':digits,
+                  'uncertainty_last_digits':digits,'uncertainty_scale':'final_digits',
+                  'decimal_places':choice.fields.get('scale',0),'convention':'last_digit_uncertainty','unit':unit}
+        spoken = quantity_words(value, UNIT_NAMES[unit]) if unit else number_spoken(value)
+        supported = (role,*evidence) if evidence else ()
+        options.append(Candidate('measurement_with_uncertainty',fields,
+                                 spoken+' with an uncertainty of '+identifier(digits)+' in the final digits',supported))
+    return [literal(raw),*options] if fallback or not options else options

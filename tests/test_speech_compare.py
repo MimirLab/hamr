@@ -33,6 +33,10 @@ def test_uncertainty_and_fraction_drops_are_not_hidden_by_matching_numbers():
     assert quantities(c('one and one half pounds'))==quantities(c('one and one pounds'))
     assert math('one and one half pounds')!=math('one and one pounds')
     assert math('one quarter pounds')!=math('one half pounds')
+    expected='one point two three four meters, with an uncertainty of five in the final digits'
+    assert math(expected)==math('1.234 meters with uncertainty 5 in the last digits')
+    assert math(expected)!=math('1.234 meters, five')
+    assert math(expected)!=math('1.234 centimeters with uncertainty five in the final digits')
 
 
 def test_unit_power_and_dimension_changes_remain_inspectable():

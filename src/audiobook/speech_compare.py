@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v22'
+POLICY='bounded-english-composed-scale-typed-v23'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -254,6 +254,8 @@ def mathematical_markers(text):
     text=text.replace('½',' half ').replace('¼',' quarter ').replace('¾',' three quarters ')
     markers=[];ts=comparison_tokens(text)
     markers += ['plus-or-minus']*len(re.findall(r'plus\s+(?:or\s+)?minus|±|\+\s*/\s*-',text))
+    markers += ['last-digit-uncertainty']*len(re.findall(
+        r'\buncertainty (?:of )?(?:#[0-9]+ )+in (?:the )?(?:final|last) digits?\b',' '.join(ts)))
     # A half already included in an exact scaled quantity must be compared by
     # that value. Independent fractional words/measurements stay protected.
     markers += ['fraction:'+('half' if w=='halves' else w.rstrip('s')) for w in ts if w in FRACTIONS]
