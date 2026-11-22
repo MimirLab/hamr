@@ -81,17 +81,25 @@ In a decision’s `normalization.edits`, the input and output ranges use half-op
 
 For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new spoken rules. Add `--reimport` to pick up importer fixes from the original snapshot. Examine the new review state with `hamr show JOB --content` before resuming.
 
-### Audition dialogue delivery
+<a name="audition-dialogue-delivery"></a>
 
-Hamr can give Breeze a delivery instruction for clearly attributed dialogue and for prose with a clear local cue. An immediate setup such as “She lowered her voice” can shape the same speaker’s next line. Two different details can support a direction together, as when a character leans closer and their words become barely audible. Competing directions leave the reading plain. Experimental mode recognizes reporting verbs before the speaker as well, as in “whispered Alice.” A quiet scene requires corroborating details, such as a silent room and a character holding their breath. The plan records the source spans and delivery cues behind a decision. Hamr requires an explicit authored marker to perform a sound.
+### Expressive narration
+
+Hamr can give Breeze a delivery instruction for clearly attributed dialogue and for prose with a clear local cue. An immediate setup such as “She lowered her voice” can shape the same speaker’s next line. Two different details can support a direction together, as when a character leans closer and their words become barely audible. Competing directions leave the reading plain. Additional delivery controls recognize reporting verbs before the speaker as well, as in “whispered Alice.” A quiet scene requires corroborating details, such as a silent room and a character holding their breath. The plan records the source spans and delivery cues behind a decision. Hamr requires an explicit authored marker to perform a sound.
 
 Authored sounds include sighs, laughter, chuckles, gasps, coughs, throat clearing, groans, sniffles, lip smacks, hiccups, sneezes, and sobs. Hamr attaches a sound to an identifiable dialogue turn. A written laugh at the start of an eligible line plays as a short chuckle. Clearly attributed dialogue can also carry delivery such as whispering, urgency, restraint, irony, or distress. These cues apply to listen mode in EPUB, Markdown, and plain text. Hamr keeps each affected utterance intact and preserves the original wording in the companion.
 
-`--performance auto` is the default. With the packaged Nigel Thornberry or Cave Johnson reference and the exact tested runtime and weights, Linux CPU Q8 performs an explicit sigh before dialogue. Linux Vulkan Q8 performs an explicit sigh at the end of the same dialogue request and uses forceful delivery for directly attributed shouts. With Nigel, it also performs an authored opening laugh and reads a quiet setting with a character holding their breath with restrained anticipation. Other candidates are available through `--performance experimental`. Choose `--performance off` for ordinary readings throughout a book.
+**Automatic delivery** is on in the normal `hamr open` workflow. With the packaged Nigel Thornberry or Cave Johnson reference and the tested runtime and weights, Linux CPU Q8 performs an explicit sigh before dialogue. Linux Vulkan Q8 performs an explicit sigh at the end of the same dialogue request and uses forceful delivery for directly attributed shouts. With Nigel, it also performs an authored opening laugh and reads a quiet setting with a character holding their breath with restrained anticipation. Choose `--performance off` for ordinary readings throughout a book.
 
-Experimental mode gives an authored heading a measured cadence and can use clear articulation for a complete table or equation in study or procedure mode. It also tries a gentler entry after a whisper or on a chapter heading that leads into a quiet passage. These directions keep the words and existing pauses. Cave Johnson’s tearful direction asks Breeze to retain his usual register and timbre.
+**Additional delivery controls** can give an authored heading a measured cadence and use clear articulation for a complete table or equation in study or procedure mode. They can also give a gentler entry after a whisper or on a chapter heading that leads into a quiet passage. These directions keep the words and existing pauses. Cave Johnson’s tearful direction asks Breeze to retain his usual register and timbre.
 
-Experimental dialogue can keep a split quotation and its intervening attribution in one request. An explicitly continuing named speaker can carry a low or restrained delivery into one adjacent turn. Hamr records both source spans. A direct attribution can also request a rise or fall across two or more quoted sentences. When the author names a phrase to stress, Hamr requires a single matching occurrence inside the quotation. These requests use Breeze’s instruction channel and retain the spoken text.
+With additional delivery enabled, Hamr can keep a split quotation and its intervening attribution in one request. An explicitly continuing named speaker can carry a low or restrained delivery into one adjacent turn. Hamr records both source spans. A direct attribution can also request a rise or fall across two or more quoted sentences. When the author names a phrase to stress, Hamr requires a single matching occurrence inside the quotation. These requests use Breeze’s instruction channel and retain the spoken text. In 0.4.0, enable these controls for a book with the following command.
+
+```sh
+hamr open 'Scene.epub' --voice cast:nigel-thornberry --performance experimental
+```
+
+To inspect the choices or preview a single passage first, use the same option in the plan and queue commands.
 
 ```sh
 hamr plan 'Scene.epub' --performance experimental --json

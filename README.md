@@ -16,6 +16,7 @@
 <p align="center">
   <a href="#epub-to-audiobook-in-three-commands">Make a book</a> ·
   <a href="#what-hamr-can-do">What hamr can do</a> ·
+  <a href="#expressive-narration">Expressive narration</a> ·
   <a href="#listen">Meet the cast</a> ·
   <a href="docs/USAGE.md">The field guide</a> ·
   <a href="https://github.com/MimirLab/hamr/releases/latest">Downloads</a>
@@ -64,12 +65,18 @@ Use the same command with a PDF, Markdown, or `.txt` file. Add `--yes` for unatt
 | When you want to… | Where to start |
 | --- | --- |
 | **Hear a book read naturally** | Contextual reading is on by default. Hamr uses nearby words and document structure to read abbreviations, amounts, dates and times. The companion preserves the original wording. Use `hamr plan DOCUMENT --json` to inspect the reading before synthesis. [Reading and pronunciation controls](docs/USAGE.md#tune-readings-that-depend-on-context) |
-| **Give dialogue some acting** | Automatic delivery can follow cues like a written sigh or a directly attributed shout with tested voice and engine combinations. `--performance experimental` lets you try more, including whispers across an attribution, targeted emphasis and lines that build in urgency. [Supported cues and how to audition them](docs/USAGE.md#audition-dialogue-delivery) |
+| **Give dialogue some acting** | Hamr uses cues in the book to shape the performance, from an authored sigh or laugh to a whispered line broken by “she said.” [Expressive narration and how to use it](#expressive-narration) |
 | **Listen to a scanned PDF** | With Tesseract installed, `hamr setup --ocr-only` adds offline English OCR. Hamr can read simple two-column scans and recognize scanned regions beside selectable text. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr) |
 | **Pick up where a book stopped** | `hamr resume JOB` checks and reuses saved takes. A retake changes one passage, and `hamr status JOB` shows whether a book is ready or needs review. [Recovery and repair](#resume-and-repair) |
 | **Check the words before export** | The ordinary book command runs local speech checks before publishing. Use `hamr transcribe CLIP.wav` to inspect a disputed recording with the installed verifier. [Speech checking](docs/USAGE.md#speech-verifier-presets) |
 
 The [release notes](RELEASE.md) record completed render, playback and interruption tests and the scope of each result.
+
+## Expressive narration
+
+An ordinary `hamr open` command already uses supported delivery cues. On Linux Q8, Nigel Thornberry and Cave Johnson can perform authored sighs. Vulkan Q8 adds directly attributed shouts for both voices, plus an opening chuckle and quiet-scene delivery for Nigel.
+
+You can also enable additional delivery for a book. Hamr can whisper across an intervening attribution, stress a word the author singles out, or build urgency across several sentences while keeping the wording intact. Those controls have been tested in matched listening comparisons and speech checks on selected passages. The guide gives the commands, voice and engine combinations, and a way to preview an exact passage. [Use expressive narration](docs/USAGE.md#expressive-narration)
 
 ## Listen
 

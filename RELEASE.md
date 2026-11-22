@@ -1,12 +1,12 @@
 # hamr 0.4.0
 
-### Source-directed delivery
+### Expressive narration
 
-Hamr can forward a delivery instruction with a cloned voice and perform authored vocal cues. The planner uses local prose evidence to guide the right speaker or a quiet scene. Recognition can flag directed speech for listening review while preserving the take. Short ambiguous sounds at an authored cue are reported separately from wording errors.
+Hamr uses cues in the prose to guide dialogue and quiet scenes. Automatic delivery supports authored leading sighs for Nigel Thornberry and Cave Johnson on Linux CPU Q8. On Linux Vulkan Q8, it supports trailing sighs and directly attributed shouts for both voices. Nigel can also perform an authored opening chuckle and read a quiet scene with restrained anticipation.
 
-Opt-in `--performance experimental` makes more directions available, including whispers across an attribution, emphasis on an authored phrase and growing urgency. Matched listening and word checks cover individual passages. Automatic delivery uses the tested combinations listed below.
+Additional delivery controls cover whispers across an attribution, emphasis on an author-specified phrase, growing urgency, and other authored directions. Matched listening and word checks cover these cases on selected passages. The ordinary book workflow has passed real chaptered publication tests with automatic delivery.
 
-With the packaged Nigel Thornberry and Cave Johnson voices, the default mode performs leading sighs on the tested Linux CPU Q8 runtime and trailing sighs and directly attributed shouts on the tested Linux Vulkan Q8 runtime. On that Vulkan profile, Nigel also performs an authored opening laugh and reads a quiet setting with a character holding their breath with restrained anticipation. Qualification combines matched listening comparisons, offline word checks, acoustic checks, and reference-voice comparison. [Performance guide](docs/USAGE.md#audition-dialogue-delivery)
+Speech checking keeps the take when a directed reading needs review. It reports an ambiguous vocalization at an authored cue separately from missing or changed words. [Delivery controls and commands](docs/USAGE.md#expressive-narration)
 
 ### Reading and recovery fixes
 
