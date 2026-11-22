@@ -17,6 +17,7 @@ Blind listening across all 45 cast voices identified 22 preferred cleaned refere
 - Adjacent quotations across two aligned native PDF lines can stay in one speech request. If a paragraph tag covers both, Hamr can continue the delivery across the wrap. For an untagged wrap, Breeze handles the passage in its usual reading voice.
 - An authored sigh or cough between complete sentences can be performed inside one continuous quotation.
 - An author-marked pronoun can carry the stress in a spoken line. EPUB stylesheet italics and Markdown emphasis can supply that cue. The plan records the marked word and its source location.
+- `hamr preview --compare` auditions named seeds, directions, and sampling settings on the same saved passage. It saves the alternate WAVs with exact request receipts and leaves the book intact.
 
 These changes run in ordinary listening mode. See the [expressive narration guide](docs/USAGE.md#expressive-narration) for examples, settings, and how to refresh an older EPUB.
 

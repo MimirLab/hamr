@@ -39,6 +39,13 @@ PRIVATE_KINDS = {'literal', 'hidden', 'generated_label', 'object_label', 'note_r
 SAMPLING_LIMITS = {'temperature':(.1,2), 'top_k':(1,256), 'top_p':(.05,1), 'repetition_penalty':(.8,1.4)}
 
 
+def validate_guidance(value, parallel=1):
+    if type(value) not in (int, float) or value not in (1, 2, 2.5, 3):
+        raise Error('speech_guidance', 'Choose Breeze guidance of 1, 2, 2.5, or 3.')
+    if value != 1 and parallel != 1:
+        raise Error('speech_guidance', 'Stronger guidance needs a serial audition.')
+
+
 def validated_sampling(fields):
     if not isinstance(fields,dict) or fields.keys()-SAMPLING_LIMITS.keys():
         raise Error('performance_sampling','Use temperature, top_k, top_p or repetition_penalty.')
@@ -61,8 +68,8 @@ def tuning_preferences(config, enabled, registry):
         if recipe not in known or not isinstance(fields,dict) or not fields:
             raise Error('performance_sampling',f'Choose a known performance recipe with tuning settings: {recipe}.')
         cfg=fields.get('cfg_scale')
-        if 'cfg_scale' in fields and (type(cfg) not in (int,float) or cfg not in (1,2,2.5,3)):
-            raise Error('speech_guidance','Choose Breeze guidance of 1, 2, 2.5, or 3.')
+        if 'cfg_scale' in fields:
+            validate_guidance(cfg)
         result[recipe]=validated_sampling({k:v for k,v in fields.items() if k!='cfg_scale'})
         if cfg is not None:result[recipe]['cfg_scale']=float(cfg)
     return result if enabled else {}

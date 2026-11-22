@@ -146,6 +146,14 @@ it can also guide the delivery of a complete table or equation. Use
 to hear the effective request. Speech recognition can flag a directed
 take for listening review while preserving the original take.
 .TP
+.B "hamr preview JOB --utterance ID --compare FILE"
+Read named settings from a JSON object and render alternate takes of the
+same passage. An empty settings object uses the saved request. Override
+the seed, instruction, markers, guidance, or sampling. The command records
+the exact Breeze requests and WAV hashes in a local manifest.
+Add --play to hear the results in order. Comparisons leave the job
+and any published book intact.
+.TP
 .B "hamr setup --checks-only --asr-profile auto"
 Set up offline verification independently of the speech engine. Auto selects
 a qualified verifier by platform, available system memory and disk space.

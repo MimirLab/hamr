@@ -158,7 +158,24 @@ For a book's own reporting phrases, add exact lowercase phrases to its source-bo
 }
 ```
 
-For a matched audition, add recipe-specific guidance or sampling to the source-bound document policy and use `--document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
+To compare delivery before changing a book, save named settings in `takes.json` and preview one of its saved passages.
+
+```json
+{
+  "Saved reading": {},
+  "Plain control": {"instruction": null, "markers": false},
+  "Quieter reading": {"instruction": "Read the passage softly, with clear consonants."},
+  "Another seed": {"seed": 43}
+}
+```
+
+```sh
+hamr preview JOB --utterance u00003 --compare takes.json --play
+```
+
+All variants start from the same bound passage, voice and engine. An empty object uses the saved take's settings. `instruction` replaces Breeze's text direction. Use `null` to clear it and `"markers": false` to remove optional vocal cues from the synthesis text while keeping the planned words. You can also override a signed 32-bit `seed`, `cfg_scale`, or a sampling setting from the list below. Each variant inherits any settings it omits. The command returns the WAV paths and a local manifest with the original source locations, the exact requests and audio hashes. Use `--json` to read the result in a script. Rerun the same command after an interruption to reuse completed takes that pass a hash check. Comparisons leave the job, render cache, and published book intact.
+
+To apply recipe-specific guidance or sampling to a book, put the settings in its source-bound policy and use `--document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
 
 ```json
 {

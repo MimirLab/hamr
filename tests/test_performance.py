@@ -1016,6 +1016,110 @@ def test_queue_binds_preview_and_render_to_same_directed_request(tmp_path,monkey
     assert clip['control_request']==preview
 
 
+def test_preview_comparison_preserves_book_and_records_each_effective_request(tmp_path, monkeypatch, capsys):
+    import wave
+
+    from audiobook import preview_compare
+
+    store, job = queued(tmp_path)
+    starts = []
+    spoken = []
+
+    class Engine(FakeEngine):
+        def __enter__(self):
+            starts.append(True)
+            return self
+
+        def speech(self, text, voice, **options):
+            spoken.append((text, voice, options))
+            return super().speech(text, voice, **options)
+
+    monkeypatch.setattr(preview_compare, 'Engine', Engine)
+    controls = tmp_path / 'compare.json'
+    writejson(controls, {'saved': {}, 'plain': {'instruction': None, 'markers': False},
+                        'new': {'seed': 0, 'instruction': 'A tired, fleeting breath.',
+                                'temperature': .7, 'top_k': 48, 'cfg_scale': 2},
+                        'saved again': {}})
+    previous = store.get(job['id'])
+    plan_file = store.path(job) / 'plan.json'
+    original_plan = plan_file.read_bytes()
+    assert cli.main(['--home', str(store.root), 'preview', job['id'], '--compare', str(controls), '--json']) == 0
+    result = json.loads(capsys.readouterr().out)
+    report = loadjson(Path(result['manifest']))
+    assert report['expected_words'] == '“I thought we had more time,” she said.'
+    assert not report['ready'] and len(starts) == 1 and len(spoken) == 3
+    assert [take['name'] for take in report['takes']] == ['saved', 'plain', 'new', 'saved again']
+    assert spoken[0][0].startswith('(sigh) ')
+    assert spoken[1] == (report['expected_words'], VOICE, {'seed': 42, 'instruction': None, 'cfg_scale': 1})
+    assert spoken[2][0] == spoken[0][0] and spoken[2][1] == VOICE
+    assert spoken[2][2] == {'seed': 0, 'instruction': 'A tired, fleeting breath.', 'cfg_scale': 2,
+                            'sampling': {'temperature': .7, 'top_k': 48}}
+    assert store.get(job['id']) == previous and plan_file.read_bytes() == original_plan
+    assert not list((store.root / 'clips').iterdir())
+    for summary, take in zip(result['takes'], report['takes'], strict=True):
+        wav = Path(summary['audio'])
+        assert digest(wav.read_bytes()) == take['audio_sha256']
+        with wave.open(str(wav), 'rb') as audio:
+            assert audio.readframes(audio.getnframes()) == TONE
+
+
+def test_preview_comparison_recovers_only_verified_takes_after_interruption(tmp_path, monkeypatch, capsys):
+    from audiobook import preview_compare
+    from audiobook.core import Error
+
+    store, job = queued(tmp_path)
+    controls = tmp_path / 'compare.json'
+    writejson(controls, {'saved': {}, 'second seed': {'seed': 43}})
+    command = ['--home', str(store.root), 'preview', job['id'], '--compare', str(controls), '--json']
+    seeds = []
+
+    class Engine(FakeEngine):
+        def speech(self, text, voice, **options):
+            seeds.append(options['seed'])
+            if seeds == [42, 43]:
+                raise Error('speech_deadline', 'Interrupted comparison.')
+            return super().speech(text, voice, **options)
+
+    monkeypatch.setattr(preview_compare, 'Engine', Engine)
+    assert cli.main(command) == 2
+    assert json.loads(capsys.readouterr().out)['error']['code'] == 'speech_deadline'
+    root = store.path(job) / 'auditions'
+    assert len(list(root.glob('*.take.json'))) == 1
+    assert cli.main(command) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert (result['new_takes'], result['reused_takes']) == (1, 1)
+    assert seeds == [42, 43, 43]
+    assert cli.main(command) == 0
+    repeat = json.loads(capsys.readouterr().out)
+    assert repeat['manifest'] == result['manifest']
+    assert (repeat['new_takes'], repeat['reused_takes']) == (0, 2)
+    assert seeds == [42, 43, 43]
+    Path(result['takes'][0]['audio']).write_bytes(b'changed')
+    assert cli.main(command) == 0
+    recovered = json.loads(capsys.readouterr().out)
+    assert recovered['manifest'] == result['manifest']
+    assert (recovered['new_takes'], recovered['reused_takes']) == (1, 1)
+    assert seeds == [42, 43, 43, 42]
+
+
+def test_preview_comparison_validates_all_settings_before_synthesis(tmp_path, monkeypatch, capsys):
+    from audiobook import preview_compare
+
+    store, job = queued(tmp_path)
+
+    def engine(*args):
+        pytest.fail('An invalid comparison must not start Breeze.')
+
+    monkeypatch.setattr(preview_compare, 'Engine', engine)
+    controls = tmp_path / 'compare.json'
+    writejson(controls, {'saved': {}, 'bad seed': {'seed': True}})
+    command = ['--home', str(store.root), 'preview', job['id'], '--compare', str(controls), '--json']
+    assert cli.main(command) == 2
+    failure = json.loads(capsys.readouterr().out)['error']
+    assert failure['code'] == 'preview_compare_seed' and 'bad seed' in failure['message']
+    assert not (store.path(job) / 'auditions').exists()
+
+
 def test_transcribe_compares_exact_take_without_changing_job(tmp_path,monkeypatch,capsys):
     from audiobook import asr_diagnostic, asr_fluid
 
