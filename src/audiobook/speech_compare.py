@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v34'
+POLICY='bounded-english-composed-scale-typed-v35'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -27,6 +27,7 @@ LITERAL_DIGIT_RUN=re.compile(
 DIGIT_PLURALS={'zeroes':'0','sixes':'6',**{word+'s':str(i) for i,word in enumerate(SMALL[:10])}}
 PRINTED_AMOUNT=r'(?:[1-9][0-9]{0,2}(?:,[0-9]{3}){1,3}|[0-9]{1,12})(?:\.[0-9]{1,12})?'
 PRINTED_CURRENCY=re.compile(rf'(?<![\w$£€¥])([+−-]?)([£¥])[ \t]*({PRINTED_AMOUNT})(?!\w|[.,][0-9]|[$£€¥])')
+GLUED_DOLLAR=re.compile(rf'(?<=[^\W\d_])\$[ \t]*{PRINTED_AMOUNT}(?!\w|[.,][0-9]|[$£€¥])')
 DOLLAR_BEFORE_YEN=re.compile(rf'(?<![\w$£€¥])\$[ \t]*({PRINTED_AMOUNT})(?=[ \t]+yen\b)',re.I)
 ELAPSED_PAIR=re.compile(r'(\belapsed?[ \t]+time[ \t]*[:,]?[ \t]+)([0-9]{1,3})[.:]([0-5][0-9])(?!\w|[.:][0-9])',re.I)
 
@@ -47,6 +48,12 @@ def notation_observation(expected, observed):
 
 def spoken_currency_observation(expected, observed):
     """Resolve ASR currency glyphs using the rendering they describe."""
+    if '$' in observed and re.search(r'\bdollars?\b',expected,re.I):
+        # A recognizer can omit the space before a complete printed amount.
+        # Bound the repair to a reading that still matches all planned words.
+        spaced = GLUED_DOLLAR.sub(r' \g<0>',observed)
+        if spaced!=observed and comparison_tokens(spaced)==comparison_tokens(expected):
+            return spaced
     labels={}
     if '£' in observed and re.search(r'\bpounds?\b',expected,re.I) and not re.search(r'\bbritish\s+pounds?\b',expected,re.I):
         labels['£']='GBP'

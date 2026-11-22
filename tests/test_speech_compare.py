@@ -96,6 +96,20 @@ def test_audio_check_resolves_asr_currency_glyphs_without_changing_amount_or_cur
     assert 'math_or_unit' in critical(expected,'Lunch cost twelve pounds and fifty cents. The last ferry was 700 yen.')
 
 
+def test_recognizer_can_glue_a_printed_dollar_amount_to_the_previous_word():
+    from audiobook.pipeline import critical
+    from audiobook.speech_compare import notation_observation
+
+    expected = 'Doctor Gray paid one hundred dollars for the repair. The key was on the shelf.'
+    raw = 'Dr. Gray paid$100 for the repair. The key was on the shelf.'
+    assert notation_observation(expected, raw) == raw.replace('paid$', 'paid $')
+    assert not critical(expected, raw)
+    assert 'quantity' in critical(expected, raw.replace('$100', '$101'))
+    assert 'math_or_unit' in critical(expected, raw.replace('$100', '£100'))
+    literal = 'Type echo dollar sign one zero zero.'
+    assert notation_observation(literal, 'Type echo$100.') == 'Type echo$100.'
+
+
 def test_unqualified_elapsed_pair_accepts_printed_fields_without_guessing_units():
     from audiobook.pipeline import critical
 
