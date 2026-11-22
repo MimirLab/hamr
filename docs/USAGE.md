@@ -12,6 +12,15 @@ hamr open "$HOME/Downloads/Ravens in Winter.epub" --voice cast:nigel-thornberry
 
 Accept the suggested profile during setup and enter `y` after checking the book plan. The second command is an optional listening sample. Once the narration passes its checks, hamr prints the job ID and M4B path. The folder under `~/Audiobooks` also contains the original source, a timed companion and a report. Use `hamr play JOB` to listen or `hamr resume JOB` to continue an interrupted book.
 
+## What runs automatically
+
+| Feature | Where to see it |
+| --- | --- |
+| **Tone and performance** | Ordinary listening follows speaker and scene cues, including whispers, restraint, urgency, distress, and authored sounds. Works in EPUB, PDF, Markdown, and text. [Expressive narration](#expressive-narration) |
+| **Contextual readings** | Nearby words and document structure guide the reading of dates, abbreviations, amounts, and similar text. `hamr plan DOCUMENT --json` shows the selection and its evidence. [Contextual readings](#tune-readings-that-depend-on-context) |
+| **Scanned and mixed PDF** | With the English OCR assets installed, `hamr open` reads scanned pages and supported scan regions. `hamr doctor` reports OCR readiness. [PDF and OCR](#pdf-and-ocr) |
+| **Offline speech checks** | `hamr open` checks speech before publishing. `hamr status JOB --json` reports which verifier ran and whether the check passed. [Speech verifier presets](#speech-verifier-presets) |
+
 ## Install and setup
 
 The [installation commands](../README.md#install-on-linux) build and install the app for your account. Run `hamr --version` and `man hamr` to check discovery. The installer uses locked dependencies. A source checkout can also run `uv run hamr` from the project directory. The installer accepts `./install.sh APP_DIRECTORY COMMAND_DIRECTORY` for a separate installation. Set `HAMR_MAN_DIR` to choose its manual hierarchy, then use `man -M "$HAMR_MAN_DIR" hamr` if needed.
@@ -84,6 +93,14 @@ For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new s
 <a name="audition-dialogue-delivery"></a>
 
 ### Expressive narration
+
+| What Hamr can direct | What triggers it |
+| --- | --- |
+| Speaking softly, whispering, shouting, or using deliberate pacing | An attributed reporting phrase such as “she answered quietly” or “Ada said slowly.” Nearby descriptions can also establish how the speaker delivered the line. |
+| Surprise, reassurance, irony, amusement, affection, or distress | Clear attribution or local speaker evidence. An identifiable speaker change or conflicting evidence limits carryover. |
+| Growing urgency, fading delivery, or emphasis on a specific phrase | An authored change over multiple sentences, or a unique quoted phrase the author explicitly singles out. |
+| Sighs, chuckles, sobs and other nonverbal sounds | An explicit marker associated with a dialogue turn. |
+| Heading cadence and technical articulation | Heading structure, or a complete table or equation in study or procedure mode. |
 
 Hamr can give Breeze a delivery instruction for clearly attributed dialogue and for prose with a clear local cue. An immediate setup such as “She lowered her voice” can shape the same speaker’s next line. Two different details can support a direction together, as when a character leans closer and their words become barely audible. Competing directions leave the reading plain. Additional delivery controls recognize reporting verbs before the speaker as well, as in “whispered Alice.” A quiet scene requires corroborating details, such as a silent room and a character holding their breath. The plan records the source spans and delivery cues behind a decision. Hamr requires an explicit authored marker to perform a sound.
 

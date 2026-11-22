@@ -19,6 +19,7 @@
   <a href="#expressive-narration">Expressive narration</a> ·
   <a href="#listen">Meet the cast</a> ·
   <a href="docs/USAGE.md">The field guide</a> ·
+  <a href="RELEASE.md">Release notes</a> ·
   <a href="https://github.com/MimirLab/hamr/releases/latest">Downloads</a>
 </p>
 
@@ -27,6 +28,8 @@
 Give Nigel Thornberry a nature book or Carl Sagan an astronomy text. Cave Johnson will read the safety manual too, if you're feeling brave.
 
 You can inspect the narration before rendering, resume after an interruption, and retake a bad passage without starting the whole book again. Each finished book comes with its source and a timed companion for following along or tracking down a mistake.
+
+**New in 0.4.2.** Hamr follows the author's cues for tone, emphasis, pace, and sounds in ordinary listening mode. A whisper can survive an interruption by “she said,” a warning can build across sentences, and an authored laugh can get its own beat. That works with searchable and scanned PDFs as well as EPUB, Markdown, and text. [How expressive narration works](#expressive-narration) · [What changed in 0.4.2](RELEASE.md#hamr-042)
 
 ## EPUB to audiobook in three commands
 
