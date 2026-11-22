@@ -8,17 +8,17 @@ The fit estimate uses the graphics driver and current available memory. Startup 
 
 | Host | Runtime and model | Evidence |
 | --- | --- | --- |
-| Linux x86_64 with Vulkan | Hoppou 0.1.7, one of F16, Q8, Q6 or Q4, plus Q8 with CPU text encoding | F16 long narration and matched F16/Q8 controls on RX 6800 XT. Q6, Q4 and CPU text encoding still need qualification. |
+| Linux x86_64 with Vulkan | Hoppou 0.1.7, one of F16, Q8, Q6 or Q4, plus Q8 with CPU text encoding | F16 long narration and matched F16/Q8 controls on RX 6800 XT. Q8 also passed chaptered publication. Render trials are pending for Q6, Q4 and CPU text encoding. |
 | Linux x86_64 on CPU | The same pinned Hoppou formats via its CPU route | Q8 short control passed real render, forced interruption, recovery, offline speech checking and playback. Long-book turnaround and other precisions need trials. |
-| Windows x86_64 with AVX2 | The upstream Hoppou Windows ZIP, same matched model files | Preview. Q8 CPU passed real setup, checked publication, forced interruption and recovery on native Windows. Native GPU qualification is pending. [Hosted run](https://github.com/MimirLab/hamr/actions/runs/44863152453) |
+| Windows x86_64 with AVX2 | The upstream Hoppou Windows ZIP, same matched model files | **CPU Q8 tested.** Setup, checked publication and forced-exit recovery passed on native Windows. The Vulkan preview still needs a physical Windows GPU trial. [Hosted run](https://github.com/MimirLab/hamr/actions/runs/44863152453) |
 | Apple Silicon | Swift/MLX BF16 and affine INT8 are first candidates | Research. Needs an owned Apple adapter and target-device trials. |
 | NVIDIA with a working Vulkan driver | The Hoppou route above | Native CUDA remains a separate comparison. |
 | AMD Strix Halo | Vulkan as available through Hoppou | Speakrail ROCm remains a separate comparison. |
 
-Linux needs the Vulkan loader even when using the CPU profile. Windows uses the loader installed by the graphics driver. For the Windows preview use PowerShell with Git, uv, Python 3.12, FFmpeg and ffprobe available. mpv is used for playback.
+Linux needs the Vulkan loader even when using the CPU profile. Windows uses the loader installed by the graphics driver. For Windows use PowerShell with Git, uv, Python 3.12, FFmpeg and ffprobe available. mpv is used for playback.
 
 ```powershell
-git clone --branch breeze-engine-preview https://github.com/MimirLab/hamr.git
+git clone https://github.com/MimirLab/hamr.git
 cd hamr
 uv build --wheel
 .\install.ps1 -PersistPath
@@ -29,7 +29,7 @@ hamr open "$HOME\Downloads\My book.epub" --voice cast:nigel-thornberry
 
 For isolated trials, put `--home DIRECTORY` before each hamr command. Windows defaults to `%LOCALAPPDATA%\hamr`. The Windows Q8 CPU control published a verified 2.43-second M4B. In a second render, hamr was forced to exit immediately after saving a take. `resume` preserved the take's checksum, checked the speech and published a second M4B. The recovered book decoded with FFmpeg, and both publications still verified after cleanup. [Native recovery run](https://github.com/MimirLab/hamr/actions/runs/44863152453)
 
-The Vulkan runtime loaded under Wine and failed at its first queue submission. To qualify Windows graphics on a physical PC, run this in PowerShell after installing the preview. Use `vulkan-q8` if `hamr doctor` recommends a smaller model.
+The Vulkan runtime loaded under Wine and failed at its first queue submission. To qualify Windows graphics on a physical PC, run this in PowerShell after installing Hamr. Use `vulkan-q8` if `hamr doctor` recommends a smaller model.
 
 ```powershell
 $trial = Join-Path $env:TEMP ('hamr-vulkan-' + [guid]::NewGuid())

@@ -81,6 +81,8 @@ For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new s
 
 ### Tune readings that depend on context
 
+Contextual reading is part of normal English narration. It uses surrounding wording and the document’s structure to resolve a reading. Use the settings below when a book has its own terminology or conventions.
+
 Inspect `decisions[].context_events` in `hamr plan DOCUMENT --json`. Each event records its source span, possible readings, evidence and selected candidate. Defaults keep uncertain dates in their printed field order and continue the book. Choose `"mode": "strict"` in the settings file to hold unresolved choices for review. Existing source and speech checks apply in either mode.
 
 Ordinary narration reads `$12.50` as “twelve dollars and fifty cents” and `3/4 cup` as “three quarters of a cup”. Set `"conventions": {"narration_style": "technical"}` when the spoken form should preserve printed currency symbols and decimal places. Either style keeps the exact source and separate reading evidence in the companion.
@@ -201,6 +203,8 @@ PCM clips and receipts are promoted together. M4B time derives from 64-bit final
 Ready output is `~/Audiobooks/JOB-rREV/`: `book.m4b`, `source.html`, `companion.json`, `companion.vtt`, `report.json`, `manifest.json`. The HTML contains exact lookup text and source locators; source identity points to the retained immutable snapshot in app state. Segment times are precise; word-level forced alignment is not implemented. AAC decode padding differs from source PCM; verified container offsets use PCM chapter boundaries with a 2 ms tolerance.
 
 ## PDF and OCR
+
+English OCR is available in the ordinary book workflow after `hamr setup --ocr-only` with Tesseract installed. An installed Linux build resumed after an OCR interruption and published a verified two-page scan as a chaptered M4B. [Qualification and scope](../RELEASE.md#scanned-and-mixed-pdfs)
 
 Searchable PDFs with reliable visible text go straight to planning. In a mixed PDF, Hamr retains native text and reads scan insets in their own crops when their boundaries are clear. It keeps competing visible and hidden text observations, checks reliable column geometry, and reports unresolved regions by page. On a uniquely captioned figure, the companion keeps the crop, its recognized labels, and its authored caption together. Captions follow the normal reading policy.
 

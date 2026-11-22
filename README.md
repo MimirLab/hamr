@@ -15,6 +15,7 @@
 
 <p align="center">
   <a href="#epub-to-audiobook-in-three-commands">Make a book</a> ·
+  <a href="#what-hamr-can-do">What hamr can do</a> ·
   <a href="#listen">Meet the cast</a> ·
   <a href="docs/USAGE.md">The field guide</a> ·
   <a href="https://github.com/MimirLab/hamr/releases/latest">Downloads</a>
@@ -56,7 +57,18 @@ e6ff67e457854bb6 · ready · Ravens in Winter
 /tmp/hamr-demo/Audiobooks/e6ff67e457854bb6-r1/book.m4b
 ```
 
-Use the same command with a PDF, Markdown, or `.txt` file. For scanned PDFs, install Tesseract and run `hamr setup --ocr-only`. If interrupted, run `hamr resume JOB` with the printed job ID. Add `--yes` for unattended conversion. If publication is on hold, `hamr status JOB` shows the planned output path and your next step.
+Use the same command with a PDF, Markdown, or `.txt` file. Add `--yes` for unattended conversion.
+
+## What hamr can do
+
+| When you want to… | Where to start |
+| --- | --- |
+| **Hear a book read naturally** | Contextual reading is on by default. Hamr uses nearby words and document structure to read abbreviations, amounts, dates and times. The companion preserves the original wording. Use `hamr plan DOCUMENT --json` to inspect the reading before synthesis. [Reading and pronunciation controls](docs/USAGE.md#tune-readings-that-depend-on-context) |
+| **Listen to a scanned PDF** | With Tesseract installed, `hamr setup --ocr-only` adds offline English OCR. Hamr can read simple two-column scans and recognize scanned regions beside selectable text. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr) |
+| **Pick up where a book stopped** | `hamr resume JOB` checks and reuses saved takes. A retake changes one passage, and `hamr status JOB` shows whether a book is ready or needs review. [Recovery and repair](#resume-and-repair) |
+| **Check the words before export** | The ordinary book command runs local speech checks before publishing. `hamr status JOB` gives the next step if a passage needs review. [Offline checks and unattended queues](docs/USAGE.md#unattended-speech-and-verification) |
+
+The [release notes](RELEASE.md) record completed render, playback and interruption tests and the scope of each result.
 
 ## Listen
 
@@ -103,7 +115,9 @@ man hamr
 
 The installer checks the wheel version and installs the command and Linux manual for your account. If you prefer to run directly from a source checkout, stay in that directory and use `uv run hamr` in place of `hamr`. For example, `uv run hamr setup` runs setup through the checkout’s environment and `uv run hamr open "/path/to/My book.epub" --voice cast:nigel-thornberry` makes a book. Use the installed command for work outside the checkout.
 
-Linux is the qualified platform. [Windows preview installation and engine research](docs/ENGINES.md) covers the other route and the evidence still needed for CUDA and Apple Silicon.
+If a checkout reports a missing speech checker, run `uv run hamr setup --checks-only` from that checkout with the same `--home` option, if used. Checker setup requires no speech engine profile. `git pull` updates the checkout. Reinstall the wheel to update the separate `hamr` command on PATH.
+
+Linux has the broadest test coverage. Windows x64 with CPU Q8 has passed installation, checked M4B publication and forced-exit recovery on a native runner. See the [Windows installation and engine guide](docs/ENGINES.md#what-hamr-can-use) for that route and the status of Windows Vulkan.
 
 ### Which profile should I choose?
 
@@ -113,27 +127,27 @@ With a compatible graphics device and enough free memory, setup offers the full 
 
 **Vulkan** lets the speech engine use your GPU through its graphics driver. It supports AMD, NVIDIA and Intel hardware with a suitable driver. **F16** stores the model's weights at 16-bit precision. **Quantization** uses fewer bits: Q8, Q6 and Q4 need progressively less storage and memory, but may change the voice's detail and delivery. A smaller model can be faster, though that depends on the hardware.
 
-Setup downloads the selected engine and its weights, then a separate CPU speech checker. The checker models add about 605 MiB plus the Python runtime dependencies. Setup verifies the pinned files and checks that the models load.
+Setup downloads the selected engine and a separate CPU speech checker. The two checker models add about 605 MiB plus runtime dependencies. Setup verifies the pinned files and checks that the models load.
 
-| Profile | Supported hardware¹ | Approx. peak VRAM² | System RAM budget² | Fresh download³ | Quality / speed and testing |
+| Profile | Hardware route¹ | Approx. peak VRAM² | System RAM budget² | Fresh download³ | Quality / speed and testing |
 | --- | --- | ---: | ---: | ---: | --- |
 | `vulkan-f16` | AMD / NVIDIA / Intel Vulkan GPU | 7–9 GiB | 4–8 GiB | 5.92 GiB | Least weight compression. **Locally tested**, including long narration. |
-| `vulkan-q8` | AMD / NVIDIA / Intel Vulkan GPU | 4–6 GiB | 3–6 GiB | 3.39 GiB | Good starting balance of size and precision; often faster. **Locally tested** on short controls. |
-| `vulkan-q6` | AMD / NVIDIA / Intel Vulkan GPU | 3.5–5 GiB | 3–6 GiB | 2.93 GiB | More compression; compare voice quality and speed. **Implemented, experimental.** |
-| `vulkan-q4` | AMD / NVIDIA / Intel Vulkan GPU | 3–4.5 GiB | 3–6 GiB | 2.43 GiB | Smallest GPU model; more precision loss. **Implemented, experimental.** |
-| `vulkan-q8-cpu-text-encoder` | Vulkan GPU + CPU text encoding | 4–6 GiB | 8–12 GiB | 3.39 GiB | Same Q8 weights; moves text encoding to CPU, potentially saving VRAM at a speed cost. Savings unmeasured. **Implemented, experimental.** |
-| `cpu-f16` | CPU; no GPU execution | 0 | 10–16 GiB | 5.92 GiB | Least compression, largest RAM budget; potentially very slow. **Implemented, experimental.** |
-| `cpu-q8` | CPU; no GPU execution | 0 | 8–12 GiB | 3.39 GiB | Less compression than Q6/Q4, more RAM. **Short control tested.** Long-book performance depends on the CPU. |
-| `cpu-q6` | CPU; no GPU execution | 0 | 7–11 GiB | 2.93 GiB | Intermediate RAM/precision choice. **Implemented, experimental.** |
-| `cpu-q4` | CPU; no GPU execution | 0 | 6–10 GiB | 2.43 GiB | Smallest CPU model; may generate much slower than playback. **Implemented, experimental.** |
+| `vulkan-q8` | AMD / NVIDIA / Intel Vulkan GPU | 4–6 GiB | 3–6 GiB | 3.39 GiB | Smaller weights and lower memory use. **Tested on Radeon** with matched voice controls and chaptered books. |
+| `vulkan-q6` | AMD / NVIDIA / Intel Vulkan GPU | 3.5–5 GiB | 3–6 GiB | 2.93 GiB | More compression. Available in setup, render trials pending. |
+| `vulkan-q4` | AMD / NVIDIA / Intel Vulkan GPU | 3–4.5 GiB | 3–6 GiB | 2.43 GiB | Smallest GPU model. Available in setup, render trials pending. |
+| `vulkan-q8-cpu-text-encoder` | Vulkan GPU + CPU text encoding | 4–6 GiB | 8–12 GiB | 3.39 GiB | Moves text encoding to CPU. Available in setup, memory savings and render trials pending. |
+| `cpu-f16` | CPU | 0 | 10–16 GiB | 5.92 GiB | Least compression and largest RAM budget. Available in setup, render trials pending. |
+| `cpu-q8` | CPU | 0 | 8–12 GiB | 3.39 GiB | **Tested on Linux and Windows** with short audiobook renders, speech checks and resume after forced exit. Long-book timing depends on the CPU. |
+| `cpu-q6` | CPU | 0 | 7–11 GiB | 2.93 GiB | Intermediate RAM and precision. Available in setup, render trials pending. |
+| `cpu-q4` | CPU | 0 | 6–10 GiB | 2.43 GiB | Smallest CPU model. Available in setup, render trials pending. |
 
-¹ All profiles require Linux x86_64 and AVX2. GPU profiles also need a working Vulkan driver. CPU profiles still need the Vulkan loader. The table covers Linux. [Windows preview](docs/ENGINES.md#what-hamr-can-use) uses the separate pinned Windows runtime.
+¹ Estimates are for Linux x86-64 with AVX2. GPU profiles need a Vulkan driver. CPU profiles still need the Vulkan loader. The [Windows setup](docs/ENGINES.md#what-hamr-can-use) uses its own pinned runtime.
 
 ² Memory figures are estimates for planning. GPU ranges use the [upstream footprints](https://github.com/HoppouAI/Breeze-TTS-2.cpp/blob/4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6/README.md#weights) with headroom; system RAM and CPU-offload peaks haven't been measured. Other applications, reference length and parallel generation affect what fits. Integrated graphics share system RAM.
 
 ³ Downloads include the runtime, selected weights and model terms, before cache reuse. Leave at least another 1 GiB for extraction and headroom. One GiB is 1,024³ bytes.
 
-F16 has been used for long narration on a Radeon RX 6800 XT with 16 GiB; Q8 has passed matched controls on the same card, including a continuous take over 45 seconds. The Q8, Q6 and Q4 files compress eligible tensors in the depth decoder and codec. [Exact tensor recipes and comparison method](docs/ENGINES.md#what-the-quantization-labels-mean). The other seven profiles are implemented but still experimental. CUDA, MLX and other research entries listed separately by `hamr profiles` have no setup adapter yet.
+F16 has rendered long narration on a Radeon RX 6800 XT with 16 GiB. Q8 has produced a continuous take over 45 seconds on the same card. See the [measured controls and tensor recipes](docs/ENGINES.md#what-the-quantization-labels-mean). `hamr profiles` lists native CUDA and MLX under research. Those paths still need setup adapters.
 
 As a rough starting point: **12–16 GiB GPU → F16**, **8 GiB → Q8**, **6 GiB → Q6**, **4 GiB → Q4**. F16 should have at least 9 GiB available; Q4 on a 4 GiB card will be tight. Start small on integrated graphics. Without usable GPU support, try `cpu-q4` if you have enough system RAM. Doctor checks current memory, so an open game or another model can change its recommendation.
 
@@ -158,7 +172,7 @@ hamr setup
 hamr setup --profile vulkan-f16
 ```
 
-Setup checks that the model starts before activating it. In scripts, supply `--profile`; the chooser needs a terminal. More detail is in the [setup guide](docs/USAGE.md#install-and-setup).
+Setup checks that the model starts before activating it. In scripts, supply `--profile` or use `--auto` on eligible hardware. More detail is in the [setup guide](docs/USAGE.md#install-and-setup).
 
 ### Optional checks before rendering
 
