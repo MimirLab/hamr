@@ -466,7 +466,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                     next_block = doc.blocks[following]
                     if next_block.id not in heading_ids and next_block.id not in overrides:
                         from .performance import pdf_inline_event_continues
-                        continued_inline_event = pdf_inline_event_continues(b,next_block)
+                        continued_inline_event = pdf_inline_event_continues(b,next_block,delivery_context)
                 if not continued_inline_event:
                     flush()
                     if utterances:utterances[-1]['pause_samples']=8400

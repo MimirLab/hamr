@@ -11,6 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
+CONTEXT_VERSION = 7
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -375,6 +376,11 @@ def sentence_seam(text, start, end):
     return any(span['end']==boundary for span in sentence_spans(before+' '+after))
 
 
+def inline_event_rules(registry, version):
+    return {kind:recipe for kind,recipe in registry['events'].items()
+            if (since := recipe.get('inline_since')) is not None and since<=version}
+
+
 def inline_event_site(source, recipes):
     if len(source)>480 or not any(marker in source for marker in '[('):
         return None
@@ -390,8 +396,8 @@ def inline_event_site(source, recipes):
         return None
     if not sentence_seam(source[start:end],mark.start()-start,mark.end()-start):
         return None
-    kind = next((kind for kind,rule in recipes.items()
-                 if rule.get('inline_instruction') and mark[0][1:-1].strip().lower() in rule['spellings']),None)
+    spelling = mark[0][1:-1].strip().lower()
+    kind = next((kind for kind,rule in recipes.items() if spelling in rule['spellings']),None)
     if not kind:
         return None
     reporting = '|'.join(NEUTRAL_REPORTING)
@@ -400,13 +406,14 @@ def inline_event_site(source, recipes):
     return kind, quote, mark
 
 
-def pdf_inline_event_continues(left, right):
+def pdf_inline_event_continues(left, right, context_version):
     if (left.role!='body' or right.role!='body' or left.issue or right.issue
             or left.chapter!=right.chapter or left.locator.get('page')!=right.locator.get('page')
             or not right.source.lstrip().startswith(('[','('))):
         return False
     source = ' '.join(delivery_text(block, True) for block in (left,right))
-    return inline_event_site(source,loadjson(RULES_FILE)['events']) is not None
+    rules = inline_event_rules(loadjson(RULES_FILE),context_version or CONTEXT_VERSION)
+    return inline_event_site(source,rules) is not None
 
 
 def inline_vocal_event(source, speech, block, recipes):
@@ -571,7 +578,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     document_policy=plan['policy'].get('document', {})
     disabled, preference = performance_preferences(document_policy, {b.id for b in document.blocks})
     registry = loadjson(RULES_FILE)
-    version = context_version or (6 if automatic_prose else 1)
+    version = context_version or (CONTEXT_VERSION if automatic_prose else 1)
     full_delivery = version >= 3
     recipes = registry['directions']
     custom = attribution_preferences(document_policy.get('performance',{}),recipes)
@@ -584,6 +591,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         return
     verbs,cue_pattern,postposed = attribution_rules(registry,version,custom)
     voice_rules = voice_description_rules(registry['context']['attached_voice']) if version>=5 else None
+    inline_rules = inline_event_rules(registry,version)
     modern_context = version >= 2
     events = {label:kind for kind,item in registry['events'].items() for label in item['spellings']}
     by_id = {b.id:b for b in document.blocks}
@@ -626,7 +634,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 event = next_source, 'after', blocks[1], 0, ''
         elif (match:=dialogue_attribution(source,cue_pattern,postposed)) and (kind:=verbs.get(attribution_phrase(match))):
             direction = kind, match
-        elif version>=6 and (inline_event:=inline_vocal_event(source,neutral,sources[0],registry['events'])):
+        elif inline_rules and (inline_event:=inline_vocal_event(source,neutral,sources[0],inline_rules)):
             pass
         elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed)) and (
                 kind:=verbs.get(attribution_phrase(owned[0]))):

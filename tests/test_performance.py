@@ -623,6 +623,29 @@ def test_inline_authored_sigh_is_one_automatic_request(tmp_path,monkeypatch,caps
         assert performance.lexical_observation(unit,uncertain)==uncertain
 
 
+def test_inline_cough_uses_the_same_continuous_request_at_the_new_context_version(tmp_path,monkeypatch,capsys):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    store=Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    source=tmp_path/'book.md'
+    source.write_text('“The powder gets everywhere. [cough] We need to open a window,” she said.')
+    older=planner.plan(inspect(source),delivery_context=6)
+    assert older['performance']['candidates']==0
+    command=['--home',str(store.root),'queue',str(source),'--voice','cast:nigel-thornberry','--json']
+    assert cli.main(command)==0
+    saved=store.get(json.loads(capsys.readouterr().out)['job'])
+    unit,=saved['plan']['utterances']
+    assert unit['text']==source.read_text().replace('[cough] ','')
+    actual,opts=performance.request(unit)
+    assert actual==source.read_text().replace('[cough]','(cough)')
+    assert opts['instruction']==loadjson(performance.RULES_FILE)['events']['cough']['inline_instruction']
+    event=unit['performance']['event']
+    assert event['position']=='within' and event['word_offset']==4
+    heard='The powder gets everywhere. [coughing] We need to open a window, she said.'
+    assert performance.lexical_observation(unit,heard)==heard.replace('[coughing] ','')
+    assert performance.lexical_observation(unit,heard.replace('open a window','open it'))==heard.replace('open a window','open it')
+
+
 @pytest.mark.parametrize('text',[
     '“The last box is [sigh] empty,” she said.',
     '“Ask Dr. [sigh] Allen about it,” she said.',
@@ -636,23 +659,27 @@ def test_inline_sound_requires_one_owned_sentence_break(tmp_path,text):
     assert all('performance_candidate' not in u for u in planner.plan(inspect(source))['utterances'])
 
 
-def test_inline_sigh_keeps_both_native_pdf_fragments(tmp_path):
+@pytest.mark.parametrize(('first_line','second_line','prior_version','cue'),[
+    ('“The last box is empty.','[sigh] At least we found the key,” she said.',5,'[sigh]'),
+    ('“The powder gets everywhere.','[cough] We need to open a window,” she said.',6,'[cough]'),
+])
+def test_inline_event_keeps_both_native_pdf_fragments(tmp_path,first_line,second_line,prior_version,cue):
     canvas=pytest.importorskip('reportlab.pdfgen.canvas')
     source=tmp_path/'story.pdf'
     pdf=canvas.Canvas(str(source))
     pdf.setFont('Helvetica',16)
-    pdf.drawString(72,710,'“The last box is empty.')
-    pdf.drawString(72,688,'[sigh] At least we found the key,” she said.')
+    pdf.drawString(72,710,first_line)
+    pdf.drawString(72,688,second_line)
     pdf.save()
     document=inspect(source)
-    assert len(planner.plan(document,delivery_context=5)['utterances'])==2
+    assert len(planner.plan(document,delivery_context=prior_version)['utterances'])==2
     unit,=planner.plan(document)['utterances']
     event=unit['performance_candidate']
     first,second=unit['sources']
     evidence,=event['evidence']
     assert [part['block'] for part in evidence['quotation_parts']]==[first,second]
-    assert event['source']=={'block':second,'span':[0,6]}
-    assert event['speech']=='“The last box is empty. At least we found the key,” she said.'
+    assert event['source']=={'block':second,'span':[0,len(cue)]}
+    assert event['speech']==first_line+' '+second_line.removeprefix(cue+' ')
 
 
 def test_book_policy_adds_an_exact_attribution_without_changing_other_requests(tmp_path,monkeypatch,capsys):

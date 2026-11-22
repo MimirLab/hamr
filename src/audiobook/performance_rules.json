@@ -5,7 +5,8 @@
     "7e4cecbe03a10c7f771f8f59b8a82a26e4f8f718855cd1fca1cc8b166e21e639",
     "9ba1306b339e98c4436600491f4a09ef334d8dd615611e8647b55967afee4b52",
     "bf06eb8e82fa32de416f92b6024059f8d677c4f888e1c07ec8222fe9991dfea1",
-    "b07278bddd3b57644dedd1dd56dea29f8d148a9e75790d00d8666ceb69edb909"
+    "b07278bddd3b57644dedd1dd56dea29f8d148a9e75790d00d8666ceb69edb909",
+    "741865068c5676e2ed1b669433c0b2a8e607d3b42850410e5068f918bc3f3f80"
   ],
   "directions": {
     "whisper": {
@@ -234,6 +235,7 @@
   "events": {
     "sigh": {
       "spellings": ["sigh", "sighs"], "marker": "(sigh)",
+      "inline_since": 6,
       "inline_instruction": "Give one brief natural sigh at the marked spot between the two quoted sentences. Keep the usual reference voice and say every word, including the attribution.",
       "asr_labels": ["sigh", "sighs"], "asr_annotations": ["sigh", "sighs", "sighing"],
       "interjections_after": ["ah", "huh"]
@@ -249,7 +251,12 @@
       "interjections_before": ["mm-hmm", "mm hmm", "mhm"]
     },
     "gasp": {"spellings": ["gasp", "gasps"], "marker": "(gasp)", "asr_labels": ["gasp", "gasps"], "asr_annotations": ["gasp", "gasps", "gasping"]},
-    "cough": {"spellings": ["cough", "coughs"], "marker": "(cough)", "asr_labels": ["cough", "coughs"], "asr_annotations": ["cough", "coughs", "coughing"]},
+    "cough": {
+      "spellings": ["cough", "coughs"], "marker": "(cough)",
+      "inline_since": 7,
+      "inline_instruction": "Give one quick cough at the marker, then continue normally.",
+      "asr_labels": ["cough", "coughs"], "asr_annotations": ["cough", "coughs", "coughing"]
+    },
     "clear_throat": {"spellings": ["clear throat", "clears throat", "clears the throat", "clearing throat"], "marker": "(clears throat)", "asr_labels": ["clear throat", "clears throat", "throat clearing"], "asr_annotations": ["clear throat", "clears throat", "clearing throat", "throat clearing"]},
     "groan": {"spellings": ["groan", "groans"], "marker": "(groan)", "asr_labels": ["groan", "groans"], "asr_annotations": ["groan", "groans", "groaning"]},
     "sniffle": {"spellings": ["sniffle", "sniffles"], "marker": "(sniffle)", "asr_labels": ["sniffle", "sniffles"], "asr_annotations": ["sniffle", "sniffles", "sniffling"]},

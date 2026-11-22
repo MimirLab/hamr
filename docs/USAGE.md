@@ -114,7 +114,7 @@ Reporting phrases also distinguish firm emphasis and calm delivery. “Ada repli
 
 Voice descriptions attached to the reporting clause can also direct one quotation. “She said, her voice barely audible” asks for softer speech when the possessive refers to the same speaker. An introduction such as “She said, in a whisper:” directs the quotation that follows. Hamr records the reporting verb, voice description and quoted span together.
 
-A written sigh can also fall between two complete sentences in one attributed quotation. For example, in “The last box is empty. [sigh] At least we found the key,” she said, Hamr sends one continuous speech request and asks Breeze to place the sigh at the marked sentence break.
+A written sigh or cough can also fall between two complete sentences in one attributed quotation. For example, in “The last box is empty. [sigh] At least we found the key,” she said, Hamr sends one continuous speech request and asks Breeze to place the sigh at the marked sentence break.
 
 Authored sounds are available in the ordinary workflow. Listening evidence includes leading sighs for Nigel Thornberry and Cave Johnson on Linux CPU Q8, trailing sighs on Linux Vulkan Q8, and Nigel's opening chuckle on Vulkan Q8 and F16. The plan records the direction that ran. Delivery varies with the voice, engine and passage.
 
