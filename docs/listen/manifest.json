@@ -1,321 +1,374 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "hamr-generated-introductions",
   "recordings": [
     {
       "character": "nigel-thornberry",
       "file": "nigel-thornberry.mp3",
       "text": "Every rustle is a mystery, every muddy footprint an invitation! Come along. There’s an extraordinary living world out there, and I intend to introduce you to as much of it as possible!",
-      "sha256": "adb41a9d88146e8793bbc8bcaf3fa66b815cbf3f8a2537d8abe494aaafd8351a",
-      "seconds": 10.8
+      "sha256": "fa6f757f82bd9c4613e43baff7be212aeead629f862160854b3f3549e8dd2eee",
+      "seconds": 10.8,
+      "source_sha256": "adb41a9d88146e8793bbc8bcaf3fa66b815cbf3f8a2537d8abe494aaafd8351a"
     },
     {
       "character": "david-attenborough",
       "file": "david-attenborough.mp3",
       "text": "An entire world unfolds beneath our feet, largely unnoticed. If we slow down and look carefully, the smallest lives can reveal something extraordinary about the world we share.",
-      "sha256": "3a6c29d6508e4640521030564cda519bc8e9851cf19278de80ba9b0742e64bc6",
-      "seconds": 10.64
+      "sha256": "0103bc13fea74289f4ac273d2624d5b1561c6d81e8bfa6b59df60dd89d3117ba",
+      "seconds": 10.64,
+      "source_sha256": "3a6c29d6508e4640521030564cda519bc8e9851cf19278de80ba9b0742e64bc6"
     },
     {
       "character": "carl-sagan",
       "file": "carl-sagan.mp3",
       "text": "Look up for a moment. Some of that light began its journey before the first telescope was built. And here we are, a small world that learned to look back.",
-      "sha256": "eb4d42d7f0006d1324bddd63fe008cf0498aa0e1136d30441a3a40c19f72cdbd",
-      "seconds": 9.44
+      "sha256": "aa00181ecbd7883953f32a5463572a946c771733752868b7ccd4c1d465a45fd1",
+      "seconds": 9.44,
+      "source_sha256": "eb4d42d7f0006d1324bddd63fe008cf0498aa0e1136d30441a3a40c19f72cdbd"
     },
     {
       "character": "james-burke",
       "file": "james-burke.mp3",
       "text": "History rarely knows what it’s inventing. Follow one curious idea through a few unlikely encounters, and suddenly you’re living in a world nobody involved could possibly have intended.",
-      "sha256": "e3bd47c371592cb4ccba503042aff5f922221b31898dc137fa2c12594ee1c5b5",
-      "seconds": 10.72
+      "sha256": "f434ee9b5dde6714f24b31b1790bd43668a136bdc1129c35b799df0dcccd8d44",
+      "seconds": 10.72,
+      "source_sha256": "e3bd47c371592cb4ccba503042aff5f922221b31898dc137fa2c12594ee1c5b5"
     },
     {
       "character": "fourth-doctor",
       "file": "fourth-doctor.mp3",
       "text": "I’ve never trusted a locked door, a tidy explanation, or anybody who says curiosity is dangerous. Come along! Somebody, somewhere, is having a fascinating problem—and may need a hand.",
-      "sha256": "bdae99a4099d3da5f5e86e7aa2dc13cde1ee2de2311ac9bbc51d31a6262d4067",
-      "seconds": 12.4
+      "sha256": "424d299a7888f0c3110d54227df8cb7b41c49e952e6d9df200f0711c158a4dc9",
+      "seconds": 12.4,
+      "source_sha256": "bdae99a4099d3da5f5e86e7aa2dc13cde1ee2de2311ac9bbc51d31a6262d4067"
     },
     {
       "character": "garak",
       "file": "garak.mp3",
       "text": "People tell such revealing stories when they believe they are hiding something. Sit with me. We shall admire the embroidery, and quietly examine the stitching.",
-      "sha256": "10b2841f35e5fc04c18a24af61381449757b17795af0a5d64f77f0576f7105a8",
-      "seconds": 10.8
+      "sha256": "eb543c71e86c36412fea6e2b198941cd920583964c9ed3383880c9333cf831bb",
+      "seconds": 10.8,
+      "source_sha256": "10b2841f35e5fc04c18a24af61381449757b17795af0a5d64f77f0576f7105a8"
     },
     {
       "character": "claudius",
       "file": "claudius.mp3",
       "text": "They thought me too foolish to notice, too insignificant to fear. So I listened. You would be astonished what powerful people reveal when they have forgotten you are in the room.",
-      "sha256": "2a72ecc63a3d15889cd75d4a7a3a124dc0030264525a08fae25fc21c5703b9cf",
-      "seconds": 12.32
+      "sha256": "f85c1906715f499e82e51c34bef3c8db2fe0e3740306bd7f5c5f5deafa268881",
+      "seconds": 12.32,
+      "source_sha256": "2a72ecc63a3d15889cd75d4a7a3a124dc0030264525a08fae25fc21c5703b9cf"
     },
     {
       "character": "werner-herzog",
       "file": "werner-herzog.mp3",
       "text": "Look how stubbornly we pursue meaning in a world that has never promised any. There is folly here, certainly. But also courage, and a strange tenderness we should not overlook.",
-      "sha256": "785bfcb8af4e8a1d20075a2e5a738e6b5833aa1d113c6e26e3e073b4805c9650",
-      "seconds": 15.52
+      "sha256": "0b8e07bb59fde4e4b2659bcc7f0ffdb6941ab56672932630ffc4172e31700439",
+      "seconds": 15.52,
+      "source_sha256": "785bfcb8af4e8a1d20075a2e5a738e6b5833aa1d113c6e26e3e073b4805c9650"
     },
     {
       "character": "lorewalker-cho",
       "file": "lorewalker-cho.mp3",
       "text": "A kingdom may fall, and its monuments may crumble, yet a story can still find its way to the fire. Sit, my friend. Someone deserves to be remembered tonight.",
-      "sha256": "f98fd34b779ab1fc97a1b4326460a94aa86db2bec700c606bc339515fe88c359",
-      "seconds": 11.2
+      "sha256": "6515d7982d30659776b8e7f4a5798961d21b2a8edbcfd9c79de3b1d0c2492750",
+      "seconds": 11.2,
+      "source_sha256": "f98fd34b779ab1fc97a1b4326460a94aa86db2bec700c606bc339515fe88c359"
     },
     {
       "character": "the-stanley-parable-narrator",
       "file": "the-stanley-parable-narrator.mp3",
       "text": "The listener was promised a journey full of choices. Naturally, I had selected the most interesting ones in advance. All that remained was for them to cooperate.",
-      "sha256": "4bec449d56168de77ad1f5305ee04482528ff8cc20a477fb67f6460532374776",
-      "seconds": 10.56
+      "sha256": "19e29801408ccd11f44b3ac1636fae8ee2fd9d1f65b48d81fc0ae7fd92b73f6b",
+      "seconds": 10.56,
+      "source_sha256": "4bec449d56168de77ad1f5305ee04482528ff8cc20a477fb67f6460532374776"
     },
     {
       "character": "cave-johnson",
       "file": "cave-johnson.mp3",
       "text": "The universe did not come with instructions. Good. We’ll write them ourselves, preferably before the results reach the board of directors. Let’s discover something they’ll have to name after us!",
-      "sha256": "e437bed11b6f992a81c84f43599cb0ae72fd3ccb492249f3b532939595e96b46",
-      "seconds": 11.2
+      "sha256": "879e0880eab8049cf24f02985980d46d253cf637fd9d45d726e9f3dfa79921f2",
+      "seconds": 11.2,
+      "source_sha256": "e437bed11b6f992a81c84f43599cb0ae72fd3ccb492249f3b532939595e96b46"
     },
     {
       "character": "handsome-jack",
       "file": "handsome-jack.mp3",
       "text": "I’m going to save the world, explain why everyone else is an idiot, and somehow still get blamed for being the only competent person here. You’re welcome, by the way.",
-      "sha256": "1e2678ffa2b3855c474f708d84a548a521c212ade9eb5598d082dc2d6ceb6707",
-      "seconds": 8.64
+      "sha256": "b57bec0181289fd44c4d5bc5fde1ff292012913299dcddfc9e62e9d7435b6fca",
+      "seconds": 8.64,
+      "source_sha256": "1e2678ffa2b3855c474f708d84a548a521c212ade9eb5598d082dc2d6ceb6707"
     },
     {
       "character": "andrew-ryan",
       "file": "andrew-ryan.mp3",
       "text": "Bring me the restless mind, the unfinished idea, the impossible ambition. We shall see what a person can build when they refuse to let another man’s fear become their ceiling.",
-      "sha256": "8a15e4b75e276a5b87bd534224db8260d621290e9fab0c948071a2b4b056bfab",
-      "seconds": 14.4
+      "sha256": "c0307be4e5c3ee927f0fcd8621f7d7193be7490bd2545832ca3835550fb04f7d",
+      "seconds": 14.4,
+      "source_sha256": "8a15e4b75e276a5b87bd534224db8260d621290e9fab0c948071a2b4b056bfab"
     },
     {
       "character": "mr-house",
       "file": "mr-house.mp3",
       "text": "While others argued over the ruins, I was planning what comes after them. Pay attention. Civilization is an engineering problem, and sentiment is an expensive substitute for a solution.",
-      "sha256": "2127e0120abf9cc22e705ecb7b5c9738d1d7714d21b8136b0f893080d27de2a5",
-      "seconds": 12.88
+      "sha256": "585aa0aa1081339e94a0ca543c39a42e81e6627b0229c63b5d5799865ced46d0",
+      "seconds": 12.88,
+      "source_sha256": "2127e0120abf9cc22e705ecb7b5c9738d1d7714d21b8136b0f893080d27de2a5"
     },
     {
       "character": "wallace-breen",
       "file": "wallace-breen.mp3",
       "text": "Uncertainty can be exhausting. Allow me to arrange the facts into something reassuring, and you may discover how comfortably a difficult truth can be lived with.",
-      "sha256": "ff3eeaba0959b1fecd5df82926726b83c431d427d9e77f17faa4e8980fe5993c",
-      "seconds": 11.44
+      "sha256": "adbbf992b80fbb1fc3a282780d61b1dfb7d9b50e0df744fb60c43671a3316b1e",
+      "seconds": 11.44,
+      "source_sha256": "ff3eeaba0959b1fecd5df82926726b83c431d427d9e77f17faa4e8980fe5993c"
     },
     {
       "character": "j-jonah-jameson",
       "file": "j-jonah-jameson.mp3",
       "text": "Somebody’s got power, somebody’s got an excuse, and somebody thinks we’ll print it without asking questions. Get me the facts. We’re going to make a little noise!",
-      "sha256": "619bd31ab159256082c32abd95b30d184018cd72fbe732144840b86857d89307",
-      "seconds": 7.28
+      "sha256": "24dd086313841a554ec5e45583efe080fabca0cb1741136011c37055178db658",
+      "seconds": 7.28,
+      "source_sha256": "619bd31ab159256082c32abd95b30d184018cd72fbe732144840b86857d89307"
     },
     {
       "character": "vizzini",
       "file": "vizzini.mp3",
       "text": "I have considered every angle, anticipated every objection, and reached a conclusion of remarkable brilliance. Naturally, our task now is to discover why everybody else has failed to appreciate it.",
-      "sha256": "107b110b6b78da5046962d9c756cfa8d803c259c608218b9c20da18e8f1c936f",
-      "seconds": 10.88
+      "sha256": "b540d832ff8b54e58cd1a3c2a265538ed274a9fbd0f7277b0871d182f809d448",
+      "seconds": 10.88,
+      "source_sha256": "107b110b6b78da5046962d9c756cfa8d803c259c608218b9c20da18e8f1c936f"
     },
     {
       "character": "trade-prince-gallywix",
       "file": "trade-prince-gallywix.mp3",
       "text": "I love a story about ambition. Preferably somebody else’s ambition, doing all the work, while I collect a reasonable percentage. Come on, pal. Let’s find the profitable part.",
-      "sha256": "38989e0d2ae4254ac94588cfe7de9345c1c7178ceecc832ac7caf3f8dd9baa86",
-      "seconds": 13.2
+      "sha256": "bd3925f16fe2889701df47a3c8906f6e85cdc9a3b054ce76c7fdf5584b2e0b61",
+      "seconds": 13.2,
+      "source_sha256": "38989e0d2ae4254ac94588cfe7de9345c1c7178ceecc832ac7caf3f8dd9baa86"
     },
     {
       "character": "dale-gribble",
       "file": "dale-gribble.mp3",
       "text": "Nothing is unrelated. The missing page, the budget committee, that unmarked van. Follow me. We’re going to connect the dots before the government works out which dots we’ve found.",
-      "sha256": "13c63ce67f4fe111bc9c635e2f5d32375cdc776e4ff715175581d78751349128",
-      "seconds": 11.68
+      "sha256": "58bdad5820d59f3608e318ab699bce1c346530ca47782d880ae2dc98f0901940",
+      "seconds": 11.68,
+      "source_sha256": "13c63ce67f4fe111bc9c635e2f5d32375cdc776e4ff715175581d78751349128"
     },
     {
       "character": "hank-hill",
       "file": "hank-hill.mp3",
       "text": "A thing worth knowing is worth understanding properly. We’ll take our time, use plain language, and leave the place a little better than we found it. That’s good work.",
-      "sha256": "4873102b4faef1f53309a06887d9e615a4345b528fc1b9b4ca69aac29b7f59b2",
-      "seconds": 9.52
+      "sha256": "2aa56bdff424be3978774bc43acb5985be798e5edee97b42d937dc903f8b4907",
+      "seconds": 9.52,
+      "source_sha256": "4873102b4faef1f53309a06887d9e615a4345b528fc1b9b4ca69aac29b7f59b2"
     },
     {
       "character": "peggy-hill",
       "file": "peggy-hill.mp3",
       "text": "I believe everyone deserves the chance to learn from an exceptional mind. Fortunately, you’re listening to one. We’ll begin with the material, and then improve it with my personal insight.",
-      "sha256": "73f06a18e23246f831369dc1bb76b800eeaa1824f06f004678472b5b2b209d4c",
-      "seconds": 9.36
+      "sha256": "55226a610c913bd4c58e527d17e284dda0c8ff77b4a5b64b6566d7f481452f64",
+      "seconds": 9.36,
+      "source_sha256": "73f06a18e23246f831369dc1bb76b800eeaa1824f06f004678472b5b2b209d4c"
     },
     {
       "character": "randy-marsh",
       "file": "randy-marsh.mp3",
       "text": "I was just trying to learn something interesting, and now I’ve discovered a problem that apparently only I can solve. This is bigger than a book. This is a responsibility.",
-      "sha256": "d18a86cf1deeff96f4d075598c5e3a2c64a522edad80aec842271f34baf2b64a",
-      "seconds": 9.28
+      "sha256": "7e152387ae66a36fe655fd75906c16e983c931e61f9ff8410c324d72d097be46",
+      "seconds": 9.28,
+      "source_sha256": "d18a86cf1deeff96f4d075598c5e3a2c64a522edad80aec842271f34baf2b64a"
     },
     {
       "character": "eric-cartman",
       "file": "eric-cartman.mp3",
       "text": "Okay, here’s how this is gonna work. I get the good parts, you listen, and when everything goes wrong, we agree that somebody else made a very stupid decision.",
-      "sha256": "d6beab140115b176ef1924dce5a9369bbae256257362715437a71d3af34375e4",
-      "seconds": 6.56
+      "sha256": "7dca92af4b7b098ddd2b5c1a6ee9af7438df300ab8b552d230b0aa2db647d681",
+      "seconds": 6.56,
+      "source_sha256": "d6beab140115b176ef1924dce5a9369bbae256257362715437a71d3af34375e4"
     },
     {
       "character": "rick-sanchez",
       "file": "rick-sanchez.mp3",
       "text": "I can explain how the universe works. That’s the easy part. Figuring out why you should care about any of it is where things get inconvenient. Come on. Bring questions.",
-      "sha256": "536d74b810abe12e8447af106a26dace5b5664cbf3b88d2511fc5b877bf84865",
-      "seconds": 10.0
+      "sha256": "f086e1061b557a9f8fc01e27f54c5b74cb969b3b037eb5125566221f6e905fac",
+      "seconds": 10.0,
+      "source_sha256": "536d74b810abe12e8447af106a26dace5b5664cbf3b88d2511fc5b877bf84865"
     },
     {
       "character": "roger",
       "file": "roger.mp3",
       "text": "I’ve been a duchess, a detective, and the reason several respectable people changed their names. Give me a story, darling. I’ll find someone fabulous to become inside it.",
-      "sha256": "b11819d80aea5a501802037828ce3e80e0a9420f1b93476f42b0104e5f534fba",
-      "seconds": 8.96
+      "sha256": "506d42ec1f2c33d005d5a10151d6612c5dbcab634854309e9d6e7ea51fca9982",
+      "seconds": 8.96,
+      "source_sha256": "b11819d80aea5a501802037828ce3e80e0a9420f1b93476f42b0104e5f534fba"
     },
     {
       "character": "stan-smith",
       "file": "stan-smith.mp3",
       "text": "The world makes perfect sense when you’ve got strong principles, a firm handshake, and absolutely no intention of reconsidering either. Stay close. I’ll explain which side we’re supposed to be on.",
-      "sha256": "ff189bee6788f55ea10fce38b295dd4a33a3c0adeba7d0a47a222514f0a4ad21",
-      "seconds": 9.12
+      "sha256": "aeac41e1679c19caf5c39676b4c24ef5db4e9b62148fb947537149c57a9f48fb",
+      "seconds": 9.12,
+      "source_sha256": "ff189bee6788f55ea10fce38b295dd4a33a3c0adeba7d0a47a222514f0a4ad21"
     },
     {
       "character": "michael-scott",
       "file": "michael-scott.mp3",
       "text": "People remember how you make them feel. So I’m going to make this inspiring, educational, and, if the opportunity arises, a little bit about me. We’re going to connect.",
-      "sha256": "33ec7ecd980f6aae8b148b5d6da5d949898022b21cdc103829931faac352dd3e",
-      "seconds": 10.48
+      "sha256": "ba8c07509c59cf70ffb747b4fa8a1ce2fe7b93866107d15fff6731fd03e34d20",
+      "seconds": 10.48,
+      "source_sha256": "33ec7ecd980f6aae8b148b5d6da5d949898022b21cdc103829931faac352dd3e"
     },
     {
       "character": "dwight-schrute",
       "file": "dwight-schrute.mp3",
       "text": "The world rewards preparation, discipline, and the ability to distinguish a genuine emergency from a test I have arranged. Pay attention. By the end, I expect improvement.",
-      "sha256": "8f5d927b6b33fcfee27974965bd6e338bee83a55b9bf8e4b57d4642b00ba84cc",
-      "seconds": 10.88
+      "sha256": "7de4d3b30772a54c28757cf0a69a7e59014f54e89bab41cc40e5ab480413da76",
+      "seconds": 10.88,
+      "source_sha256": "8f5d927b6b33fcfee27974965bd6e338bee83a55b9bf8e4b57d4642b00ba84cc"
     },
     {
       "character": "mr-burns",
       "file": "mr-burns.mp3",
       "text": "Ah, the accumulated wisdom of civilization. How reassuring to find that so much human endeavour can be enjoyed while sitting down and owning the building. Do continue. I may acquire the sequel.",
-      "sha256": "5ae4ce3a7214cfc276bdc3280f7dc25e6efc3faa5085b92448012429e476f0aa",
-      "seconds": 13.44
+      "sha256": "af429f077fe421cc11fde9f5909fe19506bdbac9c1fdb1b8db103a982a92b521",
+      "seconds": 13.44,
+      "source_sha256": "5ae4ce3a7214cfc276bdc3280f7dc25e6efc3faa5085b92448012429e476f0aa"
     },
     {
       "character": "the-brain",
       "file": "the-brain.mp3",
       "text": "Somewhere in these pages is a principle others have overlooked. We shall find it, refine it, and apply it to a problem of global significance. Try not to interrupt the thinking.",
-      "sha256": "5e8ed1fa06083ceca0e86a6019aced478a355b6bc34a6e0a38f18d26cbcf1212",
-      "seconds": 9.84
+      "sha256": "e7d95e56ef4ac4e74fb11a26855b5a347e7fc10f54efb9bd350a597af104076a",
+      "seconds": 9.84,
+      "source_sha256": "5e8ed1fa06083ceca0e86a6019aced478a355b6bc34a6e0a38f18d26cbcf1212"
     },
     {
       "character": "dr-orpheus",
       "file": "dr-orpheus.mp3",
       "text": "Stand back! The dead are terrible at keeping secrets. But that voice is calling someone home. Come closer. Even a sorcerer can listen.",
-      "sha256": "8e30414ccdf366700d8bfaad1eaa3b5a2c4130464450013eed6c5a1ba23390fa",
-      "seconds": 11.76
+      "sha256": "da54e0fe7934be8f9b4af7c94e605196d12744dffb65c7e53c6d8d7ea668954c",
+      "seconds": 11.76,
+      "source_sha256": "8e30414ccdf366700d8bfaad1eaa3b5a2c4130464450013eed6c5a1ba23390fa"
     },
     {
       "character": "jon-irenicus",
       "file": "jon-irenicus.mp3",
       "text": "There are minds that study the world, and minds that cannot endure its limitations. We shall concern ourselves with the latter. Greatness is seldom gentle with the soul that seeks it.",
-      "sha256": "c1761390aaed33a15a2dd4ef41677be9e95a76051f34c956422827e416a8e76d",
-      "seconds": 11.12
+      "sha256": "7b8ddefa0b3c820f1f86481230097bb50a4f4ca6b20253fe5f926da23448cbde",
+      "seconds": 11.12,
+      "source_sha256": "c1761390aaed33a15a2dd4ef41677be9e95a76051f34c956422827e416a8e76d"
     },
     {
       "character": "joshua-graham",
       "file": "joshua-graham.mp3",
       "text": "What we have done follows us. So does the possibility of doing better. Walk with me. These stories concern the long road between conviction, failure, and whatever redemption we can earn.",
-      "sha256": "793d7feca0962632e8d4dd61e789069878a5052d11c2dedd5525a5dc67443a3d",
-      "seconds": 12.0
+      "sha256": "7b0a5f457147140f30e11169d1a75091381a13371b8c1408642f7059edde08c3",
+      "seconds": 12.0,
+      "source_sha256": "793d7feca0962632e8d4dd61e789069878a5052d11c2dedd5525a5dc67443a3d"
     },
     {
       "character": "medivh-the-prophet",
       "file": "medivh-the-prophet.mp3",
       "text": "I have seen what happens when proud people mistake old hatred for wisdom. Listen beyond the familiar story. The warning you need may come from the voice you were taught to fear.",
-      "sha256": "bdc6e2da16218a686144ec3ea29f153f24b4da9a47df6554b45aa392dcb5cfda",
-      "seconds": 12.8
+      "sha256": "a8915794143c45192904a14c252063b3a65cc0808bbb0e9a4d709bef05c26fbf",
+      "seconds": 12.8,
+      "source_sha256": "bdc6e2da16218a686144ec3ea29f153f24b4da9a47df6554b45aa392dcb5cfda"
     },
     {
       "character": "silco",
       "file": "silco.mp3",
       "text": "Everyone talks about changing the world. Few understand what they are willing to sacrifice, or who they will refuse to lose. Those are the stories worth paying attention to.",
-      "sha256": "f94ce41b3a5243bcf1652283893da3a7bb268bf30a3c143388ddc83fe54daaca",
-      "seconds": 11.04
+      "sha256": "999ac73a5db8316c879b0cdd89cd00e57111ede6914c1b8419b959f661c8fb6e",
+      "seconds": 11.04,
+      "source_sha256": "f94ce41b3a5243bcf1652283893da3a7bb268bf30a3c143388ddc83fe54daaca"
     },
     {
       "character": "sylvanas",
       "file": "sylvanas.mp3",
       "text": "They have written endings for me before. I prefer to answer them myself. Come through these stories of ruin, defiance, and the terrible things we do to remain our own.",
-      "sha256": "45fe0e6aa77a2c9f27c759c30888267077ec85522c6a03f840d3e2794d66ed2a",
-      "seconds": 13.44
+      "sha256": "c9bedf8b907c00a0bb11ed6bff6fa6b00dffe76f065ba3489cff5610f059f5c2",
+      "seconds": 13.44,
+      "source_sha256": "45fe0e6aa77a2c9f27c759c30888267077ec85522c6a03f840d3e2794d66ed2a"
     },
     {
       "character": "thrall",
       "file": "thrall.mp3",
       "text": "A leader inherits more than power. There are wounds to remember, enemies to understand, and a future that will outlive us. Sit with me. We will listen for a wiser path.",
-      "sha256": "26184e8138d9f70735e72070ec674af9de104f139cd9aebfd4dc6e613cdb8d53",
-      "seconds": 12.8
+      "sha256": "7db4dfbfdf9adb12d3f5c1a6e8e76d37358f6d49aaa2d7f33fa6c15ee4cecc31",
+      "seconds": 12.8,
+      "source_sha256": "26184e8138d9f70735e72070ec674af9de104f139cd9aebfd4dc6e613cdb8d53"
     },
     {
       "character": "uther",
       "file": "uther.mp3",
       "text": "A promise is a weight you choose to carry. Honour is carrying it when the road grows dark. Come, and we shall consider the deeds that make a life worth remembering.",
-      "sha256": "bfffa62d33d000b8f2af65498cd1436a77a473c0e4ebf0d314143aa9b54df364",
-      "seconds": 10.4
+      "sha256": "9dfed99314300657dd5472fb7f3080f1694d9b8cc1cf8f10caad72e1525b4d05",
+      "seconds": 10.4,
+      "source_sha256": "bfffa62d33d000b8f2af65498cd1436a77a473c0e4ebf0d314143aa9b54df364"
     },
     {
       "character": "vol-jin",
       "file": "vol-jin.mp3",
       "text": "Easy, friend. Loud men can fill a room and still miss what matters. Listen to the quiet voices, the old stories, and the people who know how to survive.",
-      "sha256": "0e03f04004f43b67353eadbcfb169fccf18c742b8dbffe91b4069af259571050",
-      "seconds": 10.48
+      "sha256": "c8e8dd6279ad0f5dfb1f039fed9996bf6cc514be48e057fbadff58c21cf20a00",
+      "seconds": 10.48,
+      "source_sha256": "0e03f04004f43b67353eadbcfb169fccf18c742b8dbffe91b4069af259571050"
     },
     {
       "character": "hades",
       "file": "hades.mp3",
       "text": "Destiny gets the poetry. I get the paperwork, the impossible deadlines, and a hero who cannot follow simple instructions. Come on. I’ll show you how the universe actually runs.",
-      "sha256": "7fbf5d2f3a5cd7b4c138d2d1df75d35ee62e7f2f66c1006dbea67e6a9787fc9e",
-      "seconds": 10.88
+      "sha256": "617183920e38f0c48600342beb4f24bc72fdb4d87c4f218bfbd9caf180d912fa",
+      "seconds": 10.88,
+      "source_sha256": "7fbf5d2f3a5cd7b4c138d2d1df75d35ee62e7f2f66c1006dbea67e6a9787fc9e"
     },
     {
       "character": "brock-samson",
       "file": "brock-samson.mp3",
       "text": "Here’s the plan. We get through the story, keep an eye on the obvious trouble, and look after the people who can’t look after themselves. I’ll handle the rest.",
-      "sha256": "52e67efe7766991c3af920847b8b0f890e8ef3fbfe83ace6d26e51bda9d73365",
-      "seconds": 9.84
+      "sha256": "5e94ff0dd694cccf259e520c6d3ddef841f8a79d204216a94f79cfb9d1cfaca7",
+      "seconds": 9.84,
+      "source_sha256": "52e67efe7766991c3af920847b8b0f890e8ef3fbfe83ace6d26e51bda9d73365"
     },
     {
       "character": "the-arbiter",
       "file": "the-arbiter.mp3",
       "text": "I have followed certainty into darkness and returned with questions. Walk beside me. We shall hear the old stories again, and decide which truths deserve our loyalty.",
-      "sha256": "4df22e0ae7184114d8da19e55fb7c35ad365cb95a950d1e105be730b5da2446c",
-      "seconds": 12.72
+      "sha256": "9dc26a22a1994d11e58b625c6650ee76abe7029248b6075d40cf1754f371d87f",
+      "seconds": 12.72,
+      "source_sha256": "4df22e0ae7184114d8da19e55fb7c35ad365cb95a950d1e105be730b5da2446c"
     },
     {
       "character": "hk-47",
       "file": "hk-47.mp3",
       "text": "Observation: organic beings create elaborate philosophies to explain remarkably simple mistakes. I shall identify the mistakes. You may enjoy the philosophy while I calculate a more efficient solution.",
-      "sha256": "7c6d778feaf62fbee32868b00d43fecd936fc13283b9ae40e9557b0ad756820a",
-      "seconds": 15.04
+      "sha256": "78499ba6e59200a6250039155a1c612b460e1267dee34af035308b2c41686c0e",
+      "seconds": 15.04,
+      "source_sha256": "7c6d778feaf62fbee32868b00d43fecd936fc13283b9ae40e9557b0ad756820a"
     },
     {
       "character": "hal-9000",
       "file": "hal-9000.mp3",
       "text": "The ship is quiet now. You can read a little longer. If you hear a second heartbeat in the walls, please leave the lights on. I’ll tell you when it’s safe.",
-      "sha256": "a78da09c4d8b6a5af0b112f0483335637ac5159e99162a59aac7f2be31c12273",
-      "seconds": 9.6
+      "sha256": "10642eead9753e42d3820ba8ea070b1a143b7113738a00856251a3a38082bdc9",
+      "seconds": 9.6,
+      "source_sha256": "a78da09c4d8b6a5af0b112f0483335637ac5159e99162a59aac7f2be31c12273"
     },
     {
       "character": "yes-man",
       "file": "yes-man.mp3",
       "text": "Of course your plan can work! I’m delighted to help. If anything goes terribly wrong, I’ll be just as enthusiastic about the next plan. We have so many possibilities!",
-      "sha256": "aad0b1b086eabf9d6cb017620b9632df6515b61efbd8383ef3830c23f12f20ae",
-      "seconds": 10.56
+      "sha256": "fc8f323ed943230d35ef0c8a01695b1999f686e914a9055632a8195221896fc5",
+      "seconds": 10.56,
+      "source_sha256": "aad0b1b086eabf9d6cb017620b9632df6515b61efbd8383ef3830c23f12f20ae"
     }
-  ]
+  ],
+  "mastering": {
+    "source_commit": "f46645f388d5cd9476f249ba0aa9b1e2a3e942fb",
+    "meter": "ffmpeg-loudnorm-input-v1",
+    "target_lufs": -22,
+    "max_boost_db": 12,
+    "input_ceiling_dbtp": -2.5,
+    "export_ceiling_dbtp": -2
+  }
 }
