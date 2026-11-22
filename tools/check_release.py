@@ -26,6 +26,7 @@ ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock',
               'PKG-INFO', '.gitignore', 'AGENTS.md', 'tools/check_release.py',
               'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md', 'docs/listen/manifest.json',
               'docs/art/hamr-storyforge.png', 'docs/art/hamr-listener.png',
+              'docs/demo/lantern.md', 'docs/demo/lantern-plain.mp3', 'docs/demo/lantern-expressive.mp3',
               'docs/man/hamr.1', 'docs/man/audiobook.1'}
 
 

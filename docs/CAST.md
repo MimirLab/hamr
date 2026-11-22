@@ -38,7 +38,7 @@ Wildlife and travel, delivered with enough enthusiasm to make a muddy footprint 
 
 > Every rustle is a mystery, every muddy footprint an invitation! Come along. There’s an extraordinary living world out there, and I intend to introduce you to as much of it as possible!
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/nigel-thornberry.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/nigel-thornberry/reference.wav) · Choose in hamr: `hamr voice select nigel-thornberry`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/nigel-thornberry.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/nigel-thornberry/reference.wav) · Choose in hamr: `hamr voice select nigel-thornberry`
 
 ### David Attenborough
 
@@ -48,7 +48,7 @@ Unhurried natural history. A good voice for a book that spends time watching som
 
 > An entire world unfolds beneath our feet, largely unnoticed. If we slow down and look carefully, the smallest lives can reveal something extraordinary about the world we share.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/david-attenborough.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/david-attenborough/reference.wav) · Choose in hamr: `hamr voice select david-attenborough`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/david-attenborough.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/david-attenborough/reference.wav) · Choose in hamr: `hamr voice select david-attenborough`
 
 ### Carl Sagan
 
@@ -60,7 +60,7 @@ The conditioning reference combines two prepared excerpts from the Library of Co
 
 > Look up for a moment. Some of that light began its journey before the first telescope was built. And here we are, a small world that learned to look back.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/carl-sagan.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/carl-sagan/reference.wav) · Choose in hamr: `hamr voice select carl-sagan`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/carl-sagan.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/carl-sagan/reference.wav) · Choose in hamr: `hamr voice select carl-sagan`
 
 ### James Burke
 
@@ -70,7 +70,7 @@ History and technology, especially when one unlikely invention leads to another.
 
 > History rarely knows what it’s inventing. Follow one curious idea through a few unlikely encounters, and suddenly you’re living in a world nobody involved could possibly have intended.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/james-burke.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/james-burke/reference.wav) · Choose in hamr: `hamr voice select james-burke`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/james-burke.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/james-burke/reference.wav) · Choose in hamr: `hamr voice select james-burke`
 
 ## For a proper story
 
@@ -84,7 +84,7 @@ Warm, theatrical science fiction, with some impatience for locked doors and tidy
 
 > I’ve never trusted a locked door, a tidy explanation, or anybody who says curiosity is dangerous. Come along! Somebody, somewhere, is having a fascinating problem—and may need a hand.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/fourth-doctor.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/fourth-doctor/reference.wav) · Choose in hamr: `hamr voice select fourth-doctor`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/fourth-doctor.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/fourth-doctor/reference.wav) · Choose in hamr: `hamr voice select fourth-doctor`
 
 ### Garak
 
@@ -94,7 +94,7 @@ Political intrigue and memoirs. Assume he has noticed something the author would
 
 > People tell such revealing stories when they believe they are hiding something. Sit with me. We shall admire the embroidery, and quietly examine the stitching.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/garak.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/garak/reference.wav) · Choose in hamr: `hamr voice select garak`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/garak.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/garak/reference.wav) · Choose in hamr: `hamr voice select garak`
 
 ### Claudius
 
@@ -104,7 +104,7 @@ Historical fiction told from the corner of the room where nobody remembers to lo
 
 > They thought me too foolish to notice, too insignificant to fear. So I listened. You would be astonished what powerful people reveal when they have forgotten you are in the room.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/claudius.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/claudius/reference.wav) · Choose in hamr: `hamr voice select claudius`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/claudius.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/claudius/reference.wav) · Choose in hamr: `hamr voice select claudius`
 
 ### Werner Herzog
 
@@ -114,7 +114,7 @@ Travel writing and reflective essays. Even a trip to the shops may become an inv
 
 > Look how stubbornly we pursue meaning in a world that has never promised any. There is folly here, certainly. But also courage, and a strange tenderness we should not overlook.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/werner-herzog.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/werner-herzog/reference.wav) · Choose in hamr: `hamr voice select werner-herzog`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/werner-herzog.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/werner-herzog/reference.wav) · Choose in hamr: `hamr voice select werner-herzog`
 
 ### Lorewalker Cho
 
@@ -124,7 +124,7 @@ Folklore and fantasy told at a comfortable pace. Pull up a chair by the fire.
 
 > A kingdom may fall, and its monuments may crumble, yet a story can still find its way to the fire. Sit, my friend. Someone deserves to be remembered tonight.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/lorewalker-cho.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/lorewalker-cho/reference.wav) · Choose in hamr: `hamr voice select lorewalker-cho`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/lorewalker-cho.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/lorewalker-cho/reference.wav) · Choose in hamr: `hamr voice select lorewalker-cho`
 
 ### The Stanley Parable Narrator
 
@@ -134,7 +134,7 @@ Dry, direct and rather interested in what the listener is doing. Try him with me
 
 > The listener was promised a journey full of choices. Naturally, I had selected the most interesting ones in advance. All that remained was for them to cooperate.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/the-stanley-parable-narrator.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/the-stanley-parable-narrator/reference.wav) · Choose in hamr: `hamr voice select the-stanley-parable-narrator`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/the-stanley-parable-narrator.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/the-stanley-parable-narrator/reference.wav) · Choose in hamr: `hamr voice select the-stanley-parable-narrator`
 
 ## For questionable decisions
 
@@ -148,7 +148,7 @@ For science writing with an alarming amount of confidence. The lab can deal with
 
 > The universe did not come with instructions. Good. We’ll write them ourselves, preferably before the results reach the board of directors. Let’s discover something they’ll have to name after us!
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/cave-johnson.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/cave-johnson/reference.wav) · Choose in hamr: `hamr voice select cave-johnson`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/cave-johnson.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/cave-johnson/reference.wav) · Choose in hamr: `hamr voice select cave-johnson`
 
 ### Handsome Jack
 
@@ -158,7 +158,7 @@ A cheerful villain who is quite certain he is the hero. Corporate satire should 
 
 > I’m going to save the world, explain why everyone else is an idiot, and somehow still get blamed for being the only competent person here. You’re welcome, by the way.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/handsome-jack.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/handsome-jack/reference.wav) · Choose in hamr: `hamr voice select handsome-jack`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/handsome-jack.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/handsome-jack/reference.wav) · Choose in hamr: `hamr voice select handsome-jack`
 
 ### Andrew Ryan
 
@@ -168,7 +168,7 @@ Big arguments, political philosophy and the occasional monument to personal ambi
 
 > Bring me the restless mind, the unfinished idea, the impossible ambition. We shall see what a person can build when they refuse to let another man’s fear become their ceiling.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/andrew-ryan.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/andrew-ryan/reference.wav) · Choose in hamr: `hamr voice select andrew-ryan`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/andrew-ryan.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/andrew-ryan/reference.wav) · Choose in hamr: `hamr voice select andrew-ryan`
 
 ### Mr. House
 
@@ -178,7 +178,7 @@ Cool, deliberate delivery for strategy, political fiction and plans that require
 
 > While others argued over the ruins, I was planning what comes after them. Pay attention. Civilization is an engineering problem, and sentiment is an expensive substitute for a solution.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/mr-house.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/mr-house/reference.wav) · Choose in hamr: `hamr voice select mr-house`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/mr-house.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/mr-house/reference.wav) · Choose in hamr: `hamr voice select mr-house`
 
 ### Wallace Breen
 
@@ -188,7 +188,7 @@ Polite institutional reassurance. Particularly useful when the institution is th
 
 > Uncertainty can be exhausting. Allow me to arrange the facts into something reassuring, and you may discover how comfortably a difficult truth can be lived with.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/wallace-breen.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/wallace-breen/reference.wav) · Choose in hamr: `hamr voice select wallace-breen`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/wallace-breen.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/wallace-breen/reference.wav) · Choose in hamr: `hamr voice select wallace-breen`
 
 ### J. Jonah Jameson
 
@@ -198,7 +198,7 @@ Brisk and impatient. Give him a newsroom story and let him demand a better headl
 
 > Somebody’s got power, somebody’s got an excuse, and somebody thinks we’ll print it without asking questions. Get me the facts. We’re going to make a little noise!
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/j-jonah-jameson.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/j-jonah-jameson/reference.wav) · Choose in hamr: `hamr voice select j-jonah-jameson`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/j-jonah-jameson.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/j-jonah-jameson/reference.wav) · Choose in hamr: `hamr voice select j-jonah-jameson`
 
 ### Vizzini
 
@@ -208,7 +208,7 @@ Puzzles, capers and arguments from a man who has already decided he is the cleve
 
 > I have considered every angle, anticipated every objection, and reached a conclusion of remarkable brilliance. Naturally, our task now is to discover why everybody else has failed to appreciate it.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/vizzini.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/vizzini/reference.wav) · Choose in hamr: `hamr voice select vizzini`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/vizzini.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/vizzini/reference.wav) · Choose in hamr: `hamr voice select vizzini`
 
 ### Trade Prince Gallywix
 
@@ -218,7 +218,7 @@ Business satire and elaborate schemes. Check the receipt.
 
 > I love a story about ambition. Preferably somebody else’s ambition, doing all the work, while I collect a reasonable percentage. Come on, pal. Let’s find the profitable part.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/trade-prince-gallywix.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/trade-prince-gallywix/reference.wav) · Choose in hamr: `hamr voice select trade-prince-gallywix`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/trade-prince-gallywix.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/trade-prince-gallywix/reference.wav) · Choose in hamr: `hamr voice select trade-prince-gallywix`
 
 ## For absolute chaos
 
@@ -232,7 +232,7 @@ Conspiracies, strange investigations and entirely ordinary documents he will fin
 
 > Nothing is unrelated. The missing page, the budget committee, that unmarked van. Follow me. We’re going to connect the dots before the government works out which dots we’ve found.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/dale-gribble.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/dale-gribble/reference.wav) · Choose in hamr: `hamr voice select dale-gribble`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/dale-gribble.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/dale-gribble/reference.wav) · Choose in hamr: `hamr voice select dale-gribble`
 
 ### Hank Hill
 
@@ -242,7 +242,7 @@ Practical books and small-town fiction. He appreciates a clear explanation and t
 
 > A thing worth knowing is worth understanding properly. We’ll take our time, use plain language, and leave the place a little better than we found it. That’s good work.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/hank-hill.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hank-hill/reference.wav) · Choose in hamr: `hamr voice select hank-hill`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/hank-hill.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hank-hill/reference.wav) · Choose in hamr: `hamr voice select hank-hill`
 
 ### Peggy Hill
 
@@ -252,7 +252,7 @@ Enthusiastic instruction from someone with no shortage of confidence in her own 
 
 > I believe everyone deserves the chance to learn from an exceptional mind. Fortunately, you’re listening to one. We’ll begin with the material, and then improve it with my personal insight.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/peggy-hill.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/peggy-hill/reference.wav) · Choose in hamr: `hamr voice select peggy-hill`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/peggy-hill.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/peggy-hill/reference.wav) · Choose in hamr: `hamr voice select peggy-hill`
 
 ### Randy Marsh
 
@@ -262,7 +262,7 @@ Broad comedy. A minor inconvenience may develop into a personal crusade.
 
 > I was just trying to learn something interesting, and now I’ve discovered a problem that apparently only I can solve. This is bigger than a book. This is a responsibility.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/randy-marsh.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/randy-marsh/reference.wav) · Choose in hamr: `hamr voice select randy-marsh`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/randy-marsh.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/randy-marsh/reference.wav) · Choose in hamr: `hamr voice select randy-marsh`
 
 ### Eric Cartman
 
@@ -272,7 +272,7 @@ Loud, demanding and spectacularly unreasonable. Best paired with a book that can
 
 > Okay, here’s how this is gonna work. I get the good parts, you listen, and when everything goes wrong, we agree that somebody else made a very stupid decision.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/eric-cartman.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/eric-cartman/reference.wav) · Choose in hamr: `hamr voice select eric-cartman`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/eric-cartman.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/eric-cartman/reference.wav) · Choose in hamr: `hamr voice select eric-cartman`
 
 ### Rick Sanchez
 
@@ -282,7 +282,7 @@ Impatient science fiction with little tolerance for solemnity.
 
 > I can explain how the universe works. That’s the easy part. Figuring out why you should care about any of it is where things get inconvenient. Come on. Bring questions.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/rick-sanchez.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/rick-sanchez/reference.wav) · Choose in hamr: `hamr voice select rick-sanchez`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/rick-sanchez.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/rick-sanchez/reference.wav) · Choose in hamr: `hamr voice select rick-sanchez`
 
 ### Roger
 
@@ -292,7 +292,7 @@ Theatrical comedy and unreliable narrators. A change of costume may be required 
 
 > I’ve been a duchess, a detective, and the reason several respectable people changed their names. Give me a story, darling. I’ll find someone fabulous to become inside it.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/roger.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/roger/reference.wav) · Choose in hamr: `hamr voice select roger`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/roger.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/roger/reference.wav) · Choose in hamr: `hamr voice select roger`
 
 ### Stan Smith
 
@@ -302,7 +302,7 @@ Spy fiction and action, delivered with unquestioning confidence.
 
 > The world makes perfect sense when you’ve got strong principles, a firm handshake, and absolutely no intention of reconsidering either. Stay close. I’ll explain which side we’re supposed to be on.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/stan-smith.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/stan-smith/reference.wav) · Choose in hamr: `hamr voice select stan-smith`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/stan-smith.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/stan-smith/reference.wav) · Choose in hamr: `hamr voice select stan-smith`
 
 ### Michael Scott
 
@@ -312,7 +312,7 @@ Workplace comedy and awkward memoirs. The meeting will run over.
 
 > People remember how you make them feel. So I’m going to make this inspiring, educational, and, if the opportunity arises, a little bit about me. We’re going to connect.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/michael-scott.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/michael-scott/reference.wav) · Choose in hamr: `hamr voice select michael-scott`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/michael-scott.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/michael-scott/reference.wav) · Choose in hamr: `hamr voice select michael-scott`
 
 ### Dwight Schrute
 
@@ -322,7 +322,7 @@ Manuals, survival books and instructions that should be taken much too seriously
 
 > The world rewards preparation, discipline, and the ability to distinguish a genuine emergency from a test I have arranged. Pay attention. By the end, I expect improvement.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/dwight-schrute.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/dwight-schrute/reference.wav) · Choose in hamr: `hamr voice select dwight-schrute`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/dwight-schrute.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/dwight-schrute/reference.wav) · Choose in hamr: `hamr voice select dwight-schrute`
 
 ### Mr. Burns
 
@@ -332,7 +332,7 @@ Old-money villainy, read as though he has already bought the publisher.
 
 > Ah, the accumulated wisdom of civilization. How reassuring to find that so much human endeavour can be enjoyed while sitting down and owning the building. Do continue. I may acquire the sequel.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/mr-burns.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/mr-burns/reference.wav) · Choose in hamr: `hamr voice select mr-burns`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/mr-burns.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/mr-burns/reference.wav) · Choose in hamr: `hamr voice select mr-burns`
 
 ### The Brain
 
@@ -342,7 +342,7 @@ A serious explanation of an improbable plan. Tomorrow night is already booked.
 
 > Somewhere in these pages is a principle others have overlooked. We shall find it, refine it, and apply it to a problem of global significance. Try not to interrupt the thinking.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/the-brain.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/the-brain/reference.wav) · Choose in hamr: `hamr voice select the-brain`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/the-brain.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/the-brain/reference.wav) · Choose in hamr: `hamr voice select the-brain`
 
 ## For legends after dark
 
@@ -356,7 +356,7 @@ Gothic fiction and the occult. He gives even a modest paragraph the full weight 
 
 > Stand back! The dead are terrible at keeping secrets. But that voice is calling someone home. Come closer. Even a sorcerer can listen.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/dr-orpheus.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/dr-orpheus/reference.wav) · Choose in hamr: `hamr voice select dr-orpheus`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/dr-orpheus.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/dr-orpheus/reference.wav) · Choose in hamr: `hamr voice select dr-orpheus`
 
 ### Jon Irenicus
 
@@ -366,7 +366,7 @@ Controlled menace for dark fantasy and arcane lore.
 
 > There are minds that study the world, and minds that cannot endure its limitations. We shall concern ourselves with the latter. Greatness is seldom gentle with the soul that seeks it.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/jon-irenicus.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/jon-irenicus/reference.wav) · Choose in hamr: `hamr voice select jon-irenicus`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/jon-irenicus.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/jon-irenicus/reference.wav) · Choose in hamr: `hamr voice select jon-irenicus`
 
 ### Joshua Graham
 
@@ -376,7 +376,7 @@ A restrained voice for westerns, difficult memoirs and questions of conviction.
 
 > What we have done follows us. So does the possibility of doing better. Walk with me. These stories concern the long road between conviction, failure, and whatever redemption we can earn.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/joshua-graham.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/joshua-graham/reference.wav) · Choose in hamr: `hamr voice select joshua-graham`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/joshua-graham.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/joshua-graham/reference.wav) · Choose in hamr: `hamr voice select joshua-graham`
 
 ### Medivh / the Prophet
 
@@ -386,7 +386,7 @@ Fantasy lore and warnings somebody really ought to have listened to.
 
 > I have seen what happens when proud people mistake old hatred for wisdom. Listen beyond the familiar story. The warning you need may come from the voice you were taught to fear.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/medivh-the-prophet.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/medivh-the-prophet/reference.wav) · Choose in hamr: `hamr voice select medivh-the-prophet`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/medivh-the-prophet.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/medivh-the-prophet/reference.wav) · Choose in hamr: `hamr voice select medivh-the-prophet`
 
 ### Silco
 
@@ -396,7 +396,7 @@ Quiet, deliberate delivery for political intrigue and divided loyalties.
 
 > Everyone talks about changing the world. Few understand what they are willing to sacrifice, or who they will refuse to lose. Those are the stories worth paying attention to.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/silco.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/silco/reference.wav) · Choose in hamr: `hamr voice select silco`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/silco.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/silco/reference.wav) · Choose in hamr: `hamr voice select silco`
 
 ### Sylvanas
 
@@ -406,7 +406,7 @@ Dark fantasy, fallen kingdoms and unfinished business.
 
 > They have written endings for me before. I prefer to answer them myself. Come through these stories of ruin, defiance, and the terrible things we do to remain our own.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/sylvanas.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/sylvanas/reference.wav) · Choose in hamr: `hamr voice select sylvanas`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/sylvanas.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/sylvanas/reference.wav) · Choose in hamr: `hamr voice select sylvanas`
 
 ### Thrall
 
@@ -416,7 +416,7 @@ Heroic fantasy with a concern for the people who have to live through it.
 
 > A leader inherits more than power. There are wounds to remember, enemies to understand, and a future that will outlive us. Sit with me. We will listen for a wiser path.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/thrall.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/thrall/reference.wav) · Choose in hamr: `hamr voice select thrall`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/thrall.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/thrall/reference.wav) · Choose in hamr: `hamr voice select thrall`
 
 ### Uther
 
@@ -426,7 +426,7 @@ A solemn voice for heroic tales and promises that will be difficult to keep.
 
 > A promise is a weight you choose to carry. Honour is carrying it when the road grows dark. Come, and we shall consider the deeds that make a life worth remembering.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/uther.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/uther/reference.wav) · Choose in hamr: `hamr voice select uther`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/uther.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/uther/reference.wav) · Choose in hamr: `hamr voice select uther`
 
 ### Vol'jin
 
@@ -436,7 +436,7 @@ Folklore and fantasy with a strong, distinctive rhythm.
 
 > Easy, friend. Loud men can fill a room and still miss what matters. Listen to the quiet voices, the old stories, and the people who know how to survive.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/vol-jin.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/vol-jin/reference.wav) · Choose in hamr: `hamr voice select vol-jin`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/vol-jin.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/vol-jin/reference.wav) · Choose in hamr: `hamr voice select vol-jin`
 
 ### Hades
 
@@ -446,7 +446,7 @@ Fast-talking mythology, comic villains and contracts that deserve a second readi
 
 > Destiny gets the poetry. I get the paperwork, the impossible deadlines, and a hero who cannot follow simple instructions. Come on. I’ll show you how the universe actually runs.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/hades.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hades/reference.wav) · Choose in hamr: `hamr voice select hades`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/hades.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hades/reference.wav) · Choose in hamr: `hamr voice select hades`
 
 ## For extraordinary company
 
@@ -460,7 +460,7 @@ Dry delivery for hard-boiled fiction. He can make a grocery list sound like a br
 
 > Here’s the plan. We get through the story, keep an eye on the obvious trouble, and look after the people who can’t look after themselves. I’ll handle the rest.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/brock-samson.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/brock-samson/reference.wav) · Choose in hamr: `hamr voice select brock-samson`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/brock-samson.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/brock-samson/reference.wav) · Choose in hamr: `hamr voice select brock-samson`
 
 ### The Arbiter
 
@@ -470,7 +470,7 @@ Space opera and military science fiction, with room for a long-standing grudge.
 
 > I have followed certainty into darkness and returned with questions. Walk beside me. We shall hear the old stories again, and decide which truths deserve our loyalty.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/the-arbiter.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/the-arbiter/reference.wav) · Choose in hamr: `hamr voice select the-arbiter`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/the-arbiter.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/the-arbiter/reference.wav) · Choose in hamr: `hamr voice select the-arbiter`
 
 ### HK-47
 
@@ -480,7 +480,7 @@ Precise, formal diction for dark comedy and machine narrators with unfortunate p
 
 > Observation: organic beings create elaborate philosophies to explain remarkably simple mistakes. I shall identify the mistakes. You may enjoy the philosophy while I calculate a more efficient solution.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/hk-47.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hk-47/reference.wav) · Choose in hamr: `hamr voice select hk-47`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/hk-47.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hk-47/reference.wav) · Choose in hamr: `hamr voice select hk-47`
 
 ### HAL 9000
 
@@ -490,7 +490,7 @@ Soft-spoken science fiction. He would like everything to proceed calmly.
 
 > The ship is quiet now. You can read a little longer. If you hear a second heartbeat in the walls, please leave the lights on. I’ll tell you when it’s safe.
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/hal-9000.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hal-9000/reference.wav) · Choose in hamr: `hamr voice select hal-9000`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/hal-9000.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hal-9000/reference.wav) · Choose in hamr: `hamr voice select hal-9000`
 
 ### Yes Man
 
@@ -500,7 +500,7 @@ Relentless helpfulness for cheerful dystopias. He is delighted to be involved.
 
 > Of course your plan can work! I’m delighted to help. If anything goes terribly wrong, I’ll be just as enthusiastic about the next plan. We have so many possibilities!
 
-[▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/yes-man.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/yes-man/reference.wav) · Choose in hamr: `hamr voice select yes-man`
+[▶ Hear the introduction](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/yes-man.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/yes-man/reference.wav) · Choose in hamr: `hamr voice select yes-man`
 
 ---
 

@@ -48,6 +48,7 @@ only-include = [
     "README.md", "RELEASE.md", "AGENTS.md", "LICENSE", "pyproject.toml", "uv.lock", "install.sh", "install.ps1",
     "docs/USAGE.md", "docs/CAST.md", "docs/ARTWORK.md", "docs/ENGINES.md", "docs/listen", "docs/man",
     "docs/art/hamr-storyforge.png", "docs/art/hamr-listener.png",
+    "docs/demo/lantern.md", "docs/demo/lantern-plain.mp3", "docs/demo/lantern-expressive.mp3",
 ]
 artifacts = [
     "/src/audiobook/cast_assets/*/voice.json",
