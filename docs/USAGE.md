@@ -112,6 +112,8 @@ Phrases such as “she answered quietly” and “he said slowly” can shape th
 
 Reporting phrases also distinguish firm emphasis and calm delivery. “Ada replied firmly” and “said Ada firmly” describe the same delivery. “Answered quickly” can refer to the timing of a reply, so Hamr leaves its pace to Breeze. The plan shows which words supported each direction.
 
+The same rules recognize locally attached speaker descriptions, such as “whispered the night watchman,” “the doctor replied firmly,” and “her brother answered quietly.” Those descriptions identify the turn being directed.
+
 Voice descriptions attached to the reporting clause can also direct one quotation. “She said, her voice barely audible” asks for softer speech when the possessive refers to the same speaker. An introduction such as “She said, in a whisper:” directs the quotation that follows. Hamr records the reporting verb, voice description and quoted span together.
 
 A written sigh or cough can also fall between two complete sentences in one attributed quotation. For example, in “The last box is empty. [sigh] At least we found the key,” she said, Hamr sends one continuous speech request and asks Breeze to place the sigh at the marked sentence break.

@@ -579,6 +579,38 @@ def test_default_attached_voice_description_keeps_the_complete_turn(tmp_path,tex
     assert text[slice(*quote)].endswith('”')
 
 
+@pytest.mark.parametrize(('text','actor','recipe'),[
+    ('“Wait until the light goes out,” whispered the night watchman.', 'the night watchman', 'whisper'),
+    ('The night watchman whispered, “Wait until the light goes out.”', 'The night watchman', 'whisper'),
+    ('“Hold it steady,” replied the doctor firmly.', 'the doctor', 'firm'),
+    ('The door closed. “Stay here,” her brother answered quietly. The steps creaked.', 'her brother', 'murmured'),
+])
+def test_default_delivery_owns_a_locally_described_reporter(tmp_path,text,actor,recipe):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    document=inspect(source)
+    assert planner.plan(document,delivery_context=7)['performance']['candidates']==0
+    unit,=planner.plan(document)['utterances']
+    cue=unit['performance_candidate']
+    assert cue['recipe']==recipe and cue['speech']==text
+    evidence,=cue['evidence']
+    assert text[slice(*evidence['speaker_span'])]==actor
+    assert text[slice(*evidence['quotation_spans'][0])].startswith('“')
+
+
+@pytest.mark.parametrize('text',[
+    '“Stay there,” the guard never whispered.',
+    '“Stay there,” whispered the guard and walked away.',
+    '“Stay there,” asked the Mock Turtle a little anxiously.',
+    '“Stay there,” replied the doctor very firmly.',
+    '“Stay there,” the guard said. “What?” her brother asked quietly.',
+])
+def test_role_parser_preserves_reporting_modifiers_and_turn_boundaries(tmp_path,text):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    assert planner.plan(inspect(source))['performance']['candidates']==0
+
+
 @pytest.mark.parametrize('text',[
     '“Look outside,” he said, her voice barely audible.',
     '“Look outside,” Ada said, Lee’s voice barely audible.',
@@ -662,6 +694,7 @@ def test_inline_sound_requires_one_owned_sentence_break(tmp_path,text):
 @pytest.mark.parametrize(('first_line','second_line','prior_version','cue'),[
     ('“The last box is empty.','[sigh] At least we found the key,” she said.',5,'[sigh]'),
     ('“The powder gets everywhere.','[cough] We need to open a window,” she said.',6,'[cough]'),
+    ('“The powder gets everywhere.','[cough] Open the top window,” the caretaker said.',7,'[cough]'),
 ])
 def test_inline_event_keeps_both_native_pdf_fragments(tmp_path,first_line,second_line,prior_version,cue):
     canvas=pytest.importorskip('reportlab.pdfgen.canvas')
