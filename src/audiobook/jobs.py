@@ -602,6 +602,18 @@ def cleanup(store,purge_job=None,apply=False):
         for j in jobs:
             scratch=store.path(j)/'scratch'
             if scratch.exists() and not scratch.is_symlink(): candidates.append(scratch)
+        staging=store.root/'runtime'/'voice-staging'
+        if staging.is_dir() and not (staging.is_symlink() or staging.is_junction()):
+            for stage in staging.iterdir():
+                record=stage/'owner.json'
+                if stage.is_symlink() or stage.is_junction() or record.is_symlink():
+                    skipped.append(str(stage))
+                    continue
+                try:
+                    owned=loadjson(record)=={'type':'voice_preparation','name':stage.name}
+                except (OSError,ValueError):
+                    owned=False
+                (candidates if owned else skipped).append(stage if owned else str(stage))
         if purge_job:
             j=store.get(purge_job)
             candidates.append(store.path(j))

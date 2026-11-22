@@ -48,6 +48,7 @@ def doctor(store):
     from .installation import command, inspect as inspect_installation
     from .ocr_setup import describe as describe_ocr
     from .asr_fluid import advice as speech_diagnostic
+    from .wash_setup import describe as describe_washing
     host=inspect_host();advice=advise(host,loadjson(CATALOG))
     if choice:=advice['recommended_profile']:
         choice['command']=command(store.root,'setup','--profile',choice['profile'])
@@ -56,7 +57,7 @@ def doctor(store):
     installation,installation_issues=inspect_installation()
     if not dependencies['mpv']:
         issues.append({'code':'missing_player','executable':'mpv','action':'Install mpv to use hamr playback commands.'})
-    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'speech_diagnostic':speech_diagnostic(store,host),'speech_verifier':speech_advice(store,host),'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,'ocr':describe_ocr(store,host),**advice}
+    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'speech_diagnostic':speech_diagnostic(store,host),'speech_verifier':speech_advice(store,host),'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,'ocr':describe_ocr(store,host),'voice_preparation':describe_washing(store,host),**advice}
 
 def bound_partial(dst,wanted):
     part=dst.with_suffix(dst.suffix+'.part'); identity=part.with_suffix(part.suffix+'.json')
@@ -410,22 +411,63 @@ def validate_pcm(data,text=''):
     qa={'samples':len(a),'sample_rate':RATE,'sha256':digest(data),'seconds':seconds,'rms':float(np.sqrt(np.mean(a*a))),'clipping_fraction':float(np.mean(np.abs(a)>.999)),'semantic_qa':'pending ASR / listening; signal checks do not prove transcript fidelity'}
     return data,qa
 
-def save_voice(store,name,reference,transcript,description='',origin='clone'):
+def save_voice(store,name,reference,transcript,description='',origin='clone', *, wash='auto', channel=None):
     import re
+    from .core import fault, syncdir, syncfile
+    from .jobs import rename_new
+    from .reference_preparation import prepare
+
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',name): raise Error('voice_name','Voice name must contain 1–64 letters, digits, dash or underscore.')
-    if not transcript.strip(): raise Error('transcript_required','Exact corrected reference transcript is required.')
+    transcript=transcript.strip()
+    if not transcript: raise Error('transcript_required','Exact corrected reference transcript is required.')
+    if len(transcript.encode())>1024: raise Error('reference_transcript_length','The exact reference transcript exceeds the 1024-byte Breeze limit.')
     reference=Path(reference)
     if reference.suffix.lower() not in ('.wav','.flac','.mp3','.m4a','.ogg','.opus'): raise Error('reference_format','Reference must be a local WAV, FLAC, MP3, M4A, OGG or Opus file.')
     if reference.stat().st_size>200*1024*1024: raise Error('reference_size','Reference exceeds 200 MiB.')
     root=store.root/'voices'/name
-    if root.exists(): raise Error('voice_exists','A saved voice with this name exists.','Choose a new name.')
-    root.mkdir(); target=root/'reference.wav'
+    if root.exists() or root.is_symlink(): raise Error('voice_exists','A saved voice with this name exists.','Choose a new name.')
+    parent=store.root/'runtime'/'voice-staging'
+    if parent.is_symlink() or parent.is_junction():
+        raise Error('unsafe_path','Voice staging requires an owned directory.')
+    parent.mkdir(exist_ok=True)
+    stage=parent/name
+    owner={'type':'voice_preparation','name':name}
+    if stage.exists() or stage.is_symlink():
+        if stage.is_symlink() or stage.is_junction() or not stage.is_dir():
+            raise Error('unsafe_path','Voice staging is occupied by unrecognized data.')
+        if not any(stage.iterdir()):
+            stage.rmdir()
+        else:
+            marker=stage/'owner.json'
+            if marker.is_symlink() or not marker.is_file() or loadjson(marker)!=owner:
+                raise Error('unsafe_path','Voice staging is occupied by unrecognized data.')
+            store.safe_remove(stage)
+    stage.mkdir(mode=0o700)
     try:
-        run(['ffmpeg','-v','error','-protocol_whitelist','file,pipe','-i',reference,'-t','31','-ar',RATE,'-ac','1','-c:a','pcm_s16le',target])
-        with wave.open(str(target)) as w: seconds=w.getnframes()/w.getframerate()
-        if not 2<=seconds<=30: raise Error('reference_duration','Reference must be 2–30 seconds of clean speech.')
-        original=root/('original'+reference.suffix.lower()); shutil.copyfile(reference,original)
-        v={'original_reference':str(original),'original_reference_sha256':filehash(original),'name':name,'reference':str(target),'reference_sha256':filehash(target),'transcript':transcript.strip(),'description':description,'origin':origin,'language':'en','seconds':seconds}
-        writejson(root/'voice.json',v); return v
-    except BaseException:
-        store.safe_remove(root); raise
+        writejson(stage/'owner.json',owner)
+        target=stage/'reference.wav'
+        original=stage/('original'+reference.suffix.lower())
+        shutil.copyfile(reference,original)
+        if original.stat().st_size>200*1024*1024:
+            raise Error('reference_size','Reference exceeds 200 MiB.')
+        original_sha=filehash(original)
+        preparation=prepare(store,original,target,transcript,original_sha,wash if origin=='clone' else 'off',channel)
+        with wave.open(str(target)) as reader:
+            seconds=reader.getnframes()/reader.getframerate()
+        v={'original_reference':str(root/original.name),'original_reference_sha256':original_sha,
+           'name':name,'reference':str(root/target.name),'reference_sha256':filehash(target),
+           'transcript':transcript,'description':description,'origin':origin,'language':'en','seconds':seconds,
+           'preparation_receipt':str(root/'preparation.json')}
+        writejson(stage/'voice.json',v)
+        writejson(stage/'preparation.json',{**preparation,'reference_sha256':v['reference_sha256']})
+        syncfile(original)
+        syncfile(target)
+        syncdir(stage)
+        fault('before_voice_promote')
+        rename_new(stage,root)
+        syncdir(root.parent)
+        return {**v,'preparation':{'status':preparation['status'],'reason':preparation['reason'],
+                                   'profile':preparation.get('profile'),'cache_reused':preparation.get('cache_reused',False)}}
+    finally:
+        if stage.exists():
+            store.safe_remove(stage)

@@ -1,5 +1,15 @@
 # Upcoming changes
 
+### Voice reference preparation
+
+Custom voice import can recover a reference affected by steady electrical hum before Breeze sees it. Install the local CPU preparation worker with `hamr setup --wash-only`. Hamr retains the original media and records what it selected. The lighter FastEnhancer profile is available for explicitly requested preparation comparisons. [Preparation and hardware choices](docs/USAGE.md#prepare-a-voice-reference)
+
+Carl Sagan and HAL 9000 build on the references chosen in blind comparisons. Sagan adds a second excerpt from the Library of Congress recording. HAL adds a third film excerpt. Dr. Orpheus uses the same two turns with their background noise and music reduced. Existing books retain the reference they were made with. [Carl Sagan](docs/CAST.md#carl-sagan) · [HAL 9000](docs/CAST.md#hal-9000) · [Dr. Orpheus](docs/CAST.md#dr-orpheus)
+
+The three voices have new introductions that let you hear them change register within a short scene. HAL shifts from courtesy to unease, Sagan from invitation to wonder, and Dr. Orpheus from theatrical command to sincerity. Play them with `hamr voice sample CHARACTER --play`.
+
+Blind listening across all 45 cast voices identified 22 preferred cleaned references. Each of those voices has a freshly recorded introduction made from its selected reference. [Cast guide](docs/CAST.md)
+
 ### Expressive narration
 
 - Dialogue can take its direction from a fuller attribution such as “the doctor replied firmly” or “she said, her voice barely audible.” Hamr uses the reporting clause to tie the delivery to the right speaker.

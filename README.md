@@ -108,13 +108,15 @@ hamr voice sample nigel-thornberry --play
 hamr voice select nigel-thornberry
 ```
 
-The introductions are playback previews. Breeze clones from each voice's original clean recording and exact transcript. It never uses the generated introduction as a cloning reference.
+The introductions are playback previews. The separate voice references use source recordings with exact transcripts to condition Breeze.
 
-To use your own voice, supply a clean 2–30 second recording and its exact transcript:
+To use your own voice, supply a 2–30 second recording and its exact transcript:
 
 ```sh
 hamr voice clone my-narrator --reference clean.wav --transcript-file exact.txt
 ```
+
+Hamr keeps the original recording and reuses the saved reference in every book. For supported cleanup on noisy references, run `hamr setup --wash-only` once. [Prepare a voice reference](docs/USAGE.md#prepare-a-voice-reference)
 
 ## Install on Linux
 

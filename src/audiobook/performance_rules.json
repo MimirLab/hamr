@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "compatible_registry_sha256": [
+    "1d1517d01add3db68907af30b4476e6d742fe4571eb18602e46476c3491f77d1",
     "c46c5f9b93db2aac04799dc9343e6da9570f7ada67aa8934dc20b4cb42d06bab",
     "7e4cecbe03a10c7f771f8f59b8a82a26e4f8f718855cd1fca1cc8b166e21e639",
     "9ba1306b339e98c4436600491f4a09ef334d8dd615611e8647b55967afee4b52",
@@ -391,6 +392,104 @@
       "recipe": "laugh",
       "placement": "before",
       "reference_identity": "a5ac92d7d0b8b28cb9e42ceb3cd2448fd122d0e44a997e6e48c6829dd5924d62",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "cpu-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "sigh",
+      "placement": "before",
+      "reference_identity": "2cc029102b9550533f8170bde9765e9e785648be1a0b97cced8d960559947e2c",
+      "execution": {"device": "cpu", "parallel": 1}
+    },
+    {
+      "profile": "cpu-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "sigh",
+      "placement": "before",
+      "reference_identity": "835255d32543cb8dac579099aa0a31a9cacd13746009743784685960c4892246",
+      "execution": {"device": "cpu", "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "sigh",
+      "placement": "after",
+      "reference_identity": "2cc029102b9550533f8170bde9765e9e785648be1a0b97cced8d960559947e2c",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "sigh",
+      "placement": "after",
+      "reference_identity": "835255d32543cb8dac579099aa0a31a9cacd13746009743784685960c4892246",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "forceful",
+      "reference_identity": "2cc029102b9550533f8170bde9765e9e785648be1a0b97cced8d960559947e2c",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "forceful",
+      "reference_identity": "835255d32543cb8dac579099aa0a31a9cacd13746009743784685960c4892246",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "quiet_scene",
+      "contextual": true,
+      "context_support": "held_breath",
+      "reference_identity": "2cc029102b9550533f8170bde9765e9e785648be1a0b97cced8d960559947e2c",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "laugh",
+      "placement": "before",
+      "reference_identity": "2cc029102b9550533f8170bde9765e9e785648be1a0b97cced8d960559947e2c",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-f16",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "db740cd464d75f2635a891586f083c5b466fd63542bebd957fe7890324b04c35",
+      "platform": "linux",
+      "recipe": "laugh",
+      "placement": "before",
+      "reference_identity": "2cc029102b9550533f8170bde9765e9e785648be1a0b97cced8d960559947e2c",
       "execution": {"device": null, "parallel": 1}
     }
   ]

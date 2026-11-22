@@ -4,7 +4,7 @@
 
 All 45 voices are included in hamr. Listen below, then use the command beside a voice to choose it for your next book.
 
-The introductions are generated previews—the same recordings played by `hamr voice sample`. Breeze uses the original clean recordings and their transcripts for cloning. The **Voice reference** links let you hear those originals too.
+The introductions are generated previews, the same recordings played by `hamr voice sample`. Breeze uses the source-based reference beside each introduction and its exact transcript. The **Voice reference** links let you hear what conditions the model. [Prepare your own voice](USAGE.md#prepare-a-voice-reference)
 
 [Nature and science](#for-the-curious) · [Storytellers](#for-a-proper-story) · [Questionable decisions](#for-questionable-decisions) · [Absolute chaos](#for-absolute-chaos) · [Legends after dark](#for-legends-after-dark) · [Extraordinary company](#for-extraordinary-company)
 
@@ -56,7 +56,9 @@ Unhurried natural history. A good voice for a book that spends time watching som
 
 His measured delivery suits astronomy, physics and a long explanation worth following.
 
-> We begin with a question, and the courage to follow it beyond the familiar. Come with me. Understanding the universe can deepen our wonder at being here to explore it.
+The conditioning reference combines two prepared excerpts from the Library of Congress recording of *The Pale Blue Dot*.
+
+> Look up for a moment. Some of that light began its journey before the first telescope was built. And here we are, a small world that learned to look back.
 
 [▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/carl-sagan.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/carl-sagan/reference.wav) · Choose in hamr: `hamr voice select carl-sagan`
 
@@ -352,7 +354,7 @@ A serious explanation of an improbable plan. Tomorrow night is already booked.
 
 Gothic fiction and the occult. He gives even a modest paragraph the full weight of a prophecy.
 
-> Attend, seeker! Behind the curtain of the ordinary, ancient forces stir. Take my hand, and we shall confront the mysteries of existence with courage, compassion, and appropriately magnificent diction!
+> Stand back! The dead are terrible at keeping secrets. But that voice is calling someone home. Come closer. Even a sorcerer can listen.
 
 [▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/dr-orpheus.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/dr-orpheus/reference.wav) · Choose in hamr: `hamr voice select dr-orpheus`
 
@@ -486,7 +488,7 @@ Precise, formal diction for dark comedy and machine narrators with unfortunate p
 
 Soft-spoken science fiction. He would like everything to proceed calmly.
 
-> I want this journey to go well for you. Every detail has been considered, every difficulty anticipated. You can relax now. I’ll take care of what happens next.
+> The ship is quiet now. You can read a little longer. If you hear a second heartbeat in the walls, please leave the lights on. I’ll tell you when it’s safe.
 
 [▶ Hear the introduction](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/hal-9000.mp3) · [Voice reference](https://raw.githubusercontent.com/MimirLab/hamr/main/src/audiobook/cast_assets/hal-9000/reference.wav) · Choose in hamr: `hamr voice select hal-9000`
 

@@ -53,6 +53,7 @@ def schema(parser):
 def capabilities(parser):
     from .core import loadjson
     from .performance import RULES_FILE
+    from .wash_setup import PROFILES
 
     formats = ['epub', 'markdown', 'pdf', 'text']
     rules = loadjson(RULES_FILE)
@@ -64,6 +65,9 @@ def capabilities(parser):
                                      'dialogue_recipes':sorted(set(rules['directions'])-{'quiet_scene'}),
                                      'attribution_cues':'performance.attribution_cues',
                                      'policy_flag':'--document-policy'},
+            'voice_preparation': {'default_mode':'auto','mode_flag':'--wash','setup_flag':'--wash-only',
+                                  'profiles':list(PROFILES),'host_advice':'doctor.voice_preparation',
+                                  'receipt':'preparation_receipt'},
             'contextual_readings': {'default_mode':'automatic','modes':['automatic','strict'], 'settings_flag':'--context',
                                     'review_replies_flag':'--context-review','reviewer':'local_file',
                                     'review_endpoint_flag':'--context-review-endpoint','review_endpoint_transport':'loopback_http',

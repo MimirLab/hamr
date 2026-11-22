@@ -10,6 +10,8 @@ Read the installed contract with `hamr agent capabilities` or `hamr --help-json`
 
 Structured commands report `schema_version`. Use status and error codes for decisions. Progress and diagnostic messages go to stderr. Use `hamr cleanup --json` to preview removals and request approval for an explicit purge. The built-in cast introduction is a playback sample. Voice conditioning uses the original reference recording and exact transcript.
 
+For local custom voice preparation, use `hamr setup --wash-only` and the ordinary `hamr voice clone` command. Read `voice_preparation` in `hamr doctor --json` for hardware fit. The clone result reports the selected preparation and points to the receipt for the exact original, transcript, and reusable reference.
+
 For a speech dispute, run `hamr transcribe JOB --utterance ID --json` on the exact committed take. For an independent local excerpt, run `hamr transcribe FILE --json`. Use the PCM hash to bind the observation and compare both unprompted transcripts and the actual audio. Treat conflicting words, names and short vocal sounds as uncertain. Agreement on the words cannot establish acting, pronunciation, voice identity or audio quality. Record a listening finding only when the audible fault has actually been verified.
 
 Check `hamr doctor --json` for `speech_verifier.active` and `speech_verifier.recommended`. `hamr setup --checks-only` installs the recommended verifier, which normal `open`, `resume`, and `qa` use. `transcribe` starts with the same verifier. Fluid exposes raw words with segment timing unavailable. Compare disputed words to the utterance's intended speech and original source span. Keep a direct listening approval bound to its exact recording when judging acting or nonverbal sounds.

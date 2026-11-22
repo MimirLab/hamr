@@ -68,7 +68,7 @@ def audit(path, version):
     for name, data in files.items():
         runtime = name.removeprefix(package) if name.startswith(package) else ''
         allowed_runtime = re.fullmatch(
-            r'audiobook/(?:[a-z_]+\.py|cast\.json|catalog\.json|asr_(?:fluid_)?assets\.json|gguf_recipes\.json|context_rules\.json|performance_rules\.json|asr(?:-windows|-fluid)?\.lock|agent_guide\.md|cast_assets/[a-z0-9-]+/(?:reference\.wav|voice\.json))'
+            r'audiobook/(?:[a-z_]+\.py|cast\.json|catalog\.json|asr_(?:fluid_)?assets\.json|gguf_recipes\.json|context_rules\.json|performance_rules\.json|asr(?:-windows|-fluid)?\.lock|wash-runtime\.lock|agent_guide\.md|cast_assets/[a-z0-9-]+/(?:reference\.wav|voice\.json))'
             r'|hamr/__(?:init|main)__\.py', runtime)
         allowed_metadata = wheel and name.startswith(metadata) and name.removeprefix(metadata) in (
             'METADATA', 'WHEEL', 'RECORD', 'entry_points.txt', 'licenses/LICENSE')
@@ -91,6 +91,9 @@ def audit(path, version):
             raise ReleaseError('Missing manual, speech checker inputs or operator guide.')
         if not files[manual + 'hamr.1'].startswith(b'.TH HAMR 1 ') or files[manual + 'audiobook.1'] != b'.so man1/hamr.1\n':
             raise ReleaseError('Invalid manual title or alias.')
+    if package + 'audiobook/wash_setup.py' in files:
+        if package + 'audiobook/wash-runtime.lock' not in files:
+            raise ReleaseError('Missing the pinned voice preparation runtime.')
     try:
         cast_document = json.loads(files[package + 'audiobook/cast.json'])
         cast = cast_document['characters']

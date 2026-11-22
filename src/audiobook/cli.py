@@ -78,6 +78,12 @@ def print_doctor(result):
         print(f'Scanned PDFs: {ocr["active_profile"] or "setup available" if ocr["local_engine"] else "Tesseract required"}')
         print(f'  {ocr["reason"]}')
         if not ocr['ready']: print(f'  {ocr["action"]}')
+    if washing:=result.get('voice_preparation'):
+        names=', '.join(row['profile'] for row in washing['profiles'] if row['installed'])
+        print(f'Voice preparation: {names or "setup available"}.')
+        print(f'  {washing["reason"]}')
+        if not names and washing['recommended_profile']:
+            print(f'  {washing["setup_command"]}')
     for gpu in host['gpus']:
         memory=gpu.get('available_vram_bytes')
         detail=f'{memory/1024**3:.1f} GiB available budget/free memory' if memory is not None else 'shared or unknown memory'
@@ -230,6 +236,8 @@ def parser():
     scope.add_argument('--checks-only',action='store_true',help='Set up offline speech checking without an engine profile')
     scope.add_argument('--diagnostic-asr',choices=('auto','fluid-int8'),help='Install only the optional local speech diagnostic')
     scope.add_argument('--ocr-only',action='store_true',help='Set up offline OCR for scanned PDFs')
+    scope.add_argument('--wash-only',action='store_true',help='Set up local preparation of custom voice references')
+    q.add_argument('--wash-profile',help='Voice preparation profile from hamr doctor (default: auto)')
     from .checks_setup import PROFILES as asr_profiles
     q.add_argument('--asr-profile',choices=asr_profiles,help='Choose offline speech verification (default: auto)')
     q.add_argument('--ocr-profile',choices=('auto','tesseract-fast'),help='Also set up scanned PDF support using this profile')
@@ -282,7 +290,10 @@ def parser():
             z.add_argument('--play', action='store_true')
     for mode in ['design','clone']:
         z=v.add_parser(mode); z.add_argument('--json',action='store_true',default=argparse.SUPPRESS); z.add_argument('name'); z.add_argument('--no-default',action='store_true',help='Keep the current default narrator'); z.add_argument('--transcript-file',type=Path,required=True); z.add_argument('--description',default='A calm, clear English audiobook narrator with a natural, steady delivery.')
-        if mode=='clone': z.add_argument('--reference',type=Path,required=True)
+        if mode=='clone':
+            z.add_argument('--reference',type=Path,required=True)
+            z.add_argument('--wash',default='auto',help='Use an installed qualified treatment when needed, off, or an explicit profile')
+            z.add_argument('--channel',type=int,help='Use one source channel, numbered from 1')
     sub('completion','Print shell completion').add_argument('shell',choices=('bash','zsh','fish'))
     from .operator_cli import add_commands
     add_commands(subs)
@@ -427,11 +438,19 @@ def dispatch(argv=None):
             from .setup_progress import SetupProgress
             progress=SetupProgress()
             asr_options={'asr_profile':a.asr_profile} if a.asr_profile else {}
+            if a.wash_profile and not a.wash_only:
+                raise Error('setup_scope','--wash-profile requires --wash-only.')
+            if a.wash_only and (a.asr_profile or a.ocr_profile or a.backend_profile or a.auto or a.choose):
+                raise Error('setup_scope','--wash-only sets up voice preparation independently.')
             if a.asr_profile and (a.engine_only or a.ocr_only or a.diagnostic_asr):
                 raise Error('setup_scope','--asr-profile requires ordinary setup or --checks-only.')
             if a.ocr_profile and (a.checks_only or a.engine_only or a.diagnostic_asr):
                 raise Error('setup_scope','--ocr-profile needs ordinary setup or --ocr-only.')
-            if a.ocr_only:
+            if a.wash_only:
+                from .wash_setup import provision as provision_wash
+                with s.lock():
+                    result={'schema_version':1,'voice_preparation':provision_wash(s,progress,a.cache,a.wash_profile or 'auto')}
+            elif a.ocr_only:
                 if a.backend_profile or a.auto or a.choose:
                     raise Error('setup_scope','--ocr-only does not select a speech engine.')
                 with s.lock():
@@ -487,6 +506,8 @@ def dispatch(argv=None):
                     print(f'Offline speech verifier ready: {result["speech_verifier"]["active"]}.')
                     if reason:=checks.get('selection_reason'):print(reason)
                 if result.get('ocr'): print('Offline scanned PDF support ready.')
+                if result.get('voice_preparation'):
+                    print(f'Local voice preparation ready: {result["voice_preparation"]["profile"]}.')
                 if result.get('speech_diagnostic'):
                     print('Fluid diagnostic ready. Use hamr transcribe CLIP.wav to compare local recognizers.')
                 elif result.get('speech_diagnostic_advice'):
@@ -576,10 +597,14 @@ def dispatch(argv=None):
                         with wave.open(str(temp),'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE); w.writeframes(data)
                         reference=temp
                     else: reference=a.reference
-                    v=save_voice(s,a.name,reference,transcript,a.description,a.voice_command)
+                    options={'wash':a.wash,'channel':a.channel} if a.voice_command=='clone' else {}
+                    v=save_voice(s,a.name,reference,transcript,a.description,a.voice_command,**options)
                     if not a.no_default: writejson(s.root/'preferences.json',{**preference(s),'voice':a.name})
                     if a.voice_command=='design': temp.unlink(missing_ok=True)
-                    emit({'schema_version':1,'voice':v['name'],'origin':v['origin'],'seconds':v['seconds'],'reference':v['reference'],'next':'Listen to the reference and verify its transcript before a long render.'},True)
+                    emit({'schema_version':1,'voice':v['name'],'origin':v['origin'],'seconds':v['seconds'],
+                          'reference':v['reference'],'preparation':v['preparation'],
+                          'preparation_receipt':v['preparation_receipt'],
+                          'next':'The reference is saved for reuse in new books.'},True)
         elif a.command=='worker':
             if a.detach:
                 args=[sys.executable,'-m','hamr','--home',str(s.root),'worker']+(['--once'] if a.once else [])

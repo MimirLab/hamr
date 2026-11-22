@@ -50,6 +50,10 @@ sets up English scanned-PDF OCR with the installed Tesseract executable.
 Use
 .B \-\-ocr-profile auto
 to add OCR during ordinary setup.
+.B \-\-wash-only
+sets up local voice preparation. Use
+.BI \-\-wash-profile " PROFILE"
+to choose an exact preparation profile.
 .TP
 .B "doctor, profiles"
 Describe this installation and hardware, or list speech profiles.
@@ -58,9 +62,19 @@ Describe this installation and hardware, or list speech profiles.
 List the cast, preview an included introduction, or save a narrator
 for new books. Use
 .B "voice sample CHARACTER \-\-play"
-to listen. Breeze uses the original reference recordings and transcripts.
+to listen. Breeze uses the separate source-based references and transcripts.
 .B "voice list, voice clone, voice design"
 manage custom voices.
+.B "voice clone"
+saves the original reference and a reusable 24 kHz reference. It applies
+qualified installed cleanup when needed and reports the selection.
+Use
+.B \-\-wash off
+for direct import or
+.BI \-\-wash " PROFILE"
+to request an installed treatment. Use
+.BI \-\-channel " NUMBER"
+to choose a source channel numbered from one.
 .TP
 .BI "open " DOCUMENT
 Review the plan, render, check and assemble a book.

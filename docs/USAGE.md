@@ -260,6 +260,24 @@ hamr queue 'My book.epub' --voice cast:nigel-thornberry --output ~/Audiobooks
 
 `voice select` sets the narrator for new books. The `cast:` voice ID selects a preset for one new book or a scoped repair. Queued jobs pin their reference audio and transcript in app state for recovery across package updates.
 
+### Prepare a voice reference
+
+Choose 2–30 seconds of one speaker with whole words at both ends. Write the exact transcript, including repetitions and intended sounds as appropriate to the recording. Hamr saves the original bytes and the final 24 kHz mono reference once. Subsequent books reuse the reference.
+
+```sh
+hamr setup --wash-only
+hamr voice clone my-narrator --reference recording.wav --transcript-file exact.txt
+```
+
+Setup downloads the selected worker and model. Automatic preparation uses DPDFNet HR for detected steady electrical hum when that profile fits and the local speech checkers can verify the result. Clear recordings and inconclusive results use the original reading. The import result gives the decision and path to the preparation receipt. Use `--wash off` for a direct import, `--wash PROFILE` to request an installed treatment explicitly, or `--channel 1` to choose a clean source channel before conversion. Use `hamr setup --checks-only` to add the offline speech checkers if they are missing.
+
+| Linux x86-64 CPU profile | Model download | Measured peak worker RAM | Use |
+| --- | ---: | ---: | --- |
+| `dpdfnet-hr` | 10.5 MB | about 181 MiB | Steady-hum auto route and explicit preparation. |
+| `fastenhancer-tiny` | 151 KB | about 102 MiB | Lighter explicit comparison when the recording needs cleanup. |
+
+Worker dependencies are an additional download. Hamr runs the local speech checkers after the treatment and releases the preparation worker before Breeze starts. `hamr doctor` explains which profiles fit. Keep the original or choose a better passage when music, overlapping voices, or damaged words make the speaker uncertain.
+
 To add a character, put its ID, display name, description, and language in `src/audiobook/cast.json`. Add its 24 kHz mono PCM `reference.wav` and a `voice.json` with `transcript` and `reference_sha256` under `src/audiobook/cast_assets/CHARACTER/`. A reference can contain 2–30 seconds of speech. Add the approved introduction under `docs/listen/CHARACTER.mp3` and its exact text, duration and SHA-256 to `docs/listen/manifest.json`. The wheel bundles that same audio for offline previews. The cast catalogue uses `"preview_kind": "introduction"`; voice conditioning continues to use the original reference and transcript. Review candidates, rejected clips and source archives stay outside the installed program.
 
 ## Unattended speech and verification
