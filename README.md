@@ -15,25 +15,21 @@
 
 <p align="center">
   <a href="#epub-to-audiobook-in-three-commands">Make a book</a> ·
-  <a href="#what-hamr-can-do">What hamr can do</a> ·
+  <a href="#scanned-and-mixed-pdfs-ocr">Scanned PDFs</a> ·
   <a href="#expressive-narration">Expressive narration</a> ·
+  <a href="#offline-speech-to-text-stt">Speech checks</a> ·
   <a href="#listen">Meet the cast</a> ·
-  <a href="docs/USAGE.md">The field guide</a> ·
-  <a href="RELEASE.md">Release notes</a> ·
-  <a href="https://github.com/MimirLab/hamr/releases/latest">Downloads</a>
+  <a href="#install-on-linux">Install</a> ·
+  <a href="RELEASE.md">Release notes</a>
 </p>
 
-**hamr turns EPUB, Markdown, PDF and plain-text files into audiobooks with Breeze TTS2.** It runs on your computer and comes with 45 voices. Choose one, check the text, and make a chaptered M4B you can take to your audiobook player.
+**Hamr turns EPUBs, PDFs, Markdown and plain text into chaptered English audiobooks with Breeze TTS2.** It reads scanned pages, follows performance cues in the prose, and checks the recorded words before writing the M4B. Your book stays on your computer.
 
 Give Nigel Thornberry a nature book or Carl Sagan an astronomy text. Cave Johnson will read the safety manual too, if you're feeling brave.
 
-You can inspect the narration before rendering, resume after an interruption, and retake a bad passage without starting the whole book again. Each finished book comes with its source and a timed companion for following along or tracking down a mistake.
-
-**New in 0.4.2.** Hamr follows the author's cues for tone, emphasis, pace, and sounds in ordinary listening mode. A whisper can survive an interruption by “she said,” a warning can build across sentences, and an authored laugh can get its own beat. That works with searchable and scanned PDFs as well as EPUB, Markdown, and text. [How expressive narration works](#expressive-narration) · [What changed in 0.4.2](RELEASE.md#hamr-042)
-
 ## EPUB to audiobook in three commands
 
-Once hamr is installed, replace the example filename and run this from any directory.
+Once you've installed Hamr, replace the example filename and run this from any directory. [Installation](#install-on-linux)
 
 ```sh
 # First run only. Press Enter to choose the recommended profile.
@@ -65,37 +61,62 @@ Use the same command with a PDF, Markdown, or `.txt` file. Add `--yes` for unatt
 
 ## What hamr can do
 
-| When you want to… | Where to start |
-| --- | --- |
-| **Hear a book read naturally** | Contextual reading is on by default. Hamr uses nearby words and document structure to read abbreviations, amounts, dates and times. The companion preserves the original wording. Use `hamr plan DOCUMENT --json` to inspect the reading before synthesis. [Reading and pronunciation controls](docs/USAGE.md#tune-readings-that-depend-on-context) |
-| **Give dialogue some acting** | Expressive delivery is on in EPUB, PDF, Markdown, and plain text. Hamr can follow an author's direction, from a sigh or laugh to a whispered line broken by “she said.” [Expressive narration and how to use it](#expressive-narration) |
-| **Listen to a scanned PDF** | With Tesseract installed, `hamr setup --ocr-only` adds offline English OCR. Hamr can read simple two-column scans and recognize scanned regions beside selectable text. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr) |
-| **Pick up where a book stopped** | `hamr resume JOB` checks and reuses saved takes. A retake changes one passage, and `hamr status JOB` shows whether a book is ready or needs review. [Recovery and repair](#resume-and-repair) |
-| **Check the words before export** | The ordinary book command runs local speech checks before publishing. Use `hamr transcribe CLIP.wav` to inspect a disputed recording with the installed verifier. [Speech checking](docs/USAGE.md#speech-verifier-presets) |
+### Scanned and mixed PDFs (OCR)
 
-The [release notes](RELEASE.md) record completed render, playback and interruption tests and the scope of each result.
+Hamr uses selectable text on searchable pages and runs local English OCR on scanned pages and clearly bounded scan regions. On a mixed page, it can read a scanned inset beside native text. It follows simple two-column layouts in reading order and can keep a figure crop, its recognized labels, and its authored caption together in the companion.
 
-## Expressive narration
+Hamr can check a suspect reading against the page image. For example, it rechecks a stray “T” at the start of quoted speech at two larger sizes and accepts “I” when both readings agree on the correction and the surrounding words. Unresolved text or layout findings point back to the page for review. Completed OCR work can be reused after an interruption.
 
-Expressive delivery is on by default in EPUB, searchable and scanned PDF, Markdown, and plain text. Hamr can carry a whisper through an attribution, let urgency build or a voice fade, and stress a word the author singles out. A line can also pick up the tone of the prose around it when the evidence points to the same speaker. Scanned pages use the local English OCR setup.
-
-An authored sigh or chuckle can be performed as part of the line. The speech checker checks the words before export. The exact sound and delivery can vary with the voice and engine. If you prefer steady narration, save that preference for new books.
+Install Tesseract, then set up the English model. Use the same book command for the scan.
 
 ```sh
-hamr settings --performance off --mode study
+hamr setup --ocr-only
+hamr open "Scanned book.pdf" --voice cast:nigel-thornberry
 ```
 
-Use `hamr settings` to see your choices. Supply `--performance off` on a single book to read it plainly. [Delivery controls and supported cues](docs/USAGE.md#expressive-narration) · [Changes in the source checkout](RELEASE.md#upcoming-changes)
+Use `hamr doctor` to check OCR readiness. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr)
+
+### Expressive narration
+
+Ordinary listening mode uses the prose to direct Breeze across EPUB, searchable and scanned PDF, Markdown, and plain text. Scanned pages use the same delivery rules after OCR.
+
+- **Follow the speaker.** “Stay by the door,” she whispered, “until the footsteps fade.” Hamr sends the whole passage so Breeze can whisper both parts of the quote and keep the attribution in the narrator’s voice. A clear description like “she said, her voice barely audible” can also guide the delivery.
+- **Shape a scene.** The prose can support urgency, irony, reassurance, or restraint. A warning can build across sentences, a voice can fade, and the author’s emphasis in “Did *you* see who left?” can steer the stress.
+- **Place an authored sound.** An opening chuckle can lead into a line. A marker such as `[sigh]` or `[cough]` can sit between two sentences in a single quotation. Delivery varies by voice, engine, and passage.
+
+The plan records the cue and the text it applies to. Use `--performance off` on one book for plain narration, or save that preference with `hamr settings --performance off`. [Delivery guide and controls](docs/USAGE.md#expressive-narration)
+
+### Offline speech-to-text (STT)
+
+Before publishing, Hamr transcribes the generated takes and compares them with the planned words. It looks for dropped or repeated speech and changes to details such as a quantity, its unit, or a negation. Two local recognizers can corroborate a critical word error before Hamr retries an ordinary take. If a recognizer hears “mm-hmm” where the author marked a chuckle, Hamr can report that sound as uncertain while keeping the take for listening.
+
+Setup chooses the checker separately from the speech engine. It selects **Fluid INT8** on eligible Linux systems. The lighter **Whisper pair** covers lower-memory systems and Windows x64. The checkers run on the CPU. Use `hamr setup --checks-only` to install or refresh the checker in an existing setup.
+
+```sh
+hamr status JOB --json
+hamr transcribe JOB --utterance u00003 --json
+hamr transcribe "sample.wav" --json
+```
+
+`transcribe` can check the exact saved recording or a short local clip. The report includes recognized words and any disagreement between the active checkers. [Verifier presets and review workflow](docs/USAGE.md#speech-verifier-presets)
+
+### Contextual reading and book structure
+
+Hamr uses nearby words and the document’s structure to read abbreviations, money, dates, measurements, and elapsed times. It can read `$100` as “one hundred dollars,” keep the leading zeroes in a room number, and distinguish a clock time from a duration. Table headers can supply labels for their values, and linked notes can follow the passage that cites them.
+
+Run `hamr plan "My book.epub" --json` to see the original source, the planned words, and the evidence behind a reading before generating audio. The timed companion keeps the source wording and locations so you can track down a passage later. [Context controls](docs/USAGE.md#tune-readings-that-depend-on-context) · [Resume and repair](#resume-and-repair)
 
 ## Listen
 
-These are short introductions made with hamr. All 45 are included in the program and play offline with `hamr voice sample CHARACTER --play`.
+All 45 character introductions are included and play offline with `hamr voice sample CHARACTER --play`, even before speech-model setup. The current cast update includes 22 cleaned voice references chosen in blind listening and 23 fresh introductions.
 
 | Narrator | Try them with | Introduction |
 | --- | --- | --- |
 | **Nigel Thornberry** | Wildlife, travel and natural history | [Listen](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/nigel-thornberry.mp3) |
 | **Carl Sagan** | Astronomy and science | [Listen](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/carl-sagan.mp3) |
 | **Cave Johnson** | Science with rather too much confidence | [Listen](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/cave-johnson.mp3) |
+| **HAL 9000** | Science fiction and a little unease | [Listen](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/hal-9000.mp3) |
+| **Dr. Orpheus** | Gothic fiction and the occult | [Listen](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/dr-orpheus.mp3) |
 | **Garak** | Memoirs, politics and unreliable narrators | [Listen](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/garak.mp3) |
 | **The Stanley Parable Narrator** | Fiction that keeps an eye on the reader | [Listen](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/the-stanley-parable-narrator.mp3) |
 | **Dale Gribble** | Government documents. He has questions. | [Listen](https://raw.githubusercontent.com/MimirLab/hamr/main/docs/listen/dale-gribble.mp3) |
@@ -108,7 +129,7 @@ hamr voice sample nigel-thornberry --play
 hamr voice select nigel-thornberry
 ```
 
-The introductions are playback previews. The separate voice references use source recordings with exact transcripts to condition Breeze.
+`voice select` saves the narrator for new books. Use `--voice` to pick a narrator for one book. Breeze uses a separate reference recording and transcript to make the narration.
 
 To use your own voice, supply a 2–30 second recording and its exact transcript:
 
@@ -116,7 +137,7 @@ To use your own voice, supply a 2–30 second recording and its exact transcript
 hamr voice clone my-narrator --reference clean.wav --transcript-file exact.txt
 ```
 
-Hamr keeps the original recording and reuses the saved reference in every book. For supported cleanup on noisy references, run `hamr setup --wash-only` once. [Prepare a voice reference](docs/USAGE.md#prepare-a-voice-reference)
+For local reference cleanup, run `hamr setup --wash-only` once. Hamr can detect steady electrical hum during voice import, check the cleaned version against the transcript, and fall back to the unprocessed reference if the check fails. It keeps the original recording and reuses the saved reference in new books. [Voice preparation and the lighter CPU option](docs/USAGE.md#prepare-a-voice-reference)
 
 ## Install on Linux
 
@@ -193,17 +214,6 @@ hamr setup --profile vulkan-f16
 
 Setup checks that the model starts before activating it. In scripts, supply `--profile` or use `--auto` on eligible hardware. More detail is in the [setup guide](docs/USAGE.md#install-and-setup).
 
-### Optional checks before rendering
-
-```sh
-hamr plan 'My book.epub' --json
-hamr voice select nigel-thornberry
-hamr status
-hamr play JOB
-```
-
-`voice select` saves a default for new books. A per-book `--voice` takes priority. PDFs with scans or difficult layouts may need source review. See the [usage guide](docs/USAGE.md) for OCR, reading policies, review and unattended queues.
-
 ## Resume and repair
 
 If rendering stops or the computer reboots, check the job and resume it:
@@ -213,14 +223,14 @@ hamr status JOB --json
 hamr resume JOB
 ```
 
-hamr verifies saved takes before reusing them and retries unfinished work. To retake a particular passage:
+Hamr verifies saved takes before reusing them and retries unfinished work. If a job needs review, its status shows whether the issue is in the source or the recording and gives the next command. To retake a passage:
 
 ```sh
 hamr repair JOB --retake u00042
 hamr resume JOB
 ```
 
-You can also correct a pronunciation, repair a source passage or rebuild the packaging. Earlier publications are retained. The [recovery guide](docs/USAGE.md#recovery-and-repair) explains the options; [unattended rendering](docs/USAGE.md#unattended-speech-and-verification) covers `hamr run` and offline ASR checks.
+You can also correct a pronunciation, repair a source passage, or rebuild the packaging. Each repair produces a new edition and keeps prior publications. Play a finished book with `hamr play JOB`. [Recovery guide](docs/USAGE.md#recovery-and-repair) · [Unattended rendering](docs/USAGE.md#unattended-speech-and-verification)
 
 ## Why hamr?
 
@@ -237,6 +247,8 @@ Fresh installs use `~/.local/share/hamr`. Set `HAMR_HOME` or pass `--home` to us
 ## Working on hamr
 
 Bug reports are most useful with a source location or timestamp, the expected words and what you heard. The [release notes](RELEASE.md) list completed checks and work that still needs qualification.
+
+Scripts and assistants can discover JSON commands with `hamr agent capabilities` and inspect a job with `hamr agent inspect JOB`. [Operator guide](src/audiobook/agent_guide.md)
 
 ```sh
 uv sync --frozen --extra test
