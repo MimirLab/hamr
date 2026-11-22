@@ -518,6 +518,8 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         revision=RULES if refresh else j['plan']['rule_revision']
         if refresh: j['repairs'].append({'kind':'rules_upgrade','from':j['plan']['rule_revision'],'to':revision})
         selected_policy=dict(j['plan']['policy'])
+        automatic_prose=(performance_mode is not None or upgrade_rules or
+                         j['plan'].get('performance',{}).get('automatic_scope')=='prose')
         if performance_mode is not None:selected_policy['performance']=performance_mode
         if refresh:selected_policy.pop('context_implementation',None)
         if context is not None:
@@ -534,9 +536,12 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         if document_policy is not None:
             selected_policy['document']=document_policy
             j['repairs'].append({'kind':'document_policy','policy_sha256':key(document_policy),'source_sha256':doc.source_sha256})
-        j['document']=doc.json(); j['plan']=plan(doc,selected_policy,aliases,rule_revision=revision,context_reviewer=context_reviewer)
-        performance.bind(j['plan'],j['backend'],j['voice'],fallbacks=j.get('performance_fallbacks',()),
-                         previous=pinned_directions if performance_mode is None and not (upgrade_rules or voice) else None)
+        if any(value is not None for value in (alias,block_id,voice,retake,document_policy,chapters,context,
+                                               context_review,context_reviewer,performance_mode)) or reimport or upgrade_rules:
+            j['document']=doc.json(); j['plan']=plan(doc,selected_policy,aliases,rule_revision=revision,
+                                                   context_reviewer=context_reviewer,automatic_prose=automatic_prose)
+            performance.bind(j['plan'],j['backend'],j['voice'],fallbacks=j.get('performance_fallbacks',()),
+                             previous=pinned_directions if performance_mode is None and not (upgrade_rules or voice) else None)
         if rebased_takes:
             from collections import Counter
             from .source_rebase import conflict

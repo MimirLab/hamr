@@ -206,6 +206,15 @@
     "shiver", "shivering", "shivers", "shuddering breath", "sigh", "sighs", "sneeze", "sniff",
     "sniffle", "sob", "swallow", "teeth chatter", "whimper", "yawn", "yawns"
   ],
+  "automatic_directions": {
+    "prose": ["whisper", "murmured", "forceful", "breathless", "urgent", "warning", "reassuring", "weary",
+              "subdued", "restrained_anger", "apprehensive", "excited", "surprised", "authoritative", "reflective",
+              "ironic", "growing_force", "contrastive_emphasis", "gentle_entry"],
+    "direct_attribution": ["tearful", "affectionate"]
+  },
+  "legacy_linux_archives": {
+    "83bc0e94f293d5e24d1715fcb3e1bea4d5f2dfa066fde765cdc4ebd4dc00eef1": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376"
+  },
   "qualified": [
     {
       "profile": "cpu-q8",
@@ -288,6 +297,17 @@
       "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
       "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
       "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "laugh",
+      "placement": "before",
+      "reference_identity": "a5ac92d7d0b8b28cb9e42ceb3cd2448fd122d0e44a997e6e48c6829dd5924d62",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-f16",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "db740cd464d75f2635a891586f083c5b466fd63542bebd957fe7890324b04c35",
       "platform": "linux",
       "recipe": "laugh",
       "placement": "before",

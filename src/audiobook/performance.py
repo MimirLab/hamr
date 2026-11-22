@@ -12,6 +12,7 @@ from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
+CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
 LEADING = re.compile(r'^(?P<cue>'+MARKER+r')\s+(?P<dialogue>.+)$', re.I|re.S)
 TRAILING = re.compile(r'^(?P<dialogue>.+?)\s+(?P<cue>'+MARKER+r')(?P<stop>[.!?])?$', re.I|re.S)
@@ -306,7 +307,7 @@ def add_structural_directions(units, by_id, decisions, occurrences, disabled, di
     return count
 
 
-def annotate(plan, document):
+def annotate(plan, document, *, automatic_prose=True):
     """Recognize cues only when the compiled request has one demonstrable owner."""
     mode = plan['policy'].get('performance', 'auto')
     if mode not in MODES:
@@ -486,11 +487,13 @@ def annotate(plan, document):
         unit['performance_candidate'] = candidate
         if len(sources)==1:by_source_candidate[sources[0]]=candidate
         candidates += 1
-    if mode=='experimental':
+    expressive_default = mode == 'auto' and automatic_prose
+    if mode=='experimental' or expressive_default:
         sources = (plan['utterances'],by_id,decisions,occurrences,disabled,document.source_sha256,registry,registry_sha)
         if candidates:
             candidates+=add_gentle_entries(*sources)
-        candidates+=add_structural_directions(*sources)
+        if mode=='experimental':
+            candidates+=add_structural_directions(*sources)
         if tuning:
             tunes = [u['performance_candidate'] for u in plan['utterances'] if 'performance_candidate' in u]
             redirects={}
@@ -508,6 +511,8 @@ def annotate(plan, document):
     if candidates or 'performance' in plan['policy']:
         plan['performance'] = {'mode':mode, 'bound':not candidates, 'candidates':candidates,
                                'active':0, 'registry_sha256':registry_sha}
+        if expressive_default:
+            plan['performance']['automatic_scope'] = 'prose'
         if document_policy.get('performance',{}).get('tuning'):
             plan['performance']['tuning_state']='experimental' if tuning else 'inactive'
 
@@ -537,6 +542,27 @@ def rebase(previous, mapping, fallbacks, source_digest):
     return rebased
 
 
+@cache
+def pinned_backends():
+    catalog = loadjson(CATALOG_FILE)
+    runtime = catalog['runtimes']['hoppou']
+    profiles = {entry['id']: catalog['packages'][entry['packages'][0]]['files'][0]['sha256']
+                for entry in catalog['profiles'] if entry['runtime'] == 'hoppou'}
+    archives = {name: runtime[name]['sha256'] for name in ('linux_x86_64', 'windows_x86_64')}
+    return runtime['revision'], profiles, archives
+
+
+def supports_prose_direction(backend):
+    runtime, models, archives = pinned_backends()
+    platform = backend.get('runtime_platform') or {'linux': 'linux_x86_64', 'win32': 'windows_x86_64'}.get(sys.platform)
+    model = models.get(backend.get('profile'))
+    # Older verified setups predate the archive field. The pinned runtime and
+    # model still identify the instruction-only transport in those setups.
+    return (platform in archives and model is not None and backend.get('model_sha256') == model
+            and backend.get('runtime_revision') == runtime
+            and backend.get('runtime_archive_sha256') in (None, archives[platform]))
+
+
 def bind(plan, backend, voice, *, fallbacks=(), previous=None):
     """Freeze planned requests once a job has a pinned backend and narrator."""
     summary = plan.get('performance')
@@ -547,12 +573,18 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
     fallback_ids = {entry['candidate'] for entry in fallbacks if not entry.get('variant')}
     instructions_only = {entry['candidate'] for entry in fallbacks if entry.get('variant')=='instruction_only'}
     same_registry = summary['registry_sha256']==key(registry)
+    platform = backend.get('runtime_platform',sys.platform)
+    archive_sha256 = backend.get('runtime_archive_sha256')
+    if archive_sha256 is None and platform == 'linux':
+        archive_sha256 = registry['legacy_linux_archives'].get(backend.get('binary_sha256'))
     backend_target = {'profile':backend.get('profile'),'runtime':backend.get('runtime_revision'),
-                      'archive_sha256':backend.get('runtime_archive_sha256'),
-                      'model_sha256':backend.get('model_sha256'),
-                      'platform':backend.get('runtime_platform',sys.platform)}
+                      'archive_sha256':archive_sha256,'model_sha256':backend.get('model_sha256'),
+                      'platform':platform}
     reference = key({'reference_sha256':voice['reference_sha256'],'transcript':voice['transcript']}) if (
         voice.get('reference_sha256') and voice.get('transcript')) else None
+    prose = (same_registry and summary.get('automatic_scope') == 'prose' and reference is not None
+             and supports_prose_direction(backend))
+    automatic = registry['automatic_directions']
     settings = backend.get('settings',{})
     execution = {'device':settings.get('device'),'parallel':settings.get('parallel',1)}
     candidates=[(unit,unit['performance_candidate']) for unit in plan['utterances'] if 'performance_candidate' in unit]
@@ -587,7 +619,11 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
         qualified = same_registry and all(backend_target.values()) and (
             target in registry['qualified'] or
             reference is not None and {**target,'reference_identity':reference,'execution':execution} in registry['qualified'])
-        enabled = backend.get('runtime_revision') and (summary['mode']=='experimental' or qualified)
+        recipe = candidate['recipe']
+        directed = prose and candidate.get('instruction') and (recipe in automatic['prose'] or (
+            recipe in automatic['direct_attribution'] and any(e['kind']=='direct_attribution'
+                                                            for e in candidate.get('evidence', ()))))
+        enabled = backend.get('runtime_revision') and (summary['mode']=='experimental' or qualified or directed)
         if enabled:
             unit['text'] = candidate['speech']
             if execution['parallel']!=1 and candidate['cfg_scale']!=1:
@@ -595,13 +631,16 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
                     raise Error('speech_guidance','Stronger custom guidance requires serial generation.')
                 candidate={**candidate,'cfg_scale':1}
             suffix=candidate.get('voice_suffixes',{}).get(voice.get('character'))
-            if suffix and summary['mode']=='experimental':
+            if suffix and (summary['mode']=='experimental' or directed):
                 candidate={**candidate,'instruction':candidate['instruction']+' '+suffix}
             unit['performance'] = candidate
             active_ids.add(cid)
-            unit['performance_state'] = 'experimental' if summary['mode']=='experimental' else 'qualified'
-            if cid in instructions_only:
+            if cid in instructions_only or (directed and candidate.get('control_labels')):
                 use_instruction_only(unit)
+            elif summary['mode']=='experimental':
+                unit['performance_state']='experimental'
+            else:
+                unit['performance_state']='qualified' if qualified else 'automatic'
         else:
             unit['performance_state'] = 'unqualified'
     summary['active'] = sum('performance' in unit for unit in plan['utterances'])

@@ -349,8 +349,10 @@ def test_experimental_gentle_entrances_stay_with_their_quiet_join(tmp_path):
     suppressed=plan_source(tmp_path,text)
     performance.bind(suppressed,IDENTITY,VOICE,fallbacks=[{'candidate':const}])
     assert next(u for u in suppressed['utterances'] if u['text']=='The room was quiet.')['performance_state']=='anchor_neutral'
-    assert not any(u.get('performance_candidate',{}).get('recipe')=='gentle_entry'
-                   for u in plan_source(tmp_path,text,'auto')['utterances'])
+    automatic=plan_source(tmp_path,text,'auto')
+    performance.bind(automatic,IDENTITY,VOICE)
+    assert any(u.get('performance_candidate',{}).get('recipe')=='gentle_entry' for u in automatic['utterances'])
+    assert not any(u.get('performance') for u in automatic['utterances'])
 
 
 def test_tearful_register_instruction_is_specific_to_cave(tmp_path):
@@ -436,6 +438,61 @@ def test_automatic_quiet_scene_and_laugh_use_only_qualified_source_and_reference
         voice=loadjson(ASSETS/character/'voice.json')
         performance.bind(plan,backend_identity,voice)
         assert plan['performance']['active']==active
+
+
+def pinned_linux_profile(profile):
+    runtime, models, archives=performance.pinned_backends()
+    return {'profile':profile,'runtime_revision':runtime,'model_sha256':models[profile],
+            'runtime_archive_sha256':archives['linux_x86_64'],'settings':{}}
+
+
+def test_normal_book_directs_clear_prose_without_scope_leaks(tmp_path,monkeypatch,capsys):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    s=Store(tmp_path/'state')
+    writejson(s.root/'settings.json',pinned_linux_profile('vulkan-f16'))
+    source=tmp_path/'book.md'
+    source.write_text('\n\n'.join((
+        '“Stay by the door,” she whispered, “until the footsteps fade.”',
+        'The rain fell steadily.',
+        '“Bring the brass key,” Ada said, stressing the word “brass”.',
+        '“Wait. We have to go now,” she said, beginning softly and growing louder.',
+        'Lee was still out of breath. “I just made it in time,” Lee said.',
+        '“He can hear us. Wait until he leaves,” Ada said in a voice that grew quieter.',
+        'Her eyes filled with tears. Her voice broke. “I saved your letter,” she said.',
+        '“I saved your letter,” she said through tears.',
+        '[laugh] “The hat was on the wrong peg,” she said.',
+    )))
+    a=['--home',str(s.root),'queue',str(source),'--voice','cast:nigel-thornberry','--json']
+    assert cli.main(a)==0
+    saved=s.get(json.loads(capsys.readouterr().out)['job'])
+    assert saved['plan']['performance']['mode']=='auto'
+    rows=saved['plan']['utterances']
+    assert [u.get('performance',{}).get('recipe') for u in rows]==[
+        'whisper','gentle_entry','contrastive_emphasis','growing_force','breathless',None,None,'tearful','laugh']
+    assert 'until the footsteps fade' in performance.request(rows[0])[0]
+    assert all(performance.request(u)[0]==u['text'] for u in rows[:-1])
+    assert performance.request(rows[-1])[0].startswith('(chuckle) ')
+    wrong={**saved['backend'],'runtime_archive_sha256':'0'*64}
+    invalid=planner.plan(inspect(source))
+    assert performance.bind(invalid,wrong,saved['voice']) and invalid['performance']['active']==0
+
+
+def test_unrelated_repair_preserves_legacy_delivery_until_explicit_upgrade(tmp_path,monkeypatch):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    s=Store(tmp_path/'state')
+    writejson(s.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    source=tmp_path/'book.md'
+    source.write_text(f'{WHISPER}\n\nThe room was quiet.')
+    old=jobs.create(s,source,'cast:nigel-thornberry')
+    job=s.get(old['job'])
+    job['plan']=planner.plan(jobs.document(job),automatic_prose=False)
+    performance.bind(job['plan'],job['backend'],job['voice'])
+    s.save(job)
+    assert job['plan']['performance']['active']==0
+    repaired=jobs.repair(s,old['job'],retake='u00002')
+    assert repaired['performance']['active']==0
+    upgraded=jobs.repair(s,old['job'],performance_mode='auto')
+    assert upgraded['performance']['active']==2
 
 
 def test_native_transport_forwards_clone_instruction_and_hashes_exact_fields(tmp_path):

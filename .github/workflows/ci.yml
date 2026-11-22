@@ -72,7 +72,7 @@ jobs:
           $work = Join-Path $env:RUNNER_TEMP 'hamr-native-control'
           New-Item -ItemType Directory -Force -Path $work | Out-Null
           Set-Location $work
-          Set-Content 'Garden control.md' 'A quiet bird waited in the garden.'
+          Set-Content 'Garden control.md' '"Keep the gate closed," she whispered.'
           New-Item -ItemType Directory -Force -Path 'published' | Out-Null
           $setup = (& $hamr --home 'speech state' setup --profile cpu-q8 --json | Out-String) | ConvertFrom-Json
           if ($setup.health.actual_device -notlike 'CPU*') { throw 'The CPU runtime was not verified.' }
@@ -82,6 +82,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $result = $publication | ConvertFrom-Json
           if ($publicationExit -ne 0 -or $result.status -ne 'ready') { throw "The control book did not publish. $publication" }
+          if ($result.performance.mode -ne 'auto' -or $result.performance.active -ne 1) { throw 'Normal open did not direct the whisper.' }
           $m4b = Join-Path $result.output 'book.m4b'
           ffprobe -v error -show_entries format=duration -of json $m4b
           $inspection = (& $hamr --home 'speech state' agent inspect $result.job --verify | Out-String) | ConvertFrom-Json

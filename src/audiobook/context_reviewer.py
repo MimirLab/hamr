@@ -160,11 +160,11 @@ def exchange(endpoint, pending, expand):
     return outcome, replies, receipt
 
 
-def reviewed_plan(doc, policy, aliases, rule_revision, endpoint):
+def reviewed_plan(doc, policy, aliases, rule_revision, endpoint, *, automatic_prose=True):
     from .planner import plan
 
     endpoint=validate_endpoint(endpoint)
-    draft=plan(doc,policy,aliases,rule_revision)
+    draft=plan(doc,policy,aliases,rule_revision,automatic_prose=automatic_prose)
     context=draft.get('contextual_resolution',{})
     chosen=draft['policy'].get('context_review',[])
     chosen_ids={reply['occurrence_id'] for reply in chosen}
@@ -180,4 +180,4 @@ def reviewed_plan(doc, policy, aliases, rule_revision, endpoint):
     final={**draft['policy'],'context_review_receipt':receipt}
     if replies:
         final['context_review']=[*chosen,*replies]
-    return plan(doc,final,aliases,rule_revision)
+    return plan(doc,final,aliases,rule_revision,automatic_prose=automatic_prose)

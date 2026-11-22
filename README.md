@@ -74,9 +74,15 @@ The [release notes](RELEASE.md) record completed render, playback and interrupti
 
 ## Expressive narration
 
-An ordinary `hamr open` command already uses supported delivery cues. On Linux Q8, Nigel Thornberry and Cave Johnson can perform authored sighs. Vulkan Q8 adds directly attributed shouts for both voices, plus an opening chuckle and quiet-scene delivery for Nigel.
+Expressive delivery is on by default. As Hamr reads a book, it can carry a whisper through a spoken attribution, let an urgent line build, or stress a word the author singles out. A line can also pick up the tone of the prose around it when the evidence points to the same speaker. Hamr keeps the complete passage together and checks the spoken words before publishing.
 
-You can also enable additional delivery for a book. Hamr can whisper across an intervening attribution, stress a word the author singles out, or build urgency across several sentences while keeping the wording intact. Those controls have been tested in matched listening comparisons and speech checks on selected passages. The guide gives the commands, voice and engine combinations, and a way to preview an exact passage. [Use expressive narration](docs/USAGE.md#expressive-narration)
+An explicit sigh or chuckle can be performed with tested voice and engine combinations. If you prefer a steady delivery for technical material, save that preference for new books.
+
+```sh
+hamr settings --performance off --mode study
+```
+
+Use `hamr settings` to see your choices. Supply `--performance off` on a single book to read it plainly. [Delivery controls and supported cues](docs/USAGE.md#expressive-narration)
 
 ## Listen
 

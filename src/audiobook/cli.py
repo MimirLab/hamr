@@ -6,6 +6,7 @@ from .core import Error,Store,RATE,atomic,dumps,loadjson,writejson
 from .importers import inspect,cached_inspect
 from .planner import plan
 from .backend import Engine,doctor,save_voice,setup
+from .cast import preference
 from .jobs import bind_speech,cleanup,create,render,repair,speak,summary,excerpt
 from .installation import command, shell_command
 
@@ -177,7 +178,7 @@ def add_source(p):
 def add_performance(p):
     from .performance import MODES
     p.add_argument('--performance',choices=MODES,
-                   help='Use qualified delivery cues (auto), read plainly (off), or audition candidates (experimental)')
+                   help='Follow supported expressive cues (auto), read plainly (off), or try additional controls (experimental)')
 
 
 def add_context_review(p):
@@ -186,7 +187,7 @@ def add_context_review(p):
     group.add_argument('--context-review-endpoint',help='Explicit loopback HTTP candidate reviewer for this command')
 
 def policy(a):
-    selected={**getattr(a,'saved_policy',{}),**{k:getattr(a,k) for k in ('mode','tables','code','references','notes','performance') if getattr(a,k,None) is not None}}
+    selected={**getattr(a,'reading_defaults',{}),**getattr(a,'saved_policy',{}),**{k:getattr(a,k) for k in ('mode','tables','code','references','notes','performance') if getattr(a,k,None) is not None}}
     sections=dict(selected.get('sections',{}))
     for item in getattr(a,'section',[]):
         name,sep,mode=item.rpartition('=')
@@ -212,6 +213,9 @@ def parser():
     def sub(name,help):
         q=subs.add_parser(name,help=help); q.add_argument('--json',action='store_true',default=argparse.SUPPRESS); return q
     sub('doctor','Inspect host and dependencies without downloading')
+    q=sub('settings','Show or change the default reading style for new books')
+    q.add_argument('--performance',choices=('auto','off'),help='Set expressive (auto) or plain (off) delivery')
+    q.add_argument('--mode',choices=('listen','study','procedure'),help='Set the default document reading mode')
     q=sub('profile','Save explicit reusable listening defaults'); q.add_argument('name'); q.add_argument('--mode',choices=['listen','study','procedure'],default='listen'); q.add_argument('--tables',choices=['speak','companion'],default='speak'); q.add_argument('--code',choices=['speak','companion']); q.add_argument('--references',choices=['speak','companion']); q.add_argument('--notes',choices=['after_paragraph','inline','companion']); q.add_argument('--pronounce',action='append',default=[]); q.add_argument('--section',action='append',default=[])
     q.add_argument('--context',type=Path,help='Save reusable context settings from JSON')
     add_performance(q)
@@ -372,6 +376,8 @@ def dispatch(argv=None):
             from .operator_cli import dispatch as operator_dispatch
             return operator_dispatch(p,a)
         s=Store(a.home)
+        if a.command in ('plan','queue','open'):
+            a.reading_defaults=preference(s).get('reading',{})
         if getattr(a,'listening_profile',None):
             import re
             if not re.fullmatch('[A-Za-z0-9_-]{1,64}',a.listening_profile): raise Error('profile_name','Invalid listening profile name.')
@@ -382,6 +388,20 @@ def dispatch(argv=None):
         if a.command=='doctor':
             result=doctor(s)
             emit(result,True) if jm else print_doctor(result)
+        elif a.command=='settings':
+            changes={name:getattr(a,name) for name in ('mode','performance') if getattr(a,name) is not None}
+            if changes:
+                with s.lock():
+                    saved=preference(s)
+                    reading={**saved.get('reading',{}),**changes}
+                    writejson(s.root/'preferences.json',{**saved,'reading':reading})
+            else:
+                reading=preference(s).get('reading',{})
+            effective={'mode':'listen','performance':'auto',**reading}
+            if jm: emit({'schema_version':1,'reading':effective},True)
+            else:
+                print('Delivery: '+{'auto':'Expressive','off':'Plain'}[effective['performance']])
+                print('Reading mode: '+effective['mode'])
         elif a.command=='profiles':
             from .backend import CATALOG
             from .hardware import profile_catalog
@@ -485,7 +505,7 @@ def dispatch(argv=None):
         elif a.command in ('queue','open'):
             from .book_flow import check_source, finish_book, play_output, preflight
             check_source(a.source)
-            pref=s.root/'preferences.json'; voice=a.voice or (loadjson(pref).get('voice') if pref.exists() else None)
+            voice=a.voice or preference(s).get('voice')
             if a.command=='open': preflight(s,voice,a.output,a.play)
             if a.command=='open' and not a.yes:
                 if jm or not sys.stdin.isatty(): raise Error('confirmation_required','Headless open requires --yes with explicit/saved settings.','Use plan to inspect, then open --yes or queue.')
@@ -557,7 +577,7 @@ def dispatch(argv=None):
                         reference=temp
                     else: reference=a.reference
                     v=save_voice(s,a.name,reference,transcript,a.description,a.voice_command)
-                    if not a.no_default: writejson(s.root/'preferences.json',{'voice':a.name})
+                    if not a.no_default: writejson(s.root/'preferences.json',{**preference(s),'voice':a.name})
                     if a.voice_command=='design': temp.unlink(missing_ok=True)
                     emit({'schema_version':1,'voice':v['name'],'origin':v['origin'],'seconds':v['seconds'],'reference':v['reference'],'next':'Listen to the reference and verify its transcript before a long render.'},True)
         elif a.command=='worker':

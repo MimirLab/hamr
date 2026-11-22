@@ -41,6 +41,27 @@ def test_saved_reading_defaults_and_aliases_still_apply(tmp_path, capsys):
     assert 'the example' in ' '.join(u['text'] for u in plan['utterances'])
 
 
+def test_plain_and_technical_defaults_apply_until_overridden(tmp_path,capsys):
+    a=['--home',str(tmp_path/'state')]
+    source=tmp_path/'book.md'
+    source.write_text('“Stay close,” she whispered.')
+    assert cli.main([*a,'settings','--json'])==0
+    assert json.loads(capsys.readouterr().out)['reading']=={'mode':'listen','performance':'auto'}
+    assert cli.main([*a,'settings','--mode','study','--performance','off'])==0
+    capsys.readouterr()
+    assert cli.main([*a,'voice','select','nigel-thornberry','--json'])==0
+    capsys.readouterr()
+    assert cli.main([*a,'plan',str(source),'--json'])==0
+    plain=json.loads(capsys.readouterr().out)
+    assert plain['policy']['mode']=='study' and plain['performance']['mode']=='off'
+    assert plain['performance']['candidates']==0
+    assert cli.main([*a,'plan',str(source),'--mode','listen','--performance','auto','--json'])==0
+    expressive=json.loads(capsys.readouterr().out)
+    assert expressive['performance']['mode']=='auto' and expressive['performance']['candidates']==1
+    assert cli.main([*a,'settings','--json'])==0
+    assert json.loads(capsys.readouterr().out)['reading']=={'mode':'study','performance':'off'}
+
+
 def test_unimplemented_backend_is_reported_before_any_download(tmp_path, monkeypatch, capsys):
     from audiobook import backend
     def forbidden(*args, **kwargs):

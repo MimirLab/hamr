@@ -1,4 +1,12 @@
-# hamr 0.4.0
+# hamr 0.4.1
+
+### Expressive narration by default
+
+New books in listening mode use clear cues in the prose to shape delivery. Hamr can whisper through an intervening attribution, carry a supported tone into the same speaker's next turn, build urgency, mark an author's chosen emphasis, and enter gently after a whisper. The complete passage stays together. The normal speech check looks for missing or changed words before publication.
+
+Nigel's authored opening chuckle is also available automatically on Linux Vulkan F16. Save plain or technical delivery for new books with `hamr settings --performance off --mode study`. The setting can be overridden for an individual book, and existing jobs keep their saved delivery until revised. [How to use expressive narration](docs/USAGE.md#expressive-narration)
+
+## hamr 0.4.0
 
 ### Expressive narration
 

@@ -1,4 +1,4 @@
-.TH HAMR 1 "2026-11-22" "hamr 0.4.0" "User Commands"
+.TH HAMR 1 "2026-11-22" "hamr 0.4.1" "User Commands"
 .SH NAME
 hamr \- turn EPUB, PDF, Markdown and plain-text documents into local audiobooks
 .SH SYNOPSIS
@@ -29,6 +29,12 @@ Show commands. Use
 .BI "hamr " "command " \-\-help
 for command-specific options.
 .SH COMMANDS
+.TP
+.B "settings"
+Show the reading preferences for new books. Use
+.B "hamr settings --performance off --mode study"
+to save plain technical reading. Expressive listening uses
+.BR "--performance auto --mode listen" .
 .TP
 .B "setup"
 Choose a recommended profile and download the speech engine and offline
