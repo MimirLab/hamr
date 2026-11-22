@@ -305,6 +305,67 @@ def trailing_voice_description(source, config, preference):
     return None
 
 
+def voice_description_rules(config):
+    """Compile literal delivery descriptions owned by the reporting clause."""
+    prepositional = {phrase: recipe for recipe, entry in config.items() for phrase in entry['prepositional']}
+    introductions = {**prepositional, **{phrase: recipe for recipe, entry in config.items()
+                                        for phrase in entry.get('introductions', ())}}
+    possessive = {phrase: recipe for recipe, entry in config.items() for phrase in entry['possessive']}
+    voice_phrase = '|'.join(map(re.escape, prepositional))
+    introduction_phrase = '|'.join(map(re.escape, introductions))
+    possessive_phrase = '|'.join(map(re.escape, possessive))
+    actor = r'(?:' + ATTRIBUTION + r'|[Tt]he\s+(?:[a-z-]+\s+){0,2}[a-z-]+)'
+    verbs = '|'.join(NEUTRAL_REPORTING)
+    reporting = (rf'(?:(?P<actor_first>{actor})\s+(?P<verb_after>{verbs})|'
+                 rf'(?P<verb_first>{verbs})\s+(?P<actor_after>{actor}))')
+    after = re.compile(
+        rf'\s*,?\s*{reporting}(?:\s*,?\s*(?P<prepositional>{voice_phrase})|'
+        rf",\s*(?P<possessive>(?P<owner>my|our|his|her|their|{actor}['’]s)\s+"
+        rf'(?P<predicate>{possessive_phrase})))\s*[.!?](?=\s|$)')
+    before = re.compile(
+        rf'(?:(?:^|,\s+)(?:(?:[Tt]hen|[Aa]t last|[Aa]t length)\s+)?{reporting}|'
+        rf'[, ]\s*and\s+(?P<verb_linked>{verbs}))\s*,?\s*'
+        rf'(?P<prepositional>{introduction_phrase})(?:\s+to\s+{actor})?\s*[:,]$')
+    return before, after, introductions, prepositional, possessive
+
+
+def described_attribution(source, rules):
+    if len(source)>480 or len(quotes := list(re.finditer(QUOTATION, source)))!=1:
+        return None
+    quote, = quotes
+    before, after, introductions, prepositional, possessive = rules
+    lead = list(sentence_spans(source[:quote.start()]))
+    opening = before.search(lead[-1]['text']) if lead else None
+    if opening and opening['verb_linked']:
+        setup = lead[-1]['text'][:opening.start()]
+        if re.search(r"\b(?:that|whether|if|not|never|denied|doubted)\b|n['’]t\b",setup,re.I):
+            opening = None
+    closing = after.match(source[quote.end():])
+    if bool(opening)==bool(closing):
+        return None
+    match = opening or closing
+    offset = lead[-1]['start'] if opening else quote.end()
+    verb = next(group for group in ('verb_after','verb_first','verb_linked') if match.groupdict().get(group))
+    if match.groupdict().get('owner'):
+        actor = (match['actor_first'] or match['actor_after']).casefold()
+        owner = match['owner'].casefold().replace('’', "'")
+        # A named reporter can own the adjacent possessive when the entire
+        # passage is that one turn and its description.
+        local_owner = (quote.start()==0 and offset+match.end()==len(source)
+                       and actor not in POSSESSIVES and owner in ('his','her','their'))
+        if owner != POSSESSIVES.get(actor, actor + "'s") and not local_owner:
+            return None
+        recipe = possessive[match['predicate']]
+        cue = 'possessive'
+    else:
+        recipe = (introductions if opening else prepositional)[match['prepositional']]
+        cue = 'prepositional'
+    evidence = {'kind':'attached_voice_description', 'position':'before' if opening else 'after',
+                'span':[offset+i for i in match.span(cue)],
+                'reporting_span':[offset+i for i in match.span(verb)], 'quotation_spans':[list(quote.span())]}
+    return recipe, [evidence], quote.start()>0
+
+
 def contextual_direction(source, config, previous=None, preference='corroborated'):
     """Keep prose evidence local to a speaker or a coherent scene."""
     if result := dialogue_context(source,config,previous,preference):
@@ -437,7 +498,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     document_policy=plan['policy'].get('document', {})
     disabled, preference = performance_preferences(document_policy, {b.id for b in document.blocks})
     registry = loadjson(RULES_FILE)
-    version = context_version or (4 if automatic_prose else 1)
+    version = context_version or (5 if automatic_prose else 1)
     full_delivery = version >= 3
     recipes = registry['directions']
     custom = attribution_preferences(document_policy.get('performance',{}),recipes)
@@ -449,6 +510,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             plan['performance']['tuning_state']='inactive'
         return
     verbs,cue_pattern,postposed = attribution_rules(registry,version,custom)
+    voice_rules = voice_description_rules(registry['context']['attached_voice']) if version>=5 else None
     modern_context = version >= 2
     events = {label:kind for kind,item in registry['events'].items() for label in item['spellings']}
     by_id = {b.id:b for b in document.blocks}
@@ -603,6 +665,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             if carry:
                 anchor=by_source_candidate[previous.id]
                 kind,evidence,has_lead=anchor['recipe'],[carry],False
+            elif voice_rules and (context:=described_attribution(source,voice_rules)):
+                kind,evidence,has_lead=context
             elif (context:=contextual_direction(source,registry['context'],previous,preference)):
                 kind,evidence,has_lead=context
             elif modern_context and (context:=trailing_voice_description(source,registry['context'],preference)):
@@ -611,11 +675,18 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 continue
             recipe=recipes[kind]
             instruction=recipe['instruction']
-            if has_lead:
+            attached = evidence[0]['kind']=='attached_voice_description'
+            opening_instruction = (registry['context']['attached_voice'][kind].get('opening_instruction')
+                                   if attached and evidence[0]['position']=='before' else None)
+            if opening_instruction:
+                instruction = opening_instruction
+            elif has_lead:
                 instruction='Read the opening narration in the usual reference voice. '+instruction
             if evidence[0]['kind']=='trailing_voice_description':
                 instruction+=' Read the description after the quotation in the usual reference voice.'
-            span=carry['span'] if carry else [0,len(source)]
+            span = carry['span'] if carry else [0,len(source)]
+            if attached:
+                span = evidence[0]['span']
             candidate={'recipe':kind,'speech':neutral,'synthesis':neutral,'instruction':instruction,
                        'cfg_scale':recipe.get('cfg_scale',1),'source':{'block':sources[0],'span':span},
                        'evidence':evidence,'contextual':True}
@@ -627,7 +698,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             continue
         if joined_pdf:
             locate_pdf_candidate(candidate,blocks)
-        narrated_context=surrounding or candidate.get('evidence',[{}])[0].get('kind')=='trailing_voice_description'
+        narrated_context = surrounding or candidate.get('evidence',[{}])[0].get('kind') in (
+            'trailing_voice_description','attached_voice_description')
         if (direction or candidate.get('contextual')) and not focus and not candidate.get('anchor') and not narrated_context:
             if marker:=recipe.get('quote_marker'):
                 quotes=list(re.finditer(QUOTATION,candidate['speech']))

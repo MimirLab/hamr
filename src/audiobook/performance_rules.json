@@ -3,7 +3,8 @@
   "compatible_registry_sha256": [
     "c46c5f9b93db2aac04799dc9343e6da9570f7ada67aa8934dc20b4cb42d06bab",
     "7e4cecbe03a10c7f771f8f59b8a82a26e4f8f718855cd1fca1cc8b166e21e639",
-    "9ba1306b339e98c4436600491f4a09ef334d8dd615611e8647b55967afee4b52"
+    "9ba1306b339e98c4436600491f4a09ef334d8dd615611e8647b55967afee4b52",
+    "bf06eb8e82fa32de416f92b6024059f8d677c4f888e1c07ec8222fe9991dfea1"
   ],
   "directions": {
     "whisper": {
@@ -137,6 +138,18 @@
         "tearful": ["tearfully", "through tears"],
         "excited": ["excitedly"],
         "ironic": ["sarcastically"]
+      }
+    },
+    "attached_voice": {
+      "whisper": {
+        "prepositional": [],
+        "possessive": [],
+        "introductions": ["in a whisper"],
+        "opening_instruction": "Whisper only the quoted words. Keep the narration and attribution at the usual speaking volume and in the usual reference voice. Keep every word clear."
+      },
+      "murmured": {
+        "prepositional": ["in a barely audible voice", "in a barely audible tone"],
+        "possessive": ["voice barely audible", "words barely audible"]
       }
     },
     "trailing_voice": [

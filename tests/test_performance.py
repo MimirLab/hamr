@@ -546,6 +546,55 @@ def test_normal_attribution_directs_only_the_owned_sentence(tmp_path,text,recipe
         assert 'around the quotation in the usual reference voice' in candidate['instruction']
 
 
+@pytest.mark.parametrize(('text','cue','reporting','recipe'),[
+    ('“Stay by the door,” she said, her voice barely audible.', 'her voice barely audible', 'said', 'murmured'),
+    ('“Stay by the door,” said Ada, her voice barely audible.', 'her voice barely audible', 'said', 'murmured'),
+    ('“Use the green key,” said Ada, Ada’s words barely audible.', 'Ada’s words barely audible', 'said', 'murmured'),
+    ('The hall was empty. Then she said, in a barely audible voice: “Come this way.”',
+     'in a barely audible voice', 'said', 'murmured'),
+    ('“Leave enough for the others,” replied the old man, in a barely audible tone.',
+     'in a barely audible tone', 'replied', 'murmured'),
+    ('The steps creaked. She said, in a whisper: “Someone is moving below us.”',
+     'in a whisper', 'said', 'whisper'),
+    ('The clerk drew the curtain aside and said in a whisper, “They have found us.”',
+     'in a whisper', 'said', 'whisper'),
+    ('Before anyone left, he said, in a whisper to Ada, “Leave the gate open.”',
+     'in a whisper', 'said', 'whisper'),
+])
+def test_default_attached_voice_description_keeps_the_complete_turn(tmp_path,text,cue,reporting,recipe):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    document=inspect(source)
+    assert all('performance_candidate' not in u for u in planner.plan(document,delivery_context=4)['utterances'])
+    unit,=planner.plan(document)['utterances']
+    candidate=unit['performance_candidate']
+    assert candidate['recipe']==recipe
+    assert candidate['speech']==candidate['synthesis']==text
+    evidence,=candidate['evidence']
+    assert evidence['kind']=='attached_voice_description'
+    assert text[slice(*evidence['span'])]==cue
+    assert text[slice(*evidence['reporting_span'])]==reporting
+    quote,=evidence['quotation_spans']
+    assert text[slice(*quote)].startswith('“')
+    assert text[slice(*quote)].endswith('”')
+
+
+@pytest.mark.parametrize('text',[
+    '“Look outside,” he said, her voice barely audible.',
+    '“Look outside,” Ada said, Lee’s voice barely audible.',
+    'Lee leaned toward Ada. “Look outside,” Ada said, her voice barely audible.',
+    '“Look outside,” she said, her voice no longer barely audible.',
+    '“Look outside,” she said in a low, even voice.',
+    'She said in a barely audible voice: “Look outside.” “Where?” Ada asked.',
+    'He denied that Ada came back and said in a whisper: “Look outside.”',
+])
+def test_attached_voice_direction_requires_owned_unambiguous_description(tmp_path,text):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    plan=planner.plan(inspect(source))
+    assert all('performance_candidate' not in u for u in plan['utterances'])
+
+
 def test_book_policy_adds_an_exact_attribution_without_changing_other_requests(tmp_path,monkeypatch,capsys):
     monkeypatch.setattr(performance.sys,'platform','linux')
     store=Store(tmp_path/'state')
