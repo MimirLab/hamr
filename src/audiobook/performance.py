@@ -366,6 +366,79 @@ def described_attribution(source, rules):
     return recipe, [evidence], quote.start()>0
 
 
+def sentence_seam(text, start, end):
+    """A marker can own the pause between two complete spoken sentences."""
+    before, after = text[:start].rstrip(), text[end:].lstrip()
+    if not before or before[-1] not in '.!?' or not after:
+        return False
+    boundary = len(before)+1
+    return any(span['end']==boundary for span in sentence_spans(before+' '+after))
+
+
+def inline_event_site(source, recipes):
+    if len(source)>480 or not any(marker in source for marker in '[('):
+        return None
+    marks = list(literal_pattern(RULES_FILE).finditer(source))
+    quoted = list(re.finditer(QUOTATION,source))
+    if len(marks)!=1 or len(quoted)!=1:
+        return None
+    mark, = marks
+    quote, = quoted
+    start, end = quote.start()+1, quote.end()-1
+    if not start<mark.start()<mark.end()<end or not (
+            source[mark.start()-1].isspace() and source[mark.end()].isspace()):
+        return None
+    if not sentence_seam(source[start:end],mark.start()-start,mark.end()-start):
+        return None
+    kind = next((kind for kind,rule in recipes.items()
+                 if rule.get('inline_instruction') and mark[0][1:-1].strip().lower() in rule['spellings']),None)
+    if not kind:
+        return None
+    reporting = '|'.join(NEUTRAL_REPORTING)
+    if not (dialogue_attribution(source,reporting) or embedded_attribution(source,reporting)):
+        return None
+    return kind, quote, mark
+
+
+def pdf_inline_event_continues(left, right):
+    if (left.role!='body' or right.role!='body' or left.issue or right.issue
+            or left.chapter!=right.chapter or left.locator.get('page')!=right.locator.get('page')
+            or not right.source.lstrip().startswith(('[','('))):
+        return False
+    source = ' '.join(delivery_text(block, True) for block in (left,right))
+    return inline_event_site(source,loadjson(RULES_FILE)['events']) is not None
+
+
+def inline_vocal_event(source, speech, block, recipes):
+    if not (located := inline_event_site(source,recipes)):
+        return None
+    kind, quote, mark = located
+    spoken_quotes = list(re.finditer(QUOTATION,speech))
+    if len(spoken_quotes)!=1:
+        return None
+    spoken, = spoken_quotes
+    label = re.escape(spoken_vocal_marker(mark[0]))
+    body = spoken[0][1:-1]
+    locations = [hit for hit in re.finditer(r'(?<=\s)'+label+r'(?=\s)',body)
+                 if sentence_seam(body,hit.start(),hit.end())]
+    if len(locations)!=1:
+        return None
+    site, = locations
+    start,end = (spoken.start()+1+index for index in site.span())
+    prefix,suffix = speech[:start].rstrip(),speech[end:].lstrip()
+    recipe = recipes[kind]
+    from .speech_compare import comparison_tokens
+    return {
+        'recipe':kind, 'speech':prefix+' '+suffix, 'synthesis':prefix+' '+recipe['marker']+' '+suffix,
+        'instruction':recipe['inline_instruction'], 'cfg_scale':1,
+        'source':{'block':block,'span':list(mark.span())},
+        'evidence':[{'kind':'authored_sentence_boundary','span':list(mark.span()),
+                     'quotation_spans':[list(quote.span())]}],
+        'event':{'kind':kind,'position':'within','word_offset':len(comparison_tokens(prefix)),
+                 **{field:recipe[field] for field in ('asr_labels','asr_annotations')}},
+    }
+
+
 def contextual_direction(source, config, previous=None, preference='corroborated'):
     """Keep prose evidence local to a speaker or a coherent scene."""
     if result := dialogue_context(source,config,previous,preference):
@@ -498,7 +571,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     document_policy=plan['policy'].get('document', {})
     disabled, preference = performance_preferences(document_policy, {b.id for b in document.blocks})
     registry = loadjson(RULES_FILE)
-    version = context_version or (5 if automatic_prose else 1)
+    version = context_version or (6 if automatic_prose else 1)
     full_delivery = version >= 3
     recipes = registry['directions']
     custom = attribution_preferences(document_policy.get('performance',{}),recipes)
@@ -543,6 +616,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         surrounding = None
         focus = None
         event = None
+        inline_event = None
         event_attribution = None
         if len(blocks)==2 and not joined_pdf:
             next_source=delivery_text(blocks[1], full_delivery)
@@ -552,6 +626,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 event = next_source, 'after', blocks[1], 0, ''
         elif (match:=dialogue_attribution(source,cue_pattern,postposed)) and (kind:=verbs.get(attribution_phrase(match))):
             direction = kind, match
+        elif version>=6 and (inline_event:=inline_vocal_event(source,neutral,sources[0],registry['events'])):
+            pass
         elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed)) and (
                 kind:=verbs.get(attribution_phrase(owned[0]))):
             direction = kind, owned[0]
@@ -570,7 +646,9 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             if any(other.chapter==blocks[0].chapter and other.role=='body' and not other.issue
                    and (turn:=SPEAKER.fullmatch(other.source)) and turn['name']!=speaker['name'] for other in neighbors):
                 event=match['cue'],'before',blocks[0],speaker.start('line')+match.start('cue'),speaker['name']+':'
-        if direction:
+        if inline_event:
+            candidate = inline_event
+        elif direction:
             kind, attribution = direction
             recipe = recipes[kind]
             modifier = attribution.groupdict().get('modifier')
@@ -853,7 +931,8 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
                           if evidence['kind']=='deliberate_restraint'),None):
             target['context_support']=support
         if event:=candidate.get('event'):
-            target['placement']='after_speaker' if event['word_offset'] else event['position']
+            position = event['position']
+            target['placement']='after_speaker' if position=='before' and event['word_offset'] else position
         qualified = compatible_registry and all(backend_target.values()) and (
             target in registry['qualified'] or
             reference is not None and {**target,'reference_identity':reference,'execution':execution} in registry['qualified'])
@@ -876,7 +955,8 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
             unit['performance'] = candidate
             active_ids.add(cid)
             if (cid in instructions_only or (directed and candidate.get('control_labels'))
-                    or (directed and full_delivery and event and not qualified and candidate.get('instruction'))):
+                    or (directed and full_delivery and event and event['position']!='within'
+                        and not qualified and candidate.get('instruction'))):
                 use_instruction_only(unit)
             elif summary['mode']=='experimental':
                 unit['performance_state']='experimental'
@@ -931,6 +1011,15 @@ def lexical_observation(unit, observed):
     if not event:
         return observed
     labels = '|'.join(map(re.escape,event['asr_annotations']))
+    if event['position']=='within':
+        from .speech_compare import comparison_tokens
+        expected = comparison_tokens(unit['text'])
+        index = event['word_offset']
+        for annotation in re.finditer(r'\[(?:'+labels+r')\]',observed,re.I):
+            before,after = observed[:annotation.start()].rstrip(),observed[annotation.end():].lstrip()
+            if comparison_tokens(before)==expected[:index] and comparison_tokens(after)==expected[index:]:
+                return before+' '+after
+        return observed
     # Unprompted ASR can emit an explicit bracketed annotation for a sound.
     # Remove only this event's annotation at its planned request edge.
     if event['position']=='after':

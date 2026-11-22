@@ -595,6 +595,66 @@ def test_attached_voice_direction_requires_owned_unambiguous_description(tmp_pat
     assert all('performance_candidate' not in u for u in plan['utterances'])
 
 
+def test_inline_authored_sigh_is_one_automatic_request(tmp_path,monkeypatch,capsys):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    store=Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    source=tmp_path/'book.md'
+    source.write_text('“The last box is empty. [sigh] At least we found the key,” she said.')
+    result=planner.plan(inspect(source),delivery_context=5)
+    assert result['performance']['candidates']==0
+    command=['--home',str(store.root),'queue',str(source),'--voice','cast:nigel-thornberry','--json']
+    assert cli.main(command)==0
+    saved=store.get(json.loads(capsys.readouterr().out)['job'])
+    unit,=saved['plan']['utterances']
+    assert unit['text']=='“The last box is empty. At least we found the key,” she said.'
+    active=unit['performance']
+    assert active['event']['position']=='within'
+    assert active['event']['word_offset']==5
+    assert source.read_text()[slice(*active['source']['span'])]=='[sigh]'
+    spoken,opts=performance.request(unit)
+    assert spoken=='“The last box is empty. (sigh) At least we found the key,” she said.'
+    assert 'between the two quoted sentences' in opts['instruction']
+    correct='The last box is empty. At least we found the key, she said.'
+    heard='The last box is empty. [sighing] At least we found the key, she said.'
+    assert performance.lexical_observation(unit,heard)==correct
+    for uncertain in ('[sigh] '+correct,heard.replace('the key','it'),
+                      heard.replace('[sighing]','extra speech')):
+        assert performance.lexical_observation(unit,uncertain)==uncertain
+
+
+@pytest.mark.parametrize('text',[
+    '“The last box is [sigh] empty,” she said.',
+    '“Ask Dr. [sigh] Allen about it,” she said.',
+    '“Nobody stayed. [sigh] We left together.”',
+    '“Nobody stayed. [sigh] We left together,” she said. “I did,” Ada said.',
+    '“Nobody stayed. [sigh] We left together. [sigh] The gate shut,” she said.',
+])
+def test_inline_sound_requires_one_owned_sentence_break(tmp_path,text):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    assert all('performance_candidate' not in u for u in planner.plan(inspect(source))['utterances'])
+
+
+def test_inline_sigh_keeps_both_native_pdf_fragments(tmp_path):
+    canvas=pytest.importorskip('reportlab.pdfgen.canvas')
+    source=tmp_path/'story.pdf'
+    pdf=canvas.Canvas(str(source))
+    pdf.setFont('Helvetica',16)
+    pdf.drawString(72,710,'“The last box is empty.')
+    pdf.drawString(72,688,'[sigh] At least we found the key,” she said.')
+    pdf.save()
+    document=inspect(source)
+    assert len(planner.plan(document,delivery_context=5)['utterances'])==2
+    unit,=planner.plan(document)['utterances']
+    event=unit['performance_candidate']
+    first,second=unit['sources']
+    evidence,=event['evidence']
+    assert [part['block'] for part in evidence['quotation_parts']]==[first,second]
+    assert event['source']=={'block':second,'span':[0,6]}
+    assert event['speech']=='“The last box is empty. At least we found the key,” she said.'
+
+
 def test_book_policy_adds_an_exact_attribution_without_changing_other_requests(tmp_path,monkeypatch,capsys):
     monkeypatch.setattr(performance.sys,'platform','linux')
     store=Store(tmp_path/'state')

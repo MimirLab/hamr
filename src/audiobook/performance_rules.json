@@ -4,7 +4,8 @@
     "c46c5f9b93db2aac04799dc9343e6da9570f7ada67aa8934dc20b4cb42d06bab",
     "7e4cecbe03a10c7f771f8f59b8a82a26e4f8f718855cd1fca1cc8b166e21e639",
     "9ba1306b339e98c4436600491f4a09ef334d8dd615611e8647b55967afee4b52",
-    "bf06eb8e82fa32de416f92b6024059f8d677c4f888e1c07ec8222fe9991dfea1"
+    "bf06eb8e82fa32de416f92b6024059f8d677c4f888e1c07ec8222fe9991dfea1",
+    "b07278bddd3b57644dedd1dd56dea29f8d148a9e75790d00d8666ceb69edb909"
   ],
   "directions": {
     "whisper": {
@@ -231,7 +232,12 @@
     "technical": "Read the passage at an even, natural pace. Articulate each quantity, unit, and operator clearly. Keep each quantity with its label, say every word, and retain the reference narrator's voice."
   },
   "events": {
-    "sigh": {"spellings": ["sigh", "sighs"], "marker": "(sigh)", "asr_labels": ["sigh", "sighs"], "asr_annotations": ["sigh", "sighs", "sighing"], "interjections_after": ["ah", "huh"]},
+    "sigh": {
+      "spellings": ["sigh", "sighs"], "marker": "(sigh)",
+      "inline_instruction": "Give one brief natural sigh at the marked spot between the two quoted sentences. Keep the usual reference voice and say every word, including the attribution.",
+      "asr_labels": ["sigh", "sighs"], "asr_annotations": ["sigh", "sighs", "sighing"],
+      "interjections_after": ["ah", "huh"]
+    },
     "laugh": {"spellings": ["laugh", "laughs"], "marker": "(laugh)", "leading_recipe": "chuckle", "asr_labels": ["laugh", "laughs", "laughter"], "asr_annotations": ["laugh", "laughs", "laughter", "laughing"], "interjections": ["ha", "hah", "heh", "haha"]},
     "chuckle": {
       "spellings": ["chuckle", "chuckles"],

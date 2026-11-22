@@ -179,6 +179,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     from .pdf_layout import structure_policy,spoken_paragraph
     document_title,pdf_chapters=structure_policy(doc,document_policy,by_source=rule_revision in SOURCE_STRUCTURE)
     source_positions={b.id:i for i,b in enumerate(doc.blocks)}
+    join_inline_events = (doc.format=='pdf' and automatic_prose and policy.get('performance')!='off' and
+                          (delivery_context is None or delivery_context>=6))
     delivery=document_policy.get('delivery',{})
     if not isinstance(delivery,dict) or delivery.get('flow','continuous') not in ('continuous','segmented'):raise Error('delivery_policy','Delivery flow must be continuous or segmented.')
     continuous=delivery.get('flow','continuous' if rule_revision in ('faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) else 'segmented')=='continuous'
@@ -458,8 +460,16 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 flush()
                 if utterances:utterances[-1]['pause_samples']=14400
             if continuous and anchor=='paragraph' and not heading and re.search(r'[.!?]["”’\')\]]*$',spoken):
-                flush()
-                if utterances:utterances[-1]['pause_samples']=8400
+                following = source_positions[b.id]+1
+                continued_inline_event = False
+                if join_inline_events and effective['mode']=='listen' and following<len(doc.blocks) and len(buffer)==1:
+                    next_block = doc.blocks[following]
+                    if next_block.id not in heading_ids and next_block.id not in overrides:
+                        from .performance import pdf_inline_event_continues
+                        continued_inline_event = pdf_inline_event_continues(b,next_block)
+                if not continued_inline_event:
+                    flush()
+                    if utterances:utterances[-1]['pause_samples']=8400
             if continuous and captions and re.search(r'[.!?]["”’\')\]]*$',spoken):
                 flush_captions()
     flush();flush_captions()
