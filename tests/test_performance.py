@@ -524,6 +524,54 @@ def test_normal_book_directs_clear_prose_without_scope_leaks(tmp_path,monkeypatc
     assert performance.bind(invalid,wrong,saved['voice']) and invalid['performance']['active']==0
 
 
+@pytest.mark.parametrize(('text','recipe','cue'),[
+    ('“Stay inside the gate,” Ada replied firmly.','firm','replied firmly'),
+    ('“We have plenty of water,” answered Theo reassuringly.','reassuring','reassuringly'),
+    ('The bell rang. “We have time,” said Ada calmly. The pony settled.','composed','calmly'),
+    ('“Mind the echo,” asked Ada anxiously.','apprehensive','anxiously'),
+])
+def test_normal_attribution_directs_only_the_owned_sentence(tmp_path,text,recipe,cue):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    older=planner.plan(inspect(source),delivery_context=3)
+    assert 'performance_candidate' not in older['utterances'][0]
+    default=planner.plan(inspect(source))
+    unit,=default['utterances']
+    candidate=unit['performance_candidate']
+    assert candidate['recipe']==recipe and candidate['speech']==text
+    assert text[slice(*candidate['source']['span'])]==cue
+    if 'said Ada' in text:
+        evidence,=candidate['evidence']
+        assert text[slice(*evidence['reporting_span'])]=='said'
+        assert 'around the quotation in the usual reference voice' in candidate['instruction']
+
+
+def test_book_policy_adds_an_exact_attribution_without_changing_other_requests(tmp_path,monkeypatch,capsys):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    store=Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    source=tmp_path/'book.md'
+    source.write_text('“Leave the field,” Ada replied carefully.\n\n'
+                      '“Come by the gate,” replied Ada carefully.\n\n'
+                      '“The bell will ring,” said Ada firmly and loudly.\n\n'
+                      'Ada walked carefully beside the fence.\n\n'
+                      '“I know,” Ada answered quickly.')
+    policy=tmp_path/'policy.json'
+    writejson(policy,{'source_sha256':inspect(source).source_sha256,
+                      'performance':{'attribution_cues':{'replied carefully':'measured'}}})
+    command=['--home',str(store.root),'queue',str(source),'--voice','cast:cave-johnson','--json']
+    assert cli.main(command)==0
+    baseline=store.get(json.loads(capsys.readouterr().out)['job'])
+    assert cli.main([*command,'--document-policy',str(policy)])==0
+    directed=store.get(json.loads(capsys.readouterr().out)['job'])
+    before=baseline['plan']['utterances']
+    after=directed['plan']['utterances']
+    assert [row.get('performance',{}).get('recipe') for row in after]==['measured','measured',None,None,None]
+    assert all(performance.request(left)[0]==performance.request(right)[0] for left,right in zip(before,after))
+    assert all(jobs.clip_key(left,baseline)==jobs.clip_key(right,directed) for left,right in zip(before[2:],after[2:]))
+    assert all(row['performance']['evidence'][0]['policy_cue']=='replied carefully' for row in after[:2])
+
+
 def test_default_pdf_directs_a_quote_across_native_line_wraps(tmp_path,monkeypatch,capsys):
     from reportlab.pdfgen.canvas import Canvas
 

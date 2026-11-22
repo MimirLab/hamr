@@ -51,9 +51,19 @@ def schema(parser):
 
 
 def capabilities(parser):
+    from .core import loadjson
+    from .performance import RULES_FILE
+
+    formats = ['epub', 'markdown', 'pdf', 'text']
+    rules = loadjson(RULES_FILE)
     return {'schema_version': 1, 'hamr_version': __version__,
-            'formats': ['epub', 'markdown', 'pdf', 'text'], 'languages': ['en'],
+            'formats': formats, 'languages': ['en'],
             'cli': schema(parser), 'operator_guide': ['hamr', 'agent', 'guide'],
+            'expressive_narration': {'default_mode':'auto', 'formats':formats, 'flag':'--performance',
+                                     'plain_mode':'off', 'details':'plan.utterances[].performance',
+                                     'dialogue_recipes':sorted(set(rules['directions'])-{'quiet_scene'}),
+                                     'attribution_cues':'performance.attribution_cues',
+                                     'policy_flag':'--document-policy'},
             'contextual_readings': {'default_mode':'automatic','modes':['automatic','strict'], 'settings_flag':'--context',
                                     'review_replies_flag':'--context-review','reviewer':'local_file',
                                     'review_endpoint_flag':'--context-review-endpoint','review_endpoint_transport':'loopback_http',

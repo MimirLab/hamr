@@ -2,7 +2,8 @@
   "schema_version": 1,
   "compatible_registry_sha256": [
     "c46c5f9b93db2aac04799dc9343e6da9570f7ada67aa8934dc20b4cb42d06bab",
-    "7e4cecbe03a10c7f771f8f59b8a82a26e4f8f718855cd1fca1cc8b166e21e639"
+    "7e4cecbe03a10c7f771f8f59b8a82a26e4f8f718855cd1fca1cc8b166e21e639",
+    "9ba1306b339e98c4436600491f4a09ef334d8dd615611e8647b55967afee4b52"
   ],
   "directions": {
     "whisper": {
@@ -17,6 +18,14 @@
     "measured": {
       "cues": [],
       "instruction": "Take time with the quoted words and give them an even, measured pace. Keep the reference voice and return to the usual pace for the attribution."
+    },
+    "firm": {
+      "cues": [],
+      "instruction": "Give the quoted words firm, concise emphasis at a natural volume. Keep the reference voice and read the attribution normally."
+    },
+    "composed": {
+      "cues": [],
+      "instruction": "Give the quoted words calm, steady phrasing with the reference voice. Keep every word clear and read the attribution normally."
     },
     "forceful": {
       "cues": ["shouted", "yelled"],
@@ -114,6 +123,20 @@
       "modifiers": {
         "murmured": ["quietly", "softly", "gently", "in a low voice"],
         "measured": ["slowly", "deliberately", "one word at a time"]
+      },
+      "manner": {
+        "whisper": ["in a whisper"],
+        "firm": ["firmly", "sharply"],
+        "composed": ["calmly", "steadily", "evenly"],
+        "reassuring": ["reassuringly"],
+        "weary": ["wearily"],
+        "urgent": ["urgently", "with urgency"],
+        "reflective": ["thoughtfully", "reflectively"],
+        "apprehensive": ["anxiously", "fearfully", "apprehensively"],
+        "subdued": ["sadly"],
+        "tearful": ["tearfully", "through tears"],
+        "excited": ["excitedly"],
+        "ironic": ["sarcastically"]
       }
     },
     "trailing_voice": [

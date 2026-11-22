@@ -110,6 +110,8 @@ Authored sounds include sighs, laughter, chuckles, gasps, coughs, throat clearin
 
 Phrases such as “she answered quietly” and “he said slowly” can shape the quoted line even when a short sentence of narration shares the paragraph. A description that clearly refers back to the speaker's voice can also guide the line just spoken. Hamr asks Breeze to read the surrounding narration in its usual voice.
 
+Reporting phrases also distinguish firm emphasis and calm delivery. “Ada replied firmly” and “said Ada firmly” describe the same delivery. “Answered quickly” can refer to the timing of a reply, so Hamr leaves its pace to Breeze. The plan shows which words supported each direction.
+
 Authored sounds are available in the ordinary workflow. Listening evidence includes leading sighs for Nigel Thornberry and Cave Johnson on Linux CPU Q8, trailing sighs on Linux Vulkan Q8, and Nigel's opening chuckle on Vulkan Q8 and F16. The plan records the direction that ran. Delivery varies with the voice, engine and passage.
 
 Save plain delivery for new books with `hamr settings --performance off`. Add `--mode study` or `--mode procedure` for a technical reading policy. Use `hamr settings --mode listen --performance auto` to restore expressive listening. A per-book flag or an explicitly selected listening profile can override the saved preference. Existing jobs keep their delivery until you choose a revision. Use `hamr repair JOB --performance auto` to apply the current expressive rules to an existing job.
@@ -134,6 +136,15 @@ hamr resume JOB
 The plan lists a candidate's source block, intended words and Breeze request. Use the actual utterance ID shown by `hamr show JOB --content`. To change editions on a saved job, run `hamr repair JOB --performance off` or select another performance mode. A source-bound document policy can suppress specific occurrences with `"performance": {"disabled_blocks": ["BLOCK_ID"]}`.
 
 Set `"performance": {"contextual_dialogue": "explicit"}` in the document policy to require a decisive cue for inferred dialogue. The default `corroborated` also takes two independent, compatible cues. Use `off` for dialogue with explicit attributions only. Direct attributions and authored sounds still follow the selected `--performance` mode.
+
+For a book's own reporting phrases, add exact lowercase phrases to its source-bound policy. This example gives an even, measured delivery to quotes attributed with “replied carefully.” Run `hamr open BOOK --document-policy POLICY.json` as usual. `hamr agent capabilities` lists the available dialogue recipe names under `expressive_narration.dialogue_recipes`.
+
+```json
+{
+  "source_sha256": "REPLACE_WITH_SOURCE_SHA256",
+  "performance": {"attribution_cues": {"replied carefully": "measured"}}
+}
+```
 
 For a matched audition, add recipe-specific guidance or sampling to the source-bound document policy and use `--document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
 

@@ -108,9 +108,40 @@ def locate_pdf_candidate(candidate, blocks):
             evidence['target_parts'] = block_spans(blocks,*target)
         if turn:=evidence.pop('turn_span',None):
             evidence['turn_parts'] = block_spans(blocks,*turn)
+        if reporting:=evidence.pop('reporting_span',None):
+            evidence['reporting_parts'] = block_spans(blocks,*reporting)
 
 
-def dialogue_attribution(source, cue_pattern):
+def attribution_rules(registry, version, custom):
+    recipes = registry['directions']
+    specific = {cue:kind for kind,item in recipes.items() for cue in item['cues']}
+    reporting = registry['context']['reporting_modifiers']
+    modifiers = reporting['modifiers'] if version>=2 else {}
+    if version>=4:
+        modifiers = {**modifiers, **reporting['manner']}
+    verbs = {f'{verb} {modifier}':kind for kind,terms in modifiers.items()
+             for verb in reporting['verbs'] for modifier in terms}
+    verbs.update(specific)
+    verbs.update(custom)
+    neutral = '|'.join(map(re.escape,dict.fromkeys([*NEUTRAL_REPORTING,*verbs])))
+    postposed = None
+    if version>=4 or custom:
+        terms = sorted({tail for phrase in verbs for head,_,tail in [phrase.partition(' ')]
+                        if head in reporting['verbs'] and tail})
+        base = '|'.join(map(re.escape,reporting['verbs']))
+        ending = '|'.join(map(re.escape,terms))
+        postposed = re.compile(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<inverted>(?P<verb>'+base+
+                               r')\s+(?P<actor>'+ATTRIBUTION+r')\s+(?P<modifier>'+ending+r'))\s*[.!?]')
+    return verbs,neutral,postposed
+
+
+def attribution_phrase(match):
+    if modifier:=match.groupdict().get('modifier'):
+        return match['verb']+' '+modifier
+    return match['verb']
+
+
+def dialogue_attribution(source, cue_pattern, postposed=None):
     after = re.fullmatch(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<actor>'+ATTRIBUTION+r')'+
                          r'\s+(?P<verb>'+cue_pattern+r')\s*[.!?]', source)
     inverted = re.fullmatch(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<inverted>'
@@ -118,6 +149,8 @@ def dialogue_attribution(source, cue_pattern):
     before = re.fullmatch(r'(?P<actor>'+ATTRIBUTION+r')\s+(?P<verb>'+cue_pattern+
                           r'),\s*(?P<quote>'+QUOTATION+r')\s*[.!?]?', source)
     if simple:=after or inverted or before:return simple
+    if postposed is not None and (match:=postposed.fullmatch(source)):
+        return match
     opening=r'(?P<quote>'+QUOTATION+r')\s+'
     ending=r',\s*(?P<continuation>'+QUOTATION+r')\s*[.!?]?'
     interrupted = re.fullmatch(opening+r'(?P<actor>'+ATTRIBUTION+r')\s+(?P<verb>'+cue_pattern+r')'+ending,source)
@@ -129,7 +162,7 @@ def dialogue_attribution(source, cue_pattern):
     return None
 
 
-def embedded_attribution(source, cue_pattern):
+def embedded_attribution(source, cue_pattern, postposed=None):
     """Find an attributed line with at most one narrator sentence on each side."""
     if len(source)>480:
         return None
@@ -146,7 +179,7 @@ def embedded_attribution(source, cue_pattern):
         if part['end']<quote.end():
             continue
         stop=len(source[:part['end']].rstrip())
-        if candidate:=dialogue_attribution(source[start:stop],cue_pattern):
+        if candidate:=dialogue_attribution(source[start:stop],cue_pattern,postposed):
             tail=source[stop:].strip()
             if tail and (tail[-1] not in '.!?' or len(list(sentence_spans(tail)))!=1):
                 return None
@@ -173,16 +206,17 @@ def focus_direction(source, config):
     return focus,evidence
 
 
-def continued_direction(source, previous, attribution_cues, config, anchor):
+def continued_direction(source, previous, attribution_cues, config, anchor, postposed=None):
     """Carry an established delivery only into its explicitly continuing speaker."""
     if not anchor or anchor['recipe'] not in config['recipes'] or anchor.get('event') or anchor.get('anchor'):
         return None
     current=dialogue_attribution(source,'|'.join(map(re.escape,config['attributions'])))
-    earlier=dialogue_attribution(previous.source,attribution_cues)
+    earlier=dialogue_attribution(previous.source,attribution_cues,postposed)
     if not current or not earlier or current['actor']!=earlier['actor'] or current['actor'].casefold() in POSSESSIVES:
         return None
     return {'kind':'continued_delivery','span':list(current.span('verb')),
-            'previous_block':previous.id,'previous_attribution_span':list(earlier.span('verb'))}
+            'previous_block':previous.id,
+            'previous_attribution_span':list(earlier.span('modifier' if earlier.groupdict().get('modifier') else 'verb'))}
 
 
 def context_matches(source, phrases):
@@ -304,8 +338,8 @@ def eligible(block, decision, disabled, role='body', modes=('listen',), *, all_f
 
 def performance_preferences(document_policy, known):
     config = document_policy.get('performance', {})
-    if not isinstance(config, dict) or set(config)-{'disabled_blocks','contextual_dialogue','tuning'}:
-        raise Error('performance_policy', 'Performance policy supports disabled_blocks, contextual_dialogue and tuning.')
+    if not isinstance(config, dict) or set(config)-{'disabled_blocks','contextual_dialogue','tuning','attribution_cues'}:
+        raise Error('performance_policy', 'Performance policy supports disabled_blocks, contextual_dialogue, tuning and attribution_cues.')
     blocks = config.get('disabled_blocks', [])
     if not isinstance(blocks,list) or any(not isinstance(block,str) or block not in known for block in blocks):
         raise Error('performance_policy', 'Performance policy names unknown source blocks.')
@@ -313,6 +347,18 @@ def performance_preferences(document_policy, known):
     if dialogue not in ('off','explicit','corroborated'):
         raise Error('performance_policy', 'Choose off, explicit, or corroborated for contextual_dialogue.')
     return set(blocks), dialogue
+
+
+def attribution_preferences(config, recipes):
+    cues = config.get('attribution_cues', {})
+    if not isinstance(cues,dict):
+        raise Error('performance_policy','attribution_cues must map exact reporting phrases to dialogue recipes.')
+    for phrase, recipe in cues.items():
+        if (not isinstance(phrase,str) or not re.fullmatch(r"[a-z]+(?:[ ,'’\-]+[a-z]+)*",phrase)
+                or phrase!=normalize_space(phrase) or not isinstance(recipe,str) or recipe not in recipes
+                or recipe=='quiet_scene'):
+            raise Error('performance_policy','Use a lowercase reporting phrase and a dialogue recipe in attribution_cues.')
+    return cues
 
 
 def add_gentle_entries(units, by_id, decisions, occurrences, disabled, digest, registry, registry_sha, *, all_formats):
@@ -391,8 +437,10 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     document_policy=plan['policy'].get('document', {})
     disabled, preference = performance_preferences(document_policy, {b.id for b in document.blocks})
     registry = loadjson(RULES_FILE)
-    version = context_version or (3 if automatic_prose else 1)
+    version = context_version or (4 if automatic_prose else 1)
     full_delivery = version >= 3
+    recipes = registry['directions']
+    custom = attribution_preferences(document_policy.get('performance',{}),recipes)
     tuning=tuning_preferences(document_policy.get('performance',{}),
                               mode=='experimental' or (mode=='auto' and full_delivery),registry)
     if mode == 'off':
@@ -400,15 +448,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         if document_policy.get('performance',{}).get('tuning'):
             plan['performance']['tuning_state']='inactive'
         return
-    recipes = registry['directions']
-    verbs = {cue:kind for kind,item in recipes.items() for cue in item['cues']}
+    verbs,cue_pattern,postposed = attribution_rules(registry,version,custom)
     modern_context = version >= 2
-    if modern_context:
-        reporting = registry['context']['reporting_modifiers']
-        composed = {f'{verb} {modifier}':kind for kind,modifiers in reporting['modifiers'].items()
-                    for verb in reporting['verbs'] for modifier in modifiers}
-        verbs = {**composed,**verbs}
-    cue_pattern = '|'.join(map(re.escape, [*NEUTRAL_REPORTING,*verbs]))
     events = {label:kind for kind,item in registry['events'].items() for label in item['spellings']}
     by_id = {b.id:b for b in document.blocks}
     decisions = {d['block']:d for d in plan['decisions']}
@@ -443,21 +484,23 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         event_attribution = None
         if len(blocks)==2 and not joined_pdf:
             next_source=delivery_text(blocks[1], full_delivery)
-            if STANDALONE.fullmatch(source) and (event_attribution:=dialogue_attribution(next_source,cue_pattern)):
+            if STANDALONE.fullmatch(source) and (event_attribution:=dialogue_attribution(next_source,cue_pattern,postposed)):
                 event = source, 'before', blocks[0], 0, ''
-            elif STANDALONE.fullmatch(next_source) and (event_attribution:=dialogue_attribution(source,cue_pattern)):
+            elif STANDALONE.fullmatch(next_source) and (event_attribution:=dialogue_attribution(source,cue_pattern,postposed)):
                 event = next_source, 'after', blocks[1], 0, ''
-        elif (match:=dialogue_attribution(source,cue_pattern)) and (kind:=verbs.get(match['verb'])):
+        elif (match:=dialogue_attribution(source,cue_pattern,postposed)) and (kind:=verbs.get(attribution_phrase(match))):
             direction = kind, match
-        elif modern_context and (owned:=embedded_attribution(source,cue_pattern)) and (kind:=verbs.get(owned[0]['verb'])):
+        elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed)) and (
+                kind:=verbs.get(attribution_phrase(owned[0]))):
             direction = kind, owned[0]
             surrounding = owned[1:]
         elif (focus:=focus_direction(source,registry['context']['emphasis'])) is not None:
             pass
-        elif (match:=LEADING.fullmatch(source)) and (event_attribution:=dialogue_attribution(match['dialogue'],cue_pattern)):
+        elif (match:=LEADING.fullmatch(source)) and (
+                event_attribution:=dialogue_attribution(match['dialogue'],cue_pattern,postposed)):
             event = match['cue'], 'before', blocks[0], match.start('cue'), ''
         elif (match:=TRAILING.fullmatch(source)) and (event_attribution:=dialogue_attribution(
-                match['dialogue']+(match['stop'] or ''),cue_pattern)):
+                match['dialogue']+(match['stop'] or ''),cue_pattern,postposed)):
             event = match['cue'], 'after', blocks[0], match.start('cue'), ''
         elif (speaker:=SPEAKER.fullmatch(source)) and (match:=LEADING.fullmatch(speaker['line'])):
             index=source_order[blocks[0].id]
@@ -468,7 +511,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         if direction:
             kind, attribution = direction
             recipe = recipes[kind]
-            start,end = attribution.span('verb')
+            modifier = attribution.groupdict().get('modifier')
+            start,end = attribution.span('modifier' if modifier else 'verb')
             continuation = attribution.groupdict().get('continuation')
             instruction = recipe['instruction']
             if recipe.get('progression') and (continuation or len(list(sentence_spans(attribution['quote'][1:-1])))<2):
@@ -492,6 +536,11 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             elif attribution.groupdict().get('inverted'):
                 candidate['contextual']=True
                 candidate['evidence'][0]['form']='verb_first'
+            if modifier:
+                offset=surrounding[0] if surrounding else 0
+                candidate['evidence'][0]['reporting_span']=[offset+i for i in attribution.span('verb')]
+            if attribution_phrase(attribution) in custom:
+                candidate['evidence'][0]['policy_cue']=attribution_phrase(attribution)
             if surrounding:
                 candidate['contextual']=True
                 candidate['evidence'][0].update(form='embedded_quotation',turn_span=[offset,stop],
@@ -550,7 +599,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                                                                             all_formats=full_delivery))):
                 previous=None
             carry = (continued_direction(source,previous,cue_pattern,registry['context']['continuation'],
-                                         by_source_candidate.get(previous.id)) if previous and preference!='off' else None)
+                                         by_source_candidate.get(previous.id),postposed) if previous and preference!='off' else None)
             if carry:
                 anchor=by_source_candidate[previous.id]
                 kind,evidence,has_lead=anchor['recipe'],[carry],False
@@ -740,7 +789,8 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
         direct_attribution = any(e['kind']=='direct_attribution' for e in candidate.get('evidence', ()))
         legacy_direction = candidate.get('instruction') and (recipe in automatic['prose'] or
                             (recipe in automatic['direct_attribution'] and direct_attribution))
-        directed = prose and (full_delivery or legacy_direction)
+        policy_direction = any('policy_cue' in e for e in candidate.get('evidence', ()))
+        directed = prose and (full_delivery or legacy_direction or policy_direction)
         enabled = backend.get('runtime_revision') and (summary['mode']=='experimental' or qualified or directed)
         if enabled:
             unit['text'] = candidate['speech']
