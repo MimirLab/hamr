@@ -115,6 +115,14 @@ def speech_check_pending(jid):
             'action':f'Run hamr resume {jid} to check the saved audio and finish the book.'}
 
 
+def speech_check_status(job):
+    if not job.get('audio_gate'):
+        return 'not_required'
+    if job.get('audio_gate_approved_plan')==job['plan']['plan_sha256'] and job.get('audio_gate_approved_takes'):
+        return 'passed'
+    return 'needs_review' if job.get('audio_review') else 'pending'
+
+
 def review_error(store,j):
     error=j['error']
     code=(error or {}).get('code')
@@ -199,7 +207,8 @@ def summary(store,j):
             if profile:
                 action='Free memory and resume, or switch to the lower-memory checker.\n' + action
             error={**error,'action':action}
-    result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(valid_clip(store,k) is not None for k in set(j['clips'].values())),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':j.get('metrics',{}),'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
+    metrics = {**j.get('metrics', {}), 'semantic_qa':speech_check_status(j)}
+    result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(valid_clip(store,k) is not None for k in set(j['clips'].values())),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
     if delivery:=performance.status(j):result['performance']=delivery
     return result
 
@@ -303,7 +312,7 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
                         j['progress']={'completed_utterances':completed,'total_utterances':len(j['plan']['utterances']),'unique_takes_rendered_this_run':rendered,'reused_utterances':reused,'elapsed_seconds':elapsed,'eta_seconds':elapsed/max(1,completed-reused)*(len(j['plan']['utterances'])-completed),'parallel':parallel}
                         store.save(j)
                         print(f'{j["id"]}: verified {completed}/{len(j["plan"]["utterances"])}; ETA {j['progress']['eta_seconds']/60:.1f} min',file=__import__('sys').stderr,flush=True)
-            j['metrics']={'wall_seconds_this_run':time.monotonic()-started,'clips_reused':reused,'clips_rendered':rendered,'retries':retries,'accepted_audio_seconds':sum(valid_clip(store,k)['seconds'] for k in j['clips'].values()),'semantic_qa':'pending ASR/listening'}
+            j['metrics']={'wall_seconds_this_run':time.monotonic()-started,'clips_reused':reused,'clips_rendered':rendered,'retries':retries,'accepted_audio_seconds':sum(valid_clip(store,k)['seconds'] for k in j['clips'].values())}
             if max_new_takes is not None and rendered<len(todo):
                 j['status']='paused';j['error']={'code':'render_batch_complete','message':'The selected speech batch is complete; verified takes are retained.','action':f'hamr resume {jid} --max-new-takes {max_new_takes}'}
                 store.save(j)
@@ -434,7 +443,10 @@ def publish(store,j):
             source+='<details><summary>Reading used in the audiobook</summary><pre style="white-space:pre-wrap">'+html.escape(decision['spoken'])+'</pre><p>'+html.escape(decision['reason'])+'</p></details>'
         source+='</section>'
     atomic(stage/'source.html',source.encode())
-    writejson(stage/'report.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'metrics':j['metrics'],'warnings':j['plan']['warnings']+metadata_receipt['warnings'],'issues':j['plan']['issues'],'qa':'Signal/container checks passed; ASR and human listening are separate qualifications.','backend':j['backend'],'voice':{k:v for k,v in j['voice'].items() if k!='transcript'},'publication_metadata':metadata_receipt,'container_duration':actual,'pcm_samples':total,'created':time.time()})
+    metrics = {**j['metrics'], 'semantic_qa':speech_check_status(j)}
+    qa_message = ('Container and required offline speech checks passed.' if metrics['semantic_qa']=='passed'
+                  else 'Container checks passed. Offline speech checking was not required for this publication.')
+    writejson(stage/'report.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'metrics':metrics,'warnings':j['plan']['warnings']+metadata_receipt['warnings'],'issues':j['plan']['issues'],'qa':qa_message,'backend':j['backend'],'voice':{k:v for k,v in j['voice'].items() if k!='transcript'},'publication_metadata':metadata_receipt,'container_duration':actual,'pcm_samples':total,'created':time.time()})
     for name in ('chapters.ffmeta','encode.log'): (stage/name).unlink()
     files={p.name:filehash(p) for p in stage.iterdir() if p.name!='owner.json'}
     writejson(stage/'manifest.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'plan_sha256':j['plan']['plan_sha256'],'source_sha256':j['document']['source_sha256'],'files':files})
@@ -520,6 +532,8 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         selected_policy=dict(j['plan']['policy'])
         automatic_prose=(performance_mode is not None or upgrade_rules or
                          j['plan'].get('performance',{}).get('automatic_scope')=='prose')
+        delivery_context=(None if performance_mode is not None or upgrade_rules else
+                          j['plan'].get('performance',{}).get('context_version',1))
         if performance_mode is not None:selected_policy['performance']=performance_mode
         if refresh:selected_policy.pop('context_implementation',None)
         if context is not None:
@@ -539,7 +553,8 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         if any(value is not None for value in (alias,block_id,voice,retake,document_policy,chapters,context,
                                                context_review,context_reviewer,performance_mode)) or reimport or upgrade_rules:
             j['document']=doc.json(); j['plan']=plan(doc,selected_policy,aliases,rule_revision=revision,
-                                                   context_reviewer=context_reviewer,automatic_prose=automatic_prose)
+                                                   context_reviewer=context_reviewer,automatic_prose=automatic_prose,
+                                                   delivery_context=delivery_context)
             performance.bind(j['plan'],j['backend'],j['voice'],fallbacks=j.get('performance_fallbacks',()),
                              previous=pinned_directions if performance_mode is None and not (upgrade_rules or voice) else None)
         if rebased_takes:

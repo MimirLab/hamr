@@ -1,5 +1,9 @@
 {
   "schema_version": 1,
+  "compatible_registry_sha256": [
+    "c46c5f9b93db2aac04799dc9343e6da9570f7ada67aa8934dc20b4cb42d06bab",
+    "7e4cecbe03a10c7f771f8f59b8a82a26e4f8f718855cd1fca1cc8b166e21e639"
+  ],
   "directions": {
     "whisper": {
       "cues": ["whispered"],
@@ -9,6 +13,10 @@
     "murmured": {
       "cues": ["murmured", "said under his breath", "said under her breath"],
       "instruction": "Read the quotation low and gently voiced, with clear words in the reference voice. Let the attribution return to the usual narration."
+    },
+    "measured": {
+      "cues": [],
+      "instruction": "Take time with the quoted words and give them an even, measured pace. Keep the reference voice and return to the usual pace for the attribution."
     },
     "forceful": {
       "cues": ["shouted", "yelled"],
@@ -101,6 +109,22 @@
     }
   },
   "context": {
+    "reporting_modifiers": {
+      "verbs": ["said", "asked", "replied", "answered", "continued", "added", "returned", "remarked"],
+      "modifiers": {
+        "murmured": ["quietly", "softly", "gently", "in a low voice"],
+        "measured": ["slowly", "deliberately", "one word at a time"]
+      }
+    },
+    "trailing_voice": [
+      {"recipe":"whisper", "signal":"spoken_whisper",
+       "frames":["{owner} voice was scarcely above a whisper", "{owner} voice was little more than a whisper",
+                 "{owner} words were barely a whisper"]},
+      {"recipe":"murmured", "signal":"spoken_low",
+       "frames":["{owner} voice was barely audible", "{owner} words were barely audible", "{owner} voice was low and even"]},
+      {"recipe":"measured", "signal":"spoken_slowly",
+       "frames":["{owner} words came one at a time", "{owner} words came slowly"]}
+    ],
     "emphasis": {
       "attributions": ["stressing", "emphasizing", "emphasising", "putting the stress on"],
       "instruction": "Give the phrase {phrase} one small, natural stress within the quotation. Keep every word and read the attribution in the usual reference voice."
@@ -207,7 +231,7 @@
     "sniffle", "sob", "swallow", "teeth chatter", "whimper", "yawn", "yawns"
   ],
   "automatic_directions": {
-    "prose": ["whisper", "murmured", "forceful", "breathless", "urgent", "warning", "reassuring", "weary",
+    "prose": ["whisper", "murmured", "measured", "forceful", "breathless", "urgent", "warning", "reassuring", "weary",
               "subdued", "restrained_anger", "apprehensive", "excited", "surprised", "authoritative", "reflective",
               "ironic", "growing_force", "contrastive_emphasis", "gentle_entry"],
     "direct_attribution": ["tearful", "affectionate"]

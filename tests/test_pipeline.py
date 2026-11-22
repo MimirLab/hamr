@@ -23,6 +23,9 @@ def test_cached_pipeline_runs_required_qa_before_real_ffmpeg_publication(tmp_pat
     monkeypatch.setattr(jobs,'Engine',forbidden)
     result=pipeline.run(s,j['id'],Path('/unused'),Path('/unused'))
     assert result['status']=='ready' and s.get(j['id'])['audio_gate_approved_takes']==jobs.take_signature(s,s.get(j['id']))
+    assert result['metrics']['semantic_qa']=='passed'
+    report=json.loads((Path(result['output'])/'report.json').read_text())
+    assert report['metrics']['semantic_qa']=='passed' and 'offline speech checks passed' in report['qa']
     assert result['pipeline_progress']['phase']=='complete' and result['pipeline_progress']['remaining_unique_takes']==0
     state=json.loads((s.path(j)/'pipeline.json').read_text());assert state['phase']=='complete' and not state['retakes']
     assert state['remaining_unique_takes']==0 and state['pending_unique_observations']==0

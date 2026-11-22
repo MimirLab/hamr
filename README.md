@@ -65,7 +65,7 @@ Use the same command with a PDF, Markdown, or `.txt` file. Add `--yes` for unatt
 | When you want to… | Where to start |
 | --- | --- |
 | **Hear a book read naturally** | Contextual reading is on by default. Hamr uses nearby words and document structure to read abbreviations, amounts, dates and times. The companion preserves the original wording. Use `hamr plan DOCUMENT --json` to inspect the reading before synthesis. [Reading and pronunciation controls](docs/USAGE.md#tune-readings-that-depend-on-context) |
-| **Give dialogue some acting** | Hamr uses cues in the book to shape the performance, from an authored sigh or laugh to a whispered line broken by “she said.” [Expressive narration and how to use it](#expressive-narration) |
+| **Give dialogue some acting** | Expressive delivery is on in EPUB, PDF, Markdown, and plain text. Hamr can follow an author's direction, from a sigh or laugh to a whispered line broken by “she said.” [Expressive narration and how to use it](#expressive-narration) |
 | **Listen to a scanned PDF** | With Tesseract installed, `hamr setup --ocr-only` adds offline English OCR. Hamr can read simple two-column scans and recognize scanned regions beside selectable text. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr) |
 | **Pick up where a book stopped** | `hamr resume JOB` checks and reuses saved takes. A retake changes one passage, and `hamr status JOB` shows whether a book is ready or needs review. [Recovery and repair](#resume-and-repair) |
 | **Check the words before export** | The ordinary book command runs local speech checks before publishing. Use `hamr transcribe CLIP.wav` to inspect a disputed recording with the installed verifier. [Speech checking](docs/USAGE.md#speech-verifier-presets) |
@@ -74,9 +74,9 @@ The [release notes](RELEASE.md) record completed render, playback and interrupti
 
 ## Expressive narration
 
-Expressive delivery is on by default. As Hamr reads a book, it can carry a whisper through a spoken attribution, let an urgent line build, or stress a word the author singles out. A line can also pick up the tone of the prose around it when the evidence points to the same speaker. Hamr keeps the complete passage together and checks the spoken words before publishing.
+Expressive delivery is on by default in EPUB, searchable and scanned PDF, Markdown, and plain text. Hamr can carry a whisper through an attribution, let urgency build or a voice fade, and stress a word the author singles out. A line can also pick up the tone of the prose around it when the evidence points to the same speaker. Scanned pages use the local English OCR setup.
 
-An explicit sigh or chuckle can be performed with tested voice and engine combinations. If you prefer a steady delivery for technical material, save that preference for new books.
+An authored sigh or chuckle can be performed as part of the line. The speech checker checks the words before export. The exact sound and delivery can vary with the voice and engine. If you prefer steady narration, save that preference for new books.
 
 ```sh
 hamr settings --performance off --mode study

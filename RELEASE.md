@@ -1,4 +1,14 @@
-# hamr 0.4.1
+# hamr 0.4.2
+
+### Expressive narration for every supported input format
+
+Hamr 0.4.1 enabled several directions in normal listening but skipped expressive PDF delivery. Other supported directions still required a separate flag. In 0.4.2 the ordinary `hamr open` path applies dialogue direction, authored sounds, and heading cadence to EPUB, searchable and scanned PDF, Markdown, and plain text. Scanned PDF uses the existing offline English OCR setup. A PDF cue can span adjacent source lines and keeps its original locations in the companion.
+
+Save `hamr settings --performance off --mode study` for plain technical reading. Existing jobs keep their saved takes and instructions. To apply the current directions to an existing job, run `hamr repair JOB --performance auto`, then `hamr resume JOB`. [Commands and available directions](docs/USAGE.md#expressive-narration)
+
+Contextual English readings and offline speech checking also run in the normal workflow. The status and published report now show the result of the offline speech check instead of leaving a completed check marked pending. Use the [front page](README.md#what-hamr-can-do) for the feature and command overview, the [verifier presets](docs/USAGE.md#speech-verifier-presets) for available speech checkers, and the [engine guide](docs/ENGINES.md) for hardware-specific results.
+
+## hamr 0.4.1
 
 ### Expressive narration by default
 

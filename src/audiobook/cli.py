@@ -177,8 +177,8 @@ def add_source(p):
 
 def add_performance(p):
     from .performance import MODES
-    p.add_argument('--performance',choices=MODES,
-                   help='Follow supported expressive cues (auto), read plainly (off), or try additional controls (experimental)')
+    p.add_argument('--performance',choices=MODES,metavar='{auto,off}',
+                   help='Follow expressive cues (the default) or read plainly (off)')
 
 
 def add_context_review(p):

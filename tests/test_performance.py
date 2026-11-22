@@ -50,8 +50,8 @@ def test_planner_owns_literal_events_and_attributed_direction_without_shortening
     'Write the value `[laugh]` next to the pressure reading.',
     '[sigh] The reflex can start with a short pause.',
     '“I wrote [laugh] in the margin,” she said.',
-    '“Go now,” she whispered. He opened the door and shut it.',
-    'The speaker banged the table. “Never!” she shouted.',
+    '“Go now,” she whispered. “I will,” he replied.',
+    '“Go now,” she whispered. He opened the door. He shut it again.',
     'WOULD YOU PLEASE WAIT!!!',
 ])
 def test_literal_mentions_and_mixed_requests_stay_plain(tmp_path,text):
@@ -132,7 +132,48 @@ def test_new_quoted_sentence_can_be_a_reply_instead_of_a_continuation():
     assert performance.dialogue_attribution(source,'replied') is None
 
 
-def test_experimental_recipe_tuning_changes_only_the_affected_render_identity(tmp_path):
+@pytest.mark.parametrize(('text','recipe','form'),[
+    ('“Stay here,” Ada answered quietly.','murmured',None),
+    ('“Read the numbers,” she said slowly.','measured',None),
+    ('Rain struck the shutters. “Stay here,” Ada whispered.','whisper','embedded_quotation'),
+    ('“Go now,” she whispered. The latch clicked.','whisper','embedded_quotation'),
+    ('The speaker banged the table. “Never!” she shouted.','forceful','embedded_quotation'),
+    ('“Go now,” she said. Her voice was scarcely above a whisper.','whisper','trailing_voice_description'),
+    ('“I can wait,” Ada said. Ada’s words came one at a time.','measured','trailing_voice_description'),
+])
+def test_embedded_delivery_preserves_narration_and_locates_evidence(tmp_path,text,recipe,form):
+    plan=plan_source(tmp_path,text)
+    unit,=plan['utterances']
+    assert performance.bind(plan,IDENTITY,VOICE)
+    candidate=unit['performance']
+    evidence,=candidate['evidence']
+    assert candidate['recipe']==recipe
+    assert performance.request(unit)[0]==unit['text']==text
+    start,end=evidence['span']
+    assert text[start:end]
+    if form:
+        assert form in (evidence['kind'],evidence.get('form'))
+        (a,b),=evidence['quotation_spans']
+        assert text[a:b].startswith('“') and text[a:b].endswith('”')
+        assert 'usual reference voice' in candidate['instruction']
+    legacy=planner.plan(inspect(tmp_path/'book.md'),{'performance':'experimental'},delivery_context=1)
+    assert legacy['performance']['candidates']==0
+
+
+@pytest.mark.parametrize('text',[
+    '“Go now,” she said. His voice was scarcely above a whisper.',
+    '“Go now,” Ada said. His voice was scarcely above a whisper.',
+    '“Go now,” Ada said. Lee’s voice was barely audible.',
+    '“Go now,” she said. Her voice fell to a whisper.',
+    '“Go now,” she said. Her voice was hardly quiet.',
+    '“Go now,” she said. Her voice was barely audible. “Where?” Ada asked.',
+    '“Go now,” she replied suddenly.',
+])
+def test_after_quote_cues_require_the_delivered_voice_and_same_owner(tmp_path,text):
+    assert plan_source(tmp_path,text)['performance']['candidates']==0
+
+
+def test_recipe_tuning_changes_only_the_affected_render_identity(tmp_path):
     source=tmp_path/'book.md'
     source.write_text(f'{WHISPER}\n\nAn ordinary line remained outside the conversation.')
     doc=inspect(source)
@@ -153,10 +194,14 @@ def test_experimental_recipe_tuning_changes_only_the_affected_render_identity(tm
     with pytest.raises(backend.Error,match='serial'):
         parallel=planner.plan(doc,tuned['policy'])
         performance.bind(parallel,{**IDENTITY,'settings':{'parallel':2}},VOICE)
-    for mode in ('off','auto'):
-        paused=planner.plan(doc,{**tuned['policy'],'performance':mode})
-        assert paused['performance']['tuning_state']=='inactive'
-        assert all('tuning' not in u.get('performance_candidate',{}) for u in paused['utterances'])
+    ordinary=planner.plan(doc,{**tuned['policy'],'performance':'auto'})
+    assert ordinary['performance']['tuning_state']=='active'
+    assert ordinary['utterances'][0]['performance_candidate']['tuning']=={
+        'cfg_scale':2,'top_k':48,'temperature':.7,
+    }
+    paused=planner.plan(doc,{**tuned['policy'],'performance':'off'})
+    assert paused['performance']['tuning_state']=='inactive'
+    assert all('performance_candidate' not in u for u in paused['utterances'])
 
 
 @pytest.mark.parametrize(('text','recipe','kind'),[
@@ -394,7 +439,7 @@ def test_auto_requires_a_matching_profile_qualification_and_keeps_neutral_clip_i
 
 
 @pytest.mark.parametrize('character',['nigel-thornberry','cave-johnson'])
-def test_shipping_sigh_is_scoped_to_tested_cpu_runtime_and_reference(tmp_path,monkeypatch,character):
+def test_sigh_runs_automatically_and_reports_its_exact_qualification(tmp_path,monkeypatch,character):
     from audiobook.cast import ASSETS
 
     monkeypatch.setattr(performance.sys,'platform','linux')
@@ -414,10 +459,11 @@ def test_shipping_sigh_is_scoped_to_tested_cpu_runtime_and_reference(tmp_path,mo
                              (backend_identity,{**voice,'transcript':'A different exact transcript.'})):
         plan=plan_source(tmp_path,SIGH,'auto')
         performance.bind(plan,engine,reference)
-        assert plan['performance']['active']==0
+        assert plan['performance']['active']==1
+        assert plan['utterances'][0]['performance_state']=='automatic'
 
 
-def test_automatic_quiet_scene_and_laugh_use_only_qualified_source_and_reference(tmp_path,monkeypatch):
+def test_automatic_quiet_scene_and_laugh_keep_reference_qualification_visible(tmp_path,monkeypatch):
     from audiobook.cast import ASSETS
 
     monkeypatch.setattr(performance.sys,'platform','linux')
@@ -425,19 +471,20 @@ def test_automatic_quiet_scene_and_laugh_use_only_qualified_source_and_reference
     backend_identity={'profile':recipe['profile'],'runtime_revision':recipe['runtime'],
                       'runtime_archive_sha256':recipe['archive_sha256'],'model_sha256':recipe['model_sha256']}
     quiet='Everything went still. Behind the curtain, Lila held her breath.'
-    for source,character,active in (
-        (quiet,'nigel-thornberry',1),
-        (quiet,'cave-johnson',0),
-        ('No one spoke. Peter dared not move.','nigel-thornberry',0),
-        ('[laugh] “It was in my pocket all along,” he said.','nigel-thornberry',1),
-        ('[laugh] “It was in my pocket all along,” he said.','cave-johnson',0),
-        ('“It was in my pocket all along,” he said [laugh].','nigel-thornberry',0),
+    for source,character,state in (
+        (quiet,'nigel-thornberry','qualified'),
+        (quiet,'cave-johnson','automatic'),
+        ('No one spoke. Peter dared not move.','nigel-thornberry','automatic'),
+        ('[laugh] “It was in my pocket all along,” he said.','nigel-thornberry','qualified'),
+        ('[laugh] “It was in my pocket all along,” he said.','cave-johnson','instruction_only'),
+        ('“It was in my pocket all along,” he said [laugh].','nigel-thornberry','automatic'),
     ):
         plan=plan_source(tmp_path,source,'auto')
         assert plan['performance']['candidates']==1
         voice=loadjson(ASSETS/character/'voice.json')
         performance.bind(plan,backend_identity,voice)
-        assert plan['performance']['active']==active
+        assert plan['performance']['active']==1
+        assert plan['utterances'][0]['performance_state']==state
 
 
 def pinned_linux_profile(profile):
@@ -468,13 +515,45 @@ def test_normal_book_directs_clear_prose_without_scope_leaks(tmp_path,monkeypatc
     assert saved['plan']['performance']['mode']=='auto'
     rows=saved['plan']['utterances']
     assert [u.get('performance',{}).get('recipe') for u in rows]==[
-        'whisper','gentle_entry','contrastive_emphasis','growing_force','breathless',None,None,'tearful','laugh']
+        'whisper','gentle_entry','contrastive_emphasis','growing_force','breathless','fading_force','tearful','tearful','laugh']
     assert 'until the footsteps fade' in performance.request(rows[0])[0]
     assert all(performance.request(u)[0]==u['text'] for u in rows[:-1])
     assert performance.request(rows[-1])[0].startswith('(chuckle) ')
     wrong={**saved['backend'],'runtime_archive_sha256':'0'*64}
     invalid=planner.plan(inspect(source))
     assert performance.bind(invalid,wrong,saved['voice']) and invalid['performance']['active']==0
+
+
+def test_default_pdf_directs_a_quote_across_native_line_wraps(tmp_path,monkeypatch,capsys):
+    from reportlab.pdfgen.canvas import Canvas
+
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    store=Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    source=tmp_path/'book.pdf'
+    pdf=Canvas(str(source))
+    pdf.setFont('Helvetica',14)
+    pdf.drawString(72,700,'"Stay by the gate until the last')
+    pdf.drawString(72,681,'footstep fades," Ada whispered.')
+    pdf.save()
+    command=['--home',str(store.root),'queue',str(source),'--voice','cast:cave-johnson','--json']
+    assert cli.main(command)==0
+    job=store.get(json.loads(capsys.readouterr().out)['job'])
+    unit,=job['plan']['utterances']
+    assert job['plan']['performance']['mode']=='auto'
+    assert unit['performance']['recipe']=='whisper'
+    assert performance.request(unit)[0]==unit['text']
+    blocks={block['id']:block for block in job['document']['blocks']}
+    evidence,=unit['performance']['evidence']
+    def from_source(part):
+        return blocks[part['block']]['source'][slice(*part['span'])]
+    assert [from_source(part) for part in evidence['cue_parts']]==['whispered']
+    assert [from_source(part) for part in evidence['quotation_parts']]==[
+        '"Stay by the gate until the last','footstep fades,"',
+    ]
+    assert cli.main([*command,'--performance','off'])==0
+    plain=store.get(json.loads(capsys.readouterr().out)['job'])['plan']['utterances'][0]
+    assert plain['text']==unit['text'] and 'performance' not in plain
 
 
 def test_unrelated_repair_preserves_legacy_delivery_until_explicit_upgrade(tmp_path,monkeypatch):
@@ -493,6 +572,26 @@ def test_unrelated_repair_preserves_legacy_delivery_until_explicit_upgrade(tmp_p
     assert repaired['performance']['active']==0
     upgraded=jobs.repair(s,old['job'],performance_mode='auto')
     assert upgraded['performance']['active']==2
+
+
+def test_saved_041_plan_binds_its_original_directions_after_setup(tmp_path,monkeypatch):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    store=Store(tmp_path/'state')
+    source=tmp_path/'book.md'
+    source.write_text(f'{WHISPER}\n\n“Set down the lantern,” she replied quietly.')
+    created=jobs.create(store,source,'cast:nigel-thornberry')
+    job=store.get(created['job'])
+    legacy=planner.plan(jobs.document(job),delivery_context=1)
+    assert not legacy['performance']['bound']
+    legacy['performance']['registry_sha256']='c46c5f9b93db2aac04799dc9343e6da9570f7ada67aa8934dc20b4cb42d06bab'
+    job['plan']=legacy
+    store.save(job)
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    current=store.get(created['job'])
+    assert jobs.bind_speech(store,current)
+    assert [unit.get('performance',{}).get('recipe') for unit in current['plan']['utterances']]==[
+        'whisper',None,
+    ]
 
 
 def test_native_transport_forwards_clone_instruction_and_hashes_exact_fields(tmp_path):

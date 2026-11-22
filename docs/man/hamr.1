@@ -123,14 +123,11 @@ Accepted choices are saved with the job.
 .SH PERFORMANCE
 .B \-\-performance
 selects
-.BR auto ,
-.BR off ,
-or
-.BR experimental .
-Automatic delivery uses recipes auditioned for the job's pinned speech
-profile. Experimental mode enables candidate dialogue delivery, authored
-sounds, and heading cadence. In study or procedure mode it can also
-guide the delivery of a complete table or equation. Use
+.BR auto " (the default) or " off .
+Automatic delivery follows source cues in EPUB, searchable or scanned PDF,
+Markdown, and plain text on the built-in Breeze engine. It supports dialogue
+delivery, authored sounds, and heading cadence. In study or procedure mode
+it can also guide the delivery of a complete table or equation. Use
 .B "hamr preview JOB --utterance ID --play"
 to hear the effective request. Speech recognition can flag a directed
 take for listening review while preserving the original take.

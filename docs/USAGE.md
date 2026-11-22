@@ -87,27 +87,29 @@ For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new s
 
 Hamr can give Breeze a delivery instruction for clearly attributed dialogue and for prose with a clear local cue. An immediate setup such as “She lowered her voice” can shape the same speaker’s next line. Two different details can support a direction together, as when a character leans closer and their words become barely audible. Competing directions leave the reading plain. Additional delivery controls recognize reporting verbs before the speaker as well, as in “whispered Alice.” A quiet scene requires corroborating details, such as a silent room and a character holding their breath. The plan records the source spans and delivery cues behind a decision. Hamr requires an explicit authored marker to perform a sound.
 
-Authored sounds include sighs, laughter, chuckles, gasps, coughs, throat clearing, groans, sniffles, lip smacks, hiccups, sneezes, and sobs. Hamr attaches a sound to an identifiable dialogue turn. A written laugh at the start of an eligible line plays as a short chuckle. Clearly attributed dialogue can also carry delivery such as whispering, urgency, restraint, irony, or distress. These cues apply to listen mode in EPUB, Markdown, and plain text. Hamr keeps each affected utterance intact and preserves the original wording in the companion.
+Authored sounds include sighs, laughter, chuckles, gasps, coughs, throat clearing, groans, sniffles, lip smacks, hiccups, sneezes, and sobs. Hamr attaches a sound to an identifiable dialogue turn. A written laugh at the start of an eligible line calls for a short chuckle. Clearly attributed dialogue can also carry delivery such as whispering, urgency, restraint, irony, or distress. These cues apply in listening mode to EPUB, searchable and scanned PDF, Markdown, and plain text. Scanned pages first need local English OCR. Hamr keeps each affected utterance intact and preserves the original wording in the companion.
 
-**Expressive delivery** is on in normal listening mode. On the built-in Breeze profiles, Hamr can direct clearly attributed dialogue, let a named speaker carry a supported tone into the next turn, and shape a gentle entrance after a whisper. It applies the instruction to the complete passage, keeping the narrator's attribution and the words on both sides of an interruption. It reads conflicting and uncertain cues plainly. Technical sections use their study or procedure policy.
+**Expressive delivery** is on in normal listening mode. On the built-in Breeze profiles, Hamr can direct clearly attributed dialogue, let a named speaker carry a supported tone into the next turn, and shape a gentle entrance after a whisper. It applies the instruction to the complete passage, keeping the narrator's attribution and the words on both sides of an interruption. It reads conflicting and uncertain cues plainly. PDF line breaks can split a cue across source fragments. The plan records the original PDF blocks and spans for those cues.
 
-Authored sounds use their tested combinations. Linux CPU Q8 can give Nigel Thornberry and Cave Johnson a leading sigh. Linux Vulkan Q8 can give them a trailing sigh. Nigel can perform an opening chuckle on Linux Vulkan Q8 and F16. On Linux Vulkan Q8, Nigel can also read a quiet scene with restrained anticipation when a held breath supports it.
+Phrases such as “she answered quietly” and “he said slowly” can shape the quoted line even when a short sentence of narration shares the paragraph. A description that clearly refers back to the speaker's voice can also guide the line just spoken. Hamr asks Breeze to read the surrounding narration in its usual voice.
+
+Authored sounds are available in the ordinary workflow. Listening evidence includes leading sighs for Nigel Thornberry and Cave Johnson on Linux CPU Q8, trailing sighs on Linux Vulkan Q8, and Nigel's opening chuckle on Vulkan Q8 and F16. The plan records the direction that ran. Delivery varies with the voice, engine and passage.
 
 Save plain delivery for new books with `hamr settings --performance off`. Add `--mode study` or `--mode procedure` for a technical reading policy. Use `hamr settings --mode listen --performance auto` to restore expressive listening. A per-book flag or an explicitly selected listening profile can override the saved preference. Existing jobs keep their delivery until you choose a revision. Use `hamr repair JOB --performance auto` to apply the current expressive rules to an existing job.
 
-**Authoring and comparison controls** can give a heading a measured cadence and use clear articulation for a complete table or equation in study or procedure mode. Cave Johnson’s tearful direction asks Breeze to retain his usual register and timbre.
+Hamr can give a heading a measured cadence and use clear articulation for a complete table or equation in study or procedure mode. Cave Johnson’s tearful direction asks Breeze to retain his usual register and timbre.
 
-When the author names a phrase to stress, Hamr requires a single matching occurrence inside the quotation. Rising urgency across two or more sentences can follow an explicit attribution. Other treatments, including a fading trajectory and inferred tearful delivery, are available for individual comparison. Use the authoring option below to try those variants.
+When the author names a phrase to stress, Hamr requires a single matching occurrence inside the quotation. Rising and fading delivery across two or more sentences follow an explicit attribution. Inferred distress requires local speaker evidence. Use the ordinary command to make the audiobook.
 
 ```sh
-hamr open 'Scene.epub' --voice cast:nigel-thornberry --performance experimental
+hamr open 'Scene.pdf' --voice cast:nigel-thornberry
 ```
 
-To inspect the choices or preview a single passage first, use the same option in the plan and queue commands.
+To inspect the choices or preview a single passage first, use `plan` and `queue`.
 
 ```sh
-hamr plan 'Scene.epub' --performance experimental --json
-hamr queue 'Scene.epub' --voice cast:nigel-thornberry --performance experimental --json
+hamr plan 'Scene.pdf' --json
+hamr queue 'Scene.pdf' --voice cast:nigel-thornberry --json
 hamr preview JOB --utterance u00003 --play
 hamr resume JOB
 ```
@@ -116,7 +118,7 @@ The plan lists a candidate's source block, intended words and Breeze request. Us
 
 Set `"performance": {"contextual_dialogue": "explicit"}` in the document policy to require a decisive cue for inferred dialogue. The default `corroborated` also takes two independent, compatible cues. Use `off` for dialogue with explicit attributions only. Direct attributions and authored sounds still follow the selected `--performance` mode.
 
-For a matched audition, add recipe-specific guidance or sampling to the existing source-bound document policy and use `--performance experimental --document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
+For a matched audition, add recipe-specific guidance or sampling to the source-bound document policy and use `--document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
 
 ```json
 {
@@ -146,6 +148,8 @@ Compare two unprompted readings of the same committed take with `hamr transcribe
 | `whisper` | Lower-memory CPU preset and the baseline for Windows x64. Model files total about 634 MB. | Uses the faster-whisper pair. Choose it explicitly when limiting setup size or memory. |
 
 The verifier uses system RAM and runs in a separate process. When memory is tight during synthesis, Hamr defers the heavier check until the synthesis process releases its resources. Each recognizer exits before the next starts. Fluid keeps the raw words, including fillers and repeats, and reports its segment timing as unavailable. Hamr keeps directed takes for review when a recognizer flags them. [Fluid Speech Pro ONNX model and license](https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx)
+
+Fluid INT8 and Whisper are the installed verifier choices. The local comparison also ran Nemotron Streaming Q8 and Fluid FP32. Nemotron lost a softly spoken quote that Fluid recovered, and Fluid FP32 matched INT8's results on the controls with higher memory use. Those comparison models have no Hamr setup preset. For a finished book, `hamr status JOB --json` reports the active observer and `metrics.semantic_qa` for the saved job.
 
 ### Tune readings that depend on context
 
@@ -240,7 +244,7 @@ Add `--resident --batch-takes 1 --batch-rest-seconds 10` to retain one owned mod
 
 Source locations, planned speech and committed takes remain inspectable through `show --content`, `excerpt` and offline `qa`. Source review and speech review are separate publication gates.
 
-Rules9/10 anchor ordinary complete paragraphs independently, preserve complete sentences within bounded input, and separate an unfinished tail from preceding complete sentences. Known source gaps hold unfinished sentences. Single complete sentences up to160 words/1000 UTF-8 bytes are an experimental extension; a136-word/793-byte actual control has passed source/ASR/player checks; longer inputs retain explicit clause/forced boundaries. Saved plans retain their rules until explicitly upgraded. Verified document policies can defer a photograph caption until its interrupted paragraph finishes, with a spoken “Illustration caption” cue, or give a synopsis a standalone boundary.
+The default planner keeps complete paragraphs and sentences together within its input budget. It separates an unfinished tail from preceding complete sentences and holds unfinished sentences at known source gaps. A single complete sentence can use up to 160 words and 1,000 UTF-8 bytes. A 136-word control passed speech and playback checks. Longer inputs use recorded clause or forced boundaries. Saved plans retain their rules until explicitly upgraded. Verified document policies can defer a photograph caption until its interrupted paragraph finishes, with a spoken “Illustration caption” cue, or give a synopsis a standalone boundary.
 
 ## Recovery and repair
 

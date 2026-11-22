@@ -41,7 +41,7 @@ def validated_sampling(fields):
     return {name:int(value) if name=='top_k' else float(value) for name,value in fields.items()}
 
 
-def tuning_preferences(config, mode, registry):
+def tuning_preferences(config, enabled, registry):
     overrides=config.get('tuning',{})
     if not isinstance(overrides,dict):
         raise Error('performance_sampling','Performance tuning must map recipe names to settings.')
@@ -55,7 +55,7 @@ def tuning_preferences(config, mode, registry):
             raise Error('speech_guidance','Choose Breeze guidance of 1, 2, 2.5, or 3.')
         result[recipe]=validated_sampling({k:v for k,v in fields.items() if k!='cfg_scale'})
         if cfg is not None:result[recipe]['cfg_scale']=float(cfg)
-    return result if mode=='experimental' else {}
+    return result if enabled else {}
 
 
 @cache
@@ -76,6 +76,40 @@ def normalize_space(text):
     return ' '.join(text.split())
 
 
+def delivery_text(block, all_formats):
+    if all_formats and block.locator.get('format')=='pdf':
+        # A PDF line wrap is layout. Replace it without shifting any source spans.
+        return block.source.replace('\n',' ').replace('\r',' ')
+    return block.source
+
+
+def block_spans(blocks, start, stop):
+    parts = []
+    offset = 0
+    for block in blocks:
+        end = offset + len(block.source)
+        if start < end and stop > offset:
+            parts.append({'block':block.id,'span':[max(start,offset)-offset,min(stop,end)-offset]})
+        offset = end + 1  # The space joining adjacent fragments.
+    return parts
+
+
+def locate_pdf_candidate(candidate, blocks):
+    source = candidate['source']
+    candidate['source'] = block_spans(blocks,*source['span'])[0]
+    for evidence in candidate.get('evidence', ()):
+        if evidence.get('block'):
+            continue  # Evidence from the preceding source retains its own offsets.
+        cue = block_spans(blocks,*evidence['span'])
+        evidence.update(block=cue[0]['block'],span=cue[0]['span'],cue_parts=cue)
+        if quotes:=evidence.pop('quotation_spans',None):
+            evidence['quotation_parts'] = [part for span in quotes for part in block_spans(blocks,*span)]
+        if target:=evidence.pop('target_span',None):
+            evidence['target_parts'] = block_spans(blocks,*target)
+        if turn:=evidence.pop('turn_span',None):
+            evidence['turn_parts'] = block_spans(blocks,*turn)
+
+
 def dialogue_attribution(source, cue_pattern):
     after = re.fullmatch(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<actor>'+ATTRIBUTION+r')'+
                          r'\s+(?P<verb>'+cue_pattern+r')\s*[.!?]', source)
@@ -92,6 +126,32 @@ def dialogue_attribution(source, cue_pattern):
     if (interrupted and interrupted['quote'][-2] in ',.!?'
             and re.match(r'[a-z]',interrupted['continuation'][1:].lstrip())):
         return interrupted
+    return None
+
+
+def embedded_attribution(source, cue_pattern):
+    """Find an attributed line with at most one narrator sentence on each side."""
+    if len(source)>480:
+        return None
+    quotes = list(re.finditer(QUOTATION,source))
+    if len(quotes)!=1:
+        return None
+    quote, = quotes
+    sentences = list(sentence_spans(source))
+    before = [part for part in sentences if part['end']<=quote.start()]
+    if len(before)>1:
+        return None
+    start = before[-1]['end'] if before else 0
+    for part in sentences:
+        if part['end']<quote.end():
+            continue
+        stop=len(source[:part['end']].rstrip())
+        if candidate:=dialogue_attribution(source[start:stop],cue_pattern):
+            tail=source[stop:].strip()
+            if tail and (tail[-1] not in '.!?' or len(list(sentence_spans(tail)))!=1):
+                return None
+            if start or tail:
+                return candidate,start,stop
     return None
 
 
@@ -195,6 +255,22 @@ def dialogue_context(source, config, previous, preference):
     return newest['recipe'], [item for _,item in matching], owner is None
 
 
+def trailing_voice_description(source, config, preference):
+    """A description of the delivered words can support the preceding quote."""
+    if preference=='off' or not (owned:=embedded_attribution(source,'|'.join(NEUTRAL_REPORTING))):
+        return None
+    line,start,stop=owned
+    tail=source[stop:].strip()
+    if start or not tail:
+        return None
+    if entry:=speaker_evidence(line['actor'],tail[:-1],config['trailing_voice']):
+        tail_start=stop+len(source[stop:])-len(source[stop:].lstrip())
+        evidence={'kind':'trailing_voice_description','span':[tail_start,tail_start+len(tail)-1],
+                  'signal':entry['signal'],'quotation_spans':[list(line.span('quote'))]}
+        return entry['recipe'], [evidence], False
+    return None
+
+
 def contextual_direction(source, config, previous=None, preference='corroborated'):
     """Keep prose evidence local to a speaker or a coherent scene."""
     if result := dialogue_context(source,config,previous,preference):
@@ -217,13 +293,13 @@ def contextual_direction(source, config, previous=None, preference='corroborated
                           {'kind':'deliberate_restraint','signal':signal,'span':list(restraint.span())}],False
 
 
-def eligible(block, decision, disabled, role='body', modes=('listen',)):
+def eligible(block, decision, disabled, role='body', modes=('listen',), *, all_formats=True):
     locator = block.locator
     return (block.id not in disabled and block.role == role and not block.issue
             and decision['action'] == 'speak' and decision['section_policy']['mode'] in modes
             and not locator.get('checklist') and not block.links
             and not any(span['kind'] in PRIVATE_KINDS for span in locator.get('inline_semantics', ()))
-            and locator.get('format') in ('epub', 'markdown', 'text'))
+            and (all_formats or locator.get('format') in ('epub', 'markdown', 'text')))
 
 
 def performance_preferences(document_policy, known):
@@ -239,7 +315,7 @@ def performance_preferences(document_policy, known):
     return set(blocks), dialogue
 
 
-def add_gentle_entries(units, by_id, decisions, occurrences, disabled, digest, registry, registry_sha):
+def add_gentle_entries(units, by_id, decisions, occurrences, disabled, digest, registry, registry_sha, *, all_formats):
     """Guide the first ordinary entrance at two auditioned kinds of quiet join."""
     count = 0
     quiet = {'sigh','whisper','tearful','sobbing'}
@@ -261,7 +337,7 @@ def add_gentle_entries(units, by_id, decisions, occurrences, disabled, digest, r
         else:
             continue
         owner=unit['sources'][0]
-        if (occurrences[owner]!=1 or not eligible(by_id[owner],decisions[owner],disabled,role)
+        if (occurrences[owner]!=1 or not eligible(by_id[owner],decisions[owner],disabled,role,all_formats=all_formats)
                 or role=='body' and re.search(QUOTATION,unit['text'])
                 or unit['text']!=normalize_space(decisions[owner]['spoken'])):
             continue
@@ -276,7 +352,7 @@ def add_gentle_entries(units, by_id, decisions, occurrences, disabled, digest, r
     return count
 
 
-def add_structural_directions(units, by_id, decisions, occurrences, disabled, digest, registry, registry_sha):
+def add_structural_directions(units, by_id, decisions, occurrences, disabled, digest, registry, registry_sha, *, all_formats):
     """Use imported roles to guide complete headings and technical readings."""
     count = 0
     for unit in units:
@@ -294,7 +370,7 @@ def add_structural_directions(units, by_id, decisions, occurrences, disabled, di
             recipe, modes = 'technical', ('study','procedure')
         else:
             continue
-        if not eligible(block,decision,disabled,block.role,modes):
+        if not eligible(block,decision,disabled,block.role,modes,all_formats=all_formats):
             continue
         text = unit['text']
         candidate = {'recipe':recipe,'speech':text,'synthesis':text,'neutral':text,'cfg_scale':1,
@@ -307,7 +383,7 @@ def add_structural_directions(units, by_id, decisions, occurrences, disabled, di
     return count
 
 
-def annotate(plan, document, *, automatic_prose=True):
+def annotate(plan, document, *, automatic_prose=True, context_version=None):
     """Recognize cues only when the compiled request has one demonstrable owner."""
     mode = plan['policy'].get('performance', 'auto')
     if mode not in MODES:
@@ -315,7 +391,10 @@ def annotate(plan, document, *, automatic_prose=True):
     document_policy=plan['policy'].get('document', {})
     disabled, preference = performance_preferences(document_policy, {b.id for b in document.blocks})
     registry = loadjson(RULES_FILE)
-    tuning=tuning_preferences(document_policy.get('performance',{}),mode,registry)
+    version = context_version or (3 if automatic_prose else 1)
+    full_delivery = version >= 3
+    tuning=tuning_preferences(document_policy.get('performance',{}),
+                              mode=='experimental' or (mode=='auto' and full_delivery),registry)
     if mode == 'off':
         plan['performance'] = {'mode':mode, 'bound':True, 'active':0, 'candidates':0}
         if document_policy.get('performance',{}).get('tuning'):
@@ -323,6 +402,12 @@ def annotate(plan, document, *, automatic_prose=True):
         return
     recipes = registry['directions']
     verbs = {cue:kind for kind,item in recipes.items() for cue in item['cues']}
+    modern_context = version >= 2
+    if modern_context:
+        reporting = registry['context']['reporting_modifiers']
+        composed = {f'{verb} {modifier}':kind for kind,modifiers in reporting['modifiers'].items()
+                    for verb in reporting['verbs'] for modifier in modifiers}
+        verbs = {**composed,**verbs}
     cue_pattern = '|'.join(map(re.escape, [*NEUTRAL_REPORTING,*verbs]))
     events = {label:kind for kind,item in registry['events'].items() for label in item['spellings']}
     by_id = {b.id:b for b in document.blocks}
@@ -334,30 +419,39 @@ def annotate(plan, document, *, automatic_prose=True):
     registry_sha = key(registry)
     for unit in plan['utterances']:
         sources = unit['sources']
-        if not 1 <= len(sources) <= 2 or any(occurrences[bid]!=1 or not eligible(
-                by_id[bid],decisions[bid],disabled) for bid in sources):
-            continue
-        if len(sources)==2 and source_order[sources[1]] != source_order[sources[0]]+1:
-            continue
         blocks = [by_id[bid] for bid in sources]
-        if len(blocks)==2 and (blocks[0].chapter!=blocks[1].chapter or
-                              blocks[0].locator.get('chapter_id')!=blocks[1].locator.get('chapter_id')):
+        joined_pdf = (full_delivery and len(blocks)>1 and
+                      all(b.locator.get('format')=='pdf' for b in blocks))
+        if not sources or (len(sources)>2 and not joined_pdf) or any(occurrences[bid]!=1 or not eligible(
+                by_id[bid],decisions[bid],disabled,all_formats=full_delivery) for bid in sources):
+            continue
+        start_index = source_order[blocks[0].id]
+        chapter = (blocks[0].chapter, blocks[0].locator.get('chapter_id'))
+        if any(source_order[b.id]!=start_index+i or (b.chapter,b.locator.get('chapter_id'))!=chapter
+               for i,b in enumerate(blocks[1:],1)):
             continue
         neutral = unit['text']
         if neutral != normalize_space(' '.join(decisions[b.id]['spoken'] for b in blocks)):
             continue
-        source = blocks[0].source
+        source = delivery_text(blocks[0], full_delivery)
+        if joined_pdf:
+            source = ' '.join(delivery_text(b, True) for b in blocks)
         direction = None
+        surrounding = None
         focus = None
         event = None
         event_attribution = None
-        if len(blocks)==2:
-            if STANDALONE.fullmatch(source) and (event_attribution:=dialogue_attribution(blocks[1].source,cue_pattern)):
+        if len(blocks)==2 and not joined_pdf:
+            next_source=delivery_text(blocks[1], full_delivery)
+            if STANDALONE.fullmatch(source) and (event_attribution:=dialogue_attribution(next_source,cue_pattern)):
                 event = source, 'before', blocks[0], 0, ''
-            elif STANDALONE.fullmatch(blocks[1].source) and (event_attribution:=dialogue_attribution(source,cue_pattern)):
-                event = blocks[1].source, 'after', blocks[1], 0, ''
+            elif STANDALONE.fullmatch(next_source) and (event_attribution:=dialogue_attribution(source,cue_pattern)):
+                event = next_source, 'after', blocks[1], 0, ''
         elif (match:=dialogue_attribution(source,cue_pattern)) and (kind:=verbs.get(match['verb'])):
             direction = kind, match
+        elif modern_context and (owned:=embedded_attribution(source,cue_pattern)) and (kind:=verbs.get(owned[0]['verb'])):
+            direction = kind, owned[0]
+            surrounding = owned[1:]
         elif (focus:=focus_direction(source,registry['context']['emphasis'])) is not None:
             pass
         elif (match:=LEADING.fullmatch(source)) and (event_attribution:=dialogue_attribution(match['dialogue'],cue_pattern)):
@@ -381,6 +475,11 @@ def annotate(plan, document, *, automatic_prose=True):
                 continue
             if continuation:
                 instruction += ' Treat both quoted spans as the same speaker’s continuing turn.'
+            if surrounding:
+                offset,stop=surrounding
+                start+=offset
+                end+=offset
+                instruction+=' Read any narration around the quotation in the usual reference voice.'
             candidate = {'recipe':kind, 'speech':neutral, 'synthesis':neutral,
                          'instruction':instruction, 'cfg_scale':recipe.get('cfg_scale',1),
                          'source':{'block':sources[0], 'span':[start,end]},
@@ -393,6 +492,12 @@ def annotate(plan, document, *, automatic_prose=True):
             elif attribution.groupdict().get('inverted'):
                 candidate['contextual']=True
                 candidate['evidence'][0]['form']='verb_first'
+            if surrounding:
+                candidate['contextual']=True
+                candidate['evidence'][0].update(form='embedded_quotation',turn_span=[offset,stop],
+                    quotation_spans=[[offset+i for i in attribution.span('quote')]])
+            if joined_pdf:
+                candidate['evidence'][0].setdefault('quotation_spans',[list(attribution.span('quote'))])
             if suffixes:=recipe.get('voice_suffixes'):
                 candidate['voice_suffixes']=suffixes
         elif focus:
@@ -436,12 +541,13 @@ def annotate(plan, document, *, automatic_prose=True):
                                       or event_attribution.groupdict().get('continuation')
                                       or event_attribution['verb'] in NEUTRAL_REPORTING[1:]):
                 candidate['contextual']=True
-        elif len(blocks)==1:
+        elif len(blocks)==1 or joined_pdf:
             index=source_order[blocks[0].id]
             previous=document.blocks[index-1] if index else None
             if (previous and (previous.chapter!=blocks[0].chapter
                               or previous.locator.get('chapter_id')!=blocks[0].locator.get('chapter_id')
-                              or occurrences[previous.id]!=1 or not eligible(previous,decisions[previous.id],disabled))):
+                              or occurrences[previous.id]!=1 or not eligible(previous,decisions[previous.id],disabled,
+                                                                            all_formats=full_delivery))):
                 previous=None
             carry = (continued_direction(source,previous,cue_pattern,registry['context']['continuation'],
                                          by_source_candidate.get(previous.id)) if previous and preference!='off' else None)
@@ -450,12 +556,16 @@ def annotate(plan, document, *, automatic_prose=True):
                 kind,evidence,has_lead=anchor['recipe'],[carry],False
             elif (context:=contextual_direction(source,registry['context'],previous,preference)):
                 kind,evidence,has_lead=context
+            elif modern_context and (context:=trailing_voice_description(source,registry['context'],preference)):
+                kind,evidence,has_lead=context
             else:
                 continue
             recipe=recipes[kind]
             instruction=recipe['instruction']
             if has_lead:
                 instruction='Read the opening narration in the usual reference voice. '+instruction
+            if evidence[0]['kind']=='trailing_voice_description':
+                instruction+=' Read the description after the quotation in the usual reference voice.'
             span=carry['span'] if carry else [0,len(source)]
             candidate={'recipe':kind,'speech':neutral,'synthesis':neutral,'instruction':instruction,
                        'cfg_scale':recipe.get('cfg_scale',1),'source':{'block':sources[0],'span':span},
@@ -466,7 +576,10 @@ def annotate(plan, document, *, automatic_prose=True):
                 candidate['voice_suffixes']=suffixes
         else:
             continue
-        if (direction or candidate.get('contextual')) and not focus and not candidate.get('anchor'):
+        if joined_pdf:
+            locate_pdf_candidate(candidate,blocks)
+        narrated_context=surrounding or candidate.get('evidence',[{}])[0].get('kind')=='trailing_voice_description'
+        if (direction or candidate.get('contextual')) and not focus and not candidate.get('anchor') and not narrated_context:
             if marker:=recipe.get('quote_marker'):
                 quotes=list(re.finditer(QUOTATION,candidate['speech']))
                 if len(quotes)==1:
@@ -491,9 +604,9 @@ def annotate(plan, document, *, automatic_prose=True):
     if mode=='experimental' or expressive_default:
         sources = (plan['utterances'],by_id,decisions,occurrences,disabled,document.source_sha256,registry,registry_sha)
         if candidates:
-            candidates+=add_gentle_entries(*sources)
-        if mode=='experimental':
-            candidates+=add_structural_directions(*sources)
+            candidates+=add_gentle_entries(*sources,all_formats=full_delivery)
+        if mode=='experimental' or full_delivery:
+            candidates+=add_structural_directions(*sources,all_formats=full_delivery)
         if tuning:
             tunes = [u['performance_candidate'] for u in plan['utterances'] if 'performance_candidate' in u]
             redirects={}
@@ -508,13 +621,15 @@ def annotate(plan, document, *, automatic_prose=True):
                     redirects[prior]=candidate['id']
             for candidate in tunes:
                 if candidate.get('anchor') in redirects:candidate['anchor']=redirects[candidate['anchor']]
-    if candidates or 'performance' in plan['policy']:
+    if full_delivery or candidates or 'performance' in plan['policy']:
         plan['performance'] = {'mode':mode, 'bound':not candidates, 'candidates':candidates,
                                'active':0, 'registry_sha256':registry_sha}
         if expressive_default:
             plan['performance']['automatic_scope'] = 'prose'
+        if modern_context:
+            plan['performance']['context_version'] = version
         if document_policy.get('performance',{}).get('tuning'):
-            plan['performance']['tuning_state']='experimental' if tuning else 'inactive'
+            plan['performance']['tuning_state']='active' if tuning else 'inactive'
 
 
 def candidate_id(source_digest, candidate):
@@ -572,7 +687,8 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
     previous = previous or {}
     fallback_ids = {entry['candidate'] for entry in fallbacks if not entry.get('variant')}
     instructions_only = {entry['candidate'] for entry in fallbacks if entry.get('variant')=='instruction_only'}
-    same_registry = summary['registry_sha256']==key(registry)
+    # A queue created before backend setup still needs to bind its saved direction.
+    compatible_registry = summary['registry_sha256'] in (key(registry), *registry.get('compatible_registry_sha256', ()))
     platform = backend.get('runtime_platform',sys.platform)
     archive_sha256 = backend.get('runtime_archive_sha256')
     if archive_sha256 is None and platform == 'linux':
@@ -582,9 +698,10 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
                       'platform':platform}
     reference = key({'reference_sha256':voice['reference_sha256'],'transcript':voice['transcript']}) if (
         voice.get('reference_sha256') and voice.get('transcript')) else None
-    prose = (same_registry and summary.get('automatic_scope') == 'prose' and reference is not None
+    prose = (compatible_registry and summary.get('automatic_scope') == 'prose' and reference is not None
              and supports_prose_direction(backend))
     automatic = registry['automatic_directions']
+    full_delivery = summary.get('context_version',1)>=3
     settings = backend.get('settings',{})
     execution = {'device':settings.get('device'),'parallel':settings.get('parallel',1)}
     candidates=[(unit,unit['performance_candidate']) for unit in plan['utterances'] if 'performance_candidate' in unit]
@@ -616,13 +733,14 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
             target['context_support']=support
         if event:=candidate.get('event'):
             target['placement']='after_speaker' if event['word_offset'] else event['position']
-        qualified = same_registry and all(backend_target.values()) and (
+        qualified = compatible_registry and all(backend_target.values()) and (
             target in registry['qualified'] or
             reference is not None and {**target,'reference_identity':reference,'execution':execution} in registry['qualified'])
         recipe = candidate['recipe']
-        directed = prose and candidate.get('instruction') and (recipe in automatic['prose'] or (
-            recipe in automatic['direct_attribution'] and any(e['kind']=='direct_attribution'
-                                                            for e in candidate.get('evidence', ()))))
+        direct_attribution = any(e['kind']=='direct_attribution' for e in candidate.get('evidence', ()))
+        legacy_direction = candidate.get('instruction') and (recipe in automatic['prose'] or
+                            (recipe in automatic['direct_attribution'] and direct_attribution))
+        directed = prose and (full_delivery or legacy_direction)
         enabled = backend.get('runtime_revision') and (summary['mode']=='experimental' or qualified or directed)
         if enabled:
             unit['text'] = candidate['speech']
@@ -635,7 +753,8 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
                 candidate={**candidate,'instruction':candidate['instruction']+' '+suffix}
             unit['performance'] = candidate
             active_ids.add(cid)
-            if cid in instructions_only or (directed and candidate.get('control_labels')):
+            if (cid in instructions_only or (directed and candidate.get('control_labels'))
+                    or (directed and full_delivery and event and not qualified and candidate.get('instruction'))):
                 use_instruction_only(unit)
             elif summary['mode']=='experimental':
                 unit['performance_state']='experimental'

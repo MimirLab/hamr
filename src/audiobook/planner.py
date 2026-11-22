@@ -139,10 +139,12 @@ def split(text,words=65,rule_revision=RULES):
             i+=1
     return pieces
 
-def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_reviewer=None,automatic_prose=True):
+def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_reviewer=None,automatic_prose=True,
+         delivery_context=None):
     if context_reviewer is not None:
         from .context_reviewer import reviewed_plan
-        return reviewed_plan(doc,policy,aliases,rule_revision,context_reviewer,automatic_prose=automatic_prose)
+        return reviewed_plan(doc,policy,aliases,rule_revision,context_reviewer,automatic_prose=automatic_prose,
+                             delivery_context=delivery_context)
     if rule_revision not in KNOWN_RULES:raise Error('newer_rules','This narration rule revision is not supported by this build.','Use the matching or newer application; the saved job and approved plan are retained.')
     selected=policy or {}; mode=selected.get('mode','listen')
     if selected.get('notes','after_paragraph') not in ('after_paragraph','inline','companion'):raise Error('note_policy','Notes must be after_paragraph, inline or companion.')
@@ -492,6 +494,6 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         result['review_groups']=source_groups(doc.json(),result)
     if rule_revision==RULES:
         from .performance import annotate
-        annotate(result,doc,automatic_prose=automatic_prose)
+        annotate(result,doc,automatic_prose=automatic_prose,context_version=delivery_context)
     result['plan_sha256']=key(result)
     return result
