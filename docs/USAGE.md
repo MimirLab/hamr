@@ -110,6 +110,8 @@ Authored sounds include sighs, laughter, chuckles, gasps, coughs, throat clearin
 
 “Wait for the lantern,” she whispered. “The latch is still closed.” When the same turn continues in a second complete quotation within the paragraph, Hamr can keep both lines in one Breeze request. The narrator still reads the attribution between them. The plan marks both quotation spans under `continued_quotation`.
 
+On a searchable PDF these quotations can sit on separate printed lines. Hamr can keep adjacent aligned lines together for speech. A shared authored paragraph tag lets the delivery carry across both quotations. With only line geometry, Breeze reads the combined passage in its usual voice. The companion retains both source locations. Use `hamr repair JOB --reimport --performance auto` to check an older PDF for paragraph tags.
+
 Phrases such as “she answered quietly” and “he said slowly” can shape the quoted line even when a short sentence of narration shares the paragraph. A description that clearly refers back to the speaker's voice can also guide the line just spoken. Hamr asks Breeze to read the surrounding narration in its usual voice.
 
 Reporting phrases also distinguish firm emphasis and calm delivery. “Ada replied firmly” and “said Ada firmly” describe the same delivery. “Answered quickly” can refer to the timing of a reply, so Hamr leaves its pace to Breeze. The plan shows which words supported each direction.

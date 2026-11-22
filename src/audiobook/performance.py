@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 10
+CONTEXT_VERSION = 11
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -218,6 +218,26 @@ def attributed_turn_continuation(source, cue_pattern, postposed, *, actor):
     reporting = dialogue_attribution(source[:second.start()].rstrip(), cue_pattern, postposed, actor=actor)
     if reporting and reporting.start('quote') == 0:
         return reporting, second.span()
+    return None
+
+
+def native_quote_flow(left, right, config):
+    """Identify adjacent PDF lines that can share an intact speech request."""
+    from .pdf_layout import adjacent_native_lines
+
+    if (not isinstance(config, dict) or not re.fullmatch(QUOTATION, right.source)
+            or not adjacent_native_lines(left, right)
+            or len(left.source) + len(right.source) > 480):
+        return None
+    registry = loadjson(RULES_FILE)
+    custom = attribution_preferences(config, registry['directions'])
+    verbs, cues, postposed = attribution_rules(registry, CONTEXT_VERSION, custom)
+    source = left.source + ' ' + right.source
+    turn = attributed_turn_continuation(source, cues, postposed, actor=attribution_actor(CONTEXT_VERSION))
+    if turn and (kind := verbs.get(attribution_phrase(turn[0]))) and not registry['directions'][kind].get('progression'):
+        if left.locator.get('tagged_paragraph') is not None:
+            return 'tagged_pdf_quotation'
+        return 'adjacent_pdf_quotation'
     return None
 
 
@@ -671,6 +691,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                               mode=='experimental' or (mode=='auto' and full_delivery),registry)
     if mode == 'off':
         plan['performance'] = {'mode':mode, 'bound':True, 'active':0, 'candidates':0}
+        if document.format == 'pdf' and version >= 11:
+            plan['performance']['context_version'] = version
         if document_policy.get('performance',{}).get('tuning'):
             plan['performance']['tuning_state']='inactive'
         return
@@ -724,7 +746,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         elif (match:=dialogue_attribution(source,cue_pattern,postposed,actor=actor)) and (
                 kind:=verbs.get(attribution_phrase(match))):
             direction = kind, match
-        elif version >= 10 and len(blocks) == 1 and (
+        elif version >= 10 and (len(blocks) == 1 or unit.get('delivery_boundary') == 'tagged_pdf_quotation') and (
                 turn := attributed_turn_continuation(source, cue_pattern, postposed, actor=actor)) and (
                 kind := verbs.get(attribution_phrase(turn[0]))):
             direction = kind, turn[0]

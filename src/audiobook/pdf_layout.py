@@ -81,6 +81,27 @@ def column_order(items, width, rect, *, min_lines=3):
     return ordered
 
 
+def adjacent_native_lines(left, right):
+    """Use geometry for reading flow between two native body lines."""
+    a, b = left.locator, right.locator
+    if (left.role != 'body' or right.role != 'body' or left.issue or right.issue
+            or left.chapter != right.chapter or a.get('chapter_id') != b.get('chapter_id')
+            or a.get('format') != 'pdf' or b.get('format') != 'pdf'
+            or not a.get('page') or a['page'] != b.get('page')
+            or 'line' not in a or b.get('line') != a['line'] + 1
+            or not a.get('rect') or not b.get('rect')):
+        return False
+    ax, ay, _, atop = a['rect']
+    bx, by, _, btop = b['rect']
+    height = max(atop - ay, btop - by)
+    advance = (atop + ay - btop - by) / 2
+    a_tag, b_tag = a.get('tagged_paragraph'), b.get('tagged_paragraph')
+    if a_tag != b_tag:
+        return False
+    max_indent = 2 if a_tag is not None else .24
+    return abs(ax - bx) <= max_indent * height and .85 * height <= advance <= 1.75 * height
+
+
 def paragraphs(words, page, height, page_issue=None, *, region=None, width=None):
     origin_left, origin_top = (region[0], region[3]) if region else (0, height)
     groups = OrderedDict()

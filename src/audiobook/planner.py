@@ -181,6 +181,9 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     source_positions={b.id:i for i,b in enumerate(doc.blocks)}
     join_inline_events = (doc.format=='pdf' and automatic_prose and policy.get('performance')!='off' and
                           (delivery_context is None or delivery_context>=6))
+    pdf_dialogue_flow = (doc.format == 'pdf' and rule_revision == RULES and
+                         (automatic_prose if delivery_context is None else delivery_context >= 11))
+    quote_pairs = {}
     delivery=document_policy.get('delivery',{})
     if not isinstance(delivery,dict) or delivery.get('flow','continuous') not in ('continuous','segmented'):raise Error('delivery_policy','Delivery flow must be continuous or segmented.')
     continuous=delivery.get('flow','continuous' if rule_revision in ('faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) else 'segmented')=='continuous'
@@ -253,7 +256,10 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                         utterances[-1]['sources']=list(dict.fromkeys(utterances[-1]['sources']+source_ids))
                     continue
                 utterance={'text':part,'sources':list(dict.fromkeys(source_ids)),'chapter':chapter,'language':'en','pause_samples':4320 if continuous else 7200}
-                if continuous:utterance['delivery_boundary']=piece['boundary']
+                if continuous:
+                    utterance['delivery_boundary'] = piece['boundary']
+                    if (quote_flow := quote_pairs.get(tuple(source_ids))) and part == ' '.join(joined.split()):
+                        utterance['delivery_boundary'] = quote_flow
                 if chapter_id is not None:utterance['chapter_id']=chapter_id
                 if part in repeated_units:
                     utterance['literal_repeat']=True;utterance['pause_samples']=1200
@@ -461,13 +467,19 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 if utterances:utterances[-1]['pause_samples']=14400
             if continuous and anchor=='paragraph' and not heading and re.search(r'[.!?]["”’\')\]]*$',spoken):
                 following = source_positions[b.id]+1
-                continued_inline_event = False
-                if join_inline_events and effective['mode']=='listen' and following<len(doc.blocks) and len(buffer)==1:
+                continue_passage = False
+                if ((pdf_dialogue_flow or join_inline_events) and effective['mode']=='listen'
+                        and following < len(doc.blocks) and len(buffer) == 1):
                     next_block = doc.blocks[following]
                     if next_block.id not in heading_ids and next_block.id not in overrides:
-                        from .performance import pdf_inline_event_continues
-                        continued_inline_event = pdf_inline_event_continues(b,next_block,delivery_context)
-                if not continued_inline_event:
+                        from .performance import native_quote_flow, pdf_inline_event_continues
+                        if (pdf_dialogue_flow and b.id not in overrides and
+                                (quote_flow := native_quote_flow(b, next_block, document_policy.get('performance', {})))):
+                            quote_pairs[b.id, next_block.id] = quote_flow
+                            continue_passage = True
+                        elif join_inline_events:
+                            continue_passage = pdf_inline_event_continues(b, next_block, delivery_context)
+                if not continue_passage:
                     flush()
                     if utterances:utterances[-1]['pause_samples']=8400
             if continuous and captions and re.search(r'[.!?]["”’\')\]]*$',spoken):
