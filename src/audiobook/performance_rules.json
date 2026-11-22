@@ -7,7 +7,8 @@
     "bf06eb8e82fa32de416f92b6024059f8d677c4f888e1c07ec8222fe9991dfea1",
     "b07278bddd3b57644dedd1dd56dea29f8d148a9e75790d00d8666ceb69edb909",
     "741865068c5676e2ed1b669433c0b2a8e607d3b42850410e5068f918bc3f3f80",
-    "f4fb01cac3d06b8ad3050362c4d60bb204a1dbf9545b50a723983166f42d7d41"
+    "f4fb01cac3d06b8ad3050362c4d60bb204a1dbf9545b50a723983166f42d7d41",
+    "5bcfb76db468f8419feffde9bff44fe76d106dbe262a02cd52e9d12c71c62b91"
   ],
   "directions": {
     "whisper": {
@@ -168,6 +169,8 @@
     ],
     "emphasis": {
       "attributions": ["stressing", "emphasizing", "emphasising", "putting the stress on"],
+      "marked_pronouns": ["i", "me", "you", "he", "him", "she", "her", "we", "us", "they", "them", "mine", "yours", "hers", "ours", "theirs"],
+      "typographic_instruction": "Stress the word {phrase} to make clear who is meant. Read the rest conversationally at the usual pace.",
       "instruction": "Give the phrase {phrase} one small, natural stress within the quotation. Keep every word and read the attribution in the usual reference voice."
     },
     "continuation": {

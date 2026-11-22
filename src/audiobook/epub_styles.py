@@ -3,7 +3,7 @@ import re
 import tinycss2
 
 SEMANTIC={'display','visibility','content','vertical-align','speak','speak-as'}
-AUDIT_ONLY={'text-transform'}
+AUDIT_ONLY={'text-transform','font-style'}
 ATTRIBUTE=r'''\[\s*(?:[\w-]+\|)?[\w:-]+(?:\s*[~|^$*]?=\s*(?:"[^"]*"|'[^']*'|[\w:-]+)\s*(?:[is])?)?\]'''
 SIMPLE=r'(?:\*|[A-Za-z][\w-]*)?(?:[.#][\w-]+|'+ATTRIBUTE+r')*'
 SELECTOR=re.compile(SIMPLE+r'(?:\s*(?:[>+~]|\s)\s*'+SIMPLE+r')*')

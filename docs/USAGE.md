@@ -126,6 +126,8 @@ Hamr can give a heading a measured cadence and use clear articulation for a comp
 
 When the author names a phrase to stress, Hamr requires a single matching occurrence inside the quotation. Rising and fading delivery across two or more sentences follow an explicit attribution. Inferred distress requires local speaker evidence. Use the ordinary command to make the audiobook.
 
+An author-marked personal pronoun can guide the stress in a complete spoken turn. For example, “Did *you* see who left?” asks Breeze to stress who saw it. Hamr uses semantic emphasis or an authored italic style in EPUB and emphasis markup in Markdown. The plan ties the marked word to its original source span. Use `hamr repair JOB --reimport --performance auto` to refresh stylesheet evidence on an older EPUB job.
+
 ```sh
 hamr open 'Scene.pdf' --voice cast:nigel-thornberry
 ```

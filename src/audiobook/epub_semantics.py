@@ -5,7 +5,7 @@ from bs4 import Comment, Declaration, Doctype, NavigableString, ProcessingInstru
 
 EMBEDDED = ('audio', 'canvas', 'embed', 'iframe', 'object', 'video')
 NON_TEXT = (Comment, Declaration, Doctype, ProcessingInstruction)
-AUDIT_SPANS={'hyperlink','title_style','emphasis','display_case','math_script','math_vector','abbreviation_label'}
+AUDIT_SPANS={'hyperlink','title_style','emphasis','display_case','font_style','math_script','math_vector','abbreviation_label'}
 HAN_NAMES=('CJK UNIFIED IDEOGRAPH','CJK COMPATIBILITY IDEOGRAPH')
 KANA_NAMES=('HIRAGANA LETTER','KATAKANA LETTER')
 KANA_MARKS={'KATAKANA-HIRAGANA PROLONGED SOUND MARK','HIRAGANA ITERATION MARK','HIRAGANA VOICED ITERATION MARK',
@@ -188,6 +188,12 @@ def describe(node,resolve_asset=None,cover_assets=()):
         transform=properties(n).get('text-transform',{})
         if transform.get('value') in ('uppercase','lowercase','capitalize'):
             spans.append({**data,'kind':'display_case','transform':transform['value'],'origin':transform['origin']})
+        font=properties(n).get('font-style')
+        if font or n.name=='i':
+            style=font['value'].casefold() if font else 'italic'
+            if style.split()[:1] in (['italic'],['oblique'],['normal']):
+                spans.append({**data,'kind':'font_style','style':style,
+                              'origin':font['origin'] if font else 'Authored XHTML i element'})
         if n.name in ('msup','msub') and n.find_parent('math'):
             children=[child for child in n.children if getattr(child,'name',None)]
             if len(children)==2 and children[1].name in ('mn','mi'):

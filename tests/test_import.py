@@ -16,6 +16,29 @@ def test_annotated_literals(literal):
 def test_whitespace_emphasis_version():
     d=markdown(b'# Test\n\nUse **2**.4.10, not 0.80.\n'); assert d.blocks[1].source=='Use 2.4.10, not 0.80.'
 
+def test_epub_italic_styles_retain_evidence_without_changing_block_identity():
+    def book(stylesheet):
+        out=io.BytesIO()
+        with zipfile.ZipFile(out,'w') as z:
+            z.writestr('META-INF/container.xml','<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>')
+            z.writestr('book.opf','<package><metadata/><manifest><item id="p" href="p.xhtml"/></manifest><spine><itemref idref="p"/></spine></package>')
+            z.writestr('p.xhtml','<html><head><style>'+stylesheet+'</style></head><body>'
+                       '<p>“Did <span class="cue">you</span> see the gate?” she asked.</p>'
+                       '<p>“Did you read <cite><em>Her</em></cite> yesterday?” she asked.</p>'
+                       '<p>“Did <span class="cue"><span style="font-style:normal">you</span></span> see the road?” she asked.</p>'
+                       '</body></html>')
+        return epub(out.getvalue())
+    styled=book('.cue { font-style: italic }')
+    plain=book('')
+    assert [(block.id,block.source) for block in styled.blocks]==[(block.id,block.source) for block in plain.blocks]
+    spans=styled.blocks[0].locator['inline_semantics']
+    mark,=[span for span in spans if span['kind']=='font_style']
+    assert mark['source']=='you' and mark['style']=='italic'
+    units=plan(styled)['utterances']
+    assert [unit.get('performance_candidate',{}).get('recipe') for unit in units]==['contrastive_emphasis',None,None]
+    assert units[0]['performance_candidate']['evidence'][0]['source_kind']=='font_style'
+
+
 def test_notes_table_commands():
     d=markdown(Path('fixtures/technical.md').read_bytes()); p=plan(d)
     speech=' '.join(u['text'] for u in p['utterances'])

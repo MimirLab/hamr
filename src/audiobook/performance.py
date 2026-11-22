@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 8
+CONTEXT_VERSION = 9
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -221,6 +221,58 @@ def focus_direction(source, config):
     cue=list(match.span('cue'))
     evidence={'kind':'explicit_emphasis','span':cue,'target_span':[start+i for i in hits[0].span()]}
     return focus,evidence
+
+
+def typographic_focus(source, spoken, spans, config, actor):
+    """Use a single marked personal pronoun inside a complete spoken turn."""
+    marks = [span for span in spans if span['kind'] in ('emphasis','font_style')]
+    if not marks or len(source)>480:
+        return None
+    quotes = list(re.finditer(QUOTATION,source))
+    if len(quotes)!=1:
+        return None
+    quote, = quotes
+    if len(quote[0].split())<3:
+        return None
+    standalone = source.strip()==quote[0] and quote[0][-2] in '.!?'
+    reporting = '|'.join(NEUTRAL_REPORTING)
+    if not (standalone or dialogue_attribution(source,reporting,actor=actor)
+            or embedded_attribution(source,reporting,actor=actor)):
+        return None
+    authored = {}
+    visual = {}
+    for mark in marks:
+        start,end = mark['source_start'],mark['source_end']
+        raw = source[start:end]
+        word = re.fullmatch(r'\s*(?P<word>[A-Za-z]+)[,.!?]?\s*',raw)
+        if not word or word['word'].casefold() not in config['marked_pronouns']:
+            continue
+        lo,hi = [start+i for i in word.span('word')]
+        if not quote.start()<lo<hi<quote.end():
+            continue
+        phrase = word['word']
+        if phrase!='I' and phrase!=phrase.lower() and (not phrase.istitle() or source[quote.start()+1:lo].strip()):
+            # A mid-phrase capital such as an italicized "It" can be a title.
+            continue
+        if any(span['kind']=='title_style' and span['source_start']<hi and span['source_end']>lo
+               for span in spans):
+            continue
+        # XHTML inline spans are recorded from inner to outer. For equal
+        # ranges the closest authored font choice controls visual evidence.
+        destination = authored if mark['kind']=='emphasis' else visual
+        destination.setdefault((lo,hi),(phrase,mark))
+    eligible = {site:value for site,value in visual.items() if value[1].get('style')!='normal'}
+    eligible.update(authored)
+    if len(eligible)!=1:
+        return None
+    (start,end),(phrase,mark) = next(iter(eligible.items()))
+    unique = r"(?<![\w'’-])"+re.escape(phrase)+r"(?![\w'’-])"
+    if [match.span() for match in re.finditer(unique,source,re.I)]!=[(start,end)] or len(re.findall(unique,spoken,re.I))!=1:
+        return None
+    evidence = {'kind':'typographic_emphasis','span':[mark['source_start'],mark['source_end']],
+                'target_span':[start,end],'quotation_spans':[list(quote.span())],
+                'source_kind':mark['kind']}
+    return phrase,evidence
 
 
 def continued_direction(source, previous, attribution_cues, config, anchor, postposed=None):
@@ -663,6 +715,10 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             surrounding = owned[1:]
         elif (focus:=focus_direction(source,registry['context']['emphasis'])) is not None:
             pass
+        elif version>=9 and len(blocks)==1 and (focus:=typographic_focus(
+                source,neutral,blocks[0].locator.get('inline_semantics',()),
+                registry['context']['emphasis'],actor)):
+            pass
         elif (match:=LEADING.fullmatch(source)) and (
                 event_attribution:=dialogue_attribution(match['dialogue'],cue_pattern,postposed,actor=actor)):
             event = match['cue'], 'before', blocks[0], match.start('cue'), ''
@@ -730,8 +786,10 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 candidate['voice_suffixes']=suffixes
         elif focus:
             phrase,evidence=focus
+            emphasis = registry['context']['emphasis']
+            template = emphasis['typographic_instruction'] if evidence['kind']=='typographic_emphasis' else emphasis['instruction']
             candidate={'recipe':'contrastive_emphasis','speech':neutral,'synthesis':neutral,'cfg_scale':1,
-                       'instruction':registry['context']['emphasis']['instruction'].format(phrase=phrase),
+                       'instruction':template.format(phrase=phrase),
                        'source':{'block':sources[0],'span':evidence['span']},'evidence':[evidence],'contextual':True}
         elif event:
             raw, position, owner, offset, prefix = event

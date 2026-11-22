@@ -85,7 +85,7 @@ An authored sigh or chuckle can be performed as part of the line. The speech che
 hamr settings --performance off --mode study
 ```
 
-Use `hamr settings` to see your choices. Supply `--performance off` on a single book to read it plainly. [Delivery controls and supported cues](docs/USAGE.md#expressive-narration)
+Use `hamr settings` to see your choices. Supply `--performance off` on a single book to read it plainly. [Delivery controls and supported cues](docs/USAGE.md#expressive-narration) · [Changes in the source checkout](RELEASE.md#upcoming-changes)
 
 ## Listen
 

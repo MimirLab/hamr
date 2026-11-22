@@ -611,6 +611,42 @@ def test_role_parser_preserves_reporting_modifiers_and_turn_boundaries(tmp_path,
     assert planner.plan(inspect(source))['performance']['candidates']==0
 
 
+def test_markdown_pronoun_emphasis_reaches_the_default_request(tmp_path,monkeypatch,capsys):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    store=Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    source=tmp_path/'book.md'
+    source.write_text('“Did *you* see who left?” the doctor asked.\n')
+    doc=inspect(source)
+    assert planner.plan(doc,delivery_context=8)['performance']['candidates']==0
+    command=['--home',str(store.root),'queue',str(source),'--voice','cast:nigel-thornberry','--json']
+    assert cli.main(command)==0
+    saved=store.get(json.loads(capsys.readouterr().out)['job'])
+    unit,=saved['plan']['utterances']
+    candidate=unit['performance']
+    assert candidate['recipe']=='contrastive_emphasis'
+    assert unit['text']==performance.request(unit)[0]=='“Did you see who left?” the doctor asked.'
+    evidence,=candidate['evidence']
+    assert evidence['kind']=='typographic_emphasis'
+    assert doc.blocks[0].source[slice(*evidence['target_span'])]=='you'
+    assert 'Stress the word you' in performance.request(unit)[1]['instruction']
+
+
+@pytest.mark.parametrize('text',[
+    '“Did you read *It* yesterday?” she asked.',
+    '“Did *you*nger soldiers see you before dark?” she asked.',
+    '“Did *you* say you know who left?” she asked.',
+    '“Were *you* there with *them*?” she asked.',
+    'She saw *you* leave at dusk.',
+    '“It was the spare key, not the master key,” she said.',
+])
+def test_word_stress_requires_an_unambiguous_authored_target(tmp_path,text):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    plan=planner.plan(inspect(source))
+    assert all('performance_candidate' not in unit for unit in plan['utterances'])
+
+
 @pytest.mark.parametrize('text',[
     '“Look outside,” he said, her voice barely audible.',
     '“Look outside,” Ada said, Lee’s voice barely audible.',

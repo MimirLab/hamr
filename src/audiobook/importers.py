@@ -723,7 +723,7 @@ def inspect(path:Path)->Document:
     if not d.blocks: raise Error('empty_document','Document contains no narratable material.')
     return d
 
-IMPORT_REVISION='import-25'
+IMPORT_REVISION='import-26'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .core import atomic,key,loadjson,writejson,filehash
     import importlib.metadata
