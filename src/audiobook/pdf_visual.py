@@ -7,7 +7,7 @@ import subprocess
 import sys
 from ctypes import byref, c_ulong, c_ushort
 
-from PIL import ImageStat
+from PIL import Image, ImageStat
 
 from .core import Error, digest
 from .pdf_fidelity import damaged_regnal_glyph, disputes
@@ -87,6 +87,46 @@ def read_words(tsv, size):
     return words
 
 
+def recheck_dialogue_initials(image, words, read_line):
+    """Use the page pixels to confirm a common I/T error after an opening quote."""
+    lines = {}
+    for index, word in enumerate(words):
+        lines.setdefault(tuple(word[1:5]), []).append(index)
+    corrections = []
+    for indices in lines.values():
+        if len(indices) < 3:
+            continue
+        index = indices[0]
+        first = words[index][11]
+        if not re.fullmatch(r"""["'“‘]T""", first):
+            continue
+        following = [words[i][11] for i in indices[1:]]
+        if not following[0][0].islower():
+            continue
+        boxes = [tuple(map(int, words[i][6:10])) for i in indices]
+        left = max(0, min(x for x,y,w,h in boxes)-10)
+        top = max(0, min(y for x,y,w,h in boxes)-10)
+        right = min(image.width, max(x+w for x,y,w,h in boxes)+10)
+        bottom = min(image.height, max(y+h for x,y,w,h in boxes)+10)
+        if (right-left)*(bottom-top)*9 > MAX_PIXELS:
+            continue
+        crop = image.crop((left,top,right,bottom))
+        expected = [first[:-1]+'I', *following]
+        confirmations = []
+        for scale in (2,3):
+            view = crop.resize((crop.width*scale,crop.height*scale),Image.Resampling.LANCZOS)
+            alternate = read_line(view)
+            if [row[11] for row in alternate] != expected:
+                break
+            confirmations.append({'scale':scale,'confidence':float(alternate[0][10])})
+        if len(confirmations) == 2:
+            corrections.append({'original':first,'text':expected[0],'rect_pixels':list(boxes[0]),
+                                'confidence':float(words[index][10]),'confirmations':confirmations})
+            # Keep the page geometry and the original confidence in the audit record.
+            words[index] = [*words[index][:10],str(min(x['confidence'] for x in confirmations)),expected[0]]
+    return corrections
+
+
 class Observer:
     """Identify the OCR engine and acquire a process only after a cache miss."""
     def __init__(self, cache=None, config=None):
@@ -144,6 +184,30 @@ class Observer:
                                         {'observer':alternate[2],'recognized_words':len(alternate_words),'reused':retry_reused}]
                 if alternate_words:
                     words, selected, reused = alternate_words, alternate, retry_reused
+            if words and selected and len(selected)==4:
+                binary, env, recipe, reusable = selected
+                line_recipe = {**recipe,'page_segmentation':7}
+                line_scope = {**self.scope,'view':'dialogue_initial'}
+
+                def read_line(view):
+                    stream = io.BytesIO()
+                    view.save(stream,format='PNG')
+                    line_png = stream.getvalue()
+                    if offline:
+                        saved = offline_observation(line_png,self.cache,line_scope)
+                        return read_words(saved[0],view.size) if saved and saved[1]==line_recipe else []
+                    try:
+                        result,_ = observe(line_png,(binary,env,line_recipe,reusable),self.cache,line_scope)
+                        return read_words(result,view.size)
+                    except Error as exc:
+                        if exc.code not in ('ocr_contract','ocr_size'):
+                            raise
+                        return []
+                    except (subprocess.SubprocessError,OSError):
+                        return []
+
+                if corrections := recheck_dialogue_initials(image,words,read_line):
+                    evidence['ocr_rechecks'] = corrections
             if offline:
                 evidence['offline_checkpoint'] = True
             if self.cache:

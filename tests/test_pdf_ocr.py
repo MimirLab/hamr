@@ -1,4 +1,5 @@
 import io
+import pytest
 from PIL import Image,ImageDraw,ImageFont
 from reportlab.pdfgen.canvas import Canvas
 from reportlab.lib.utils import ImageReader
@@ -74,6 +75,45 @@ def test_real_scanned_columns_preserve_column_major_order():
     canvas.save()
     doc=pdf(output.getvalue())
     assert ' '.join(' '.join(block.source.split()) for block in doc.blocks) == ' '.join(left+right)
+
+
+@pytest.mark.parametrize(('line_reads','expected_initial'), [
+    ((('"I','opened'),('"I','opened')), '"I'),
+    ((('"I','opened'),('"T','opened')), '"T'),
+    ((('"I','closed'),), '"T'),
+    ((('"T','opened'),), '"T'),
+])
+def test_quoted_initial_rechecked_before_planning(monkeypatch, line_reads, expected_initial):
+    image = Image.new('RGB',(440,240),'white')
+    ImageDraw.Draw(image).text((40,35),'"I opened the door."',fill='black')
+    output = io.BytesIO()
+    canvas = Canvas(output,pagesize=(220,120))
+    canvas.drawImage(ImageReader(image),0,0,width=220,height=120)
+    canvas.save()
+    remaining = iter(line_reads)
+    observed = []
+    recipe = {'page_segmentation':'default'}
+
+    def observe(png, config, cache, scope):
+        segmentation = config[2]['page_segmentation']
+        observed.append(segmentation)
+        initial, verb = next(remaining) if segmentation==7 else ('"T','opened')
+        rows = ['level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext']
+        for index, word in enumerate((initial,verb,'the','door."')):
+            rows.append(f'5\t1\t1\t1\t1\t{index+1}\t{40+40*index}\t35\t30\t20\t82\t{word}')
+        return '\n'.join(rows)+'\n',False
+
+    monkeypatch.setattr('audiobook.pdf_ocr.observe',observe)
+    doc = pdf(output.getvalue(),ocr_config=(None,None,recipe,False))
+    unit, = plan(doc)['utterances']
+    assert unit['text'] == f'{expected_initial} opened the door."'
+    assert observed == ['default', *([7]*len(line_reads))]
+    if expected_initial == '"I':
+        correction, = doc.inventory[0]['ocr_rechecks']
+        assert (correction['original'],correction['text']) == ('"T','"I')
+        assert correction['rect_pixels'] == [40,35,30,20]
+    else:
+        assert 'ocr_rechecks' not in doc.inventory[0]
 
 
 def test_native_cache_does_not_probe_ocr(tmp_path,monkeypatch):

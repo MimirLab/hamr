@@ -8,6 +8,10 @@
 
 These changes run in ordinary listening mode. See the [expressive narration guide](docs/USAGE.md#expressive-narration) for examples, settings, and how to refresh an older EPUB.
 
+### Scanned PDF source checks
+
+Hamr can recover an opening “I” that OCR read as “T” in a quotation. Two enlarged readings of the source line must agree on the correction and reproduce the surrounding words. The source inventory keeps both readings. To apply the check to an existing job, run `hamr repair JOB --reimport`, then `hamr resume JOB`.
+
 # hamr 0.4.2
 
 ### Expressive narration for every supported input format
