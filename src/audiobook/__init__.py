@@ -1,2 +1,4 @@
 """hamr: document planning and recoverable, offline audiobook rendering."""
-__version__ = '0.4.1'
+from importlib.metadata import version
+
+__version__ = version('hamr')
