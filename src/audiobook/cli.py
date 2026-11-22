@@ -6,7 +6,8 @@ from .core import Error,Store,RATE,atomic,dumps,loadjson,writejson
 from .importers import inspect,cached_inspect
 from .planner import plan
 from .backend import Engine,doctor,save_voice,setup
-from .jobs import cleanup,create,render,repair,summary,excerpt
+from .jobs import bind_speech,cleanup,create,render,repair,speak,summary,excerpt
+from .installation import command, shell_command
 
 
 def emit(value,json_mode=False):
@@ -19,6 +20,8 @@ def emit(value,json_mode=False):
                     'listening_review':'Listening review needed', 'source_review':'Source review needed'}.get(error.get('code'),'Needs review')
         print(f'{value["job"]} · {status} · {value.get("title","")}')
         if value.get('output'): print(Path(value['output']) / 'book.m4b')
+        if (delivery:=value.get('performance')) and delivery['fallbacks']:
+            print(f'Ordinary reading used after a speech check on {delivery["fallbacks"]} directed passage(s).')
         if error.get('message'): print(error['message'])
         if value['status']=='needs_review' and value.get('planned_output'):
             print(f'Current audiobook publication is on hold. Planned file: {value["planned_output"]}')
@@ -50,6 +53,9 @@ def print_profiles(rows):
 
 
 def print_doctor(result):
+    from .checks_setup import setup_argv
+
+    root=result['state']
     host=result['hardware']
     print(f'hamr doctor · {host["system"]} {host["arch"]}')
     if installation:=result.get('installation'):
@@ -57,7 +63,16 @@ def print_doctor(result):
         print(f'Command on PATH: {installation["path_command"] or "unavailable"}')
         if host['system'] != 'Windows':
             print(f'Manual: {installation["manual"] or "unavailable on the manual path"}')
-        print(f'Speech checking: {"ready" if result["speech_checks_ready"] else "run hamr setup"}')
+        print(f'Speech checking: {"ready" if result["speech_checks_ready"] else "setup needed"}')
+    if diagnostic:=result.get('speech_diagnostic'):
+        label='installed' if diagnostic['installed'] else diagnostic['recommended']
+        if 'speech_verifier' not in result:print(f'Speech diagnostic: {label}. {diagnostic["reason"]}')
+    if verifier:=result.get('speech_verifier'):
+        print(f'Speech verifier: {verifier["active"] or "setup needed"}. Recommended: {verifier["recommended"]}.')
+        print(f'  {verifier["reason"]}')
+        if verifier['active']!=verifier['recommended'] and verifier['requested']=='auto':
+            print('  To install the recommended verifier, run:')
+            print('  '+shell_command(setup_argv(root)))
     if ocr:=result.get('ocr'):
         print(f'Scanned PDFs: {ocr["active_profile"] or "setup available" if ocr["local_engine"] else "Tesseract required"}')
         print(f'  {ocr["reason"]}')
@@ -82,7 +97,8 @@ def print_doctor(result):
         for reason in fallback.get('reasons',[]) if fallback else []:print('  '+reason)
     for note in result['uncertainties']:print('Note: '+note)
     for issue in result['issues']:print('Issue: '+issue['action'])
-    print('\nRun hamr setup for a guided choice, or hamr profiles for all built-in variants.')
+    print('\nFor guided setup, run:')
+    print(command(root,'setup'))
 
 
 def choose_backend(store, json_mode, *, automatic=False, advanced=False, include_checks=True):
@@ -154,7 +170,14 @@ def add_source(p):
     p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile',dest='listening_profile',help='Saved listening defaults created with hamr profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
     p.add_argument('--chapters',help='Source chapter occurrences, e.g.5,2-3,2; original order is retained. Use all to reset.')
     p.add_argument('--context',type=Path,help='Context cue weights, conventions and review mode as JSON')
+    add_performance(p)
     add_context_review(p)
+
+
+def add_performance(p):
+    from .performance import MODES
+    p.add_argument('--performance',choices=MODES,
+                   help='Use qualified delivery cues (auto), read plainly (off), or audition candidates (experimental)')
 
 
 def add_context_review(p):
@@ -163,7 +186,7 @@ def add_context_review(p):
     group.add_argument('--context-review-endpoint',help='Explicit loopback HTTP candidate reviewer for this command')
 
 def policy(a):
-    selected={**getattr(a,'saved_policy',{}),**{k:getattr(a,k) for k in ('mode','tables','code','references','notes') if getattr(a,k,None) is not None}}
+    selected={**getattr(a,'saved_policy',{}),**{k:getattr(a,k) for k in ('mode','tables','code','references','notes','performance') if getattr(a,k,None) is not None}}
     sections=dict(selected.get('sections',{}))
     for item in getattr(a,'section',[]):
         name,sep,mode=item.rpartition('=')
@@ -191,6 +214,7 @@ def parser():
     sub('doctor','Inspect host and dependencies without downloading')
     q=sub('profile','Save explicit reusable listening defaults'); q.add_argument('name'); q.add_argument('--mode',choices=['listen','study','procedure'],default='listen'); q.add_argument('--tables',choices=['speak','companion'],default='speak'); q.add_argument('--code',choices=['speak','companion']); q.add_argument('--references',choices=['speak','companion']); q.add_argument('--notes',choices=['after_paragraph','inline','companion']); q.add_argument('--pronounce',action='append',default=[]); q.add_argument('--section',action='append',default=[])
     q.add_argument('--context',type=Path,help='Save reusable context settings from JSON')
+    add_performance(q)
     q=sub('setup','Download and check one speech model')
     selection=q.add_mutually_exclusive_group()
     selection.add_argument('--profile',dest='backend_profile',help='Choose a specific model from hamr profiles')
@@ -199,8 +223,11 @@ def parser():
     q.add_argument('--cache',type=Path)
     scope=q.add_mutually_exclusive_group()
     scope.add_argument('--engine-only',action='store_true',help='Set up just the speech engine')
-    scope.add_argument('--checks-only',action='store_true',help='Set up offline speech checking')
+    scope.add_argument('--checks-only',action='store_true',help='Set up offline speech checking without an engine profile')
+    scope.add_argument('--diagnostic-asr',choices=('auto','fluid-int8'),help='Install only the optional local speech diagnostic')
     scope.add_argument('--ocr-only',action='store_true',help='Set up offline OCR for scanned PDFs')
+    from .checks_setup import PROFILES as asr_profiles
+    q.add_argument('--asr-profile',choices=asr_profiles,help='Choose offline speech verification (default: auto)')
     q.add_argument('--ocr-profile',choices=('auto','tesseract-fast'),help='Also set up scanned PDF support using this profile')
     sub('profiles','Show pinned candidate catalog and implemented profiles')
     for name in ['plan','queue','open']:
@@ -217,6 +244,7 @@ def parser():
     q=sub('show','Inspect saved plan and exact unresolved locations'); q.add_argument('job'); q.add_argument('--content',action='store_true',help='Explicitly export source/script content')
     q=sub('repair','Change only a scoped pronunciation, verified passage or saved voice'); q.add_argument('job'); q.add_argument('--pronounce'); q.add_argument('--repackage',action='store_true'); q.add_argument('--reimport',action='store_true'); q.add_argument('--upgrade-rules',action='store_true'); q.add_argument('--retake'); q.add_argument('--block'); q.add_argument('--text-file',type=Path); q.add_argument('--voice'); q.add_argument('--document-policy',type=Path);q.add_argument('--metadata',type=Path,help='Source-preserving publication metadata overrides as JSON; null clears, inherit resets')
     q.add_argument('--context',type=Path,help='Replace contextual reading settings and replan'); add_context_review(q)
+    add_performance(q)
     q.add_argument('--chapters',help='Replace source chapter occurrence selection; all restores complete source order.')
     q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
     for state in ['pause','cancel']:
@@ -226,6 +254,12 @@ def parser():
     q=sub('review','Record or resolve an exact-take listening finding'); q.add_argument('job');action=q.add_mutually_exclusive_group(required=True);action.add_argument('--accept',dest='accept_utterance');action.add_argument('--flag',dest='flag_utterance');q.add_argument('--reason',required=True)
     q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
     q=sub('qa','Check saved narration locally; resume normally to check and publish'); q.add_argument('job'); q.add_argument('--asr-python',type=Path,help='Optional Python executable for a custom checker'); q.add_argument('--asr-model',type=Path,help='Optional local model directory for a custom checker'); q.add_argument('--all',action='store_true'); q.add_argument('--require-review',action='store_true',help='Save the check as evidence for publication and hold flagged passages')
+    q=sub('transcribe','Compare unprompted local transcripts without changing audio or job state')
+    q.add_argument('input',help='Local audio file, or a job ID with --utterance')
+    q.add_argument('--utterance',help='Read this exact committed passage from the given job')
+    q.add_argument('--asr-python',type=Path)
+    q.add_argument('--asr-model',type=Path)
+    q.add_argument('--second-model',type=Path)
     q=sub('excerpt','Export consecutive committed takes while a render continues'); q.add_argument('job'); q.add_argument('--start',default='u00001'); q.add_argument('--count',type=int,default=4); q.add_argument('--output',type=Path,required=True)
     q=sub('preview','Audition an actual planned passage outside ready output'); q.add_argument('job'); q.add_argument('--utterance',default='u00001'); q.add_argument('--play',action='store_true')
     q=sub('play','Open ready M4B in the real target player'); q.add_argument('job'); q.add_argument('--start',type=float,default=0)
@@ -368,11 +402,14 @@ def dispatch(argv=None):
             value={'schema_version':1,'name':a.name,'policy':policy(a),'aliases':aliases}
             writejson(s.root/'profiles'/(a.name+'.json'),value); emit(value,True)
         elif a.command=='setup':
-            from .checks_setup import preflight, provision
+            from .checks_setup import preflight, provision, setup_argv, speech_advice
             from .ocr_setup import provision as provision_ocr
             from .setup_progress import SetupProgress
             progress=SetupProgress()
-            if a.ocr_profile and (a.checks_only or a.engine_only):
+            asr_options={'asr_profile':a.asr_profile} if a.asr_profile else {}
+            if a.asr_profile and (a.engine_only or a.ocr_only or a.diagnostic_asr):
+                raise Error('setup_scope','--asr-profile requires ordinary setup or --checks-only.')
+            if a.ocr_profile and (a.checks_only or a.engine_only or a.diagnostic_asr):
                 raise Error('setup_scope','--ocr-profile needs ordinary setup or --ocr-only.')
             if a.ocr_only:
                 if a.backend_profile or a.auto or a.choose:
@@ -383,12 +420,27 @@ def dispatch(argv=None):
                 if a.backend_profile or a.auto or a.choose:
                     raise Error('setup_scope', '--checks-only does not select a speech engine.')
                 with s.lock():
-                    result={'schema_version':1,'speech_checks':provision(s,progress,a.cache)}
+                    result={'schema_version':1,'speech_checks':provision(s,progress,a.cache,**asr_options)}
+            elif a.diagnostic_asr:
+                if a.backend_profile or a.auto or a.choose:
+                    raise Error('setup_scope','--diagnostic-asr installs the speech diagnostic on its own.')
+                from .asr_fluid import advice as diagnostic_advice, provision as provision_diagnostic
+                from .hardware import inspect_host
+                fit=diagnostic_advice(s,inspect_host())
+                if not fit['fits']:
+                    if a.diagnostic_asr!='auto':
+                        raise Error('asr_diagnostic_fit',fit['reason'],
+                                    'To install the Whisper checker, run:\n'+shell_command(setup_argv(s.root,'whisper')))
+                    result={'schema_version':1,'speech_diagnostic_advice':fit}
+                else:
+                    with s.lock():
+                        result={'schema_version':1,'speech_diagnostic':provision_diagnostic(s,progress,a.cache),
+                                'speech_diagnostic_advice':fit}
             else:
                 selected=a.backend_profile or choose_backend(s,jm,automatic=a.auto,advanced=a.choose,
                                                             include_checks=not a.engine_only)
                 if not a.engine_only: preflight()
-                stage=None if a.engine_only else lambda: provision(s,progress,a.cache)
+                stage=None if a.engine_only else lambda: provision(s,progress,a.cache,activate=False,**asr_options)
                 ocr_profile=a.ocr_profile
                 if not ocr_profile and not (a.engine_only or jm or a.auto) and sys.stdin.isatty():
                     from .ocr_setup import MODEL_BYTES, NOTICE_BYTES
@@ -400,16 +452,32 @@ def dispatch(argv=None):
                         if answer in ('','y','yes'): ocr_profile='auto'
                     else:
                         print('Scanned PDFs can be enabled after installing Tesseract. Run hamr setup --ocr-only.')
-                result=setup(s,selected,a.cache,progress=progress,before_activate=stage)
+                ocr_stage=None
                 if ocr_profile:
-                    with s.lock():
-                        result['ocr']=provision_ocr(s,progress,a.cache,ocr_profile)
+                    from .ocr_setup import preflight as preflight_ocr
+                    preflight_ocr(ocr_profile)
+                    ocr_stage=lambda: provision_ocr(s,progress,a.cache,ocr_profile,activate=False)
+                result=setup(s,selected,a.cache,progress=progress,before_activate=stage,before_ocr_activate=ocr_stage)
+            if result.get('speech_checks'):
+                result['speech_verifier']=speech_advice(s)
             if jm: emit(result,True)
             else:
                 if result.get('profile'): print(f'Speech engine ready: {result["profile"]}')
-                if result.get('speech_checks'): print('Offline speech checking ready.')
+                if checks:=result.get('speech_checks'):
+                    print(f'Offline speech verifier ready: {result["speech_verifier"]["active"]}.')
+                    if reason:=checks.get('selection_reason'):print(reason)
                 if result.get('ocr'): print('Offline scanned PDF support ready.')
-                print('Next: hamr open "My book.epub" --voice cast:nigel-thornberry')
+                if result.get('speech_diagnostic'):
+                    print('Fluid diagnostic ready. Use hamr transcribe CLIP.wav to compare local recognizers.')
+                elif result.get('speech_diagnostic_advice'):
+                    print(result['speech_diagnostic_advice']['reason'])
+                    print('To install the Whisper checker, run:')
+                    print(shell_command(setup_argv(s.root,'whisper')))
+                elif a.checks_only:
+                    print('Repeat the command that needed speech checking.')
+                elif result.get('profile'):
+                    print('To make a book, replace the example filename with your document:')
+                    print(command(s.root,'open','My book.epub','--voice','cast:nigel-thornberry'))
         elif a.command=='plan':
             from .book_flow import check_source
             check_source(a.source)
@@ -430,6 +498,8 @@ def dispatch(argv=None):
                         alternative=plan(doc,{**policy(a),'tables':'companion'},a.aliases)
                         print(f'Keep exact tables in companion: estimated speech delta {alternative["estimated_minutes"]-p["estimated_minutes"]:+.1f} minutes. Enter t to change.',file=sys.stderr)
                     if counts['code']: print(f'{counts["code"]} literal blocks: {p["policy"]["code"]}. Exact commands remain in the timed companion. Enter c to change.',file=sys.stderr)
+                    if delivery:=p.get('performance'):
+                        print(f'Delivery cues identified: {delivery["candidates"]} ({delivery["mode"]}).',file=sys.stderr)
                     print(f'{len(p["issues"])} locations need review.',file=sys.stderr)
                     try: answer=input('Start recommended? [y/N, t tables, c literals] ').strip().lower()
                     except EOFError: return 0
@@ -463,11 +533,11 @@ def dispatch(argv=None):
             j=s.get(a.job); emit({'schema_version':1,'job':j['id'],'plan':j['plan']} if a.content else summary(s,j),True)
         elif a.command=='repair':
             if a.block and not a.text_file: raise Error('repair_text','--block requires --text-file containing a verified reading.')
-            if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters,a.context,a.context_review,a.context_review_endpoint]): raise Error('repair_required','Specify a scoped repair, --document-policy, --context, --metadata or --chapters.')
+            if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters,a.context,a.context_review,a.context_review_endpoint,a.performance]): raise Error('repair_required','Specify a scoped repair, --document-policy, --context, --metadata, --chapters or --performance.')
             from .context_config import read as read_context
             emit(repair(s,a.job,a.pronounce,a.block,a.text_file.read_text() if a.text_file else None,a.voice,a.retake,a.reimport,a.upgrade_rules,loadjson(a.document_policy) if a.document_policy else None,loadjson(a.metadata) if a.metadata else None,chapters=a.chapters,expect_revision=a.expect_revision,
                         context=read_context(a.context) if a.context else None,context_review=read_context(a.context_review) if a.context_review else None,
-                        context_reviewer=a.context_review_endpoint),jm)
+                        context_reviewer=a.context_review_endpoint,performance_mode=a.performance),jm)
         elif a.command in ('pause','cancel'):
             with s.lock():
                 j=s.get(a.job); j['status']='paused' if a.command=='pause' else 'cancelled'
@@ -499,15 +569,27 @@ def dispatch(argv=None):
                 emit({'schema_version':1,'pid':child.pid,'log':str(s.root/'runtime'/'worker.log'),'restart':f'hamr --home {s.root} worker --detach'},True)
             else:
                 with s.lock('queue-worker'):
-                    from .book_flow import finish_book
-                    from .checks_setup import observer
+                    from .book_flow import finish_book, record_worker_failure
                     while True:
                         queued=[j for j in s.jobs() if j['status']=='queued']
-                        if queued: observer(s)
+                        results=[]
                         for j in queued:
-                            try: finish_book(s,j['id'],announce=True)
-                            except Error as e: print(dumps({'job':j['id'],'error':e.code}),file=sys.stderr)
-                        if a.once: break
+                            try:
+                                result=finish_book(s,j['id'],announce=not jm)
+                                results.append({'job':j['id'],'status':result['status']})
+                            except Error as e:
+                                failure={'code':e.code,'message':e.message,'action':e.action}
+                                status=record_worker_failure(s,j,failure)
+                                results.append({'job':j['id'],'status':status,'error':failure})
+                                if not jm or not a.once:
+                                    print(f"{j['id']}: {e.message}",file=sys.stderr)
+                                    if e.action: print(e.action,file=sys.stderr)
+                        if a.once:
+                            if jm: emit({'schema_version':1,'processed':results},True)
+                            elif results: print(f'Queue pass processed {len(results)} job(s). Run hamr jobs for status.')
+                            if any('error' in result or result['status']=='failed' for result in results): return 2
+                            if any(result['status']=='needs_review' for result in results): return 3
+                            break
                         time.sleep(2)
         elif a.command=='review':
             from .qa import accept,flag
@@ -519,13 +601,31 @@ def dispatch(argv=None):
             python,model,_=observer(s,a.asr_python,a.asr_model,use_second=False)
             result=check(s,a.job,python,model,a.all,a.require_review); emit(result,True)
             if result['status']=='needs_review': return 3
+        elif a.command=='transcribe':
+            from .asr_diagnostic import transcribe
+            result=transcribe(s,a.input,utterance=a.utterance,python=a.asr_python,model=a.asr_model,second=a.second_model)
+            if jm:
+                emit(result,True)
+            else:
+                for reading in result['observations']:
+                    print(f'{reading["role"].capitalize()} ({reading["model"]})\n{reading["raw"]["text"]}')
+                if (extra:=result['challenger']) and extra['status']=='observed':
+                    print(f'Fluid CPU diagnostic\n{extra["text"]}')
+                elif extra and extra['status']=='unavailable':
+                    print(extra['message'],file=sys.stderr)
+                elif extra:
+                    print('Fluid diagnostics cover excerpts up to 30 seconds.',file=sys.stderr)
+                print(result['assessment'])
         elif a.command=='excerpt': emit(excerpt(s,a.job,a.start,a.count,a.output),True)
         elif a.command=='preview':
             with s.lock():
                 j=s.get(a.job); u=next((u for u in j['plan']['utterances'] if u['id']==a.utterance),None)
                 if not u: raise Error('unknown_utterance','Unknown utterance ID.')
                 if not j['voice']: raise Error('voice_required','Preview needs a saved narrator.')
-                with Engine(s,j['backend']) as e: data,receipt=e.speech(u['text'],j['voice'],seed=u.get('seed',42))
+                # Audition the same request that would be bound by render.
+                # Preview leaves a queued job unbound until actual rendering.
+                bind_speech(s,j)
+                with Engine(s,j['backend']) as e: data,receipt=speak(e,u,j['voice'])
                 dest=s.path(j)/'preview.wav'
                 with wave.open(str(dest),'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE); w.writeframes(data)
                 emit({'schema_version':1,'preview':str(dest),'ready':False,'sources':[b['locator'] for b in j['document']['blocks'] if b['id'] in u['sources']],'receipt':receipt},True)
@@ -543,8 +643,10 @@ def dispatch(argv=None):
     except Error as e:
         return emit_error(e,jm or a.command=='agent')
     except KeyboardInterrupt:
+        status, action = ('interrupted','Run the same transcribe command again.') if a.command=='transcribe' else (
+            'paused','Run hamr status, then resume JOB.')
         try:
-            emit({'schema_version':1,'status':'paused','action':'Run hamr status, then resume JOB.'},True); sys.stdout.flush()
+            emit({'schema_version':1,'status':status,'action':action},True); sys.stdout.flush()
         except OSError: discard_closed_output()
         return 130
     except FileNotFoundError as e:

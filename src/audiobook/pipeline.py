@@ -2,9 +2,10 @@
 from pathlib import Path
 from contextlib import contextmanager,ExitStack
 import math,time
-from .core import Error,key,writejson,loadjson,filehash
-from . import jobs,qa,qa_cache
-from .speech_compare import comparison_tokens,quantities,negations,mathematical_markers,notation_observation
+from .core import Error,key,writejson,loadjson,filehash,fault
+from . import jobs,performance,qa,qa_cache
+from .asr_fluid import BOOK_RAM_HEADROOM, Recipe, memory_available
+from .speech_compare import comparison_tokens,quantities,negations,mathematical_markers,notation_observation,unit_sites
 
 
 def binding(job):
@@ -22,7 +23,7 @@ def critical(expected,observed,protected=None,reference=None):
     if qa.content_gaps(expected,observed):result.add('internal_gap')
     if qa.missing_measurement_instruction(expected,observed):result.add('measurement_instruction')
     if qa.reference_leakage(expected,observed,reference):result.add('reference_leakage')
-    if mathematical_markers(expected)!=mathematical_markers(observed):result.add('math_or_unit')
+    if unit_sites(ref,hyp) or mathematical_markers(expected)!=mathematical_markers(observed):result.add('math_or_unit')
     if qa.missing_parenthetical_counts(expected,observed,protected):result.add('count')
     if qa.missing_final_clause(expected,observed) or qa.missing_final_words(expected,observed):result.add('tail')
     return result
@@ -33,22 +34,30 @@ def corroborated(expected,first,second,protected=None,reference=None):
     from difflib import SequenceMatcher
     first,second=(notation_observation(expected,observed) for observed in (first,second))
     shared=critical(expected,first,protected,reference)&critical(expected,second,protected,reference)
+    if not shared:return shared
+    ref,a,b=map(comparison_tokens,(expected,first,second))
+    markers=mathematical_markers(first),mathematical_markers(second)
+    if a==b and markers[0]==markers[1]:return shared
+
+    # For unequal transcripts, each confirmation needs an independently
+    # aligned source site. A broad error category cannot authorize a retake.
+    sites={}
+    if shared&{'negation','negation_scope'}:
+        same=qa.negation_sites(ref,a)&qa.negation_sites(ref,b)
+        sites.update(negation=same,negation_scope=same)
     if 'quantity' in shared:
-        expected_values=quantities(comparison_tokens(expected))
-        def sites(observed):
-            values=quantities(comparison_tokens(observed));result=set()
-            for action,a,b,c,d in SequenceMatcher(None,expected_values,values,autojunk=False).get_opcodes():
-                if action=='equal':continue
-                result.add((a,b,tuple(expected_values[a:b]) if a!=b else ('inserted',*values[c:d])))
-            return result
-        if not sites(first)&sites(second):shared.remove('quantity')
+        expected_values=quantities(ref)
+        def quantity_sites(tokens):
+            values=quantities(tokens)
+            return {(i,j,tuple(values[k:l])) for action,i,j,k,l in SequenceMatcher(None,expected_values,values,autojunk=False).get_opcodes()
+                    if action!='equal'}
+        sites['quantity']=quantity_sites(a)&quantity_sites(b)
     if 'math_or_unit' in shared:
-        expected_markers=mathematical_markers(expected)
-        def changes(observed):
-            markers=mathematical_markers(observed)
-            return {(name,expected_markers.get(name,0),markers.get(name,0)) for name in expected_markers.keys()|markers.keys() if expected_markers.get(name,0)!=markers.get(name,0)}
-        if not changes(first)&changes(second):shared.remove('math_or_unit')
-    return shared
+        sites['math_or_unit']=unit_sites(ref,a)&unit_sites(ref,b)
+    if 'internal_gap' in shared:
+        sites['internal_gap']={tuple(gap['expected_token_range']) for gap in qa.content_gaps(expected,first)} & {
+            tuple(gap['expected_token_range']) for gap in qa.content_gaps(expected,second)}
+    return {kind for kind in shared if sites.get(kind)}
 
 
 def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,prepare_clear=False,max_new_takes=None,resident=False,batch_rest_seconds=0,overlap_batch_rest=False,report_progress=False):
@@ -66,9 +75,8 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
     with store.lock('pipeline'), ExitStack() as resources:
         engine_session=resources.enter_context(ResidentEngineSession(store,factory=jobs.Engine)) if resident else None
         job=store.get(jid)
-        if job['backend'] is None:
-            if not (store.root/'settings.json').exists():raise Error('setup_required','Configure the speech backend before running the pipeline.')
-            job['backend']=loadjson(store.root/'settings.json')
+        starting_binding=binding(job)
+        performance_bound=jobs.bind_speech(store,job)
         owner=binding(job)
         try:state=loadjson(path)
         except FileNotFoundError:state={'retakes':[],'observed_pcm':{},'runs':[]}
@@ -76,8 +84,9 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
         # job's cumulative automatic-retake history rather than resetting it.
         if state.get('binding')!=owner:state['observed_pcm']={}
         observer=qa_cache.observer_identity(python,model,Path(__file__).with_name('qa_worker.py'))
+        confirming_observer=None
         if state.get('observer_sha256')!=key(observer):state['observed_pcm']={}
-        state.update(observer_sha256=key(observer),observer_options={'python':str(python),'model':str(model),'second_model':str(second_model) if second_model else None})
+        state.update(observer_sha256=key(observer),observer_profile=observer.get('profile','whisper'),observer_options={'python':str(python),'model':str(model),'second_model':str(second_model) if second_model else None})
         state.update(binding=owner,job=jid,plan_sha256=job['plan']['plan_sha256'],phase='starting',error=None,resident_model=resident)
         state['runs'].append({'revision':job['revision'],'started':time.time(),'batch_takes':batch_takes,'max_retakes':max_retakes,'prepare_clear':prepare_clear,'resident':resident,'batch_rest_seconds':batch_rest_seconds,'overlap_batch_rest':overlap_batch_rest})
         last_phase = None
@@ -87,7 +96,8 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                       'assembling': 'Assembling the audiobook'}
             if report_progress and phase != last_phase and phase in labels:
                 import sys
-                print(f'{jid}: {labels[phase]}', file=sys.stderr, flush=True)
+                profile=f' ({state["observer_profile"]})' if phase!='assembling' else ''
+                print(f'{jid}: {labels[phase]}{profile}', file=sys.stderr, flush=True)
             last_phase = phase
             state.update(phase=phase,updated=time.time(),elapsed_seconds_this_run=time.monotonic()-started,
                          new_takes_this_run=generated,**fields)
@@ -123,28 +133,63 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
         def observe(selected,chosen_model):
             with writer():
                 rows,identity,checkpoint=qa_cache.observe(store,current(),selected,python,chosen_model)
-            return rows
-        def spoken_observation(row):
-            return ' '.join(segment['text'].strip() for segment in row['segments'] if segment['start']<row['audio_seconds']+.1)
+            return rows,identity
+        def spoken_observation(row,unit):
+            observed=qa_cache.audible_text(row,row['audio_seconds'])
+            return performance.lexical_observation(unit,observed)
         def retake_candidates(rows,j):
+            nonlocal confirming_observer
             byid={u['id']:u for u in j['plan']['utterances']};candidates=[]
+            source=j['document']['source_sha256']
+            listening={r['clip_key'] for r in j.get('listening_findings',[]) if r['status']=='open'}
+            accepted={(r['clip_key'],r.get('pcm_sha256')) for r in j.get('audio_acceptances',[])
+                      if r['source_sha256']==source}
             for row in rows:
-                u=byid[row['utterance']];identity=key({'text':u['text'],'sources':u['sources']})
-                if critical(u['text'],row['comparison_text'],u.get('protected_counts'),(j.get('voice') or {}).get('transcript')) and sum(t['identity']==identity for t in state['retakes'])<2:candidates.append(row)
+                u=byid[row['utterance']];identity=jobs.take_selection(u)
+                clip=jobs.clip_key(u,j)
+                if u.get('performance') or clip in listening or (clip,row['pcm_sha256']) in accepted:continue
+                first=row['comparison_text']
+                mismatch=critical(u['text'],first,u.get('protected_counts'),(j.get('voice') or {}).get('transcript'))
+                if mismatch and sum(t['identity']==identity for t in state['retakes'])<2:candidates.append(row)
             confirmed=[]
             if second_model and candidates and len(state['retakes'])<max_retakes:
-                progress('second_observer',candidates=len(candidates));others=observe([byid[r['utterance']] for r in candidates],second_model)
+                if confirming_observer is None:
+                    primary=qa_cache.model_fingerprint(observer)
+                    try:
+                        secondary=qa_cache.observer_identity(python,second_model,Path(__file__).with_name('qa_worker.py'))
+                        other=qa_cache.model_fingerprint(secondary)
+                        confirming_observer=secondary if primary and other and primary!=other else False
+                        state['second_observer_status']='distinct_model' if confirming_observer else 'duplicate_or_unverified_model'
+                    except (Error,OSError):
+                        confirming_observer=False
+                        state['second_observer_status']='unavailable'
+                if not confirming_observer:return confirmed
+                progress('second_observer',candidates=len(candidates))
+                try:
+                    others,observed_identity=observe([byid[r['utterance']] for r in candidates],second_model)
+                except (FileNotFoundError,Error) as exc:
+                    if isinstance(exc,Error) and exc.code not in ('asr_environment','asr_failed','asr_contract'):raise
+                    confirming_observer=False
+                    state['second_observer_status']='unavailable'
+                    return confirmed
+                if observed_identity!=confirming_observer:
+                    confirming_observer=False
+                    state['second_observer_status']='changed_model'
+                    return confirmed
                 for row,other in zip(candidates,others):
                     u=byid[row['utterance']]
-                    shared=corroborated(u['text'],row['comparison_text'],spoken_observation(other),u.get('protected_counts'),(j.get('voice') or {}).get('transcript'))
+                    first,second=row['comparison_text'],spoken_observation(other,u)
+                    shared=corroborated(u['text'],first,second,u.get('protected_counts'),(j.get('voice') or {}).get('transcript'))
                     if shared:confirmed.append((u,shared))
             return confirmed
         def queue_retakes(confirmed):
             nonlocal owner
             for u,reasons in confirmed[:max(0,max_retakes-len(state['retakes']))]:
-                current();identity=key({'text':u['text'],'sources':u['sources']})
-                wait_writer(lambda:jobs.repair(store,jid,retake=u['id']));j=store.get(jid)
-                state['retakes'].append({'identity':identity,'utterance':u['id'],'reasons':sorted(reasons),'at':time.time()})
+                before=current()
+                wait_writer(lambda:jobs.repair(store,jid,retake=u['id'],expect_revision=before['revision'],
+                                               automatic={'limit':max_retakes,'reasons':sorted(reasons)}))
+                fault('after_automatic_retake_commit')
+                j=store.get(jid);state['retakes']=j['automatic_retakes']
                 owner=binding(j);state.update(binding=owner,plan_sha256=j['plan']['plan_sha256']);progress('bounded_retake_queued')
         def source_hold(j):
             with writer():
@@ -152,6 +197,16 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
             progress('source_review',source_locations=len(j['plan']['issues']),publication_attempted=False)
             return jobs.summary(store,j)
         with writer():
+            latest=store.get(jid)
+            if latest['revision']!=job['revision'] or binding(latest)!=starting_binding:
+                raise Error('pipeline_plan_changed','The saved job changed before this pipeline started.')
+            latest['backend']=job['backend']
+            if performance_bound:
+                latest['plan']=job['plan']
+                writejson(store.path(latest)/'plan.json',latest['plan'])
+            job=latest
+            state['retakes']=job.setdefault('automatic_retakes',state.get('retakes',[]))
+            if job['status']=='cancelled':raise Error('cancelled','This job was cancelled.')
             if (job.get('error') or {}).get('code')=='user_paused':job['error']=None;job['status']='queued'
             job['audio_gate']=True;store.save(job)
         try:
@@ -172,21 +227,32 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                     batch_completed=time.monotonic()
                     generated+=result.get('metrics',{}).get('clips_rendered',0)
                     j=current()
-                selected=[];seen=set()
+                selected=[];seen=set();unrendered=False
                 for u in j['plan']['utterances']:
                     k=jobs.clip_key(u,j)
                     if k in seen:continue
                     seen.add(k);receipt=jobs.valid_clip(store,k)
+                    if not receipt:unrendered=True
                     if receipt and state['observed_pcm'].get(k)!=receipt['sha256']:selected.append(u)
+                if isinstance(model,Recipe) and engine_session is not None:
+                    if not unrendered:
+                        engine_session.release()
+                    elif selected and (memory_available() or 0)<BOOK_RAM_HEADROOM:
+                        progress('speech_check_deferred',reason='Waiting for synthesis to release system memory.')
+                        selected=[]
                 if selected:
                     progress('observing',pending_unique_observations=len(selected))
-                    rows=observe(selected,model)
+                    rows,observed_identity=observe(selected,model)
+                    if qa_cache.model_fingerprint(observer) and observed_identity!=observer:
+                        raise Error('asr_environment_changed','The primary speech checker changed during the job.',
+                                    f'Run hamr resume {jid} with the current checker.')
                     for u,row in zip(selected,rows):state['observed_pcm'][jobs.clip_key(u,j)]=row['pcm_sha256']
                     progress('observations_checkpointed',observed_unique_takes=len(state['observed_pcm']),pending_unique_observations=0)
                     # Catch critical omissions in clear work now, rather than
                     # waiting for every remaining chapter to finish. This is
                     # still partial evidence and never publication approval.
-                    early=[{'utterance':r['utterance'],'comparison_text':spoken_observation(r)} for r in rows]
+                    early=[{'utterance':r['utterance'],'pcm_sha256':r['pcm_sha256'],
+                            'comparison_text':spoken_observation(r,u)} for r,u in zip(rows,selected)]
                     confirmed=retake_candidates(early,current())
                     if confirmed:queue_retakes(confirmed)
                 j=current()
@@ -218,9 +284,11 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                 wait_writer(lambda:qa.check(store,jid,python,model,all_clips=True,require_review=True));j=current()
                 if not j.get('audio_review'):
                     progress('assembling');result=wait_writer(lambda:jobs.render(store,jid,allow_synthesis=False))
-                    progress('complete',output=result['output'],acceptances_added=0);return jobs.summary(store,current())
+                    progress('complete' if result['status']=='ready' else 'publication_held',output=result['output'],acceptances_added=0)
+                    return jobs.summary(store,current())
                 pending={r['utterance'] for r in j['audio_review']};report=loadjson(store.path(j)/f'qa-r{j["revision"]}.json')
-                confirmed=retake_candidates([r for r in report['rows'] if r['utterance'] in pending],j)
+                flagged=[r for r in report['rows'] if r['utterance'] in pending]
+                confirmed=retake_candidates(flagged,j)
                 if not confirmed:
                     progress('speech_review',speech_locations=len(j['audio_review']),acceptances_added=0);return jobs.summary(store,j)
                 queue_retakes(confirmed)

@@ -96,6 +96,7 @@ def watch_token(db, root, job_id):
 
 
 def snapshot(root, job, *, content=False, verify=False):
+    from .performance import status as performance_status
     from .jobs import final_path, verify_publication
 
     jid = job['id']
@@ -147,6 +148,8 @@ def snapshot(root, job, *, content=False, verify=False):
             pass
     if content:
         result['plan'] = job['plan']
+    if delivery:=performance_status(job):
+        result['performance']=delivery
     if context:=job['plan'].get('contextual_resolution'):
         result['contextual_readings']={k:context[k] for k in ('configuration_sha256','score_kind','routes','review_provider') if k in context}
     return result
@@ -218,7 +221,8 @@ def dispatch(parser, args):
                 # Rendering can checkpoint an intermediate hold before QA starts.
                 phase = (value.get('pipeline') or {}).get('phase')
                 temporary = value['status'] in ('paused', 'needs_review') and phase not in (
-                    None, 'interrupted', 'paused_at_run_limit', 'stopped', 'speech_review', 'source_review', 'complete')
+                    None, 'interrupted', 'paused_at_run_limit', 'stopped', 'speech_review', 'source_review',
+                    'publication_held', 'complete')
                 if not temporary:
                     return {'failed': 2, 'needs_review': 3}.get(value['status'], 0)
             if end is not None and time.monotonic() >= end:

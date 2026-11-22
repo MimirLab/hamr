@@ -104,3 +104,13 @@ def verify_container(path,chapters,samples):
             position+=size
     with Path(path).open('rb') as stream:atoms(stream,0,Path(path).stat().st_size)
     return probe
+
+
+def verify_audio_decode(path):
+    """Decode every staged AAC frame before making the publication visible."""
+    try:
+        run(['ffmpeg','-v','error','-xerror','-nostdin','-i',path,'-map','0:a:0','-f','null','-'])
+    except Error as exc:
+        if exc.code!='subprocess_failed': raise
+        raise Error('audio_decode_failed','The finished M4B failed a full audio decode.',
+                    'Run hamr resume JOB_ID to rebuild the container from the saved speech.') from exc

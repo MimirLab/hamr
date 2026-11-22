@@ -1,6 +1,5 @@
 """Install one qualified CPU OCR recipe without changing speech settings."""
 from pathlib import Path
-import os
 import shutil
 import subprocess
 
@@ -14,28 +13,6 @@ NOTICE_BYTES = 11_358
 NOTICE_SHA256 = 'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30'
 UPSTREAM = 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/4.1.0/'
 RECIPE = 'eng-fast-4.1.0'
-
-
-def effective_ram(host_available):
-    """Apply Linux cgroup headroom when it is lower than free host RAM."""
-    candidates = [host_available] if host_available is not None else []
-    if os.name == 'posix':
-        try:
-            path = next(line[3:] for line in Path('/proc/self/cgroup').read_text().splitlines() if line.startswith('0::/'))
-            root = Path('/sys/fs/cgroup')
-            group = root / path.lstrip('/')
-            for folder in (group,*group.parents):
-                if not folder.is_relative_to(root):
-                    break
-                try:
-                    limit = (folder/'memory.max').read_text().strip()
-                    if limit.isdecimal():
-                        candidates.append(max(0,int(limit)-int((folder/'memory.current').read_text())))
-                except (OSError,ValueError):
-                    continue
-        except (OSError,StopIteration):
-            pass
-    return min(candidates,default=None)
 
 
 def english_data(root):
@@ -55,7 +32,7 @@ def describe(store, host):
     binary, _ = tesseract_binary()
     managed = english_data(store.root) is not None
     ready = binary.is_file()
-    available = effective_ram(host['ram_available_bytes'])
+    available = host['ram_available_bytes']
     reason = ('The installed Tesseract can run English OCR without a graphics device.' if ready else
               'Install the Tesseract executable for this operating system before OCR setup.')
     return {
@@ -67,21 +44,27 @@ def describe(store, host):
     }
 
 
-def provision(store, progress, cache=None, profile='auto'):
-    from .backend import acquire
+def preflight(profile):
     if profile not in ('auto', PROFILE):
         raise Error('ocr_profile', f'OCR profile {profile!r} is unavailable.', f'Use {PROFILE} or auto.')
     binary, _ = tesseract_binary()
     if not binary.is_file():
         raise Error('missing_ocr', 'The Tesseract executable was not found.',
                     'Install Tesseract for this operating system, then run hamr setup --ocr-only.')
+
+
+def provision(store, progress, cache=None, profile='auto', *, activate=True):
+    from .backend import acquire, remaining_bytes
+    preflight(profile)
     directory = store.root / 'assets' / 'ocr' / RECIPE
     directory.mkdir(parents=True, exist_ok=True)
     if directory.is_symlink():
         raise Error('unsafe_path', 'OCR assets must use the owned Hamr directory.')
     required = (("eng.traineddata",MODEL_BYTES,MODEL_SHA256,"English scanned-PDF model"),
                 ('LICENSE',NOTICE_BYTES,NOTICE_SHA256,'English OCR model license'))
-    needed = sum(size for name,size,_,_ in required if not (directory/name).is_file())
+    needed = sum(size if cache and (Path(cache)/name).is_file() and not (directory/name).exists()
+                 else remaining_bytes(UPSTREAM+name,directory/name,expected,size)
+                 for name,size,expected,_ in required)
     if needed and shutil.disk_usage(directory).free < needed+32*1024**2:
         raise Error('disk_space', f'Insufficient room for OCR assets at {directory}.')
     for name,size,expected,label in required:
@@ -121,5 +104,6 @@ def provision(store, progress, cache=None, profile='auto'):
              'model_license':'Apache-2.0', 'model_terms':UPSTREAM+'LICENSE',
              'model_notice_sha256':NOTICE_SHA256,
              'runtime':'Tesseract', 'device':'cpu', 'languages':['en']}
-    writejson(store.root / 'ocr-settings.json', saved)
+    if activate:
+        writejson(store.root / 'ocr-settings.json', saved)
     return saved

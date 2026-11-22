@@ -83,9 +83,9 @@ def test_low_wer_truncation_stays_held_and_automatic_retakes_need_corroboration_
             receipt=jobs.valid_clip(store,jobs.clip_key(u,job))
             text=u['text'] if model.name=='second' and not corroborated else prefix
             rows.append({'utterance':u['id'],'text':text,'segments':[{'start':0,'end':receipt['seconds'],'text':text}],'audio_seconds':receipt['seconds'],'audio_samples':receipt['samples'],'pcm_sha256':receipt['sha256']})
-        return rows,{'model_files':{'control':'Substitute ASR lifecycle control only'}},{}
+        return rows,{'model_files':{'model.bin':str(model)}},{}
     monkeypatch.setattr('audiobook.qa_cache.observe',observe)
-    monkeypatch.setattr('audiobook.qa_cache.observer_identity',lambda *a:{'control':'Substitute ASR only'})
+    monkeypatch.setattr('audiobook.qa_cache.observer_identity',lambda *a:{'model_files':{'model.bin':str(a[1])}})
     class Engine:
         def __init__(self,*a):pass
         def __enter__(self):return self
@@ -100,3 +100,72 @@ def test_low_wer_truncation_stays_held_and_automatic_retakes_need_corroboration_
     assert len(state['retakes'])==(2 if corroborated else 0)
     assert not jobs.final_path(s.get(j['id'])).exists()
     assert jobs.valid_clip(s,original) and not s.get(j['id']).get('audio_acceptances')
+
+
+@pytest.mark.parametrize('expected,observed,flag',[
+    ('The first vessel contains five liters of water and seven grams of powder.',
+     'The first vessel contains five grams of water and seven liters of powder.','paired with a different unit'),
+    ('Do not issue the final permit to Alice. Do issue the final permit to Bob.',
+     'Do issue the final permit to Alice. Do not issue the final permit to Bob.','Negation is associated'),
+])
+def test_required_gate_holds_misassociated_values_and_negation(tmp_path,monkeypatch,expected,observed,flag):
+    from audiobook import qa
+
+    source=tmp_path/'book.md'
+    source.write_text(expected)
+    store,job=prepared(tmp_path,source)
+    assert len(job['plan']['utterances'])==1
+
+    def observe(store,job,utterances,python,model):
+        unit,=utterances
+        pcm=jobs.valid_clip(store,jobs.clip_key(unit,job))
+        return ([{'utterance':unit['id'],'text':observed,'audio_seconds':pcm['seconds'],'pcm_sha256':pcm['sha256'],'audio_samples':pcm['samples'],
+                  'segments':[{'text':observed,'start':0,'end':pcm['seconds']}]}],{'model_files':{}},{})
+
+    monkeypatch.setattr('audiobook.qa_cache.observe',observe)
+    result=qa.check(store,job['id'],Path('/fixture-python'),Path('/fixture-model'),require_review=True)
+    saved=store.get(job['id'])
+    assert result['status']=='needs_review' and not saved.get('audio_gate_approved_takes')
+    assert any(flag in message for message in saved['audio_review'][0]['flags'])
+
+
+@pytest.mark.parametrize('expected,first,second,category',[
+    ('Do not issue the final permit to Alice. Do not issue the final permit to Bob.',
+     'Do issue the final permit to Alice. Do not issue the final permit to Bob.',
+     'Do not issue the final permit to Alice. Do issue the final permit to Bob.','negation'),
+    ('Add two liters of water to Alice’s vessel, then pour five liters into Bob’s container.',
+     'Add two of water to Alice’s vessel, then pour five liters into Bob’s container.',
+     'Add two liters of water to Alice’s vessel, then pour five into Bob’s container.','math_or_unit'),
+])
+def test_automatic_retake_requires_a_shared_source_site(expected,first,second,category):
+    assert category in pipeline.critical(expected,first) and category in pipeline.critical(expected,second)
+    assert category in pipeline.corroborated(expected,first,first)
+    assert not pipeline.corroborated(expected,first,second)
+
+
+def test_copied_model_cannot_confirm_its_own_disagreement(tmp_path,monkeypatch):
+    source=tmp_path/'book.md'
+    source.write_text('Fill this vessel with exactly five liters of clean water before final inspection.')
+    store,job=prepared(tmp_path,source)
+    first,second=tmp_path/'first',tmp_path/'second'
+    for path in (first,second):
+        path.mkdir()
+        (path/'model.bin').write_bytes(b'duplicate toy model')
+    from audiobook.core import filehash
+    def identity(python,model,worker):return {'model_files':{'model.bin':filehash(model/'model.bin')}}
+    monkeypatch.setattr(pipeline.qa_cache,'observer_identity',identity)
+
+    calls=[]
+    def observe(store,job,utterances,python,model):
+        calls.append(model)
+        unit,=utterances
+        pcm=jobs.valid_clip(store,jobs.clip_key(unit,job))
+        text=unit['text'].replace('five','seven')
+        return ([{'utterance':unit['id'],'text':text,'audio_seconds':pcm['seconds'],'pcm_sha256':pcm['sha256'],'audio_samples':pcm['samples'],
+                  'segments':[{'text':text,'start':0,'end':pcm['seconds']}]}],identity(python,model,None),{})
+
+    monkeypatch.setattr(pipeline.qa_cache,'observe',observe)
+    result=pipeline.run(store,job['id'],Path('/fixture-python'),first,second_model=second)
+    checkpoint=json.loads((store.path(job)/'pipeline.json').read_text())
+    assert result['status']=='needs_review' and checkpoint['second_observer_status']=='duplicate_or_unverified_model'
+    assert calls==[first,first] and not store.get(job['id'])['automatic_retakes']

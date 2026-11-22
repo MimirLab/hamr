@@ -309,7 +309,7 @@ def epub(data:bytes)->Document:
 
             if not text and not issue and not any(s['kind']=='object_label' and (s.get('reading') or s.get('cover')) for s in semantics): continue
             if role=='heading': chapter=text
-            links=[]
+            links=[]; table_notes={}
             note_references=iter(sorted((s for s in semantics if s['kind']=='note_reference'),key=lambda s:s['source_start']))
             for a in node.find_all('a',href=True):
                 if 'noteref' in str(a.get('epub:type','')) or a.get('role')=='doc-noteref':
@@ -329,7 +329,9 @@ def epub(data:bytes)->Document:
                     if n.find('a',attrs={'role':'doc-noteref'}) or any('noteref' in str(a.get('epub:type','')).split() for a in n.find_all('a')):note_problems.append('Nested linked notes require a verified reading; recursive note expansion is not inferred.')
                     note_problem=' '.join(dict.fromkeys(p for p in note_problems if p)) or None
                     target=(np,anchor);linked_targets[target]=n
-                    links.append({'kind':'note','href':np+'#'+anchor,'text':note,'reading':note_reading(note_block),'inline_semantics':note_spans,'language':note_loc['language'],'issue':note_problem,**({'source_start':location['source_start']} if location else {})})
+                    link={'kind':'note','href':np+'#'+anchor,'text':note,'reading':note_reading(note_block),'inline_semantics':note_spans,'language':note_loc['language'],'issue':note_problem,**({'source_start':location['source_start']} if location else {})}
+                    links.append(link)
+                    if role=='table':table_notes[id(a)]=link
                 elif role!='navigation':
                     try:
                         np,anchor=document_reference(path,a['href'])
@@ -371,17 +373,36 @@ def epub(data:bytes)->Document:
                 table_locator,header_issue=table_headers(table_cells,identifiers)
                 loc.update(table_locator)
                 if header_issue and not out[-1].issue:out[-1].issue=header_issue
-                from .epub_semantics import reading
-                ruby_cells=[]
+                from .epub_semantics import noteref,reading
+                def table_entry(owner):
+                    source,spans=describe(owner,lambda href:archive_path(posixpath.dirname(path),href)[0],cover_assets)
+                    spans+=annotate(source,spans,vars(s).get('_audiobook_lexicons',[]),language(owner) or (lang[0] if lang else 'en'))
+                    note_spans=(span for span in spans if span['kind']=='note_reference')
+                    notes=[]
+                    for anchor in (tag for tag in owner.find_all('a') if noteref(tag)):
+                        local=next(note_spans,None)
+                        if local is not None and id(anchor) in table_notes:
+                            notes.append({**table_notes[id(anchor)],'source_start':local['source_start'],'reference_href':local['href']})
+                    return {'source':source,'spans':spans,'notes':notes}
+                ruby_cells=[];semantic_cells=[];hidden_cells=[]
                 for i,row in enumerate(table_cells):
                     for j,cell in enumerate(row):
+                        if any(hidden(tag) for tag in (cell,*cell.parents)):
+                            hidden_cells.append([i,j])
+                        entry=table_entry(cell)
+                        source,spans=entry['source'],entry['spans']
+                        if spans or entry['notes']:
+                            semantic_cells.append({'row':i,'column':j,**entry})
                         if not cell.find('ruby'):continue
-                        source,spans=describe(cell)
-                        if source!=rows[i][j]:continue
                         inline=[span for span in spans if span['kind'] in ('ruby','hidden')]
                         spoken=reading(block(source,{'inline_semantics':inline}))
                         if spoken!=source:ruby_cells.append({'row':i,'column':j,'source':source,'reading':spoken})
                 if ruby_cells:loc['ruby_cells']=ruby_cells
+                if semantic_cells:loc['table_cell_semantics']=semantic_cells
+                if hidden_cells:loc['table_hidden_cells']=hidden_cells
+                loc['table_header_cells']=[i for i,c in enumerate(table_cells[0]) if c.name=='th' and c.get('scope') in (None,'col') and [0,i] not in hidden_cells]
+                if (caption:=node.find('caption',recursive=False)) and not hidden(caption):
+                    loc['table_caption']=table_entry(caption)
             # Append asset evidence after identity creation to preserve existing img locators.
             if image_resource:
                 out[-1].locator['image_resource']=image_resource
@@ -702,7 +723,7 @@ def inspect(path:Path)->Document:
     if not d.blocks: raise Error('empty_document','Document contains no narratable material.')
     return d
 
-IMPORT_REVISION='import-24'
+IMPORT_REVISION='import-25'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .core import atomic,key,loadjson,writejson,filehash
     import importlib.metadata

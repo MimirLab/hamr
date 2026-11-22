@@ -46,16 +46,24 @@ def review_choice(reply, request):
     return 'invalid_reply', None
 
 
-def table_view(rows, header_columns=None):
+def table_view(rows, header_columns=None, *, column_headers=None, caption='',excluded=()):
     """Keep typed cell ownership while preparing the established spoken table."""
-    cells, parts = [], ['Table. ']
+    caption=caption.rstrip()
+    ending=' ' if caption.endswith(('.','?','!')) else '. '
+    cells, parts = [], ['Table. '+(caption+ending if caption.strip() else '')]
     position = len(parts[0])
     mappings=header_columns or {}
-    for row_index, row in enumerate(rows[1:], 1):
-        for column,value in enumerate(row):
-            header=rows[0][mappings.get(f'{row_index}:{column}',column)]
-            prefix = f'{header}: '
-            suffix = '; ' if column+1 < len(row) else '. '
+    authored=set(range(len(rows[0]))) if column_headers is None else set(column_headers)
+    start_row=1 if column_headers is None else 0
+    for row_index, row in enumerate(rows[start_row:],start_row):
+        selected=[(column,value) for column,value in enumerate(row) if (row_index,column) not in excluded
+                  and (row_index or len(rows)==1 or column not in authored)]
+        for index,(column,value) in enumerate(selected):
+            header_column=mappings.get(f'{row_index}:{column}',column)
+            header=rows[0][header_column] if row_index and header_column in authored else ''
+            prefix = f'{header}: ' if header.strip() else ''
+            suffix = '; ' if index+1 < len(selected) else '. '
+            if column_headers is not None and value.rstrip().endswith(('.','?','!')):suffix=' '
             start = position+len(prefix)
             cells.append((start,start+len(value),row_index,column,header,value))
             parts.extend((prefix,value,suffix))

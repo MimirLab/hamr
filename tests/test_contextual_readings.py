@@ -663,6 +663,48 @@ def test_epub_uses_the_authored_column_reference_and_keeps_ditto_lineage():
     assert dittos[1]['antecedent']['id']=='previous' and dittos[1]['value_source']==dittos[0]['antecedent']
 
 
+def test_epub_table_renders_cell_semantics_notes_and_visibility_together():
+    from audiobook.importers import epub
+    from test_upstream_epub import book
+
+    markup=(
+        '<table><caption>Sampling log<a role="doc-noteref" href="#caption-note">[1]</a></caption>'
+        '<tr><th>Result</th><th>Detail</th></tr>'
+        '<tr><td>Plot <span hidden="hidden"><math><msup><mi>z</mi><mn>7</mn></msup></math></span>'
+        '<math><msup><mi>x</mi><mn>2</mn></msup></math>.</td>'
+        '<td><img alt="A blue ascending curve"/>'
+        '<a role="doc-noteref" href="#cell-note">[2]</a></td></tr>'
+        '<tr aria-hidden="true"><td>Hidden row</td><td>Hidden value</td></tr></table>'
+        '<aside role="doc-footnote" id="caption-note">Samples were drawn at dusk.</aside>'
+        '<aside role="doc-footnote" id="cell-note">Calibration came first.</aside>')
+    doc=epub(book({'c':markup},['c']))
+    for notes in ('after_paragraph','inline','companion'):
+        result=plan(doc,{'notes':notes})
+        text=speech(result).lower()
+        assert not result['issues']
+        assert 'sampling log' in text and 'x to the power of 2' in text and 'blue ascending curve' in text
+        assert 'hidden' not in text and 'z to the' not in text
+        if notes=='companion':
+            assert 'a note is available in the companion' in text and 'calibration' not in text
+        else:
+            assert text.count('samples were drawn at dusk')==text.count('calibration came first')==1
+    table=next(b for b in doc.blocks if b.role=='table')
+    assert 'Hidden value' in table.source and table.locator['rows'][1][0]=='Plot z7x2.'
+
+
+def test_epub_data_only_table_keeps_its_first_row_and_decimal_cells():
+    from audiobook.importers import epub
+    from test_upstream_epub import book
+
+    doc=epub(book({'c':'<table><tr><td>Date</td><td>First entry.</td></tr></table>'
+                       '<table><tr><td>One row only</td><td>2.05 grams</td></tr></table>'},['c']))
+    result=plan(doc)
+    assert not result['issues']
+    text=speech(result)
+    assert 'Date' in text and 'First entry' in text and 'One row only' in text
+    assert all(b.locator['table_header_cells']==[] for b in doc.blocks if b.role=='table')
+
+
 def test_epub_table_header_references_do_not_borrow_an_unowned_column():
     from audiobook.importers import epub
     from test_upstream_epub import book

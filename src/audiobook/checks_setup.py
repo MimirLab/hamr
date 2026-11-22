@@ -1,12 +1,14 @@
 """Install and select the offline speech checker independently of narration."""
 import os
 from pathlib import Path
+import platform
 import shutil
 import subprocess
 import sys
 
 from .backend import acquire
 from .core import Error, filehash, loadjson, writejson
+from .installation import command, command_argv, shell_command
 
 
 LOCK = Path(__file__).with_name('asr.lock')
@@ -17,6 +19,27 @@ from faster_whisper import WhisperModel
 for model in sys.argv[1:]:
     WhisperModel(model, device='cpu', compute_type='int8', cpu_threads=2, local_files_only=True)
 """
+PROFILES = ('auto','fluid-int8','whisper')
+
+
+def setup_argv(root, profile=None):
+    args = ['setup', '--checks-only']
+    if profile:
+        args.extend(('--asr-profile', profile))
+    return command_argv(root, *args)
+
+
+def recovery(store, *, job=None, profile=None):
+    argv = setup_argv(store.root, profile)
+    lines = ['Run this command to install or repair the speech checker. No speech engine profile is needed.',
+             shell_command(argv)]
+    if argv[:2] == ['uv', 'run']:
+        lines.append('Use the checkout shown above. A bare hamr command uses your shell’s PATH and may start a different installation.')
+    if job:
+        lines.extend(('Then resume the saved book.', command(store.root, 'resume', job)))
+    else:
+        lines.append('Then repeat your original command.')
+    return '\n'.join(lines)
 
 
 def configured(store):
@@ -44,11 +67,48 @@ def local_model(path, option):
     return path
 
 
+def configured_fluid(saved):
+    from . import asr_fluid
+
+    recipe = (saved or {}).get('fluid')
+    if (isinstance(recipe,dict) and recipe.get('profile')==asr_fluid.PROFILE
+            and recipe.get('lock_sha256')==filehash(asr_fluid.LOCK)
+            and isinstance(recipe.get('python'),str) and Path(recipe['python']).is_file()
+            and isinstance(recipe.get('model'),str) and Path(recipe['model']).is_dir()):
+        return recipe
+    return None
+
+
+def speech_advice(store, host=None):
+    from . import asr_fluid
+
+    if host is None:
+        host = {'system':platform.system(),'arch':platform.machine(),'ram_available_bytes':asr_fluid.memory_available()}
+    fluid = asr_fluid.advice(store,host,book=True)
+    saved = configured(store)
+    request = (saved or {}).get('requested_profile','auto')
+    installed = configured_fluid(saved) is not None
+    active = None
+    if saved:
+        if request!='whisper' and fluid['fits'] and installed:active = 'fluid-int8'
+        elif request!='fluid-int8':active = 'whisper'
+    return {'requested':request,'active':active,'recommended':fluid['recommended'],'reason':fluid['reason'],
+            'profiles':[
+                {'profile':'fluid-int8','status':'qualified','linux_arch':'x86_64','fits':fluid['fits'],
+                 'device':'cpu','verified_peak_ram_bytes':2175276*1024,'required_available_ram_bytes':fluid['ram_headroom_bytes'],
+                 'download_bytes':fluid['download_bytes'],'additional_disk_budget_bytes':fluid['additional_disk_budget_bytes'],
+                 'installed':installed,'reason':fluid['reason']},
+                {'profile':'whisper','status':'baseline','device':'cpu','installed':saved is not None,
+                 'download_bytes':sum(item['bytes'] for model in loadjson(ASSETS).values() for item in model['files']),
+                 'reason':'Uses the lower-memory faster-whisper pair.'}]}
+
+
 def observer(store, python=None, model=None, second=None, *, use_second=True):
     if (python == Path('ASR_PYTHON') or model == Path('LOCAL_MODEL')) and not (
             python and python.is_file() and model and model.is_dir()):
         raise Error('asr_placeholder', 'ASR_PYTHON and LOCAL_MODEL in older instructions stand for local paths.',
-                    'Omit --asr-python and --asr-model to use the installed speech checker. Run hamr setup --checks-only if needed.')
+                    'Omit --asr-python and --asr-model to use the installed speech checker.\n'
+                    + (recovery(store) if not configured(store) else 'Then repeat the command.'))
     if python is not None or model is not None:
         if not python or not model:
             raise Error('asr_options', 'Custom speech checking needs both --asr-python and --asr-model.',
@@ -61,24 +121,39 @@ def observer(store, python=None, model=None, second=None, *, use_second=True):
     saved = configured(store)
     if not saved:
         raise Error('speech_checks_required', 'The offline speech checker is missing or its installation is incomplete.',
-                    'Run hamr setup --checks-only, then repeat the book command.')
-    return (Path(saved['python']), Path(saved['model']),
-            local_model(second, '--second-model') if second else Path(saved['second_model']) if use_second else None)
+                    recovery(store))
+    from . import asr_fluid
+
+    requested = saved.get('requested_profile','auto')
+    primary = Path(saved['model'])
+    secondary = Path(saved['second_model']) if use_second else None
+    if requested!='whisper':
+        recipe = configured_fluid(saved)
+        available = asr_fluid.memory_available() if recipe else None
+        if (recipe and platform.system()=='Linux' and platform.machine()=='x86_64'
+                and available is not None and available>=asr_fluid.BOOK_RAM_HEADROOM):
+            secondary = primary if use_second else None
+            primary = asr_fluid.Recipe(recipe['python'],recipe['model'])
+        elif requested=='fluid-int8':
+            raise Error('asr_profile_unavailable','The selected Fluid verifier needs a complete install and 2.75 GiB of available system RAM.',
+                        'Free memory and retry, or switch to the lower-memory checker.\n' + recovery(store, profile='whisper'))
+    return Path(saved['python']),primary,local_model(second, '--second-model') if second else secondary
 
 
 def preflight():
     if not shutil.which('uv'):
         raise Error('missing_dependency', 'uv is needed to install speech checking.',
-                    'Install uv and repeat hamr setup.')
+                    'Install uv and repeat your original setup command.')
     for executable in ('ffmpeg', 'ffprobe'):
         if not shutil.which(executable):
             raise Error('missing_dependency', f'Missing executable: {executable}',
-                        'Install FFmpeg (including ffprobe) and repeat hamr setup.')
+                        'Install FFmpeg (including ffprobe) and repeat your original setup command.')
 
 
-def provision(store, progress, cache=None):
+def provision(store, progress, cache=None, *, activate=True, asr_profile='auto'):
     """Called under the setup writer lock, with the engine process stopped."""
     preflight()
+    prior_fluid=configured_fluid(configured(store))
     root = store.root / 'assets' / 'speech-checks'
     root.mkdir(exist_ok=True)
     lock = WINDOWS_LOCK if os.name == 'nt' else LOCK
@@ -124,9 +199,25 @@ def provision(store, progress, cache=None):
                            stdout=output, stderr=subprocess.STDOUT, check=True, timeout=120)
     except (OSError, subprocess.SubprocessError) as exc:
         raise Error('speech_checks_setup', 'Speech-check setup could not finish.',
-                    f'Check {log}, then repeat hamr setup --checks-only.') from exc
+                    f'Check the setup log at {log}, then repeat your original setup command.') from exc
     writejson(ready, {'lock_sha256': lock_hash})
     result = {'schema_version': 1, 'python': str(python), 'model': str(models[0]),
-              'second_model': str(models[1]), 'lock_sha256': lock_hash}
-    writejson(store.root / 'speech-checks.json', result)
+              'second_model': str(models[1]), 'lock_sha256': lock_hash,'requested_profile':asr_profile}
+    if prior_fluid:result['fluid']=prior_fluid
+    if asr_profile!='whisper':
+        from . import asr_fluid
+
+        fit = speech_advice(store)
+        if fit['recommended']=='fluid-int8':
+            try:
+                result['fluid']=asr_fluid.provision(store,progress,cache,activate=False)
+            except Error as exc:
+                if asr_profile!='auto':raise
+                result['selection_reason']=f'Fluid setup could not finish. Whisper is ready. {exc.message}'
+        elif asr_profile!='auto':
+            raise Error('asr_profile_fit',fit['reason'],'Choose whisper or make more memory and disk available.')
+        else:
+            result['selection_reason']=fit['reason']
+    if activate:
+        writejson(store.root / 'speech-checks.json', result)
     return result

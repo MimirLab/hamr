@@ -200,6 +200,8 @@ def observations(block, cells, table_fragments, *, source_digest):
     row_headers=block.locator.get('row_header_columns',{})
     row_counts={}
     inherited_cells={}
+    hidden_cells={tuple(pair) for pair in block.locator.get('table_hidden_cells',())}
+    hidden_rows={index for index,row in enumerate(rows) if row and all((index,column) in hidden_cells for column in range(len(row)))}
     cell_ids=block.locator.get('cell_ids',{})
     pdf_readings={(cell['row'],cell['column']):cell for cell in block.locator.get('pdf_cell_readings',())}
     for _,_,row,column,header,value in cells:
@@ -212,17 +214,19 @@ def observations(block, cells, table_fragments, *, source_digest):
             add('pdf_table_cell','typed_cell',{'row':row,'column':column,'source':original},fields,
                 (selected['event_id'],selected['kind'],fields,related))
         if original.strip() in ('〃','"') and original!=value:
-            antecedent={'table':block.id,'row':row-1,'column':column}
-            if authored_id:=cell_ids.get(f'{row-1}:{column}'):
+            previous_row=row-1
+            while previous_row in hidden_rows:previous_row-=1
+            antecedent={'table':block.id,'row':previous_row,'column':column}
+            if authored_id:=cell_ids.get(f'{previous_row}:{column}'):
                 antecedent['id']=authored_id
             fields={'header':header,'source_marker':original,'value':value,'inherited_value':value,'antecedent':antecedent}
-            root=inherited_cells.get((row-1,column),antecedent)
+            root=inherited_cells.get((previous_row,column),antecedent)
             inherited_cells[row,column]=root
             if root is not antecedent:fields['value_source']=root
             add('table_relation','inherited_cell',{'row':row,'column':column,'source':original},fields,
                 ('CR-L032','inherited_cell_value',fields,()))
         columns=row_headers.get(str(row),row_headers.get(row,[]))
-        preceding=[n for n in columns if n<column]
+        preceding=[n for n in columns if n<column and (row,n) not in hidden_cells]
         if preceding:
             headers=[rows[0][n] for n in preceding]+[header]
             fields={'header_path':headers,'row_header':' / '.join(rows[row][n] for n in preceding),'value':value}

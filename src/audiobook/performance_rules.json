@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "directions": {
+    "whisper": {
+      "cues": ["whispered"],
+      "instruction": "Whisper the words inside the quotation in a close, breathy, almost unvoiced voice, clearly enough to understand. Use the usual reference narrator for the attribution. Say every word.",
+      "quote_marker": "(whispering)"
+    },
+    "murmured": {
+      "cues": ["murmured", "said under his breath", "said under her breath"],
+      "instruction": "Read the quotation low and gently voiced, with clear words in the reference voice. Let the attribution return to the usual narration."
+    },
+    "forceful": {
+      "cues": ["shouted", "yelled"],
+      "instruction": "Give the quoted speech firm, urgent emphasis while keeping it comfortable to listen to. Read any attribution in the usual narrator voice. Keep every word."
+    },
+    "tearful": {
+      "cues": ["said through tears", "said tearfully", "said, fighting back tears"],
+      "instruction": "Let restrained sadness color the quoted speech and keep the words clear. Read any attribution in the usual narrator voice.",
+      "voice_suffixes": {
+        "cave-johnson": "Keep the reference narrator’s usual register and timbre throughout."
+      }
+    },
+    "sobbing": {
+      "cues": ["said between sobs", "said through sobs", "said, sobbing"],
+      "instruction": "Let the quotation catch slightly on the breath as the speaker fights through sobs. Preserve the reference voice and every word. Read the attribution in the usual narrator voice."
+    },
+    "amused": {
+      "cues": ["said with a smile", "said with a chuckle", "said, amused", "said with a laugh", "said, laughing"],
+      "instruction": "Give the quoted speech a slight smile and light amusement. Read any attribution in the usual narrator voice. Keep every word."
+    },
+    "affectionate": {
+      "cues": ["teased affectionately", "said playfully", "said with a warm chuckle"],
+      "instruction": "This is affectionate teasing. Give the quoted words a small, warm smile in the voice. Read the attribution in the usual reference voice. Say every word."
+    },
+    "reassuring": {
+      "cues": ["said reassuringly", "said in a reassuring tone"],
+      "instruction": "Read the quotation with quiet, natural reassurance. Give the listener time to take it in, keeping the reference voice. Read the attribution normally."
+    },
+    "warning": {
+      "cues": ["warned"],
+      "instruction": "Let the listener hear the importance of the warning. Give the quotation clear, steady emphasis and read the attribution normally."
+    },
+    "weary": {
+      "cues": ["said wearily", "said in a tired voice"],
+      "instruction": "Let the quotation wear the weight of fatigue, with slightly slower natural phrasing. Keep every word clear in the reference voice and read the attribution normally."
+    },
+    "breathless": {
+      "cues": ["said breathlessly", "said, out of breath"],
+      "instruction": "Give the quotation the light breath and urgency of someone who has just been running. Take one natural breath if needed, keep every word, and read the attribution normally."
+    },
+    "urgent": {
+      "cues": ["said urgently", "said with urgency"],
+      "instruction": "Read the quotation with focused urgency and clear consonants. Keep the reference voice and preserve every word, especially quantities and negation. Read the attribution normally."
+    },
+    "ironic": {
+      "cues": ["said sarcastically", "said with dry irony"],
+      "instruction": "Let subtle stress and phrasing bring out the dry irony of the quotation. Keep the reference voice and the words. Read the attribution normally."
+    },
+    "subdued": {
+      "cues": ["said sadly", "said with quiet sadness"],
+      "instruction": "Read the quoted words with subdued sadness and gentle pacing. Keep the reference voice and read the attribution normally."
+    },
+    "restrained_anger": {
+      "cues": ["said with restrained anger", "said with controlled anger"],
+      "instruction": "Give the quoted speech contained anger with steady pacing and firm emphasis. Preserve the reference voice, the words, and the usual delivery of the attribution."
+    },
+    "apprehensive": {
+      "cues": ["said fearfully", "said apprehensively"],
+      "instruction": "Give the quotation a sense of apprehension and guarded energy. Keep the words intelligible in the reference voice and read the attribution normally."
+    },
+    "excited": {
+      "cues": ["said excitedly", "said with excitement"],
+      "instruction": "Let enthusiasm lift the quoted line. Leave enough room for every word and read the attribution in the usual reference voice."
+    },
+    "surprised": {
+      "cues": ["said in disbelief", "said in surprise", "said, startled"],
+      "instruction": "Let a brief note of unexpected surprise color the quotation, with clear words and the same voice. Read the attribution normally."
+    },
+    "authoritative": {
+      "cues": ["said with quiet authority", "said with calm authority"],
+      "instruction": "Read the quotation decisively with composed authority and measured emphasis. Keep the reference voice and read the attribution normally."
+    },
+    "reflective": {
+      "cues": ["said thoughtfully", "said reflectively"],
+      "instruction": "Give the quotation thoughtful, unhurried phrasing. Preserve the reference voice and every word. Read the attribution normally."
+    },
+    "growing_force": {
+      "cues": ["said, beginning softly and growing louder", "said in a voice that grew louder"],
+      "progression": true,
+      "instruction": "Start the quotation quietly. Let each sentence gain a little force until the last one is firm. Keep the reference voice and every word. Return to the usual narrator voice for the attribution."
+    },
+    "fading_force": {
+      "cues": ["said, beginning loudly and growing quieter", "said in a voice that grew quieter"],
+      "progression": true,
+      "instruction": "Start the quotation firmly. Let the force ease across its sentences so the last words are quiet and clear. Keep every word in the reference voice. Read the attribution normally."
+    },
+    "quiet_scene": {
+      "cues": [],
+      "instruction": "Narrate this moment quietly and steadily with restrained anticipation. Keep the reference narrator’s timbre and say every word."
+    }
+  },
+  "context": {
+    "emphasis": {
+      "attributions": ["stressing", "emphasizing", "emphasising", "putting the stress on"],
+      "instruction": "Give the phrase {phrase} one small, natural stress within the quotation. Keep every word and read the attribution in the usual reference voice."
+    },
+    "continuation": {
+      "attributions": ["continued", "went on", "said in the same tone"],
+      "recipes": ["whisper", "murmured", "subdued", "tearful", "weary"]
+    },
+    "speaker_cues": [
+      {
+        "recipe": "whisper", "signal": "lowered_voice", "strong": true,
+        "frames": ["{actor} lowered {possessive} voice", "{actor} leaned closer and lowered {possessive} voice",
+                   "{owner} voice dropped to a whisper", "{owner} voice sank to a whisper", "{owner} voice was scarcely a whisper"]
+      },
+      {
+        "recipe": "whisper", "signal": "proximity", "strong": false,
+        "frames": ["{actor} leaned closer", "{actor} bent closer", "{actor} drew close"]
+      },
+      {
+        "recipe": "whisper", "signal": "low_audibility", "strong": false,
+        "frames": ["{owner} voice was barely audible", "{owner} words were barely audible", "{actor} kept {possessive} voice low"]
+      },
+      {
+        "recipe": "forceful", "signal": "raised_voice", "strong": true,
+        "frames": ["{actor} raised {possessive} voice", "{actor} took a breath and raised {possessive} voice",
+                   "{owner} voice rose to a shout"]
+      },
+      {
+        "recipe": "tearful", "signal": "restrained_tears", "strong": true,
+        "frames": ["{actor} held back tears", "{actor} blinked back tears", "{actor} fought back tears"]
+      },
+      {
+        "recipe": "tearful", "signal": "physical_tears", "strong": false,
+        "frames": ["{owner} eyes filled with tears", "tears welled in {owner} eyes"]
+      },
+      {
+        "recipe": "tearful", "signal": "breaking_voice", "strong": false,
+        "frames": ["{owner} voice broke", "{owner} voice caught"]
+      },
+      {
+        "recipe": "breathless", "signal": "breath_between_words", "strong": true,
+        "frames": ["{actor} could barely catch {possessive} breath", "{actor} was still out of breath",
+                   "{actor} struggled to catch {possessive} breath"]
+      },
+      {
+        "recipe": "weary", "signal": "fatigued_voice", "strong": true,
+        "frames": ["{owner} voice was heavy with fatigue", "{owner} voice was heavy with exhaustion"]
+      },
+      {
+        "recipe": "affectionate", "signal": "explicit_affection", "strong": true,
+        "frames": ["{actor} gave an affectionate smile", "{actor} gave a playful grin"]
+      }
+    ],
+    "quiet_scene": {
+      "setting": ["the room was silent", "everything went still", "no one spoke", "in the silence", "in the stillness"],
+      "restraint": {
+        "held_breath": ["held his breath", "held her breath", "held their breath", "held my breath"],
+        "stillness": ["dared not move", "stayed perfectly still", "without making a sound"]
+      },
+      "conflict": ["as if", "pretended", "if", "noisy", "roared", "shouted", "yelled", "screamed", "screech", "slammed", "burst into laughter"]
+    }
+  },
+  "gentle_entry": {
+    "instruction": "Continue in the same narrator voice at a quiet, steady level. Start gently, then let the line settle into natural speech. Keep every word clear."
+  },
+  "structural": {
+    "heading": "Read the heading clearly with a calm, deliberate cadence. End cleanly and keep the reference narrator's timbre.",
+    "technical": "Read the passage at an even, natural pace. Articulate each quantity, unit, and operator clearly. Keep each quantity with its label, say every word, and retain the reference narrator's voice."
+  },
+  "events": {
+    "sigh": {"spellings": ["sigh", "sighs"], "marker": "(sigh)", "asr_labels": ["sigh", "sighs"], "asr_annotations": ["sigh", "sighs", "sighing"], "interjections_after": ["ah", "huh"]},
+    "laugh": {"spellings": ["laugh", "laughs"], "marker": "(laugh)", "leading_recipe": "chuckle", "asr_labels": ["laugh", "laughs", "laughter"], "asr_annotations": ["laugh", "laughs", "laughter", "laughing"], "interjections": ["ha", "hah", "heh", "haha"]},
+    "chuckle": {
+      "spellings": ["chuckle", "chuckles"],
+      "marker": "(chuckle)",
+      "leading_instruction": "Begin with one short natural chuckle. Then read the line clearly in the usual reference voice, saying every word.",
+      "asr_labels": ["chuckle", "chuckles", "laugh", "laughs", "laughter"],
+      "asr_annotations": ["chuckle", "chuckles", "chuckling", "laugh", "laughs", "laughing", "laughter"],
+      "interjections": ["ha", "hah", "heh", "haha"],
+      "interjections_before": ["mm-hmm", "mm hmm", "mhm"]
+    },
+    "gasp": {"spellings": ["gasp", "gasps"], "marker": "(gasp)", "asr_labels": ["gasp", "gasps"], "asr_annotations": ["gasp", "gasps", "gasping"]},
+    "cough": {"spellings": ["cough", "coughs"], "marker": "(cough)", "asr_labels": ["cough", "coughs"], "asr_annotations": ["cough", "coughs", "coughing"]},
+    "clear_throat": {"spellings": ["clear throat", "clears throat", "clears the throat", "clearing throat"], "marker": "(clears throat)", "asr_labels": ["clear throat", "clears throat", "throat clearing"], "asr_annotations": ["clear throat", "clears throat", "clearing throat", "throat clearing"]},
+    "groan": {"spellings": ["groan", "groans"], "marker": "(groan)", "asr_labels": ["groan", "groans"], "asr_annotations": ["groan", "groans", "groaning"]},
+    "sniffle": {"spellings": ["sniffle", "sniffles"], "marker": "(sniffle)", "asr_labels": ["sniffle", "sniffles"], "asr_annotations": ["sniffle", "sniffles", "sniffling"]},
+    "lip_smack": {"spellings": ["lip smack", "lip smacks", "smacks lips"], "marker": "(lip smack)", "asr_labels": ["lip smack", "lip smacks", "smacks lips"], "asr_annotations": ["lip smack", "lip smacks", "smacks lips", "lip smacking"]},
+    "hiccup": {"spellings": ["hiccup", "hiccups"], "marker": "(hiccup)", "asr_labels": ["hiccup", "hiccups"], "asr_annotations": ["hiccup", "hiccups", "hiccuping"]},
+    "sneeze": {
+      "spellings": ["sneeze", "sneezes"],
+      "marker": "(sneeze)",
+      "leading_instruction": "Give one quick natural sneeze before the line. Then return to the usual voice and read every word with clear consonants, including the attribution.",
+      "asr_labels": ["sneeze", "sneezes"],
+      "asr_annotations": ["sneeze", "sneezes", "sneezing"]
+    },
+    "sob": {"spellings": ["sob", "sobs"], "marker": "(sob)", "asr_labels": ["sob", "sobs"], "asr_annotations": ["sob", "sobs", "sobbing"]}
+  },
+  "literal_markers": [
+    "cackles", "chuckle", "chuckles", "clear throat", "clears throat", "clears the throat", "clearing throat", "cough", "coughs", "cry",
+    "exhales", "gasp", "gasps", "giggle", "groan", "heavy breath", "heavy sigh", "hiccup",
+    "inhale", "inhales", "inhales deeply", "inhales sharply", "laugh", "laughs", "lip smack",
+    "nervous breath", "nervous laugh", "pant", "panting", "pants", "pause", "scoff", "sharp inhale",
+    "shiver", "shivering", "shivers", "shuddering breath", "sigh", "sighs", "sneeze", "sniff",
+    "sniffle", "sob", "swallow", "teeth chatter", "whimper", "yawn", "yawns"
+  ],
+  "qualified": [
+    {
+      "profile": "cpu-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "sigh",
+      "placement": "before",
+      "reference_identity": "a5ac92d7d0b8b28cb9e42ceb3cd2448fd122d0e44a997e6e48c6829dd5924d62",
+      "execution": {"device": "cpu", "parallel": 1}
+    },
+    {
+      "profile": "cpu-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "sigh",
+      "placement": "before",
+      "reference_identity": "3ae4742314197c8460c0666054cc15d852ab115fd7a8c6464d19327d2dcd7f20",
+      "execution": {"device": "cpu", "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "sigh",
+      "placement": "after",
+      "reference_identity": "a5ac92d7d0b8b28cb9e42ceb3cd2448fd122d0e44a997e6e48c6829dd5924d62",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "sigh",
+      "placement": "after",
+      "reference_identity": "3ae4742314197c8460c0666054cc15d852ab115fd7a8c6464d19327d2dcd7f20",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "forceful",
+      "reference_identity": "a5ac92d7d0b8b28cb9e42ceb3cd2448fd122d0e44a997e6e48c6829dd5924d62",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "forceful",
+      "reference_identity": "3ae4742314197c8460c0666054cc15d852ab115fd7a8c6464d19327d2dcd7f20",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "quiet_scene",
+      "contextual": true,
+      "context_support": "held_breath",
+      "reference_identity": "a5ac92d7d0b8b28cb9e42ceb3cd2448fd122d0e44a997e6e48c6829dd5924d62",
+      "execution": {"device": null, "parallel": 1}
+    },
+    {
+      "profile": "vulkan-q8",
+      "runtime": "4110a9fff4e47d4d1ba850d92d81f3ba86bf39c6",
+      "archive_sha256": "fafde710eee91909a09ab90a36c0d31c86a7742a088258e5c49d50e1d849f376",
+      "model_sha256": "a02bcc4b69b0601032727f8040c4942149b1b73aa0f69022fe5aaa6a8f0ef879",
+      "platform": "linux",
+      "recipe": "laugh",
+      "placement": "before",
+      "reference_identity": "a5ac92d7d0b8b28cb9e42ceb3cd2448fd122d0e44a997e6e48c6829dd5924d62",
+      "execution": {"device": null, "parallel": 1}
+    }
+  ]
+}

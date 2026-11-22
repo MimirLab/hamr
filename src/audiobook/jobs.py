@@ -8,6 +8,7 @@ from .importers import inspect,cached_inspect,IMPORT_REVISION
 from .planner import plan,RULES
 from .backend import Engine,validate_pcm,validate_request
 from .cast import resolve_voice
+from . import performance
 
 
 def rename_new(src,dst):
@@ -44,11 +45,33 @@ def create(store,source,voice=None,policy=None,output=None,aliases=None,label=No
             if j['backend'] is None: raise Error('setup_required','Configure a backend before selecting concurrent streams.')
             if j['backend']['settings'].get('text_encoder')=='cpu': raise Error('parallel_limit','Concurrent CPU text encoding is not qualified.')
             j['backend']['settings']={**j['backend']['settings'],'parallel':parallel}
+        performance.bind(p,j['backend'],saved_voice)
         writejson(path/'plan.json',p); store.save(j); return summary(store,j)
     except BaseException:
         store.safe_remove(path); raise
 
-def clip_key(u,j): return key({'text':u['text'],'language':u['language'],'voice':j['voice'],'backend':j['backend'],'seed':u.get('seed',42),'split_chars':0,'max_new_tokens':1500,'cfg_scale':1,'codec':'hoppou-s16le-24000','receipt_revision':j.get('speech_contract',1)})
+def bind_speech(store,job):
+    if job['backend'] is None:
+        if not (store.root/'settings.json').is_file():
+            raise Error('setup_required','No Breeze backend configured.','Run hamr setup.')
+        job['backend']=loadjson(store.root/'settings.json')
+    return performance.bind(job['plan'],job['backend'],job['voice'],
+                            fallbacks=job.get('performance_fallbacks',()))
+
+
+def clip_key(u,j):
+    text,options=performance.request(u)
+    identity={'text':text,'language':u['language'],'voice':j['voice'],'backend':j['backend'],
+              'seed':options['seed'],'split_chars':0,'max_new_tokens':1500,
+              'cfg_scale':options.get('cfg_scale',1),'codec':'hoppou-s16le-24000',
+              'receipt_revision':j.get('speech_contract',1)}
+    if active:=performance.request_identity(u):identity['performance']=active
+    return key(identity)
+
+
+def speak(engine,unit,voice):
+    text,options=performance.request(unit)
+    return engine.speech(text,voice,**options)
 
 def valid_clip(store,k):
     p=store.root/'clips'/k
@@ -105,10 +128,13 @@ def review_error(store,j):
                 'message':'Some source passages need to be resolved before Hamr can finish the audiobook.',
                 'action':f'Run hamr show {jid} --content to find those passages.'}
     if code in (None,'speech_qa_pending'):
-        from .checks_setup import configured
+        from .checks_setup import configured, recovery
+        from .installation import command
         error=speech_check_pending(jid)
         if not configured(store):
-            error['action']=f'Run hamr setup --checks-only, then hamr resume {jid}.'
+            error['action']=recovery(store, job=jid)
+        else:
+            error['action']='Run this command to check the saved audio and finish the book.\n' + command(store.root, 'resume', jid)
     return error
 
 
@@ -143,7 +169,7 @@ def summary(store,j):
     try:
         recorded=loadjson(store.path(j)/'pipeline.json')
         if recorded['plan_sha256']==j['plan']['plan_sha256']:
-            pipeline_progress={k:v for k,v in recorded.items() if k in ('phase','updated','elapsed_seconds_this_run','new_takes_this_run','total_unique_takes','remaining_unique_takes','observed_unique_takes','source_locations','speech_locations','error')}
+            pipeline_progress={k:v for k,v in recorded.items() if k in ('phase','observer_profile','updated','elapsed_seconds_this_run','new_takes_this_run','total_unique_takes','remaining_unique_takes','observed_unique_takes','source_locations','speech_locations','error')}
             current_keys={clip_key(u,j) for u in j['plan']['utterances']}
             observations=recorded.get('observed_pcm',{})
             pipeline_progress['observed_unique_takes']=len(current_keys&observations.keys())
@@ -161,7 +187,21 @@ def summary(store,j):
             pipeline_progress['automatic_retakes_used']=len(recorded.get('retakes',[]))
     except (OSError,ValueError,KeyError):pass
     error=review_error(store,j) if j['status']=='needs_review' else j['error']
-    return {'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(valid_clip(store,k) is not None for k in set(j['clips'].values())),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':j.get('metrics',{}),'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
+    if error and error['code'] in ('speech_checks_required', 'asr_profile_unavailable'):
+        from .checks_setup import configured, recovery
+        from .installation import command
+        if error['code']=='speech_checks_required' and configured(store):
+            error={**error,'message':'The speech checker is now installed. Resume the saved book.',
+                   'action':command(store.root, 'resume', j['id'])}
+        else:
+            profile='whisper' if error['code']=='asr_profile_unavailable' else None
+            action=recovery(store, job=j['id'], profile=profile)
+            if profile:
+                action='Free memory and resume, or switch to the lower-memory checker.\n' + action
+            error={**error,'action':action}
+    result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(valid_clip(store,k) is not None for k in set(j['clips'].values())),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':j.get('metrics',{}),'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
+    if delivery:=performance.status(j):result['performance']=delivery
+    return result
 
 def generate_takes(engine,j,todo,parallel):
     """Keep at most N requests in flight; the caller alone commits durable state."""
@@ -169,7 +209,7 @@ def generate_takes(engine,j,todo,parallel):
         started=time.monotonic()
         for attempt in range(2):
             try:
-                data,receipt=engine.speech(u['text'],j['voice'],seed=u.get('seed',42))
+                data,receipt=speak(engine,u,j['voice'])
                 receipt['request_wall_seconds']=time.monotonic()-started
                 return data,receipt,attempt
             except Error as exc:
@@ -212,11 +252,9 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
                 j['status']='needs_review'; store.save(j); return summary(store,j)
             j['status']='ready'; j['error']=None; store.save(j); return summary(store,j)
         if final.exists(): raise Error('output_collision',f'An existing folder at {final} does not match this audiobook job.','Choose another existing output directory and pass it with --output when resuming.')
-        if j['backend'] is None:
-            if not (store.root/'settings.json').exists(): raise Error('setup_required','No Breeze backend configured.','Run hamr setup --profile vulkan-f16.')
-            j['backend']=loadjson(store.root/'settings.json')
         if not j['voice']: raise Error('voice_required','Job requires one saved narrator.','Use hamr voice design/clone, then repair JOB --voice NAME.')
         if filehash(Path(j['snapshot']))!=j['document']['source_sha256']: raise Error('snapshot_changed','Immutable source snapshot has changed.')
+        if bind_speech(store,j):writejson(store.path(j)/'plan.json',j['plan'])
         started=time.monotonic(); reused=0; rendered=0; retries=0
         j['status']='rendering'; j['error']=None; store.save(j)
         try:
@@ -245,7 +283,8 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
                 if not allow_synthesis:raise Error('synthesis_required','CPU-only resume found missing or invalid speech takes.','Use the selected GPU launcher for missing speech, then repeat resume --no-synthesis. Verified clips are retained.')
                 selected=list(todo.items())[:max_new_takes] if max_new_takes is not None else list(todo.items())
                 for _,take in selected:
-                    try:validate_request(take['text'],j['voice'])
+                    request_text,options=performance.request(take)
+                    try:validate_request(request_text,j['voice'],options.get('instruction'))
                     except Error:
                         j['failed_take']={'utterance':take['id'],'key':clip_key(take,j),'seed':take.get('seed',42)};raise
                 with (engine_session.use(j['backend']) if engine_session is not None else Engine(store,j['backend'])) as engine:
@@ -332,7 +371,7 @@ def publish(store,j):
     metadata=';FFMETADATA1\ntitle='+escape_meta(j['document']['title']+(' — '+j['publication_label'] if j.get('publication_label') else ''))+'\nartist='+escape_meta(j['voice']['name'])+'\n'
     for c in chapters: metadata+=f'[CHAPTER]\nTIMEBASE=1/{RATE}\nSTART={c["start_sample"]}\nEND={c["end_sample"]}\ntitle={escape_meta(c["title"])}\n'
     atomic(stage/'chapters.ffmeta',metadata.encode()); fault('during_assembly')
-    from .media import tag_publication,verify_container,packet_hash
+    from .media import tag_publication,verify_container,verify_audio_decode,packet_hash
     previous=j.get('metadata_repackage');previous_hash=None
     if previous:
         source=Path(previous['audio'])
@@ -361,6 +400,7 @@ def publish(store,j):
     metadata_receipt['audio_stream_copy']=bool(previous)
     if previous_hash and metadata_receipt['audio_packet_sha256']!=previous_hash:raise Error('repackage_audio_changed','Metadata-only remux changed audio packets.')
     probe=verify_container(stage/'book.m4b',chapters,total);actual=float(probe['format']['duration'])
+    verify_audio_decode(stage/'book.m4b')
     original='original'+Path(j['snapshot']).suffix
     shutil.copyfile(j['snapshot'],stage/original)
     if filehash(stage/original)!=j['document']['source_sha256']: raise Error('source_copy','Publication source copy differs from the immutable input.')
@@ -368,7 +408,7 @@ def publish(store,j):
     writejson(stage/'companion.json',{'schema_version':1,'original_source':original,'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'sample_rate':RATE,'samples':total,'chapters':chapters,'segments':rows,'decisions':j['plan']['decisions'],'source_inventory':j['document']['inventory'],'source_metadata':j['document'].get('metadata',{}),'source_links':source_links})
     def ts(sec):
         ms=round(sec*1000); return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02}.{ms%1000:03}'
-    vtt='WEBVTT\n\n'+'\n\n'.join(f'{r["id"]}\n{ts(r["start"])} --> {ts(r["end"])}\n{r["text"]}\n{r["destination"]}' for r in rows)+'\n'
+    vtt='WEBVTT\n\n'+'\n\n'.join(f'{r["id"]}\n{ts(r["start"])} --> {ts(r["end"])}\n{html.escape(r["text"],quote=False)}\n{r["destination"]}' for r in rows)+'\n'
     atomic(stage/'companion.vtt',vtt.encode())
     pointers={};context_time=0
     for b in j['document']['blocks']:
@@ -404,13 +444,26 @@ def publish(store,j):
     if not verify_publication(final,j): raise Error('publication_validation','Published directory failed checksum validation.')
 
 
-def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None,context=None,context_review=None,context_reviewer=None):
+def take_selection(u):
+    identity={'text':u['text'],'sources':u['sources']}
+    if active:=performance.request_identity(u):identity['performance']=active
+    return key(identity)
+
+
+def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None,context=None,context_review=None,context_reviewer=None,automatic=None,performance_mode=None):
     with store.lock():
         from .core import check_revision
         j=store.get(jid)
         check_revision(j,expect_revision)
         doc=document(j); aliases=dict(j['plan']['aliases'])
         old_plan=j['plan']['plan_sha256'];old_voice=j['voice'];old_output=final_path(j)
+        pinned_directions={u['performance_candidate']['id']:u for u in j['plan']['utterances']
+                           if 'performance_state' in u}
+        takes=j.get('retakes',{});rebased_takes={}
+        target=None
+        if retake:
+            target=next((u for u in j['plan']['utterances'] if u['id']==retake),None)
+            if target is None: raise Error('unknown_utterance','Retake ID does not belong to this approved plan.')
         previous={'audio':str(old_output/'book.m4b'),'sha256':filehash(old_output/'book.m4b'),'plan_sha256':old_plan} if verify_publication(old_output,j) else None
         if metadata is not None:
             from .media import merge_overrides
@@ -419,8 +472,24 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             previous_doc=doc; fresh=cached_inspect(Path(j['snapshot']),store.root/'extractions')
             if fresh.source_sha256!=previous_doc.source_sha256: raise Error('snapshot_changed','Reimport source identity differs from the saved revision.')
             from .source_rebase import rebase
+            selected={take_selection(u):u for u in j['plan']['utterances'] if take_selection(u) in takes}
+            retained={bid for unit in selected.values() for bid in unit['sources']}
+            retained.update(u['performance_candidate']['source']['block'] for u in pinned_directions.values())
+            retained.update(entry['source']['block'] for entry in j.get('performance_fallbacks',()))
+            if target:retained.update(target['sources'])
             stored=None if document_policy is not None else j['plan']['policy'].get('document')
-            j['repairs'],rebased_policy,mapping=rebase(previous_doc,fresh,j['repairs'],stored)
+            j['repairs'],rebased_policy,mapping=rebase(previous_doc,fresh,j['repairs'],stored,retain_sources=retained)
+            for original,unit in selected.items():
+                replacement=take_selection({**unit,'sources':[mapping[bid] for bid in unit['sources']]})
+                rebased_takes[replacement]=takes[original]
+                if replacement!=original:takes.pop(original)
+            takes.update(rebased_takes)
+            if target:target={**target,'sources':[mapping[bid] for bid in target['sources']]}
+            pinned_directions=performance.rebase(pinned_directions,mapping,j.get('performance_fallbacks',()),fresh.source_sha256)
+            for record in j.get('automatic_retakes',[]):
+                if record.get('sources') and all(bid in mapping for bid in record['sources']):
+                    record['sources']=[mapping[bid] for bid in record['sources']]
+                    record['identity']=take_selection(record)
             if stored is not None:j['plan']['policy']={**j['plan']['policy'],'document':rebased_policy}
             doc=fresh; j['repairs'].append({'kind':'reimport','import_revision':IMPORT_REVISION,'source_sha256':doc.source_sha256,'previous_plan_sha256':j['plan']['plan_sha256'],'source_block_map':mapping})
         if alias:
@@ -433,17 +502,23 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             b=matches[0]; old=b.source; b.source=text; b.issue=None; b.evidence.append('User-verified replacement for this exact source occurrence')
             j['repairs'].append({'block':block_id,'original':old,'replacement':text,'source_sha256':doc.source_sha256})
         if voice: j['voice']=resolve_voice(store,voice)
-        takes=j.get('retakes',{})
-        if retake:
-            target=next((u for u in j['plan']['utterances'] if u['id']==retake),None)
-            if target is None: raise Error('unknown_utterance','Retake ID does not belong to this approved plan.')
-            identity=key({'text':target['text'],'sources':target['sources']}); takes[identity]=target.get('seed',42)+1
+        if target:
+            identity=take_selection(target); takes[identity]=target.get('seed',42)+1
+            if reimport:rebased_takes[identity]=takes[identity]
+            if automatic is not None:
+                history=j.setdefault('automatic_retakes',[])
+                if len(history)>=automatic['limit'] or sum(r['identity']==identity for r in history)>=2:
+                    raise Error('automatic_retake_budget','The saved automatic retake budget has been used.')
+                history.append({'identity':identity,'utterance':retake,'reasons':automatic['reasons'],'at':time.time(),
+                                'text':target['text'],'sources':target['sources'],'revision':j['revision']+1,
+                                **({'performance':target['performance']} if target.get('performance') else {})})
             j['repairs'].append({'kind':'retake','utterance':retake,'seed':takes[identity]})
         j['retakes']=takes
-        refresh=upgrade_rules or context is not None or (context_review is not None or context_reviewer is not None) and j['plan']['rule_revision']!=RULES
+        refresh=upgrade_rules or performance_mode is not None or context is not None or (context_review is not None or context_reviewer is not None) and j['plan']['rule_revision']!=RULES
         revision=RULES if refresh else j['plan']['rule_revision']
         if refresh: j['repairs'].append({'kind':'rules_upgrade','from':j['plan']['rule_revision'],'to':revision})
         selected_policy=dict(j['plan']['policy'])
+        if performance_mode is not None:selected_policy['performance']=performance_mode
         if refresh:selected_policy.pop('context_implementation',None)
         if context is not None:
             selected_policy['context']=context
@@ -460,9 +535,16 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             selected_policy['document']=document_policy
             j['repairs'].append({'kind':'document_policy','policy_sha256':key(document_policy),'source_sha256':doc.source_sha256})
         j['document']=doc.json(); j['plan']=plan(doc,selected_policy,aliases,rule_revision=revision,context_reviewer=context_reviewer)
+        performance.bind(j['plan'],j['backend'],j['voice'],fallbacks=j.get('performance_fallbacks',()),
+                         previous=pinned_directions if performance_mode is None and not (upgrade_rules or voice) else None)
+        if rebased_takes:
+            from collections import Counter
+            from .source_rebase import conflict
+            destinations=Counter(take_selection(u) for u in j['plan']['utterances'])
+            if any(destinations[identity]!=1 for identity in rebased_takes):conflict()
         if j['plan'].get('document_title'):j['document']['title']=j['plan']['document_title']
         for u in j['plan']['utterances']:
-            seed=takes.get(key({'text':u['text'],'sources':u['sources']}))
+            seed=takes.get(take_selection(u))
             if seed: u['seed']=seed
         j['plan'].pop('plan_sha256',None); j['plan']['plan_sha256']=key(j['plan']); j['revision']+=1; j['status']='queued'; j['error']=None
         j.pop('metadata_repackage',None)
@@ -486,10 +568,14 @@ def cleanup(store,purge_job=None,apply=False):
                 # Listening evidence remains inspectable after a retake. Purging
                 # its owning job explicitly releases these historical pins.
                 pins.update(finding['clip_key'] for finding in j.get('listening_findings',[]))
+                pins.update(entry['clip_key'] for entry in j.get('performance_fallbacks',[]))
         candidates=[]; skipped=[]
         for p in (store.root/'clips').iterdir():
-            if p.is_symlink(): skipped.append(str(p)); continue
-            try: owned=p.is_dir() and bool(re.fullmatch('[0-9a-f]{64}',p.name)) and loadjson(p/'receipt.json').get('key')==p.name
+            if p.is_symlink() or p.is_junction(): skipped.append(str(p)); continue
+            receipt_path=p/'receipt.json'
+            try:
+                receipt=loadjson(receipt_path) if p.is_dir() and re.fullmatch('[0-9a-f]{64}',p.name) and not receipt_path.is_symlink() and receipt_path.is_file() else None
+                owned=isinstance(receipt,dict) and receipt.get('key')==p.name
             except (OSError,ValueError): owned=False
             if not owned: skipped.append(str(p)); continue
             if p.name not in pins: candidates.append(p)

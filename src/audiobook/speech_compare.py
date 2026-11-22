@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v30'
+POLICY='bounded-english-composed-scale-typed-v34'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -295,6 +295,7 @@ def comparison_tokens(text):
         elif t.endswith("n't") and t!="ain't":out.extend([t[:-3],'not'])
         elif t=="ain't":out.append(t)
         elif t=="it's":out.append('its')
+        elif t=='alright':out.extend(('all','right'))
         elif re.fullmatch('n+o+',t):out.append('no')
         else:out.append(t)
         i+=1
@@ -302,6 +303,37 @@ def comparison_tokens(text):
 
 def quantities(ts):return [t[1:] for t in ts if t.startswith('#')]
 def negations(ts):return sum(t in ('not','never','no',"ain't") for t in ts)
+
+
+UNITS=r'(?:centi|milli|kilo)?met(?:er|re)s?|milligrams?|kilograms?|grams?|pounds?|yards?|seconds?|degrees?|inch(?:es)?|feet|foot|cm|mm|mg|kg|lbs?|(?:milli|micro)?volts?|kilopascals?|megabytes?|megabits?|kilobytes?|kilobits?|cups?|teaspoons?|tablespoons?|lit(?:er|re)s?|millilit(?:er|re)s?|celsius|fahrenheit|kelvin|ounces?|hours?|minutes?'
+UNIT_WORD=re.compile(UNITS)
+
+
+def unit_name(word):
+    word=word.replace('metre','meter').replace('litre','liter')
+    return {'cm':'centimeter','mm':'millimeter','mg':'milligram','kg':'kilogram','lb':'pound',
+            'lbs':'pound','inches':'inch','feet':'foot','celsius':'celsius'}.get(word,word.rstrip('s'))
+
+
+def unit_sites(ref,hyp):
+    """Bind a measured value to its adjacent unit and rate denominator."""
+    if quantities(ref)!=quantities(hyp):return set()
+
+    def readings(tokens):
+        def unit(index):
+            power=tokens[index] if index<len(tokens) and tokens[index] in ('square','cubic') else ''
+            index+=bool(power)
+            if index<len(tokens) and UNIT_WORD.fullmatch(tokens[index]):return (power,unit_name(tokens[index])),index+1
+            return (),index
+
+        for index,token in enumerate(tokens):
+            if not token.startswith('#'):continue
+            numerator,end=unit(index+1)
+            denominator=unit(end+1)[0] if numerator and tokens[end:end+1]==['per'] else ()
+            yield index,token,(numerator,denominator)
+
+    return {(index,value,expected,observed) for (index,value,expected),(_,_,observed) in zip(readings(ref),readings(hyp))
+            if expected!=observed}
 
 
 def mathematical_markers(text):
@@ -337,12 +369,8 @@ def mathematical_markers(text):
     markers += ['exponent:3']*len(re.findall(r'\bcubic\b|\bcubed\b',text))
     for name,pattern in [('divide',r'\bdivided by\b'),('sine',r'\bsine\b'),('cosine',r'\bcosine\b')]:
         markers += [name]*len(re.findall(pattern,text))
-    units=r'(?:centi|milli|kilo)?met(?:er|re)s?|milligrams?|kilograms?|grams?|pounds?|yards?|seconds?|degrees?|inch(?:es)?|feet|foot|cm|mm|mg|kg|lbs?|(?:milli|micro)?volts?|kilopascals?|megabytes?|megabits?|kilobytes?|kilobits?|cups?|teaspoons?|tablespoons?|lit(?:er|re)s?|millilit(?:er|re)s?|celsius|fahrenheit|kelvin|ounces?|hours?|minutes?'
-    def unit(word):
-        word=word.replace('metre','meter').replace('litre','liter')
-        return {'cm':'centimeter','mm':'millimeter','mg':'milligram','kg':'kilogram','lb':'pound','lbs':'pound','inches':'inch','feet':'foot','celsius':'celsius'}.get(word,word.rstrip('s'))
-    markers += ['unit:'+unit(w) for w in re.findall(r'\b('+units+r')\b',text)]
-    markers += ['denominator:'+unit(w) for w in re.findall(r'\bper\s+(?:square\s+|cubic\s+)?('+units+r')\b',text)]
+    markers += ['unit:'+unit_name(w) for w in re.findall(r'\b('+UNITS+r')\b',text)]
+    markers += ['denominator:'+unit_name(w) for w in re.findall(r'\bper\s+(?:square\s+|cubic\s+)?('+UNITS+r')\b',text)]
     rates={'percent':r'\b(?:percent|per cent)\b|%', 'per_mille':r'\bper\s+mille\b|‰', 'basis_point':r'\bbasis\s+points?\b'}
     for label,pattern in rates.items():markers += ['rate:'+label]*len(re.findall(pattern,text))
     financial={'dollar sign':'unassigned-dollar','us dollar':'usd','canadian dollar':'cad','australian dollar':'aud',
@@ -363,7 +391,7 @@ def mathematical_markers(text):
         if t=='bar' and i and i+1<len(ts) and ts[i+1] in ('slash','subscript','subscripts','superscript','superscripts'):
             markers.append('bar:'+ts[i-1])
         if t=='to' and i and i+1<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#'):markers.append('numeric-range')
-        if t=='by' and i and i+2<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#') and re.fullmatch(units,ts[i+2]):markers.append('dimension-axis')
+        if t=='by' and i and i+2<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#') and UNIT_WORD.fullmatch(ts[i+2]):markers.append('dimension-axis')
         if t in ('a','p') and i and ts[i+1:i+2]==['m']:
             previous=ts[i-1] if ts[i-1]!="o'clock" or i<2 else ts[i-2]
             if previous.startswith('#'):markers.append('meridiem:'+t)

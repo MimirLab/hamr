@@ -4,6 +4,7 @@ import io
 import json
 from pathlib import Path
 import tarfile
+from types import SimpleNamespace
 
 import pytest
 
@@ -116,3 +117,107 @@ def test_unsupported_platform_rejected_before_acquisition(tmp_path, monkeypatch,
         backend.setup(Store(tmp_path / 'state'), 'vulkan-f16')
     assert failure.value.code == 'unsupported_platform'
     assert transfers == []
+
+
+def test_setup_replaces_mismatched_runtime_without_overwriting_prior_job_pins(tmp_path,monkeypatch,assets):
+    catalog,payloads,_=assets
+    store=Store(tmp_path/'state')
+    monkeypatch.setattr(backend,'Engine',lambda *_: Healthy())
+    first=backend.setup(store,'vulkan-q8')['identity']
+    previous_binary=Path(first['binary'])
+    previous_model=Path(first['model'])
+    previous_weights=previous_model.read_bytes()
+    previous_binary.write_bytes(b'damaged previous extraction')
+
+    runtime=catalog['runtimes']['hoppou']['linux_x86_64']
+    archive=io.BytesIO()
+    with tarfile.open(fileobj=archive,mode='w:gz') as tar:
+        binary=b'a different verified runtime'
+        entry=tarfile.TarInfo('engine/breeze-server')
+        entry.size=len(binary)
+        tar.addfile(entry,io.BytesIO(binary))
+        link=tarfile.TarInfo('engine/entry-link')
+        link.type,link.linkname=tarfile.SYMTYPE,'breeze-server'
+        tar.addfile(link)
+    model=catalog['packages']['hoppou-q8']['files'][0]
+    for record,data in ((runtime,archive.getvalue()),(model,b'different verified weights')):
+        payloads[record['url']]=data
+        record.update(bytes=len(data),sha256=hashlib.sha256(data).hexdigest())
+    writejson(backend.CATALOG,catalog)
+    current=backend.setup(store,'vulkan-q8')['identity']
+    assert Path(current['binary']).read_bytes()==binary
+    assert Path(current['model']).read_bytes()==b'different verified weights'
+    assert previous_binary.read_bytes()==b'damaged previous extraction' and previous_model.read_bytes()==previous_weights
+    assert current['runtime_archive_sha256']==runtime['sha256']
+    assert backend.setup(store,'vulkan-q8')['identity']==current
+
+    Path(current['binary']).write_bytes(b'damaged current extraction')
+    repaired=backend.setup(store,'vulkan-q8')['identity']
+    assert repaired['binary']!=current['binary'] and Path(repaired['binary']).read_bytes()==binary
+    assert Path(current['binary']).read_bytes()==b'damaged current extraction'
+    assert backend.setup(store,'vulkan-q8')['identity']==repaired
+
+
+class Healthy:
+    health={'actual_device':'cpu'}
+
+    def __enter__(self):return self
+    def __exit__(self,*_):pass
+
+
+def test_setup_counts_only_missing_bytes_for_a_bound_partial(tmp_path,monkeypatch,assets):
+    catalog,payloads,_=assets
+    store=Store(tmp_path/'state')
+    monkeypatch.setattr(backend,'Engine',lambda *_: Healthy())
+    runtime=catalog['runtimes']['hoppou']['linux_x86_64']
+    model=catalog['packages']['hoppou-q8']['files'][0]
+    license_file=next(f for f in catalog['packages']['official']['files'] if f['path']=='LICENSE')
+    directory=store.root/'assets/vulkan-q8'
+    directory.mkdir()
+    part=directory/(model['path']+'.part')
+    offset=model['bytes']-3
+    part.write_bytes(payloads[model['url']][:offset])
+    receipt=part.with_suffix('.part.json')
+    receipt.write_text('invalid partial receipt')
+    free=1024**3+runtime['bytes']+license_file['bytes']+3
+    monkeypatch.setattr(backend.shutil,'disk_usage',lambda _:SimpleNamespace(free=free))
+    with pytest.raises(Error) as rejected:backend.setup(store,'vulkan-q8')
+    assert rejected.value.code=='disk_space' and part.stat().st_size==offset
+    writejson(receipt,{k:model[k] for k in ('url','sha256','bytes')})
+    result=backend.setup(store,'vulkan-q8')
+    assert Path(result['identity']['model']).read_bytes()==payloads[model['url']]
+    assert not part.exists() and not receipt.exists()
+
+
+def test_combined_setup_activates_only_after_all_requested_stages(tmp_path,monkeypatch,capsys,assets):
+    from audiobook import checks_setup,ocr_setup
+    _,_,transfers=assets
+    store=Store(tmp_path/'state')
+    previous={'settings.json':{'profile':'old-speech'},'speech-checks.json':{'profile':'old-checks'},
+              'ocr-settings.json':{'profile':'old-ocr'}}
+    for name,value in previous.items():writejson(store.root/name,value)
+    monkeypatch.setattr(backend,'Engine',lambda *_:Healthy())
+    monkeypatch.setattr(checks_setup,'preflight',lambda:None)
+    check_result={'profile':'new-checks'}
+    monkeypatch.setattr(checks_setup,'provision',lambda *a,activate:check_result if not activate else pytest.fail('early ASR activation'))
+    args=['--home',str(store.root),'setup','--profile','vulkan-q8','--ocr-profile','auto','--json']
+    monkeypatch.setattr(ocr_setup,'tesseract_binary',lambda:(tmp_path/'missing',None))
+    assert cli.main(args)==2
+    assert json.loads(capsys.readouterr().out)['error']['code']=='missing_ocr' and not transfers
+    monkeypatch.setattr(ocr_setup,'preflight',lambda _:None)
+
+    def check_ocr(*args,activate):
+        assert not activate
+        assert all(loadjson(store.root/name)==value for name,value in previous.items())
+        raise Error('ocr_setup_failed','OCR startup control failed.')
+
+    monkeypatch.setattr(ocr_setup,'provision',check_ocr)
+    assert cli.main(args)==2
+    assert json.loads(capsys.readouterr().out)['error']['code']=='ocr_setup_failed'
+    assert all(loadjson(store.root/name)==value for name,value in previous.items())
+    monkeypatch.setattr(ocr_setup,'provision',lambda *a,activate:{'profile':'new-ocr'} if not activate else pytest.fail('early OCR activation'))
+    assert cli.main(args)==0
+    result=json.loads(capsys.readouterr().out)
+    assert loadjson(store.root/'settings.json')==result['identity']
+    assert loadjson(store.root/'speech-checks.json')==check_result
+    assert loadjson(store.root/'ocr-settings.json')==result['ocr']

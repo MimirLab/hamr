@@ -2,9 +2,10 @@ from __future__ import annotations
 import re
 from .core import Document,key,Error,digest
 
-RULES='faithful-14'
-SOURCE_STRUCTURE=('faithful-12','faithful-13',RULES)
-NORMALIZATION_TRACE=('faithful-13',RULES)
+RULES='faithful-16'
+CONTEXTUAL_RULES=('faithful-14','faithful-15',RULES)
+SOURCE_STRUCTURE=('faithful-12','faithful-13',*CONTEXTUAL_RULES)
+NORMALIZATION_TRACE=('faithful-13',*CONTEXTUAL_RULES)
 MODERN=('faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
 ASIDES=('faithful-3','faithful-4','faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
 BOUNDED=('faithful-4','faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
@@ -24,7 +25,10 @@ def normalize(text,aliases=None,rule_revision=RULES,abbreviation_audit=None,pres
     text=text.replace('\u00ad','').replace('\u00a0',' ')
     # Literal spelling is distinct from the runtime's performance-cue syntax.
     from .linguistic import literal_cues
-    text=literal_cues(text,current=rule_revision==RULES)
+    text=literal_cues(text,current=rule_revision in CONTEXTUAL_RULES)
+    if rule_revision==RULES:
+        from .performance import neutralize_controls
+        text=neutralize_controls(text)
     if rule_revision in ('faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE):
         if rule_revision in MODERN:
             from .linguistic import technical
@@ -166,7 +170,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         from .pdf_table_readings import apply_glyph_aliases
         doc=apply_glyph_aliases(doc,document_policy['pdf_glyph_aliases'])
     resolver=None
-    if rule_revision==RULES:
+    if rule_revision in CONTEXTUAL_RULES:
         from .contextual import Resolver
         resolver=Resolver(doc,policy,document_policy,aliases or {})
     section_defaults={k:v for k,v in policy.items() if k not in ('document','context','context_implementation','context_review','context_review_receipt')}
@@ -310,9 +314,12 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             text='Literal block. '+b.source; reason='Follow a procedure: speak the exact literal block by explicit policy.'; connector=True
         elif b.role=='table':
             rows=b.locator.get('rows',[])
+            column_headers=b.locator.get('table_header_cells') if rule_revision in ('faithful-15',RULES) else None
+            excluded={tuple(pair) for pair in b.locator.get('table_hidden_cells',())} if column_headers is not None else set()
+            caption='';note_suffix='';cell_spans={}
             if resolver and rows:
                 from .table_readings import split_cell_fractions
-                table_fragments=split_cell_fractions(rows)
+                table_fragments=split_cell_fractions(rows,0 if column_headers==[] else 1,excluded=excluded)
             if effective['tables']=='companion': action='companion'; reason='User explicitly selected table lookup in companion.'; text='The full table is available in the companion.'; connector=True
             elif table_fragments:
                 action='companion';reason='The table contains fraction-like fragments in separate cells.'
@@ -322,22 +329,32 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                     from .table_readings import rows_for_speech
                     marker=resolver.table_ditto(b,block_chapter,block_chapter_id) if resolver else None
                     readings=[*b.locator.get('ruby_cells',()),*b.locator.get('pdf_cell_readings',())]
+                    if column_headers is not None:
+                        from .table_readings import semantic_cells
+                        readings,cell_spans,note_suffix,caption=semantic_cells(b,effective.get('notes','after_paragraph'))
                     rows,table_issue=rows_for_speech(rows,table_context,marker=marker,cell_readings=readings,
-                                                   header_columns=b.locator.get('header_columns') if resolver else None)
+                                                   header_columns=b.locator.get('header_columns') if resolver else None,
+                                                   column_headers=column_headers,excluded=excluded)
                     if table_issue:action='unreadable';reason=table_issue;text='';rows=[]
             if rows and action=='speak':
                 headers=rows[0]
-                if any(len(r)!=len(headers) for r in rows): action='unreadable'; reason='Table cells do not have reliable header associations.'; text=''
+                if column_headers!=[] and any(len(r)!=len(headers) for r in rows): action='unreadable'; reason='Table cells do not have reliable header associations.'; text=''
                 else:
                     if resolver:
                         from .contextual import table_view
-                        text,cells=table_view(rows,b.locator.get('header_columns'))
+                        text,cells=table_view(rows,b.locator.get('header_columns'),column_headers=column_headers,caption=caption,excluded=excluded)
+                        text+=note_suffix
                         rendered={(cell['row'],cell['column']) for cell in b.locator.get('pdf_cell_readings',())}
-                        if rendered:
+                        if rendered or column_headers is not None:
                             prepared_text=text
-                            prepared_spans=[(start,end) for start,end,row,column,*_ in cells if (row,column) in rendered]
+                            caption_end=len(caption.rstrip())
+                            prepared_spans=[(len('Table. ')+a,len('Table. ')+min(b,caption_end))
+                                            for a,b in cell_spans.get((-1,0),()) if a<caption_end]
+                            for start,end,row,column,*_ in cells:
+                                if (row,column) in rendered:prepared_spans.append((start,end))
+                                else:prepared_spans.extend((start+a,start+b) for a,b in cell_spans.get((row,column),()))
                     else:text='Table. '+' '.join('; '.join(f'{h}: {v}' for h,v in zip(headers,row))+'.' for row in rows[1:])
-                    reason='Speak every row with explicit header labels; keep exact table in companion.'
+                    reason='Speak every data row with its authored labels where available.' if column_headers is not None else 'Speak every row with explicit header labels; keep exact table in companion.'
         if effective['references']=='companion' and re.search(r'^(bibliography|references|works cited|index)$',block_chapter,re.I):
             action='companion'; reason='Bibliography lookup retained in companion by selected policy.'; text=''
         if b.id in overrides:
@@ -473,5 +490,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     if rule_revision in SOURCE_STRUCTURE:
         from .review_grouping import source_groups
         result['review_groups']=source_groups(doc.json(),result)
+    if rule_revision==RULES:
+        from .performance import annotate
+        annotate(result,doc)
     result['plan_sha256']=key(result)
     return result

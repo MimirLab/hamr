@@ -64,9 +64,10 @@ Use the same command with a PDF, Markdown, or `.txt` file. Add `--yes` for unatt
 | When you want to… | Where to start |
 | --- | --- |
 | **Hear a book read naturally** | Contextual reading is on by default. Hamr uses nearby words and document structure to read abbreviations, amounts, dates and times. The companion preserves the original wording. Use `hamr plan DOCUMENT --json` to inspect the reading before synthesis. [Reading and pronunciation controls](docs/USAGE.md#tune-readings-that-depend-on-context) |
+| **Give dialogue some acting** | Automatic delivery can follow cues like a written sigh or a directly attributed shout with tested voice and engine combinations. `--performance experimental` lets you try more, including whispers across an attribution, targeted emphasis and lines that build in urgency. [Supported cues and how to audition them](docs/USAGE.md#audition-dialogue-delivery) |
 | **Listen to a scanned PDF** | With Tesseract installed, `hamr setup --ocr-only` adds offline English OCR. Hamr can read simple two-column scans and recognize scanned regions beside selectable text. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr) |
 | **Pick up where a book stopped** | `hamr resume JOB` checks and reuses saved takes. A retake changes one passage, and `hamr status JOB` shows whether a book is ready or needs review. [Recovery and repair](#resume-and-repair) |
-| **Check the words before export** | The ordinary book command runs local speech checks before publishing. `hamr status JOB` gives the next step if a passage needs review. [Offline checks and unattended queues](docs/USAGE.md#unattended-speech-and-verification) |
+| **Check the words before export** | The ordinary book command runs local speech checks before publishing. Use `hamr transcribe CLIP.wav` to inspect a disputed recording with the installed verifier. [Speech checking](docs/USAGE.md#speech-verifier-presets) |
 
 The [release notes](RELEASE.md) record completed render, playback and interruption tests and the scope of each result.
 
@@ -115,7 +116,7 @@ man hamr
 
 The installer checks the wheel version and installs the command and Linux manual for your account. If you prefer to run directly from a source checkout, stay in that directory and use `uv run hamr` in place of `hamr`. For example, `uv run hamr setup` runs setup through the checkout’s environment and `uv run hamr open "/path/to/My book.epub" --voice cast:nigel-thornberry` makes a book. Use the installed command for work outside the checkout.
 
-If a checkout reports a missing speech checker, run `uv run hamr setup --checks-only` from that checkout with the same `--home` option, if used. Checker setup requires no speech engine profile. `git pull` updates the checkout. Reinstall the wheel to update the separate `hamr` command on PATH.
+If a checkout reports a missing speech checker, run the recovery command it prints, or run `uv run hamr setup --checks-only` from that checkout with the same `--home` option, if used. Checker setup chooses a verifier automatically and requires no speech engine profile. `git pull` updates the checkout. Reinstall the wheel to update the separate `hamr` command on PATH.
 
 Linux has the broadest test coverage. Windows x64 with CPU Q8 has passed installation, checked M4B publication and forced-exit recovery on a native runner. See the [Windows installation and engine guide](docs/ENGINES.md#what-hamr-can-use) for that route and the status of Windows Vulkan.
 
@@ -127,7 +128,7 @@ With a compatible graphics device and enough free memory, setup offers the full 
 
 **Vulkan** lets the speech engine use your GPU through its graphics driver. It supports AMD, NVIDIA and Intel hardware with a suitable driver. **F16** stores the model's weights at 16-bit precision. **Quantization** uses fewer bits: Q8, Q6 and Q4 need progressively less storage and memory, but may change the voice's detail and delivery. A smaller model can be faster, though that depends on the hardware.
 
-Setup downloads the selected engine and a separate CPU speech checker. The two checker models add about 605 MiB plus runtime dependencies. Setup verifies the pinned files and checks that the models load.
+Setup downloads the selected engine and a separate CPU speech checker. The Whisper pair adds about 605 MiB plus runtime dependencies. Eligible hosts can also use Fluid INT8, which adds about 801 MB of model files. Setup verifies the pinned files and checks that the models load.
 
 | Profile | Hardware route¹ | Approx. peak VRAM² | System RAM budget² | Fresh download³ | Quality / speed and testing |
 | --- | --- | ---: | ---: | ---: | --- |

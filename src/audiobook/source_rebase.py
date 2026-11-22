@@ -8,7 +8,7 @@ def conflict():
     raise Error('repair_rebase_conflict','A saved decision has no unique matching source occurrence after reimport.','Keep the existing job and inspect its source context; supply an explicit policy for the new import.')
 
 
-def rebase(previous,fresh,repairs,policy=None):
+def rebase(previous,fresh,repairs,policy=None,*,retain_sources=()):
     if previous.source_sha256!=fresh.source_sha256:conflict()
     original=deepcopy(previous.blocks);by_id={b.id:b for b in original}
     edits=[r for r in repairs if 'block' in r]
@@ -17,10 +17,11 @@ def rebase(previous,fresh,repairs,policy=None):
         b=by_id.get(edit['block'])
         if b is None or b.source!=edit['replacement']:conflict()
         b.source=edit['original']
-    targets={r['block'] for r in edits}
+    targets={r['block'] for r in edits}|set(retain_sources)
     if policy:
         targets.update(policy.get('blocks',{}))
         targets.update(policy.get('pdf_glyph_aliases',{}))
+        targets.update(policy.get('performance',{}).get('disabled_blocks',[]))
         structure=policy.get('structure',{})
         targets.update(structure.get('title',{}).get('source_blocks',[]))
         targets.update(r['source_block'] for r in structure.get('chapters',[]))
@@ -56,6 +57,9 @@ def rebase(previous,fresh,repairs,policy=None):
         new_policy['blocks']={mapped[k]:v for k,v in new_policy.get('blocks',{}).items()}
         if 'pdf_glyph_aliases' in new_policy:
             new_policy['pdf_glyph_aliases']={mapped[k]:v for k,v in new_policy['pdf_glyph_aliases'].items()}
+        performance=new_policy.get('performance',{})
+        if 'disabled_blocks' in performance:
+            performance['disabled_blocks']=[mapped[k] for k in performance['disabled_blocks']]
         structure=new_policy.get('structure',{})
         if structure.get('title'):structure['title']['source_blocks']=[mapped[k] for k in structure['title']['source_blocks']]
         for chapter in structure.get('chapters',[]):chapter['source_block']=mapped[chapter['source_block']]

@@ -1,4 +1,4 @@
-.TH HAMR 1 "2026-11-20" "hamr 0.4 preview" "User Commands"
+.TH HAMR 1 "2026-11-22" "hamr 0.4.0" "User Commands"
 .SH NAME
 hamr \- turn EPUB, PDF, Markdown and plain-text documents into local audiobooks
 .SH SYNOPSIS
@@ -36,7 +36,7 @@ speech checks. Use
 .BI \-\-profile " PROFILE"
 for explicit selection,
 .B \-\-checks-only
-to add speech checks, or
+to add speech checks without choosing an engine profile, or
 .B \-\-engine-only
 to configure just speech generation.
 .B \-\-ocr-only
@@ -71,6 +71,11 @@ to write under ~/Audiobooks.
 .B "plan, profile, queue, worker"
 Inspect a proposed reading, save reading preferences, create a queued
 job, or process the queue.
+.B "worker \-\-once \-\-json"
+reports each job handled in that pass. A failure exits 2 and a review
+hold exits 3 when no job failed. Use
+.B "hamr status JOB"
+for the saved reason and recovery command.
 .TP
 .BI "resume " JOB
 Continue a saved job using verified takes and speech observations.
@@ -109,6 +114,35 @@ to supply a local array of candidate replies, or
 to request a review from a loopback HTTP service.
 The service may request one follow-up with bounded source context.
 Accepted choices are saved with the job.
+.SH PERFORMANCE
+.B \-\-performance
+selects
+.BR auto ,
+.BR off ,
+or
+.BR experimental .
+Automatic delivery uses recipes auditioned for the job's pinned speech
+profile. Experimental mode enables candidate dialogue delivery, authored
+sounds, and heading cadence. In study or procedure mode it can also
+guide the delivery of a complete table or equation. Use
+.B "hamr preview JOB --utterance ID --play"
+to hear the effective request. Speech recognition can flag a directed
+take for listening review while preserving the original take.
+.TP
+.B "hamr setup --checks-only --asr-profile auto"
+Set up offline verification independently of the speech engine. Auto selects
+a qualified verifier by platform, available system memory and disk space.
+Choose fluid-int8 or whisper explicitly. Doctor reports the active verifier
+and its recommendation. Ordinary open and resume use the selected verifier.
+From a source checkout, use
+.B "uv run hamr setup --checks-only"
+with the same state directory as the book command.
+.TP
+.B "hamr transcribe INPUT"
+Compare the active verifier and a second local recognizer on an audio excerpt of up to
+125 seconds. Supply a job ID and
+.B --utterance
+to check the exact committed passage. The command leaves job state untouched.
 .SH EXIT STATUS
 .TP
 .B 0

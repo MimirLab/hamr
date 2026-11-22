@@ -16,7 +16,7 @@ Accept the suggested profile during setup and enter `y` after checking the book 
 
 The [installation commands](../README.md#install-on-linux) build and install the app for your account. Run `hamr --version` and `man hamr` to check discovery. The installer uses locked dependencies. A source checkout can also run `uv run hamr` from the project directory. The installer accepts `./install.sh APP_DIRECTORY COMMAND_DIRECTORY` for a separate installation. Set `HAMR_MAN_DIR` to choose its manual hierarchy, then use `man -M "$HAMR_MAN_DIR" hamr` if needed.
 
-Use [the profile guide](../README.md#which-profile-should-i-choose) if you need a different model. Setup downloads the selected engine and two offline speech recognition models and checks that they load. Setup keeps verified partial downloads for retry. `--cache DIRECTORY` accepts verified engine files by filename and checker files in `base.en/` and `small.en/`. Run `hamr setup --checks-only` after upgrading an installation that already has a working engine. Use `--engine-only` when configuring speech generation for a separate manual QA workflow.
+Use [the profile guide](../README.md#which-profile-should-i-choose) if you need a different speech engine. Setup selects the offline speech verifier separately. It keeps verified partial downloads for retry. `--cache DIRECTORY` accepts verified engine files by filename and checker files in `base.en/`, `small.en/`, and `fluid-int8/`. Run `hamr setup --checks-only` after upgrading an installation that already has a working engine. Use `--engine-only` when configuring speech generation for a separate manual QA workflow.
 
 ```sh
 hamr doctor
@@ -37,6 +37,8 @@ uv build --wheel
 hamr --version
 hamr setup --checks-only
 ```
+
+If you use the checkout directly, `git pull --ff-only` followed by `uv run hamr setup --checks-only` updates the checkout and installs its speech checker. Repeat your original book command afterward. Keep the same `--home` before the subcommand if you use custom state. The recovery command Hamr prints includes the exact state directory and keeps checkout commands in their checkout.
 
 ## Everyday commands
 
@@ -67,7 +69,7 @@ Use `--notes after_paragraph|inline|companion` to control linked notes. `--chapt
 
 ### Check how a document will be read
 
-Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-14` rules.
+Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-16` rules.
 
 - Markdown note definitions can contain several paragraphs or list items. A code span containing a note marker stays literal. Missing, duplicate and nested note targets need review when selected for speech.
 - Plain `.txt` files accept UTF-8 or BOM-marked UTF-16/UTF-32. Blank lines separate paragraphs. The source locations retain exact decoded lines and line endings. Convert files from other encodings before opening them.
@@ -78,6 +80,60 @@ Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisi
 In a decision’s `normalization.edits`, the input and output ranges use half-open Unicode code-point offsets. Read input offsets against `source` when `input_basis` is `block_source`. When earlier processing changed the text, use the included `normalization.input`. Output offsets point into `spoken`. These mappings cover the new typed readings. Other transformations have their own provenance, such as note links, PDF locations and abbreviation evidence.
 
 For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new spoken rules. Add `--reimport` to pick up importer fixes from the original snapshot. Examine the new review state with `hamr show JOB --content` before resuming.
+
+### Audition dialogue delivery
+
+Hamr can give Breeze a delivery instruction for clearly attributed dialogue and for prose with a clear local cue. An immediate setup such as “She lowered her voice” can shape the same speaker’s next line. Two different details can support a direction together, as when a character leans closer and their words become barely audible. Competing directions leave the reading plain. Experimental mode recognizes reporting verbs before the speaker as well, as in “whispered Alice.” A quiet scene requires corroborating details, such as a silent room and a character holding their breath. The plan records the source spans and delivery cues behind a decision. Hamr requires an explicit authored marker to perform a sound.
+
+Authored sounds include sighs, laughter, chuckles, gasps, coughs, throat clearing, groans, sniffles, lip smacks, hiccups, sneezes, and sobs. Hamr attaches a sound to an identifiable dialogue turn. A written laugh at the start of an eligible line plays as a short chuckle. Clearly attributed dialogue can also carry delivery such as whispering, urgency, restraint, irony, or distress. These cues apply to listen mode in EPUB, Markdown, and plain text. Hamr keeps each affected utterance intact and preserves the original wording in the companion.
+
+`--performance auto` is the default. With the packaged Nigel Thornberry or Cave Johnson reference and the exact tested runtime and weights, Linux CPU Q8 performs an explicit sigh before dialogue. Linux Vulkan Q8 performs an explicit sigh at the end of the same dialogue request and uses forceful delivery for directly attributed shouts. With Nigel, it also performs an authored opening laugh and reads a quiet setting with a character holding their breath with restrained anticipation. Other candidates are available through `--performance experimental`. Choose `--performance off` for ordinary readings throughout a book.
+
+Experimental mode gives an authored heading a measured cadence and can use clear articulation for a complete table or equation in study or procedure mode. It also tries a gentler entry after a whisper or on a chapter heading that leads into a quiet passage. These directions keep the words and existing pauses. Cave Johnson’s tearful direction asks Breeze to retain his usual register and timbre.
+
+Experimental dialogue can keep a split quotation and its intervening attribution in one request. An explicitly continuing named speaker can carry a low or restrained delivery into one adjacent turn. Hamr records both source spans. A direct attribution can also request a rise or fall across two or more quoted sentences. When the author names a phrase to stress, Hamr requires a single matching occurrence inside the quotation. These requests use Breeze’s instruction channel and retain the spoken text.
+
+```sh
+hamr plan 'Scene.epub' --performance experimental --json
+hamr queue 'Scene.epub' --voice cast:nigel-thornberry --performance experimental --json
+hamr preview JOB --utterance u00003 --play
+hamr resume JOB
+```
+
+The plan lists a candidate's source block, intended words and Breeze request. Use the actual utterance ID shown by `hamr show JOB --content`. To change editions on a saved job, run `hamr repair JOB --performance off` or select another performance mode. A source-bound document policy can suppress specific occurrences with `"performance": {"disabled_blocks": ["BLOCK_ID"]}`.
+
+Set `"performance": {"contextual_dialogue": "explicit"}` in the document policy to require a decisive cue for inferred dialogue. The default `corroborated` also takes two independent, compatible cues. Use `off` for dialogue with explicit attributions only. Direct attributions and authored sounds still follow the selected `--performance` mode.
+
+For a matched audition, add recipe-specific guidance or sampling to the existing source-bound document policy and use `--performance experimental --document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
+
+```json
+{
+  "source_sha256": "SOURCE_FILE_SHA256",
+  "performance": {
+    "tuning": {
+      "contrastive_emphasis": {"cfg_scale": 1, "temperature": 0.7, "top_k": 48}
+    }
+  }
+}
+```
+
+Set `source_sha256` to the file hash from `hamr plan`. Guidance accepts 1, 2, 2.5, or 3. Sampling ranges are 0.1–2 for `temperature`, 1–256 for `top_k`, 0.05–1 for `top_p`, and 0.8–1.4 for `repetition_penalty`. The controls change how Breeze generates a take. They can affect word fidelity and performance, so listen to matched takes before applying a tuned policy to a whole book.
+
+Hamr keeps a directed take when speech recognition flags it. A possible wording error can hold publication for listening review. When the surrounding words match, a short interjection or recognized cue label at the position of an authored sound is recorded as uncertain. A recognizer can transcribe an actual chuckle as “mm-hmm.” The raw transcript stays in the QA report.
+
+Compare two unprompted readings of the same committed take with `hamr transcribe JOB --utterance u00003 --json`. The report gives the PCM hash, native transcripts, word disagreements, and any intervals of exact digital silence lasting at least a quarter second. You can also run `hamr transcribe clip.wav --json` on a local excerpt up to 125 seconds. Neither command changes the take, job, or publication review. Use the actual audio to decide questions of performance, pronunciation, or sound quality.
+
+### Speech verifier presets
+
+`hamr setup` and `hamr setup --checks-only` select the verifier automatically. `hamr doctor` shows the active verifier, recommendation, and the reason for it. Set `--asr-profile` on either setup command to make an explicit choice.
+
+| Preset | Hardware and download | How Hamr uses it |
+| --- | --- | --- |
+| `auto` | Checks available system RAM, platform, and remaining download space | Chooses the strongest qualified fit and checks its installed runtime before activation. |
+| `fluid-int8` | Qualified on Linux x86-64 CPU. Requires 2.75 GiB available RAM for whole takes. The model adds about 801 MB to the baseline downloads. | Reads every take for publication. Whisper can corroborate a critical fault before an ordinary take is retried. |
+| `whisper` | Lower-memory CPU preset and the baseline for Windows x64. Model files total about 634 MB. | Uses the faster-whisper pair. Choose it explicitly when limiting setup size or memory. |
+
+The verifier uses system RAM and runs in a separate process. When memory is tight during synthesis, Hamr defers the heavier check until the synthesis process releases its resources. Each recognizer exits before the next starts. Fluid keeps the raw words, including fillers and repeats, and reports its segment timing as unavailable. Hamr keeps directed takes for review when a recognizer flags them. [Fluid Speech Pro ONNX model and license](https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx)
 
 ### Tune readings that depend on context
 
@@ -195,6 +251,8 @@ hamr resume JOB
 ```
 
 Ctrl-C, HUP and TERM stop owned work and retain verified clips. A single managed writer prevents rendering/GC races. Abrupt parent death terminates the owned Breeze child on Linux. The detached worker survives terminal close via a new session and private log, and continues unrelated queued jobs when one fails or needs review. A worker must be started again after logout/reboot; no boot/login service is installed. `pause`/`cancel` mark idle jobs; signal the owned foreground process to interrupt active work.
+
+For a foreground queue pass, `hamr worker --once --json` lists the jobs processed and their outcomes. Exit code 2 means a job failed. Exit code 3 means a job needs review and none failed. Jobs blocked before rendering retain a reason and a recovery command in `hamr status JOB`. After fixing the cause, run `hamr resume JOB`.
 
 Every source is copied by bytes before import; changing the original path does not change queued content. Repairs create a new output revision and preserve prior publications. The source occurrence ID is retained; no automatic rebasing across changed source bytes is claimed. The current state schema is 16. Supported older state is migrated transactionally, and newer schemas are rejected. Existing jobs retain their saved narration rules, sources, voice and model pins.
 

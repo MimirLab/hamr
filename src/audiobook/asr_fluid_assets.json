@@ -1,0 +1,38 @@
+{
+  "id": "fluid-int8",
+  "repository": "FluidVoice-Labs/fluid-speech-pro-onnx",
+  "revision": "fa588e9f87f1b9ad0ca2e2d8f7eaf84dc3803581",
+  "license": "CC-BY-4.0",
+  "files": [
+    {
+      "path": "config.json",
+      "bytes": 98,
+      "sha256": "21565538716b1cb134a096e3df9fa3f27f0470bc09c596d9faa578dc27d945d5"
+    },
+    {
+      "path": "decoder_joint-model.int8.onnx",
+      "bytes": 8586,
+      "sha256": "59e3ff4b22b6629bc5a23e627daff7697ec232d2d4e6de50597c907f4038bd29"
+    },
+    {
+      "path": "decoder_joint-model.int8.onnx.data",
+      "bytes": 53817344,
+      "sha256": "3c7a1e90be06acc16d858b989700cdb51f761c6129a45b0bdc0378f2b40a28a4"
+    },
+    {
+      "path": "encoder-model.int8.onnx",
+      "bytes": 955592,
+      "sha256": "07ad77459bd3bb165c2c53e978ed1dfd64c6e129b18af2ec5ee38343be1d4451"
+    },
+    {
+      "path": "encoder-model.int8.onnx.data",
+      "bytes": 745971712,
+      "sha256": "d2f8bfbb1fa399f207cde85aa3fabee0d67f6730cb31cbf31832c10de69f9c3c"
+    },
+    {
+      "path": "vocab.txt",
+      "bytes": 93939,
+      "sha256": "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d"
+    }
+  ]
+}

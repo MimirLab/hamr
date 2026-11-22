@@ -9,6 +9,34 @@ import sys
 from . import __version__
 
 
+def command_argv(root, *args):
+    """Build a follow-up command for this build and the state it just opened."""
+    launcher = Path(sys.argv[0]).absolute()
+    scripts = Path(sys.executable).parent
+    checkout = Path(__file__).resolve().parents[2]
+    if (launcher.name.lower() in ('hamr', 'hamr.exe') and launcher.parent == scripts and launcher.is_file()
+            and (checkout / 'pyproject.toml').is_file()
+            and (checkout / '.venv').resolve() == Path(sys.prefix).resolve()
+            and shutil.which('uv')):
+        prefix = ['uv', 'run', '--project', str(checkout), '--no-sync', 'hamr']
+    elif launcher.name.lower() in ('hamr', 'hamr.exe', 'audiobook', 'audiobook.exe') and launcher.is_file():
+        prefix = [str(launcher)]
+    else:
+        prefix = [sys.executable, '-m', 'hamr']
+    return [*prefix, '--home', str(root), *args]
+
+
+def shell_command(argv):
+    if os.name != 'nt':
+        return shlex.join(argv)
+    # PowerShell also needs its call operator before a quoted executable path.
+    return '& ' + ' '.join("'" + arg.replace("'", "''") + "'" for arg in argv)
+
+
+def command(root, *args):
+    return shell_command(command_argv(root, *args))
+
+
 def inspect():
     windows = os.name == 'nt'
     if windows:

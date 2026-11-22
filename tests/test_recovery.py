@@ -217,6 +217,42 @@ def test_explicit_reimport_preserves_saved_verified_edit(job):
     repair(s,j['id'],block_id=b['id'],text='Keep the verified zero point zero eight milligrams.'); repair(s,j['id'],reimport=True)
     saved=s.get(j['id']); assert any(x['source']=='Keep the verified zero point zero eight milligrams.' for x in saved['document']['blocks']); assert saved['voice']==j['voice']
 
+
+def test_reimport_rebases_retaken_source_and_cleanup_keeps_the_new_audio_pin(job,monkeypatch):
+    from copy import deepcopy
+    from audiobook import jobs
+
+    store,original,_=job
+    target=original['plan']['utterances'][1]
+    repair(store,original['id'],retake=target['id'])
+    selected=store.get(original['id'])
+    retaken=selected['plan']['utterances'][1]
+    keep=clip_key(retaken,selected)
+    pcm=store.root/'clips'/clip_key(target,original)/'audio.pcm'
+    data=pcm.read_bytes()
+    atomic(store.root/'clips'/keep/'audio.pcm',data)
+    writejson(store.root/'clips'/keep/'receipt.json',{'key':keep,**validate_pcm(data)[1]})
+    malformed=store.root/'clips'/('a'*64)
+    writejson(malformed/'receipt.json',[])
+    fresh=jobs.document(deepcopy(original))
+    changed=next(b for b in fresh.blocks if b.id==target['sources'][0])
+    changed.id='reimported-'+changed.id
+    monkeypatch.setattr(jobs,'cached_inspect',lambda *args:deepcopy(fresh))
+    repair(store,original['id'],reimport=True)
+    saved=store.get(original['id'])
+    matching=next(u for u in saved['plan']['utterances'] if changed.id in u['sources'])
+    assert matching['seed']==43 and clip_key(matching,saved)==keep
+    cleanup(store,apply=True)
+    assert valid_clip(store,keep) and malformed.is_dir()
+
+    # A split or moved occurrence could no longer recover this exact selected take.
+    changed.source+=' Additional source sentence.'
+    snapshot=store.get(original['id'])
+    with pytest.raises(Error) as conflict:
+        repair(store,original['id'],reimport=True)
+    assert conflict.value.code=='repair_rebase_conflict'
+    assert store.get(original['id'])==snapshot and valid_clip(store,keep)
+
 def test_repair_pins_old_rule_until_explicit_upgrade(job):
     from audiobook.jobs import document
     from audiobook.planner import plan

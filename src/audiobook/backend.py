@@ -1,5 +1,5 @@
 from __future__ import annotations
-import contextlib,hashlib,http.client,json,os,platform,shutil,socket,subprocess,sys,threading,time,urllib.request,wave
+import contextlib,hashlib,http.client,json,os,platform,shutil,socket,stat,subprocess,sys,tempfile,threading,time,urllib.request,uuid,wave
 from pathlib import Path
 import httpx,numpy as np
 from .core import Error,RATE,atomic,digest,filehash,key,loadjson,run,writejson
@@ -44,29 +44,53 @@ def transfer_asset(url,part,offset,size,*,progress=None,label=None):
 
 def doctor(store):
     from .hardware import inspect_host,advise
-    from .checks_setup import configured
-    from .installation import inspect as inspect_installation
+    from .checks_setup import configured, speech_advice
+    from .installation import command, inspect as inspect_installation
     from .ocr_setup import describe as describe_ocr
+    from .asr_fluid import advice as speech_diagnostic
     host=inspect_host();advice=advise(host,loadjson(CATALOG))
+    if choice:=advice['recommended_profile']:
+        choice['command']=command(store.root,'setup','--profile',choice['profile'])
     dependencies={x:shutil.which(x) for x in ['ffmpeg','ffprobe','mpv','tesseract']}
     issues=[{'code':'missing_dependency','executable':x,'action':f'Install {x} in user space before rendering.'} for x in ('ffmpeg','ffprobe') if not dependencies[x]]
     installation,installation_issues=inspect_installation()
     if not dependencies['mpv']:
         issues.append({'code':'missing_player','executable':'mpv','action':'Install mpv to use hamr playback commands.'})
-    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,'ocr':describe_ocr(store,host),**advice}
+    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'speech_diagnostic':speech_diagnostic(store,host),'speech_verifier':speech_advice(store,host),'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,'ocr':describe_ocr(store,host),**advice}
+
+def bound_partial(dst,wanted):
+    part=dst.with_suffix(dst.suffix+'.part'); identity=part.with_suffix(part.suffix+'.json')
+    if part.is_symlink() or part.exists() and (not part.is_file() or part.stat().st_nlink!=1):raise Error('unsafe_path','Asset partial must be an owned regular file with one link.')
+    if identity.is_symlink() or (identity.exists() and not identity.is_file()):
+        raise Error('unsafe_path','The asset partial receipt must be a local regular file.')
+    if part.exists() and identity.is_file():
+        try: recorded=loadjson(identity)
+        except ValueError: recorded=None
+        offset=part.stat().st_size
+        if recorded==wanted and 0<offset<wanted['bytes']:
+            return part,identity,offset
+    return part,identity,0
+
+
+def remaining_bytes(url,dst,expected,size):
+    if dst.is_symlink() or dst.exists() and not dst.is_file():
+        raise Error('unsafe_path','An asset must be a local regular file.')
+    if dst.exists(): return 0
+    return size-bound_partial(dst,{'url':url,'sha256':expected,'bytes':size})[2]
+
 
 def acquire(url,dst,expected,size,*,progress=None,label=None):
     label=label or dst.name
+    if dst.is_symlink() or dst.exists() and not dst.is_file():
+        raise Error('unsafe_path','An asset must be a local regular file.')
     if dst.exists():
         if progress: progress.stage(f'Checking cached {label} ({size_text(size)})')
         if dst.stat().st_size==size and filehash(dst)==expected: return
         raise Error('asset_corrupt','Installed candidate asset failed checksum.','Remove only this failed candidate and run setup again.')
-    part=dst.with_suffix(dst.suffix+'.part'); identity=part.with_suffix(part.suffix+'.json')
-    if part.is_symlink() or part.exists() and (not part.is_file() or part.stat().st_nlink!=1):raise Error('unsafe_path','Asset partial must be an owned regular file with one link.')
     wanted={'url':url,'sha256':expected,'bytes':size}
-    if part.exists() and (not identity.exists() or loadjson(identity)!=wanted): part.unlink()
-    if part.exists() and part.stat().st_size>=size: part.unlink()
-    writejson(identity,wanted); offset=part.stat().st_size if part.exists() else 0
+    part,identity,offset=bound_partial(dst,wanted)
+    if not offset: part.unlink(missing_ok=True)
+    writejson(identity,wanted)
     try:
         options={'progress':progress,'label':label} if progress else {}
         transfer_asset(url,part,offset,size,**options)
@@ -75,42 +99,98 @@ def acquire(url,dst,expected,size,*,progress=None,label=None):
         os.replace(part,dst); identity.unlink(missing_ok=True)
     except (OSError,http.client.HTTPException) as e: raise Error('download_failed',f'Asset acquisition failed ({type(e).__name__}).','Check connectivity and disk space; repeat setup to resume.') from e
 
-def setup(store,profile,cache=None,*,progress=None,before_activate=None):
+def asset_destination(root,record):
+    legacy=root/record['path']
+    if legacy.is_symlink() or legacy.exists() and not legacy.is_file():
+        raise Error('unsafe_path','An asset must be a local regular file.')
+    if not legacy.exists(): return legacy,False
+    if legacy.stat().st_size==record['bytes'] and filehash(legacy)==record['sha256']:
+        return legacy,True
+    # Preserve the previous bytes and their path for jobs pinned to this basename.
+    destination=root/'pinned'/record['sha256']/record['path']
+    for directory in (destination.parent.parent,destination.parent):
+        if directory.is_symlink() or directory.is_junction():
+            raise Error('unsafe_path','Pinned assets must use an owned Hamr directory.')
+        directory.mkdir(exist_ok=True)
+    return destination,False
+
+
+def runtime_tree(directory):
+    files={}
+    for path in directory.rglob('*'):
+        relative=path.relative_to(directory).as_posix()
+        if path.is_symlink():
+            files[relative]=('link',os.readlink(path))
+        elif path.is_file():
+            files[relative]=('file',filehash(path),stat.S_IMODE(path.stat().st_mode))
+        elif path.is_dir():
+            files[relative]=('directory',)
+        else:
+            files[relative]=('special',)
+    return files
+
+
+def verified_runtime(root,archive,archive_sha,variant,progress):
+    if progress: progress.stage('Checking the Breeze runtime against its pinned archive')
+    stage=root/f'.runtime-{archive_sha}.partial'
+    if stage.is_symlink() or stage.is_junction() or stage.exists() and not stage.is_dir():
+        raise Error('unsafe_path','The runtime staging path must be an owned Hamr directory.')
+    if stage.exists():shutil.rmtree(stage)
+    stage.mkdir()
+    legacy=root/('runtime-windows' if variant=='windows_x86_64' else 'runtime')
+    destination=root/f'runtime-{archive_sha}'
+    try:
+        extract_hoppou(archive,stage,variant)
+        windows=variant=='windows_x86_64'
+        candidates=list(stage.rglob('breeze-server.exe' if windows else 'breeze-server'))
+        if len(candidates)!=1 or not candidates[0].is_file():
+            raise Error('runtime_layout','Expected one breeze-server executable.')
+        relative=candidates[0].relative_to(stage)
+        if not windows: candidates[0].chmod(0o755)
+        expected=runtime_tree(stage)
+        for path in (destination,*sorted(root.glob(destination.name+'-repair-*')),legacy):
+            if path.is_symlink() or path.is_junction() or not path.is_dir(): continue
+            if runtime_tree(path)==expected: return path,path/relative
+        if destination.exists() or destination.is_symlink():
+            destination=root/f'{destination.name}-repair-{uuid.uuid4().hex}'
+        stage.rename(destination)
+        return destination,destination/relative
+    finally:
+        if stage.exists():shutil.rmtree(stage)
+
+
+def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_ocr_activate=None):
     c=loadjson(CATALOG); profiles={p['id']:p for p in c['profiles']}; p=profiles.get(profile)
     if not p or p['runtime']!='hoppou': raise Error('unsupported_profile',f'Backend profile {profile!r} is unknown or catalog-only in this build.','Run hamr profiles for the built-in CPU/Vulkan model choices; selecting one downloads its pinned runtime and weights.')
     variant=runtime_key(platform.system(),platform.machine())
     if variant is None or variant not in c['runtimes']['hoppou']:
         raise Error('unsupported_platform','This speech runtime is available for x86_64 Linux and Windows.','Run hamr profiles to see the supported builds and research candidates.')
     with store.lock():
-        r=c['runtimes']['hoppou'][variant]; package=c['packages'][p['packages'][0]]; root=store.root/'assets'/profile; root.mkdir(exist_ok=True)
-        files=[dict(r,path=r['filename']),*package['files']]
-        required=sum(f['bytes'] for f in files if not (root/f['path']).exists())
-        if shutil.disk_usage(root).free<required+1024**3: raise Error('disk_space','Insufficient asset acquisition headroom.','Free space on the state filesystem.')
-        for f in files:
-            dst=root/f['path']
-            if cache and (Path(cache)/f['path']).exists() and not dst.exists():
-                src=Path(cache)/f['path']
-                if src.stat().st_size!=f['bytes'] or filehash(src)!=f['sha256']: raise Error('asset_integrity','Cached candidate does not match catalog.')
-                shutil.copyfile(src,dst)
-            acquire(f['url'],dst,f['sha256'],f['bytes'],**({'progress':progress} if progress else {}))
-        runtime=root/('runtime-windows' if variant=='windows_x86_64' else 'runtime')
-        if not runtime.exists():
-            if progress: progress.stage('Extracting the Breeze runtime')
-            stage=runtime.with_suffix('.partial')
-            if stage.exists(): store.safe_remove(stage)
-            stage.mkdir()
-            extract_hoppou(root/r['filename'],stage,variant)
-            stage.rename(runtime)
-        windows=variant=='windows_x86_64'
-        candidates=list(runtime.rglob('breeze-server.exe' if windows else 'breeze-server'))
-        if len(candidates)!=1: raise Error('runtime_layout','Expected one breeze-server executable.')
-        binary=candidates[0]
-        if not windows: binary.chmod(0o755)
-        # Preserve executable/shared-library identities, and model terms locally.
-        terms=root/'MODEL-LICENSE'
+        r=c['runtimes']['hoppou'][variant]; package=c['packages'][p['packages'][0]]; root=store.root/'assets'/profile
+        if root.is_symlink() or root.is_junction(): raise Error('unsafe_path','Backend assets must use an owned Hamr directory.')
+        root.mkdir(exist_ok=True)
         license_file=next(f for f in c['packages']['official']['files'] if f['path']=='LICENSE')
-        acquire(license_file['url'],terms,license_file['sha256'],license_file['bytes'],**({'progress':progress} if progress else {}))
-        identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':c['runtimes']['hoppou']['revision'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(root/package['files'][0]['path']),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{x.relative_to(runtime).as_posix():filehash(x) for x in runtime.rglob('*.dll' if windows else '*.so*') if x.is_file()}}
+        files=[dict(r,path=r['filename']),*package['files'],dict(license_file,path='MODEL-LICENSE')]
+        destinations=[asset_destination(root,f) for f in files]
+        cache_paths=[Path(cache)/f['path'] if cache else None for f in files[:-1]]+[None]
+        required=sum(f['bytes'] if src and src.exists() else remaining_bytes(f['url'],dst,f['sha256'],f['bytes'])
+                     for f,(dst,validated),src in zip(files,destinations,cache_paths) if not validated and not dst.exists())
+        if shutil.disk_usage(root).free<required+1024**3: raise Error('disk_space','Insufficient asset acquisition headroom.','Free space on the state filesystem.')
+        for f,(dst,validated),src in zip(files,destinations,cache_paths):
+            if validated: continue
+            if src and src.exists() and not dst.exists():
+                if src.stat().st_size!=f['bytes'] or filehash(src)!=f['sha256']: raise Error('asset_integrity','Cached candidate does not match catalog.')
+                with tempfile.NamedTemporaryFile(dir=dst.parent,delete=False) as staged: temporary=Path(staged.name)
+                try:
+                    shutil.copyfile(src,temporary)
+                    os.replace(temporary,dst)
+                finally:
+                    temporary.unlink(missing_ok=True)
+            acquire(f['url'],dst,f['sha256'],f['bytes'],**({'progress':progress} if progress else {}))
+        runtime,binary=verified_runtime(root,destinations[0][0],r['sha256'],variant,progress)
+        windows=variant=='windows_x86_64'
+        terms=destinations[-1][0]
+        identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':c['runtimes']['hoppou']['revision'],'runtime_archive_sha256':r['sha256'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(destinations[1][0]),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{x.relative_to(runtime).as_posix():filehash(x) for x in runtime.rglob('*.dll' if windows else '*.so*') if x.is_file()}}
         if windows: identity['runtime_platform']=variant
         # A real startup proves activation before replacing known-working settings.
         try:
@@ -136,6 +216,12 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None):
         result={'schema_version':1,'profile':profile,'health':health,'identity':identity,'model_terms':str(terms),'runtime_platform':variant}
         if before_activate:
             result['speech_checks']=before_activate()
+        if before_ocr_activate:
+            result['ocr']=before_ocr_activate()
+        if before_activate:
+            writejson(store.root/'speech-checks.json',result['speech_checks'])
+        if before_ocr_activate:
+            writejson(store.root/'ocr-settings.json',result['ocr'])
         writejson(store.root/'settings.json',identity)
         return result
 
@@ -157,7 +243,12 @@ class ResidentEngineSession:
         self.store=store;self.factory=factory or Engine;self.engine=None;self.identity=None;self.starts=0;self.closed=False
     def __enter__(self):return self
     def __exit__(self,*exc):
-        engine=self.engine;self.engine=None;self.closed=True
+        self.closed=True
+        self.release(*exc)
+    def release(self,*exc):
+        """Release the current process while keeping the pinned session reusable."""
+        engine=self.engine;self.engine=None
+        if not exc:exc=(None,None,None)
         if engine is not None:engine.__exit__(*exc)
     def speech(self,*args,**kwargs):
         if self.engine is None:raise Error('resident_closed','The resident engine is closed; explicitly restart the pipeline.')
@@ -256,16 +347,24 @@ class Engine:
         if not actual or (expected_cpu and not actual[1].lower().startswith('cpu')) or (not expected_cpu and not actual[1].startswith('Vulkan')):
             raise Error('device_unverified','Breeze did not prove the requested execution backend.','Check backend/device availability; unexpected CPU fallback is rejected.')
         return actual[1].rstrip(',')
-    def speech(self,text,voice=None,instruction=None,seed=42):
+    def speech(self,text,voice=None,instruction=None,seed=42,*,cfg_scale=1,sampling=None):
         validate_request(text,voice,instruction)
+        if type(cfg_scale) not in (int,float) or cfg_scale not in (1,2,2.5,3):
+            raise Error('speech_guidance','Choose Breeze guidance of 1, 2, 2.5, or 3.')
+        if cfg_scale!=1 and (getattr(self,'identity',None) or {}).get('settings',{}).get('parallel',1)!=1:
+            raise Error('speech_guidance','Stronger guidance needs a serial audition.')
         logpath=self.store.root/'runtime'/'backend.log' if getattr(self,'store',None) is not None else None
         log_offset=logpath.stat().st_size if logpath and logpath.exists() else 0
-        fields={'text':text,'split_chars':'0','max_new_tokens':'1500','seed':str(seed),'cfg_scale':'1'}
+        fields={'text':text,'split_chars':'0','max_new_tokens':'1500','seed':str(seed),'cfg_scale':format(cfg_scale,'g')}
+        if sampling:
+            from .performance import validated_sampling
+            fields.update({name:str(value) for name,value in validated_sampling(sampling).items()})
         files=None; fh=None
         if voice:
             ref=Path(voice['reference'])
             if filehash(ref)!=voice['reference_sha256']: raise Error('voice_changed','Saved voice reference changed.')
             fh=ref.open('rb'); files={'ref_audio':('reference.wav',fh,'audio/wav')}; fields['ref_text']=voice['transcript']
+            if instruction:fields['instruction']=instruction
         else: fields['instruction']=instruction or 'A calm, clear English audiobook narrator.'
         try:
             with wall_budget(self.REQUEST_SECONDS,self._stop_backend,'speech_deadline','Breeze exceeded its speech request wall-clock budget.'):

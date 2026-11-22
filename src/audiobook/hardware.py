@@ -52,12 +52,29 @@ def _integer(path):
         return None
 
 
+def effective_ram(host_available,sysroot,procroot):
+    """Limit available memory to the tightest Linux cgroup v2 ancestor."""
+    root=sysroot/'fs/cgroup'
+    path=next((line[3:] for line in _read(procroot/'self/cgroup').splitlines() if line.startswith('0::/')),None)
+    candidates=[host_available] if host_available is not None else []
+    if path is not None and '..' not in Path(path).parts:
+        group=root/path.lstrip('/')
+        for folder in (group,*group.parents):
+            if not folder.is_relative_to(root):break
+            limit,used=_integer(folder/'memory.max'),_integer(folder/'memory.current')
+            if limit is not None and used is not None:candidates.append(max(0,limit-used))
+    return min(candidates,default=None)
+
+
+def linux_memory(procroot=Path('/proc')):
+    return {k:int(v)*1024 for k,v in re.findall(r'^(MemTotal|MemAvailable):\s+(\d+)',_read(procroot/'meminfo'),re.M)}
+
+
 def inspect_host(sysroot=Path('/sys'), procroot=Path('/proc'), command=_command):
     """No model/download; optional bounded vendor and Vulkan information tools."""
     system = platform.system()
     linux = system == 'Linux'
-    meminfo = _read(procroot / 'meminfo') if linux else ''
-    memory = {k: int(v) * 1024 for k, v in re.findall(r'^(MemTotal|MemAvailable):\s+(\d+)', meminfo, re.M)}
+    memory = linux_memory(procroot) if linux else {}
     cpu = _read(procroot / 'cpuinfo') if linux else ''
     flags = re.search(r'^flags\s*:\s*(.*)$', cpu, re.M)
     pci = {}
@@ -160,8 +177,11 @@ def inspect_host(sysroot=Path('/sys'), procroot=Path('/proc'), command=_command)
     if system == 'Windows':
         from .platform_support import windows_memory
         total, available, avx2 = windows_memory()
+    host_available=available
+    if linux:available=effective_ram(available,sysroot,procroot)
     return {'system': system, 'arch': platform.machine(), 'gpus': gpus,
-            'ram_total_bytes': total, 'ram_available_bytes': available, 'cpu_avx2': avx2, 'vulkan': vulkan}
+            'ram_total_bytes': total, 'ram_available_bytes': available, 'cpu_avx2': avx2, 'vulkan': vulkan,
+            'host_ram_available_bytes':host_available,'cgroup_ram_limited':linux and available!=host_available}
 
 
 def profile_catalog(catalog, host=None):
@@ -209,6 +229,8 @@ def advise(host, catalog):
     gpu = max(candidates, key=lambda g: g.get('available_vram_bytes') or 0, default=None)
     free = gpu.get('available_vram_bytes') if gpu else None
     ram = host.get('ram_available_bytes')
+    if host.get('cgroup_ram_limited'):
+        warnings.append('Profile advice uses the memory available to this Linux cgroup.')
     if len(host['gpus']) > 1:
         warnings.append('Multiple GPUs detected. Advice assumes the GPU with most observed free VRAM; the backend device choice must be checked separately.')
     if host['cpu_avx2'] is None:

@@ -4,7 +4,7 @@ from difflib import SequenceMatcher
 from .core import Error,writejson,key,check_revision
 from .jobs import clip_key,valid_clip,summary,final_path,verify_publication,take_signature
 from .planner import count_words,SMALL,TENS,COUNT_RE
-from .speech_compare import POLICY,comparison_tokens,quantities,negations,mathematical_markers,notation_observation
+from .speech_compare import POLICY,comparison_tokens,quantities,negations,mathematical_markers,notation_observation,unit_sites
 
 
 def tokens(s):
@@ -86,14 +86,40 @@ def missing_measurement_instruction(expected,observed):
             return True
     return False
 
-def negation_contexts(text):
+def negation_bindings(tokens):
     from collections import Counter
-    ts=comparison_tokens(text);ignored={'a','an','the','to','of','is','be','been','being','was','were','are','and','or','that','this'}
-    return Counter(tuple(t for t in ts[i+1:i+6] if t not in ignored)[:2] for i,t in enumerate(ts) if t in ('not','never','no',"ain't"))
+    words=[]; markers=Counter()
+    for token in tokens:
+        if token in ('not','never','no',"ain't"):markers[len(words),token]+=1
+        else:words.append(token)
+    return words,markers
+
+
+def negation_contexts(text):
+    return negation_bindings(comparison_tokens(text))[1]
+
+
+def negation_sites(ref,hyp):
+    """Align whole non-negative clauses before comparing marker positions."""
+    ref_words,expected=negation_bindings(ref)
+    hyp_words,observed=negation_bindings(hyp)
+    alignment={}
+    for a,b,length in SequenceMatcher(None,ref_words,hyp_words,autojunk=False).get_matching_blocks():
+        alignment.update((b+i,a+i) for i in range(length))
+    mapped=expected.copy();mapped.clear();uncertain=False
+    for (index,token),count in observed.items():
+        left=alignment.get(index-1)
+        right=alignment.get(index)
+        if right is not None and (left is None or left+1==right):mapped[right,token]+=count
+        elif left is not None and right is None:mapped[left+1,token]+=count
+        else:uncertain=True
+    moved={('added',index,token) for index,token in mapped-expected}
+    if not uncertain:moved.update(('missing',index,token) for index,token in expected-mapped)
+    return moved
 
 def misplaced_negation(expected,observed):
-    a,b=negation_contexts(expected),negation_contexts(observed)
-    return bool(a) and sum(a.values())==sum(b.values()) and a!=b
+    ref,hyp=comparison_tokens(expected),comparison_tokens(observed)
+    return bool(negations(ref) and negations(ref)==negations(hyp) and negation_sites(ref,hyp))
 
 def reference_leakage(expected,observed,reference):
     ref=comparison_tokens(reference or '');target=comparison_tokens(expected);hyp=comparison_tokens(observed)
@@ -120,24 +146,32 @@ def missing_parenthetical_counts(expected,observed,protected=None):
 def check(store,jid,python,model,all_clips=False,require_review=False):
     with store.lock():
         j=store.get(jid); utterances=j['plan']['utterances']
+        from . import performance
         if require_review: all_clips=True
         listening_keys={r['clip_key'] for r in j.get('listening_findings',[]) if r['status']=='open'}
         if not all_clips: utterances=[u for i,u in enumerate(utterances) if i in (0,len(utterances)-1) or re.search(r'\d|\bnot\b|\bnever\b|--',u['text']) or mathematical_markers(u['text']) or clip_key(u,j) in listening_keys]
         if not utterances: raise Error('qa_empty','No eligible speech passages.')
-        from .qa_cache import observe
+        from .qa_cache import audible_text, observe
         observations,observer,checkpoint=observe(store,j,utterances,python,model)
         rows=[]; errors=0; words=0;raw_errors=0;raw_words=0
         for u,row in zip(utterances,observations):
             if row['utterance']!=u['id']: raise Error('asr_contract','ASR returned an unexpected utterance identity.')
             literal_ref=tokens(u['text']);literal_hyp=tokens(row['text']);literal_edits=distance(literal_ref,literal_hyp);raw_errors+=literal_edits;raw_words+=len(literal_ref)
             plausible=[s for s in row['segments'] if s['start']<row['audio_seconds']+.1]
-            comparison_text=notation_observation(u['text'],' '.join(s['text'].strip() for s in plausible))
+            observed=audible_text(row,row['audio_seconds'])
+            comparison_text=notation_observation(u['text'],performance.lexical_observation(u,observed))
+            sound=performance.authored_sound_observation(u,observed,comparison_text)
             ref=comparison_tokens(u['text']);hyp=comparison_tokens(comparison_text);edits=distance(ref,hyp);errors+=edits;words+=len(ref)
             expected_numbers=re.findall(r'(?<!\w)[+-]?\d+(?:[.,]\d+)*',u['text']); observed_numbers=re.findall(r'(?<!\w)[+-]?\d+(?:[.,]\d+)*',row['text'])
             flags=[]
             findings=[r for r in j.get('listening_findings',[]) if r['status']=='open' and r['source_sha256']==j['document']['source_sha256'] and r['clip_key']==clip_key(u,j) and r['pcm_sha256']==row['pcm_sha256']]
             flags.extend('Listening finding: '+r['reason'] for r in findings)
+            if not sound and performance.label_spoken(u,literal_ref,tokens(comparison_text)):
+                flags.append('ASR reports the intended sound label as extra speech.')
+            elif not sound and performance.extra_event_words(u,comparison_text):
+                flags.append('ASR reports unplanned words at the authored sound.')
             if quantities(ref)!=quantities(hyp): flags.append('Quantity disagreement requires inspection; raw numbers and cardinal spellings are compared by value.')
+            if unit_sites(ref,hyp):flags.append('A quantity is paired with a different unit or rate denominator; inspect the measurement.')
             if negations(ref)!=negations(hyp): flags.append('Negation disagreement requires listening.')
             if misplaced_negation(u['text'],comparison_text):flags.append('Negation is associated with different neighboring words; inspect its scope.')
             gaps=content_gaps(u['text'],comparison_text)
@@ -146,15 +180,30 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             if reference_leakage(u['text'],comparison_text,(j.get('voice') or {}).get('transcript')):flags.append('ASR contains a reference-only phrase; inspect possible conditioning-audio leakage.')
             if [t for t in ref if t in ('checked','unchecked')]!=[t for t in hyp if t in ('checked','unchecked')]:flags.append('Checklist status disagreement requires listening.')
             if mathematical_markers(u['text'])!=mathematical_markers(comparison_text):flags.append('Fraction, mathematical operator or physical-unit disagreement requires inspection.')
-            if edits/max(1,len(ref))>.2: flags.append('WER above 20%; inspect this passage for drops/insertions.')
+            if not sound and edits/max(1,len(ref))>.2: flags.append('WER above 20%; inspect this passage for drops/insertions.')
             if missing_final_clause(u['text'],comparison_text):flags.append('ASR stops near an earlier clause boundary; inspect a possibly missing final clause.')
             if missing_final_words(u['text'],comparison_text):flags.append('ASR recovers a source prefix but misses its ending; inspect possible mid-sentence truncation.')
             missing_counts=missing_parenthetical_counts(u['text'],comparison_text,u.get('protected_counts'))
             if missing_counts:flags.append('Parenthetical count not recovered by ASR; inspect the source and take: '+', '.join(missing_counts))
             warnings=[]
+            if sound and sound['status']=='ambiguous_vocalization':
+                warnings.append('The words match around an authored sound. The recognizer cannot determine whether the extra tokens were spoken or vocalized.')
             if any(s['start']>row['audio_seconds']+.1 or s['end']>row['audio_seconds']+1 for s in row['segments']):warnings.append('ASR timestamps extend beyond the physical clip; transcript tail is unreliable. Check recognition before changing the audio.')
             rows.append({**row,'expected':u['text'],'source_blocks':u['sources'],'listening_findings':findings,'comparison_text':comparison_text,'ASR_segments_wholly_after_audio':len(row['segments'])-len(plausible),'word_errors':edits,'reference_words':len(ref),'wer':edits/max(1,len(ref)),'raw_word_errors':literal_edits,'raw_reference_words':len(literal_ref),'raw_wer':literal_edits/max(1,len(literal_ref)),'comparison_quantities_expected':quantities(ref),'comparison_quantities_observed':quantities(hyp),'expected_numbers':expected_numbers,'asr_numbers':observed_numbers,'missing_parenthetical_counts':missing_counts,'observation_warnings':warnings,'flags':flags,'retake_action':f'hamr repair {jid} --retake {u["id"]}'})
+            if event:=(u.get('performance') or {}).get('event'):
+                rows[-1]['expected_intentional_event']={k:event[k] for k in ('kind','position')}
+            if sound:
+                rows[-1]['authored_sound_observation']=sound
         report={'schema_version':1,'job':jid,'revision':j['revision'],'plan_sha256':j['plan']['plan_sha256'],'asr_model_files':observer['model_files'],'observer':observer,'observation_checkpoints':checkpoint,'comparison_policy':POLICY,'device':'cpu','compute_type':'int8','prompt':None,'clips_checked':len(rows),'reference_words':words,'word_errors':errors,'wer':errors/max(1,words),'raw_reference_words':raw_words,'raw_word_errors':raw_errors,'raw_wer':raw_errors/max(1,raw_words),'flagged_passages':sum(bool(r['flags']) for r in rows),'disposition':'ASR disagreements are uncertain evidence. Recorded listening findings remain independent holds until the exact audio is accepted or replaced; a matching transcript cannot clear them.','rows':rows}
+        report['primary_profile']=observer.get('profile','whisper')
+        report['device']=observer.get('device','cpu')
+        report['compute_type']=observer.get('compute_type','int8')
+        if require_review and report['primary_profile']!='fluid-int8':
+            from .asr_fluid import screen
+            from .checks_setup import configured
+            if (configured(store) or {}).get('requested_profile')!='whisper':
+                if diagnostic:=screen(store,j,rows):
+                    report['speech_diagnostic']=diagnostic
         dest=store.path(j)/f'qa-r{j["revision"]}.json'; writejson(dest,report)
         if require_review:
             current={(clip_key(u,j),r['pcm_sha256']) for u,r in zip(utterances,rows)}
@@ -178,7 +227,7 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
                 j['audio_gate_approved_comparison_policy']=POLICY
                 j['status']='needs_review' if j['plan']['issues'] else ('ready' if verify_publication(final_path(j),j) else 'queued')
             store.save(j)
-        result={'schema_version':1,'status':j['status'],'job':jid,'clips_checked':len(rows),'wer':report['wer'],'flagged_passages':report['flagged_passages'],'report':str(dest),'device':'cpu','prompt':None,'planned_output':str(final_path(j)/'book.m4b')}
+        result={'schema_version':1,'status':j['status'],'job':jid,'clips_checked':len(rows),'wer':report['wer'],'flagged_passages':report['flagged_passages'],'report':str(dest),'primary_profile':report['primary_profile'],'device':report['device'],'prompt':None,'planned_output':str(final_path(j)/'book.m4b')}
         if require_review and j.get('audio_review'):
             result.update(message='Flagged audio needs a listening check before publication.',
                           action=f'Run hamr status {jid} for the flagged passages and listening instructions.')

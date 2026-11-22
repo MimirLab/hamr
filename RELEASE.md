@@ -1,4 +1,22 @@
-# hamr 0.4
+# hamr 0.4.0
+
+### Source-directed delivery
+
+Hamr can forward a delivery instruction with a cloned voice and perform authored vocal cues. The planner uses local prose evidence to guide the right speaker or a quiet scene. Recognition can flag directed speech for listening review while preserving the take. Short ambiguous sounds at an authored cue are reported separately from wording errors.
+
+Opt-in `--performance experimental` makes more directions available, including whispers across an attribution, emphasis on an authored phrase and growing urgency. Matched listening and word checks cover individual passages. Automatic delivery uses the tested combinations listed below.
+
+With the packaged Nigel Thornberry and Cave Johnson voices, the default mode performs leading sighs on the tested Linux CPU Q8 runtime and trailing sighs and directly attributed shouts on the tested Linux Vulkan Q8 runtime. On that Vulkan profile, Nigel also performs an authored opening laugh and reads a quiet setting with a character holding their breath with restrained anticipation. Qualification combines matched listening comparisons, offline word checks, acoustic checks, and reference-voice comparison. [Performance guide](docs/USAGE.md#audition-dialogue-delivery)
+
+### Reading and recovery fixes
+
+EPUB tables now read the first data row, use authored column labels, and carry image descriptions, equations and linked notes into the reading. Existing jobs can opt in with `hamr repair JOB --reimport --upgrade-rules`.
+
+Speech checks now keep quantities with their units and negation with its place in the sentence. Setup selects the offline verifier by hardware. Fluid INT8 becomes the primary whole-book verifier on eligible Linux x86-64 hosts. The lighter Whisper pair remains available from `--asr-profile whisper`. `hamr transcribe` uses the active verifier to investigate saved speech or local audio. Automatic retakes of ordinary narration require matching evidence from two distinct models and keep their budget through interruption. Reimport preserves a selected retake when it can identify the same passage. [Verifier presets](docs/USAGE.md#speech-verifier-presets)
+
+Setup verifies extracted runtime bytes against the pinned archive and accounts for downloads already on disk. Combined setup runs the requested checks before activating the speech profile. The queue records blocked jobs with a recovery action. New audiobook publications preserve literal text in WebVTT and decode the complete M4B before making it available.
+
+If the offline speech checker is missing, Hamr prints a recovery command for the current checkout or installation and the same state directory. `setup --checks-only` can upgrade the verifier in an existing installation without an engine profile.
 
 ### Scanned and mixed PDFs
 

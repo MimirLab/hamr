@@ -104,6 +104,37 @@ def test_a_playable_but_shortened_container_is_rejected(tmp_path):
     assert not verify_publication(out,store.get(job['id']))
 
 
+@pytest.mark.parametrize('text',['Compare x < y, then x --> y.','A <c.red>word</c> & an ampersand.',
+                                 'Literal &lt;i&gt;italic&lt;/i&gt; and &amp; ampersand.'])
+def test_webvtt_round_trips_literal_narration(tmp_path,text):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    store,job=prepared(tmp_path,source)
+    result=render(store,job['id'],allow_synthesis=False)
+    companion=Path(result['output'])/'companion.vtt'
+    subtitles=subprocess.run(['ffmpeg','-v','error','-i',companion,'-f','srt','-'],
+                             capture_output=True,text=True,check=True).stdout
+    assert job['plan']['utterances'][0]['text'] in subtitles
+
+
+def test_failed_full_audio_decode_does_not_publish(tmp_path,monkeypatch):
+    from audiobook import jobs,media
+    source=tmp_path/'book.md'
+    source.write_text('A connected recording to package.')
+    store,job=prepared(tmp_path,source)
+    real_run=media.run
+
+    def failed_decode(args,*a,**kw):
+        if '-xerror' in args:raise Error('subprocess_failed','Fixture decoder failure.')
+        return real_run(args,*a,**kw)
+
+    monkeypatch.setattr(media,'run',failed_decode)
+    with pytest.raises(Error) as failure:render(store,job['id'],allow_synthesis=False)
+    assert failure.value.code=='audio_decode_failed'
+    assert not jobs.final_path(job).exists()
+    assert valid_clip(store,clip_key(job['plan']['utterances'][0],job))
+
+
 def test_invalid_metadata_update_is_atomic_and_does_not_restore_cleared_values(tmp_path):
     assert merge_overrides({'series':None},{'narrator':'A'})=={'series':None,'narrator':'A'}
     assert merge_overrides({'series':None},{'inherit':['series']})=={}

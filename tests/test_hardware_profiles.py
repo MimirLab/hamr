@@ -76,6 +76,27 @@ def test_unsupported_host_or_insufficient_memory_has_no_false_suggestion(change)
     assert result['recommended_profile'] is None
 
 
+def test_doctor_applies_the_tightest_cgroup_memory_headroom(tmp_path,monkeypatch):
+    monkeypatch.setattr(hardware.platform,'system',lambda:'Linux')
+    monkeypatch.setattr(hardware.platform,'machine',lambda:'x86_64')
+    monkeypatch.setattr(hardware.shutil,'which',lambda _:None)
+    proc,sys=tmp_path/'proc',tmp_path/'sys'
+    (proc/'self').mkdir(parents=True)
+    (proc/'self/cgroup').write_text('0::/parent/child\n')
+    (proc/'meminfo').write_text('MemTotal: 67108864 kB\nMemAvailable: 33554432 kB\n')
+    (proc/'cpuinfo').write_text('flags: avx2\n')
+    parent=sys/'fs/cgroup/parent'
+    child=parent/'child'
+    child.mkdir(parents=True)
+    for folder,limit,used in ((parent,hardware.GIB*2,hardware.GIB),(child,'max',0)):
+        (folder/'memory.max').write_text(str(limit))
+        (folder/'memory.current').write_text(str(used))
+    observed=hardware.inspect_host(sys,proc,command=lambda args:(1,'','fixture'))
+    assert observed['host_ram_available_bytes']==32*hardware.GIB
+    assert observed['ram_available_bytes']==hardware.GIB and observed['cgroup_ram_limited']
+    assert hardware.advise(observed,catalog())['recommended_profile'] is None
+
+
 def test_every_model_has_cpu_and_vulkan_choices_with_bound_download_sizes():
     rows = hardware.profile_catalog(catalog());mapping = {r['id']: r for r in rows}
     assert sum(r['implemented'] for r in rows) == 9
@@ -148,3 +169,36 @@ def test_guided_choice_retries_typo_then_cancels_without_assets(tmp_path, monkey
     assert failure.value.code=='setup_cancelled'
     assert list((store.root/'assets').iterdir())==[]
     assert 'Press Enter to install' in capsys.readouterr().out
+@pytest.mark.parametrize(('available','profile'),[(512*1024**2,'whisper'),(8*1024**3,'fluid-int8')])
+def test_speech_diagnostic_advice_uses_current_cpu_ram(tmp_path,monkeypatch,available,profile):
+    from types import SimpleNamespace
+    from audiobook import asr_fluid
+
+    monkeypatch.setattr(asr_fluid.shutil,'disk_usage',lambda path:SimpleNamespace(free=3*1024**3))
+    advisory=asr_fluid.advice(SimpleNamespace(root=tmp_path),
+                            {'system':'Linux','arch':'x86_64','ram_available_bytes':available})
+    assert advisory['recommended']==profile
+    assert advisory['download_bytes']==800847271
+    assert not (tmp_path/asr_fluid.RECORD).exists()
+
+
+@pytest.mark.parametrize(('available','system','requested','active','recommended'),[
+    (2,'Linux','auto','whisper','whisper'),
+    (8,'Linux','auto','fluid-int8','fluid-int8'),
+    (8,'Linux','whisper','whisper','fluid-int8'),
+    (2,'Linux','fluid-int8',None,'whisper'),
+    (12,'Windows','auto','whisper','whisper'),
+])
+def test_required_speech_verifier_uses_available_stage_memory(tmp_path,monkeypatch,available,system,requested,active,recommended):
+    from types import SimpleNamespace
+    from audiobook import asr_fluid, checks_setup
+    from audiobook.core import filehash
+    import sys
+
+    saved={'requested_profile':requested,'fluid':{'profile':'fluid-int8','lock_sha256':filehash(asr_fluid.LOCK),
+                                                  'model':str(tmp_path),'python':sys.executable}}
+    monkeypatch.setattr(checks_setup,'configured',lambda store:saved)
+    monkeypatch.setattr(asr_fluid.shutil,'disk_usage',lambda path:SimpleNamespace(free=3*1024**3))
+    host={'system':system,'arch':'x86_64','ram_available_bytes':available*1024**3}
+    result=checks_setup.speech_advice(SimpleNamespace(root=tmp_path),host)
+    assert (result['active'],result['recommended'])==(active,recommended)

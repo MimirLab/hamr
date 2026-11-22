@@ -7,6 +7,7 @@ import sys
 from . import jobs
 from .checks_setup import observer
 from .core import Error, run
+from .installation import command
 
 
 def check_source(source):
@@ -21,7 +22,7 @@ def check_source(source):
 
 def preflight(store, voice, output, play):
     if not (store.root / 'settings.json').is_file():
-        raise Error('setup_required', 'The speech engine needs setup.', 'Run hamr setup.')
+        raise Error('setup_required', 'The speech engine needs setup.', 'Run this command to choose an engine.\n'+command(store.root, 'setup'))
     if not voice:
         raise Error('voice_required', 'Choose a narrator before creating the book.',
                     'Run hamr voice select nigel-thornberry or pass --voice cast:CHARACTER.')
@@ -47,8 +48,12 @@ def finish_book(store, jid, *, output=None, announce=False):
         raise Error('voice_required', 'The saved job needs a narrator.',
                     f'Run hamr repair {jid} --voice cast:nigel-thornberry.')
     if not job.get('backend') and not (store.root / 'settings.json').is_file():
-        raise Error('setup_required', 'The speech engine needs setup.', 'Run hamr setup.')
+        raise Error('setup_required', 'The speech engine needs setup.', 'Run this command to choose an engine.\n'+command(store.root, 'setup'))
     python, model, second_model = observer(store)
+    for executable in ('ffmpeg','ffprobe'):
+        if not shutil.which(executable):
+            raise Error('missing_dependency',f'Missing executable: {executable}.',
+                        f'Install it and run hamr resume {jid}.')
     if output is not None:
         if not output.is_dir():
             raise Error('output_unavailable', f'Output directory does not exist: {output}')
@@ -60,13 +65,36 @@ def finish_book(store, jid, *, output=None, announce=False):
             store.save(job)
     default = Path.home() / 'Audiobooks'
     if Path(job['output_parent']) == default:
-        default.mkdir(exist_ok=True)
+        try:default.mkdir(exist_ok=True)
+        except OSError as exc:
+            raise Error('output_unavailable',f'Could not open the default output directory at {default}.',
+                        f'Choose a writable directory with hamr resume {jid} --output DIRECTORY.') from exc
+    elif not Path(job['output_parent']).is_dir():
+        raise Error('output_unavailable',f'Output directory does not exist: {job["output_parent"]}',
+                    f'Create it and run hamr resume {jid}, or choose a directory with --output.')
     if announce:
-        print(f'{jid}: rendering and checking speech. Resume with hamr resume {jid}.', file=sys.stderr, flush=True)
+        print(f'{jid}: rendering and checking speech. If interrupted, run:\n{command(store.root, "resume", jid)}',
+              file=sys.stderr, flush=True)
         print(f'Planned audiobook: {jobs.final_path(job) / "book.m4b"}', file=sys.stderr, flush=True)
     from .pipeline import run as run_pipeline
     return run_pipeline(store, jid, python, model, second_model, batch_takes=8, resident=True,
                         report_progress=announce)
+
+
+def record_worker_failure(store, job, error):
+    """Persist a blocked preflight only while the queue snapshot is current."""
+    permanent_preflight={'voice_required','setup_required','speech_checks_required','asr_profile_unavailable',
+                         'missing_dependency','output_unavailable','asr_environment'}
+    if error['code'] not in permanent_preflight:
+        return store.get(job['id'])['status']
+    failed={**job,'status':'failed','error':error}
+    try:
+        with store.lock():
+            if store.save_if_current(failed,job['updated']):
+                return 'failed'
+    except Error as exc:
+        if exc.code!='busy':raise
+    return store.get(job['id'])['status']
 
 
 def play_output(result, start=0, *, quiet=False):

@@ -233,6 +233,7 @@ def describe(node,resolve_asset=None,cover_assets=()):
         if n.name=='svg' and not label and n.find(['img','image']):return
         spans.append({'source_start':start,'source_end':position,'kind':'object_label','source':'',
                       'reading':label,'image_resource':asset,'cover':cover,'decorative':decorative,
+                      'inside_note':any(noteref(a) for a in n.parents),
                       'issue':None if label or cover or decorative else 'Image or SVG has no authored accessible description; verify its essential content.'})
     visit(node);raw=''.join(pieces);left=len(raw)-len(raw.lstrip());source=raw.strip()
     for span in spans:
@@ -246,16 +247,19 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False):
     """Use explicit roles; an unclassified superscript is not a guessed power."""
     source=block.source;edits=[];spans=block.locator.get('inline_semantics',[])
     references=[s for s in spans if s['kind']=='note_reference' and not any(h['kind']=='hidden' and h['source_start']<=s['source_start'] and h['source_end']>=s['source_end'] for h in spans)]
+    hidden_ranges=[(s['source_start'],s['source_end']) for s in spans if s['kind']=='hidden']
     for span in spans:
         a,b=span['source_start'],span['source_end'];kind=span['kind']
         if source[a:b]!=span['source']:continue
+        if kind!='hidden' and any(start<=a and b<=end for start,end in hidden_ranges):continue
         if kind in ('note_reference','hidden'):
-            note=next((link for link in block.links if link.get('kind')=='note' and link.get('source_start')==a),None)
+            note=next((link for link in block.links if link.get('kind')=='note' and link.get('source_start')==a and
+                       link.get('reference_href',span.get('href'))==span.get('href')),None)
             value=' Note. '+note.get('reading',note['text'])+' End note. ' if note and kind=='note_reference' and note_policy=='inline' else ''
             edits.append((a,b,value))
         elif kind=='pagebreak':edits.append((a,b,' '))
         elif kind=='object_label':
-            if any(s['source_start']<=a and s['source_end']>=b for s in references):continue
+            if span.get('inside_note',any(s['source_start']<=a and s['source_end']>=b for s in references)):continue
             edits.append((a,b,'' if span.get('cover') or span.get('decorative') else ' '+span.get('reading','')+' '))
         elif kind=='ruby':edits.append((a,b,span.get('pronunciation',span['reading'])))
         elif kind=='generated_label':
@@ -267,7 +271,7 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False):
         elif kind=='subscript':edits.append((a,b,' subscript '+span['source']+' '))
     # Outermost explicit math/note roles win over their nested presentation.
     selected=[]
-    for a,b,value in sorted(edits,key=lambda x:(x[0],-x[1])):
+    for a,b,value in sorted(edits,key=lambda x:(x[0],x[1]!=x[0],-x[1])):
         if selected and a<selected[-1][1]:continue
         selected.append((a,b,value))
     protected=[]

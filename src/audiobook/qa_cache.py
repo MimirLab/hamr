@@ -6,12 +6,15 @@ Never cache expected text, review decisions or a speech-quality pass.
 from __future__ import annotations
 import contextlib,json,math,shutil,subprocess,sys,time
 from pathlib import Path
+from .asr_fluid import Recipe, observe_many
 from .core import Error,filehash,key,loadjson,writejson,fault
 from .jobs import clip_key,valid_clip
 
 BATCH_SIZE=32
 
 def observer_identity(python,model,worker):
+    if isinstance(model,Recipe):
+        return model.identity()
     model=Path(model).absolute()
     files={p.name:filehash(p) for p in sorted(model.iterdir()) if p.is_file()}
     # Probe the explicitly chosen isolated environment, not the app environment.
@@ -50,12 +53,25 @@ def raw_observation(row):
     raw={k:row[k] for k in ('text','segments','seconds')}
     if not isinstance(raw['text'],str) or not isinstance(raw['segments'],list): raise ValueError('Invalid ASR text/segments')
     if not isinstance(raw['seconds'],(int,float)) or not math.isfinite(raw['seconds']) or raw['seconds']<0: raise ValueError('Invalid ASR time')
+    if row.get('timing_kind')=='unavailable':
+        if raw['segments']: raise ValueError('Observer without timing returned segments')
+        return {**raw,'timing_kind':'unavailable'}
     for s in raw['segments']:
         if not isinstance(s['text'],str): raise ValueError('Invalid segment text')
         for k in ('start','end','avg_logprob'):
             if not isinstance(s[k],(int,float)) or not math.isfinite(s[k]): raise ValueError('Invalid segment value')
     if ' '.join(s['text'].strip() for s in raw['segments'])!=raw['text']: raise ValueError('ASR text differs from segments')
     return raw
+
+
+def model_fingerprint(identity):
+    return identity.get('model_sha256') or identity.get('model_files',{}).get('model.bin')
+
+
+def audible_text(row, seconds):
+    if row.get('timing_kind')=='unavailable':
+        return row['text']
+    return ' '.join(s['text'].strip() for s in row['segments'] if s['start']<seconds+.1)
 
 def observation_path(store,k,pcm_sha256,identity):
     return store.root/'clips'/k/('asr-'+key({'identity':identity,'pcm_sha256':pcm_sha256})+'.json')
@@ -79,6 +95,36 @@ def write_observation(store,k,receipt,identity,row,provenance='fresh unprompted 
     writejson(p,{'schema_version':1,'observer_sha256':key(identity),'pcm_sha256':receipt['sha256'],
                  'observation':raw,'observation_sha256':key(raw),'provenance':provenance,'recorded':time.time()})
 
+def recognize(python, model, clips):
+    """Decode supplied PCM without sending the worker the expected words."""
+    if isinstance(model,Recipe):
+        requests=[]
+        for clip in clips:
+            path=Path(clip['path'])
+            receipt=clip.get('receipt') or {'samples':path.stat().st_size//2,'sha256':filehash(path)}
+            requests.append({'pcm':str(path),'samples':receipt['samples'],'pcm_sha256':receipt['sha256']})
+        return [raw_observation({**row,'segments':[]}) for row in observe_many(model,requests)]
+    worker=Path(__file__).with_name('qa_worker.py')
+    request={'model':str(Path(model).absolute()),'clips':clips}
+    try:
+        result=subprocess.run([str(python),str(worker)],input=json.dumps(request).encode(),
+                              stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=True,timeout=max(120,len(clips)*30))
+        observed=json.loads(result.stdout)
+    except (OSError,ValueError,subprocess.SubprocessError) as e:
+        raise Error('asr_failed','Isolated CPU ASR failed; completed observation checkpoints are retained.',
+                    'Repeat with the same speech checker. No ASR download occurs.') from e
+    rows=observed.get('rows',[]) if isinstance(observed,dict) else []
+    if not isinstance(rows,list) or len(rows)!=len(clips):
+        raise Error('asr_contract','ASR result count differs from requested clips.')
+    checked=[]
+    for clip,row in zip(clips,rows):
+        if not isinstance(row,dict) or row.get('utterance')!=clip['utterance']:
+            raise Error('asr_contract','ASR returned an unexpected utterance identity.')
+        try: checked.append(raw_observation(row))
+        except (ValueError,KeyError,TypeError) as e:
+            raise Error('asr_contract','ASR returned an invalid observation.') from e
+    return checked
+
 def observe(store,j,utterances,python,model):
     worker=Path(__file__).with_name('qa_worker.py'); identity=observer_identity(python,model,worker)
     # A unique verified take is recognized once, even if it occurs repeatedly in the plan.
@@ -97,32 +143,26 @@ def observe(store,j,utterances,python,model):
         elapsed=time.monotonic()-started
         done=sum(k in raw for k in mapping.values())
         writejson(progress_path,{'schema_version':1,'job':j['id'],'revision':j['revision'],
-            'plan_sha256':j['plan']['plan_sha256'],'observer_sha256':key(identity),'phase':phase,
+            'plan_sha256':j['plan']['plan_sha256'],'observer_sha256':key(identity),'observer_profile':identity.get('profile','whisper'),'phase':phase,
             'completed_utterances':done,'total_utterances':len(utterances),'completed_unique_takes':len(raw),
             'total_unique_takes':len(takes),'reused_observations':reused,'recognized_this_run':recognized,
             'maximum_uncheckpointed_takes':BATCH_SIZE,'elapsed_seconds':elapsed,
             'eta_seconds':elapsed/recognized*(len(todo)-recognized) if recognized else (0 if not todo else None),
-            'updated':time.time(),'resume':f'hamr qa {j["id"]} with the same ASR Python/model options',
+            'updated':time.time(),'resume':f'hamr resume {j["id"]}',
             'meaning':'Last durable QA checkpoint; this file alone does not establish a live worker or quality acceptance.'})
     progress('checking')
     try:
         for offset in range(0,len(todo),BATCH_SIZE):
             batch=todo[offset:offset+BATCH_SIZE]
-            request={'model':str(Path(model).absolute()),'clips':[{'utterance':takes[k]['utterance'],'path':takes[k]['path']} for k in batch]}
-            try:
-                result=subprocess.run([str(python),str(worker)],input=json.dumps(request).encode(),stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=True,timeout=max(120,len(batch)*30))
-                observed=json.loads(result.stdout)
-            except (OSError,ValueError,subprocess.SubprocessError) as e:
-                raise Error('asr_failed','Isolated CPU ASR failed; completed observation checkpoints are retained.','Repeat qa with the same Python/model to resume. No ASR download occurs.') from e
-            if len(observed.get('rows',[]))!=len(batch): raise Error('asr_contract','ASR result count differs from requested clips.')
-            for k,row in zip(batch,observed['rows']):
-                if row.get('utterance')!=takes[k]['utterance']: raise Error('asr_contract','ASR returned an unexpected utterance identity.')
+            clips=[{'utterance':takes[k]['utterance'],'path':takes[k]['path']} for k in batch]
+            if isinstance(model,Recipe):
+                for clip,k in zip(clips,batch):clip['receipt']=takes[k]['receipt']
+            for k,row in zip(batch,recognize(python,model,clips)):
                 # Revalidate the actual PCM before attaching an observation to it.
                 receipt=valid_clip(store,k)
                 if not receipt or receipt['sha256']!=takes[k]['receipt']['sha256']: raise Error('qa_clip_changed','Speech changed during ASR; run QA on the current verified take.')
-                try: write_observation(store,k,receipt,identity,row)
-                except (ValueError,KeyError,TypeError) as e: raise Error('asr_contract','ASR returned an invalid observation.') from e
-                raw[k]=raw_observation(row);recognized+=1
+                write_observation(store,k,receipt,identity,row)
+                raw[k]=row;recognized+=1
             progress('checking')
             fault('after_asr_batch')
             print(f'Speech QA: {sum(k in raw for k in mapping.values())}/{len(utterances)} passages; {reused} saved observations reused.',file=sys.stderr,flush=True)
