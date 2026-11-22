@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 9
+CONTEXT_VERSION = 10
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -202,6 +202,22 @@ def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTI
                 return None
             if start or tail:
                 return candidate,start,stop
+    return None
+
+
+def attributed_turn_continuation(source, cue_pattern, postposed, *, actor):
+    """Recognize a second complete quotation in the same imported paragraph."""
+    quotes = list(re.finditer(QUOTATION, source))
+    if len(quotes) != 2:
+        return None
+    first, second = quotes
+    if (first.start() or first[0][0] != second[0][0] or not second[0][1].isupper()
+            or second[0][-2] not in '.!?' or source[second.end():].strip() not in ('', '.', '!', '?')
+            or not re.fullmatch(r'[^\n]+\.\s+', source[first.end():second.start()])):
+        return None
+    reporting = dialogue_attribution(source[:second.start()].rstrip(), cue_pattern, postposed, actor=actor)
+    if reporting and reporting.start('quote') == 0:
+        return reporting, second.span()
     return None
 
 
@@ -692,6 +708,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             source = ' '.join(delivery_text(b, True) for b in blocks)
         direction = None
         surrounding = None
+        following_quote = None
         focus = None
         event = None
         inline_event = None
@@ -707,6 +724,11 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         elif (match:=dialogue_attribution(source,cue_pattern,postposed,actor=actor)) and (
                 kind:=verbs.get(attribution_phrase(match))):
             direction = kind, match
+        elif version >= 10 and len(blocks) == 1 and (
+                turn := attributed_turn_continuation(source, cue_pattern, postposed, actor=actor)) and (
+                kind := verbs.get(attribution_phrase(turn[0]))):
+            direction = kind, turn[0]
+            following_quote = turn[1]
         elif inline_rules and (inline_event:=inline_vocal_event(source,neutral,sources[0],inline_rules,actor)):
             pass
         elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed,actor=actor)) and (
@@ -741,13 +763,18 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             continuation = attribution.groupdict().get('continuation')
             described = not re.fullmatch(ATTRIBUTION,attribution['actor'])
             role_instruction = recipe.get('role_instruction') if described else None
-            if described and not continuation and attribution.start('quote')<attribution.start('actor'):
+            if described and not (continuation or following_quote) and attribution.start('quote')<attribution.start('actor'):
                 role_instruction = recipe.get('role_after_instruction',role_instruction)
             instruction = role_instruction or recipe['instruction']
-            if recipe.get('progression') and (continuation or len(list(sentence_spans(attribution['quote'][1:-1])))<2):
+            if recipe.get('progression') and (continuation or following_quote
+                                              or len(list(sentence_spans(attribution['quote'][1:-1]))) < 2):
                 continue
             if continuation:
                 instruction += ' Treat both quoted spans as the same speaker’s continuing turn.'
+            if following_quote:
+                instruction = recipe.get('continued_turn_instruction') or (
+                    instruction + ' Use the same delivery for both quotations. '
+                    'Read the words between them in the usual narrator voice.')
             if surrounding:
                 offset,stop=surrounding
                 start+=offset
@@ -758,11 +785,14 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                          'instruction':instruction, 'cfg_scale':recipe.get('cfg_scale',1),
                          'source':{'block':sources[0], 'span':[start,end]},
                          'evidence':[{'kind':'direct_attribution','span':[start,end]}]}
-            if continuation:
+            if continuation or following_quote:
                 candidate['contextual']=True
-                candidate['evidence'][0].update(form='interrupted_quotation',
-                    quotation_spans=[list(attribution.span('quote')),list(attribution.span('continuation'))])
-                if attribution.groupdict().get('inverted'):candidate['evidence'][0]['attribution_order']='verb_first'
+                form = 'continued_quotation' if following_quote else 'interrupted_quotation'
+                second_span = following_quote or attribution.span('continuation')
+                candidate['evidence'][0].update(form=form,
+                    quotation_spans=[list(attribution.span('quote')),list(second_span)])
+                if attribution.groupdict().get('inverted'):
+                    candidate['evidence'][0]['attribution_order']='verb_first'
             elif attribution.groupdict().get('inverted'):
                 candidate['contextual']=True
                 candidate['evidence'][0]['form']='verb_first'
@@ -882,7 +912,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                     pos=quotes[0].start()+1
                     candidate['synthesis']=candidate['speech'][:pos]+marker+' '+candidate['speech'][pos:]
                     candidate['control_labels']=[marker[1:-1]]
-                elif not direction or not continuation:continue
+                elif not direction or not (continuation or following_quote):continue
         from .backend import validate_request
         try:
             validate_request(candidate['synthesis'],instruction=candidate.get('instruction'))

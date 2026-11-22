@@ -9,13 +9,15 @@
     "b07278bddd3b57644dedd1dd56dea29f8d148a9e75790d00d8666ceb69edb909",
     "741865068c5676e2ed1b669433c0b2a8e607d3b42850410e5068f918bc3f3f80",
     "f4fb01cac3d06b8ad3050362c4d60bb204a1dbf9545b50a723983166f42d7d41",
-    "5bcfb76db468f8419feffde9bff44fe76d106dbe262a02cd52e9d12c71c62b91"
+    "5bcfb76db468f8419feffde9bff44fe76d106dbe262a02cd52e9d12c71c62b91",
+    "42149012fe8820489f3b6061267f1ea29dccd0c3c2fc2e5a62597a93bec0e268"
   ],
   "directions": {
     "whisper": {
       "cues": ["whispered"],
       "instruction": "Whisper the words inside the quotation in a close, breathy, almost unvoiced voice, clearly enough to understand. Use the usual reference narrator for the attribution. Say every word.",
       "role_after_instruction": "Read the quoted words in a light, breathy whisper. Give the full attribution in your normal speaking voice, with clear word endings.",
+      "continued_turn_instruction": "Read both quotations in the same light, breathy whisper, with clear consonants. Use normal spoken narration for the full attribution between them.",
       "quote_marker": "(whispering)"
     },
     "murmured": {
@@ -37,7 +39,8 @@
     },
     "forceful": {
       "cues": ["shouted", "yelled"],
-      "instruction": "Give the quoted speech firm, urgent emphasis while keeping it comfortable to listen to. Read any attribution in the usual narrator voice. Keep every word."
+      "instruction": "Give the quoted speech firm, urgent emphasis while keeping it comfortable to listen to. Read any attribution in the usual narrator voice. Keep every word.",
+      "continued_turn_instruction": "Give both quotations the same urgent, clear emphasis. Speak the full attribution between them in the usual narrator voice, with clear word endings."
     },
     "tearful": {
       "cues": ["said through tears", "said tearfully", "said, fighting back tears"],

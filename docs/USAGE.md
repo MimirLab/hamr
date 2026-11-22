@@ -108,6 +108,8 @@ Authored sounds include sighs, laughter, chuckles, gasps, coughs, throat clearin
 
 **Expressive delivery** is on in normal listening mode. On the built-in Breeze profiles, Hamr can direct clearly attributed dialogue, let a named speaker carry a supported tone into the next turn, and shape a gentle entrance after a whisper. It applies the instruction to the complete passage, keeping the narrator's attribution and the words on both sides of an interruption. It reads conflicting and uncertain cues plainly. PDF line breaks can split a cue across source fragments. The plan records the original PDF blocks and spans for those cues.
 
+“Wait for the lantern,” she whispered. “The latch is still closed.” When the same turn continues in a second complete quotation within the paragraph, Hamr can keep both lines in one Breeze request. The narrator still reads the attribution between them. The plan marks both quotation spans under `continued_quotation`.
+
 Phrases such as “she answered quietly” and “he said slowly” can shape the quoted line even when a short sentence of narration shares the paragraph. A description that clearly refers back to the speaker's voice can also guide the line just spoken. Hamr asks Breeze to read the surrounding narration in its usual voice.
 
 Reporting phrases also distinguish firm emphasis and calm delivery. “Ada replied firmly” and “said Ada firmly” describe the same delivery. “Answered quickly” can refer to the timing of a reply, so Hamr leaves its pace to Breeze. The plan shows which words supported each direction.

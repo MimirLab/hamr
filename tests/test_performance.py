@@ -84,6 +84,44 @@ def test_interrupted_dialogue_keeps_both_spans_and_attribution_in_one_request(tm
     assert [text[start:end] for start,end in evidence['quotation_spans']][1][1:-1]=='until the door opens.'
 
 
+@pytest.mark.parametrize(('text', 'attribution', 'quotes', 'recipe'), [
+    ('“Keep close,” Ada whispered. “We are almost there.”', 'whispered',
+     ['“Keep close,”', '“We are almost there.”'], 'whisper'),
+    ('“Wait here,” whispered the watchman. “I will bring the key.”', 'whispered',
+     ['“Wait here,”', '“I will bring the key.”'], 'whisper'),
+    ('“Mind the step!” cried the watchman. “The stone is loose!”', 'cried',
+     ['“Mind the step!”', '“The stone is loose!”'], 'forceful'),
+    ('“Hear me out,” said Ada firmly. “There is another way.”', 'firmly',
+     ['“Hear me out,”', '“There is another way.”'], 'firm'),
+])
+def test_attributed_turn_keeps_the_next_sentence_in_the_same_request(tmp_path, text, attribution, quotes, recipe):
+    runtime, models, archives = performance.pinned_backends()
+    backend_identity = {'profile': 'vulkan-q8', 'runtime_revision': runtime,
+                        'model_sha256': models['vulkan-q8'], 'runtime_platform': 'linux_x86_64',
+                        'runtime_archive_sha256': archives['linux_x86_64']}
+    voice = {'reference_sha256': 'a' * 64, 'transcript': 'Reference words.'}
+    policy = {'source_sha256': digest(text.encode()), 'performance': {'attribution_cues': {'cried': 'forceful'}}}
+    result = plan_source(tmp_path, text, 'auto', document=policy)
+    assert performance.bind(result, backend_identity, voice)
+    unit, = result['utterances']
+    spoken, fields = performance.request(unit)
+    assert spoken == text and 'both quotations' in fields['instruction']
+    assert unit['performance']['recipe'] == recipe
+    evidence, = unit['performance']['evidence']
+    assert evidence['form'] == 'continued_quotation'
+    assert text[slice(*evidence['span'])] == attribution
+    assert [text[slice(*span)] for span in evidence['quotation_spans']] == quotes
+    legacy = planner.plan(inspect(tmp_path / 'book.md'), {'performance': 'auto'}, delivery_context=9)
+    assert legacy['performance']['candidates'] == 0
+
+
+def test_attributed_turn_does_not_carry_across_a_new_paragraph(tmp_path):
+    result = plan_source(tmp_path, '“Stay here,” Ada whispered.\n\n“Where is Clara?”', 'auto')
+    first, second = result['utterances']
+    assert first['performance_candidate']['recipe'] == 'whisper'
+    assert 'performance_candidate' not in second
+
+
 @pytest.mark.parametrize(('text','recipe'),[
     ('“Bring me the brass key,” Ada said, stressing the word “brass”.','contrastive_emphasis'),
     ('“We can wait. We can still turn back. We have to go now,” Ada said, beginning softly and growing louder.','growing_force'),

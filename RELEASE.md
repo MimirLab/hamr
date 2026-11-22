@@ -13,6 +13,7 @@ Blind listening across all 45 cast voices identified 22 preferred cleaned refere
 ### Expressive narration
 
 - Dialogue can take its direction from a fuller attribution such as “the doctor replied firmly” or “she said, her voice barely audible.” Hamr uses the reporting clause to tie the delivery to the right speaker.
+- If the same turn continues in a second complete quotation in the paragraph, Hamr sends both quotes and the intervening attribution together. This lets a whisper or another attributed delivery carry into the second line without adding an audio join.
 - An authored sigh or cough between complete sentences can be performed inside one continuous quotation.
 - An author-marked pronoun can carry the stress in a spoken line. EPUB stylesheet italics and Markdown emphasis can supply that cue. The plan records the marked word and its source location.
 
