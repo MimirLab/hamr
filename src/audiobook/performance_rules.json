@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "compatible_registry_sha256": [
+    "428a3bfe182375225c78b64826b927b23bfa43f73eabdeba1cb1b6ee909bd17a",
     "bd17f798eaa725aba03d3e15c9259e2d541bc026c3d8ea02e0c8755d55dc147f",
     "1d1517d01add3db68907af30b4476e6d742fe4571eb18602e46476c3491f77d1",
     "c46c5f9b93db2aac04799dc9343e6da9570f7ada67aa8934dc20b4cb42d06bab",
@@ -208,6 +209,7 @@
       },
       "murmured": {
         "prepositional": ["in a barely audible voice", "in a barely audible tone"],
+        "register_phrases": ["in a low voice", "in a low tone", "in a hushed voice", "in a hushed tone", "in hushed tones"],
         "possessive": ["voice barely audible", "words barely audible"]
       }
     },
@@ -232,16 +234,20 @@
     },
     "speaker_cues": [
       {
-        "recipe": "whisper", "signal": "lowered_voice", "strong": true,
-        "frames": ["{actor} lowered {possessive} voice", "{actor} leaned closer and lowered {possessive} voice",
-                   "{owner} voice dropped to a whisper", "{owner} voice sank to a whisper", "{owner} voice was scarcely a whisper"]
+        "recipe": "murmured", "legacy_recipe": "whisper", "signal": "lowered_voice", "strong": true,
+        "frames": ["{actor} lowered {possessive} voice", "{actor} leaned closer and lowered {possessive} voice"]
       },
       {
-        "recipe": "whisper", "signal": "proximity", "strong": false,
+        "recipe": "whisper", "signal": "lowered_voice", "strong": true,
+        "frames": ["{owner} voice dropped to a whisper", "{owner} voice sank to a whisper", "{owner} voice was scarcely a whisper"],
+        "register_frames": ["{actor} lowered {possessive} voice to a whisper"]
+      },
+      {
+        "recipe": "murmured", "legacy_recipe": "whisper", "signal": "proximity", "strong": false,
         "frames": ["{actor} leaned closer", "{actor} bent closer", "{actor} drew close"]
       },
       {
-        "recipe": "whisper", "signal": "low_audibility", "strong": false,
+        "recipe": "murmured", "legacy_recipe": "whisper", "signal": "low_audibility", "strong": false,
         "frames": ["{owner} voice was barely audible", "{owner} words were barely audible", "{actor} kept {possessive} voice low"]
       },
       {

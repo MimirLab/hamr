@@ -243,8 +243,9 @@ def test_recipe_tuning_changes_only_the_affected_render_identity(tmp_path):
 
 
 @pytest.mark.parametrize(('text','recipe','kind'),[
-    ('She lowered her voice. “Stay close,” she said.','whisper','same_speaker_setup'),
-    ('Mia lowered her voice. “Stay close,” Mia said.','whisper','same_speaker_setup'),
+    ('She lowered her voice. “Stay close,” she said.','murmured','same_speaker_setup'),
+    ('Mia lowered her voice. “Stay close,” Mia said.','murmured','same_speaker_setup'),
+    ('She lowered her voice to a whisper. “Stay close,” she said.','whisper','same_speaker_setup'),
     ('He raised his voice. “Stay beside me,” he said.','forceful','same_speaker_setup'),
     ('Ada blinked back tears. “I kept the letter,” Ada said.','tearful','same_speaker_setup'),
     ('The room was silent. Mia held her breath and watched the door.','quiet_scene','scene_setting'),
@@ -321,7 +322,8 @@ def test_only_the_adjacent_matching_speaker_supplies_prose_context(tmp_path):
     assert 'performance' not in lead and 'performance' not in after
     assert quote['performance']['evidence']==[
         {'kind':'preceding_speaker_setup','block':lead['sources'][0],'span':[0,21],'signal':'lowered_voice'}]
-    assert performance.request(quote)[0]=='“(whispering) Stay close,” she said.'
+    assert performance.request(quote)[0]=='“Stay close,” she said.'
+    assert quote['performance']['recipe']=='murmured'
     chapter_break='She lowered her voice.\n\n# A new chapter\n\n“Wait here,” she said.'
     across_chapters=plan_source(tmp_path,chapter_break)
     assert [u['performance_candidate']['recipe'] for u in across_chapters['utterances']
@@ -329,15 +331,17 @@ def test_only_the_adjacent_matching_speaker_supplies_prose_context(tmp_path):
 
 
 @pytest.mark.parametrize(('setup','attribution','recipe','signals'),[
-    ('Mia leaned closer. Her words were barely audible.', 'Mia said.', 'whisper', ['proximity','low_audibility']),
+    ('Mia leaned closer. Her words were barely audible.', 'Mia said.', 'murmured', ['proximity','low_audibility']),
     ('Her eyes filled with tears. Her voice broke.', 'she said.', 'tearful', ['physical_tears','breaking_voice']),
     ('Mia’s voice dropped to a whisper.', 'Mia said.', 'whisper', ['lowered_voice']),
+    ('Mia leaned closer. Her voice dropped to a whisper.', 'Mia said.', 'whisper', ['proximity','lowered_voice']),
     ('Lee was still out of breath.', 'Lee said.', 'breathless', ['breath_between_words']),
     ('Mia leaned closer.', 'Mia said.', None, []),
     ('Mia leaned closer. Mia bent closer.', 'Mia said.', None, []),
     ('Mia leaned closer. His voice was barely audible.', 'Jo said.', None, []),
     ('Mia leaned closer. Her voice was never barely audible.', 'Mia said.', None, []),
     ('Mia lowered her voice. Mia raised her voice.', 'Mia said.', None, []),
+    ('Mia’s voice dropped to a whisper. Mia raised her voice.', 'Mia said.', None, []),
     ('Mia lowered her voice. The door opened.', 'Mia said.', None, []),
 ])
 def test_dialogue_context_uses_precise_local_cues(tmp_path,setup,attribution,recipe,signals):
@@ -372,7 +376,7 @@ def test_verb_first_and_other_reporting_verbs_are_auditionable(tmp_path):
     assert whisper['performance_candidate']['evidence'][0]['form']=='verb_first'
     assert whisper['performance_candidate']['contextual']
     result=plan_source(tmp_path,'Emma lowered her voice. “Follow me,” Emma replied.')
-    assert result['utterances'][0]['performance_candidate']['recipe']=='whisper'
+    assert result['utterances'][0]['performance_candidate']['recipe']=='murmured'
     result=plan_source(tmp_path,'[sigh] “Follow me,” said Emma.')
     assert result['utterances'][0]['performance_candidate']['contextual']
 
@@ -598,6 +602,12 @@ def test_normal_attribution_directs_only_the_owned_sentence(tmp_path,text,recipe
      'in a whisper', 'said', 'whisper'),
     ('Before anyone left, he said, in a whisper to Ada, “Leave the gate open.”',
      'in a whisper', 'said', 'whisper'),
+    ('“Your brother should take the part,” said Mr. Yates, in a low voice.',
+     'in a low voice', 'said', 'murmured'),
+    ('“Leave enough for the others,” replied the Cat, in a hushed tone.',
+     'in a hushed tone', 'replied', 'murmured'),
+    ('The hall was empty. The guard said in hushed tones: “Come this way.”',
+     'in hushed tones', 'said', 'murmured'),
 ])
 def test_default_attached_voice_description_keeps_the_complete_turn(tmp_path,text,cue,reporting,recipe):
     source=tmp_path/'book.md'
@@ -607,7 +617,8 @@ def test_default_attached_voice_description_keeps_the_complete_turn(tmp_path,tex
     unit,=planner.plan(document)['utterances']
     candidate=unit['performance_candidate']
     assert candidate['recipe']==recipe
-    assert candidate['speech']==candidate['synthesis']==text
+    plain,=planner.plan(document,{'performance':'off'})['utterances']
+    assert candidate['speech']==candidate['synthesis']==plain['text']
     evidence,=candidate['evidence']
     assert evidence['kind']=='attached_voice_description'
     assert text[slice(*evidence['span'])]==cue
@@ -615,6 +626,64 @@ def test_default_attached_voice_description_keeps_the_complete_turn(tmp_path,tex
     quote,=evidence['quotation_spans']
     assert text[slice(*quote)].startswith('“')
     assert text[slice(*quote)].endswith('”')
+
+
+def test_saved_context_keeps_the_previous_lowered_voice_request(tmp_path):
+    source=tmp_path/'book.md'
+    source.write_text('She lowered her voice. “Stay close,” she said.')
+    document=inspect(source)
+    older=planner.plan(document,delivery_context=16)
+    ordinary=planner.plan(document)
+    old,=older['utterances']
+    new,=ordinary['utterances']
+    assert old['performance_candidate']['recipe']=='whisper'
+    assert '(whispering) ' in old['performance_candidate']['synthesis']
+    assert new['performance_candidate']['recipe']=='murmured'
+    assert new['performance_candidate']['synthesis']==new['text']==old['text']
+
+
+@pytest.mark.parametrize('text',[
+    '“I told him to speak in a low voice,” she said.',
+    '“Is a hushed tone your best idea?” Ada said.',
+    '“Stay here,” she said, as Ada lowered her voice.',
+    'Ada lowered her voice. “Wait here,” Lee said.',
+    'She did not lower her voice. “Wait here,” she said.',
+])
+def test_register_cues_require_ownership_in_the_default_plan(tmp_path,text):
+    assert plan_source(tmp_path,text,'auto')['performance']['candidates']==0
+
+
+@pytest.mark.parametrize(('opening','closing'),[('“','"'), ('"','”')])
+def test_single_mixed_quotation_keeps_source_spans_and_spoken_text(tmp_path,opening,closing):
+    quote=f'{opening}Keep the gate shut,{closing}'
+    text=f'{quote} she said, in a low voice.'
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    document=inspect(source)
+    old,=planner.plan(document,delivery_context=16)['utterances']
+    assert 'performance_candidate' not in old
+    unit,=planner.plan(document)['utterances']
+    candidate=unit['performance_candidate']
+    assert candidate['recipe']=='murmured'
+    assert candidate['speech']==candidate['synthesis']==text
+    start,stop=candidate['evidence'][0]['quotation_spans'][0]
+    assert text[start:stop]==quote
+    assert text[slice(*candidate['source']['span'])]=='in a low voice'
+
+
+def test_mixed_quotation_can_keep_whisper_and_authored_event_in_one_request(tmp_path):
+    text='“You can tell me. [sigh] I’m still listening," she whispered.'
+    plan=plan_source(tmp_path,text,'auto')
+    unit,=plan['utterances']
+    candidate=unit['performance_candidate']
+    assert candidate['composition']=={'delivery':'whisper','vocal_event':'sigh'}
+    assert candidate['speech']=='“You can tell me. I’m still listening," she whispered.'
+    assert candidate['synthesis']=='“You can tell me. (sigh) I’m still listening," she whispered.'
+
+
+def test_unmatched_quote_and_inch_symbol_remain_literal(tmp_path):
+    text='A 20" screen was too big,” she said, in a low voice.'
+    assert plan_source(tmp_path,text,'auto')['performance']['candidates']==0
 
 
 @pytest.mark.parametrize(('text','actor','recipe'),[
