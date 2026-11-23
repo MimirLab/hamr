@@ -124,8 +124,8 @@ def test_opening_fallback_verifies_contrast_on_the_actual_take(tmp_path,monkeypa
         assert data == speech
 
 
-@pytest.mark.parametrize('quiet_final',[False,True])
-def test_opening_ordinary_anchor_is_reused_or_corrected(tmp_path,monkeypatch,quiet_final):
+@pytest.mark.parametrize(('quiet_final','causal_ok'),[(True,False),(False,False),(False,True)])
+def test_opening_ordinary_anchor_is_reused_or_corrected(tmp_path,monkeypatch,quiet_final,causal_ok):
     frame = quote_timing.FRAME
     text = '“Wait by the lamp,” she whispered. The rain stopped. No one came.'
     unit = {'text':text,'quote_timing':quote_timing.scope(text,text,25)}
@@ -138,6 +138,7 @@ def test_opening_ordinary_anchor_is_reused_or_corrected(tmp_path,monkeypatch,qui
     quiet = (100).to_bytes(2,'little')*(3*frame)+tail
     loud = (180).to_bytes(2,'little')*(3*frame)+tail
     requests = []
+    causal_attempts = []
 
     def synthesize(text,options):
         requests.append(options)
@@ -147,6 +148,13 @@ def test_opening_ordinary_anchor_is_reused_or_corrected(tmp_path,monkeypatch,qui
 
     monkeypatch.setattr(quote_timing,'verified_models',lambda _:True)
     monkeypatch.setattr(quote_timing,'measure_take',lambda *args:([measures],[]))
+    def causal(*args):
+        causal_attempts.append(len(requests))
+        if causal_ok:
+            return (quiet,{'sha256':digest(quiet),'samples':len(quiet)//2}),'decoder',{}
+        return None,None,{}
+
+    monkeypatch.setattr(quote_timing,'causal_take',causal)
     audio,receipt = quote_timing.render(store,job,unit,'a'*64,synthesize)
     assert requests[0] == {'seed':42}
     windows = [options['frame_guidance'] for options in requests[1:]]
@@ -154,8 +162,10 @@ def test_opening_ordinary_anchor_is_reused_or_corrected(tmp_path,monkeypatch,qui
         [(3,2),(4,1)] if quiet_final else [(3,2),(4,1),(5,0)])
     report = receipt['quote_timing']
     assert report['trials'][0]['anchor'] == 'ordinary' and report['trials'][0]['schedule'] is None
-    assert report['selected'] == ('directed' if quiet_final else 'ordinary')
-    assert audio == (quiet if quiet_final else ordinary)
+    assert report['selected'] == ('directed' if quiet_final or causal_ok else 'ordinary')
+    assert report.get('controller') == ('decoder' if causal_ok else None)
+    assert audio == (quiet if quiet_final or causal_ok else ordinary)
+    assert causal_attempts == ([] if quiet_final else [len(requests)])
     requests.clear()
     replayed,receipt = quote_timing.render(store,job,unit,'a'*64,synthesize)
     assert not requests and replayed==audio

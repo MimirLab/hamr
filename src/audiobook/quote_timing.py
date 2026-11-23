@@ -724,6 +724,23 @@ def inline_take(checkpoint, job, text, ordinary, target, quotations, instruction
     return None,trials
 
 
+def causal_take(checkpoint, job, text, ordinary, target, quotations, instruction, synthesize):
+    if not performance.supports_quote_guidance(job.get('backend') or {}):
+        return None,None,{}
+    decoded, attempt = decoder_take(checkpoint/'decoder',job,text,ordinary,target,quotations,
+                                    instruction,synthesize)
+    reports = {'decoder_attempt':attempt}
+    power = attempt.get('maximum_quote_power_ratio')
+    if (job['quote_timing_models'].get('timing_algorithm',3)>=8 and supports_inline_whisper(job['backend'])
+            and attempt.get('reason')!='quote_guidance_unavailable'
+            and (decoded is None or power is None or power>QUIET_QUOTE_POWER)):
+        inline, trials = inline_take(checkpoint,job,text,ordinary,target,quotations,instruction,synthesize)
+        reports['inline_attempts'] = trials
+        if inline is not None:
+            return inline,'inline',reports
+    return decoded,'decoder',reports
+
+
 def render(store, job, unit, clip, synthesize):
     """Reuse completed trials and adopt a direction only on measured speech."""
     recipe = job['quote_timing_models']
@@ -749,23 +766,12 @@ def render(store, job, unit, clip, synthesize):
     allow_exit_overlap = recipe.get('timing_algorithm',3)>=5
     decoder = {}
     if verified_models(recipe):
-        if performance.supports_quote_guidance(job.get('backend') or {}):
-            decoded, attempt = decoder_take(checkpoint/'decoder',job,text,ordinary,target,quotations,
-                                            instruction,synthesize)
-            decoder['decoder_attempt'] = attempt
-            power = attempt.get('maximum_quote_power_ratio')
-            if (recipe.get('timing_algorithm',3)>=8 and supports_inline_whisper(job['backend'])
-                    and attempt.get('reason')!='quote_guidance_unavailable'
-                    and (decoded is None or power is None or power>QUIET_QUOTE_POWER)):
-                inline, trials = inline_take(checkpoint,job,text,ordinary,target,quotations,instruction,synthesize)
-                decoder['inline_attempts'] = trials
-                if inline is not None:
-                    data, receipt = inline
-                    return data,{**receipt,'quote_timing':{**target,'selected':'directed',
-                        'controller':'inline','trials':[],**decoder}}
-            if decoded is not None:
-                data,receipt = decoded
-                return data,{**receipt,'quote_timing':{**target,'selected':'directed','controller':'decoder',
+        if not ordinary_anchor:
+            guided,controller,decoder = causal_take(checkpoint,job,text,ordinary,target,quotations,
+                                                     instruction,synthesize)
+            if guided is not None:
+                data,receipt = guided
+                return data,{**receipt,'quote_timing':{**target,'selected':'directed','controller':controller,
                                                        'trials':[],**decoder}}
         for index in range(attempts+allow_short_taper):
             trial = checkpoint/str(index)
@@ -861,5 +867,12 @@ def render(store, job, unit, clip, synthesize):
                 break
             schedule = proposal
             reason = 'corrected_take_outside_quote'
+        if ordinary_anchor:
+            guided,controller,decoder = causal_take(checkpoint,job,text,ordinary,target,quotations,
+                                                     instruction,synthesize)
+            if guided is not None:
+                data,receipt = guided
+                return data,{**receipt,'quote_timing':{**target,'selected':'directed','controller':controller,
+                                                       'trials':history,**decoder}}
     data,receipt = saved_ordinary if saved_ordinary is not None else synthesize(text,ordinary)
     return data,{**receipt,'quote_timing':{**target,'selected':'ordinary','reason':reason,'trials':history,**decoder}}
