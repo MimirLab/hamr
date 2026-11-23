@@ -98,12 +98,23 @@ def test_doctor_applies_the_tightest_cgroup_memory_headroom(tmp_path,monkeypatch
 
 
 def test_every_model_has_cpu_and_vulkan_choices_with_bound_download_sizes():
-    rows = hardware.profile_catalog(catalog());mapping = {r['id']: r for r in rows}
+    records = catalog()
+    rows = hardware.profile_catalog(records,{'system':'Linux','arch':'x86_64'})
+    mapping = {r['id']: r for r in rows}
+    runtime = records['runtimes']['hoppou']
+    timed, = runtime['profile_archives']['linux_x86_64']
+    timed_profiles = {'vulkan-f16','vulkan-q8','cpu-q8'}
+    assert set(timed['profiles'])==timed_profiles
+    terms = next(f['bytes'] for f in records['packages']['official']['files'] if f['path']=='LICENSE')
     assert sum(r['implemented'] for r in rows) == 9
     for variant in ('f16','q8','q6','q4'):
         gpu, cpu = mapping['vulkan-'+variant],mapping['cpu-'+variant]
         assert gpu['implemented'] and cpu['implemented']
-        assert gpu['download_bytes'] == cpu['download_bytes'] > 2*hardware.GIB
+        for row in (gpu,cpu):
+            model = records['packages'][row['packages'][0]]['payload_bytes']
+            asset = timed if row['id'] in timed_profiles else runtime['linux_x86_64']
+            assert row['download_bytes']==model+asset['bytes']+terms
+            assert row['download_bytes']>2*hardware.GIB
     assert not mapping['cuda-bf16-eager']['implemented']
     assert mapping['vulkan-f16']['testing_status'] == 'locally_tested'
     assert mapping['vulkan-q6']['testing_status'] == 'implemented_experimental'

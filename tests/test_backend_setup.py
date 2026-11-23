@@ -28,7 +28,11 @@ def assets(tmp_path, monkeypatch):
         payloads[url] = content
         return {'url': url, 'sha256': hashlib.sha256(content).hexdigest(), 'bytes': len(content)}
 
-    runtime = catalog['runtimes']['hoppou']['linux_x86_64']
+    engine = catalog['runtimes']['hoppou']
+    # This fixture replaces the stock archive. The alternate-archive test
+    # registers its own matching payload and capability receipt.
+    engine.pop('profile_archives', None)
+    runtime = engine['linux_x86_64']
     runtime.update(asset(runtime['filename'], archive.getvalue()))
     for precision in ('f16', 'q8', 'q6', 'q4'):
         package = catalog['packages']['hoppou-' + precision]

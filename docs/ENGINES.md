@@ -8,14 +8,20 @@ The fit estimate uses the graphics driver and current available memory. Startup 
 
 | Host | Runtime and model | Evidence |
 | --- | --- | --- |
-| Linux x86_64 with Vulkan | Hoppou 0.1.7, one of F16, Q8, Q6 or Q4, plus Q8 with CPU text encoding | F16 long narration and matched F16/Q8 controls on RX 6800 XT. Q8 also passed chaptered publication. Render trials are pending for Q6, Q4 and CPU text encoding. |
-| Linux x86_64 on CPU | The same pinned Hoppou formats via its CPU route | Q8 short control passed real render, forced interruption, recovery, offline speech checking and playback. Long-book turnaround and other precisions need trials. |
+| Linux x86_64 with Vulkan | Hamr's pinned Breeze build for F16 and Q8. Hoppou 0.1.7 for Q6, Q4 and Q8 with CPU text encoding. | F16 and Q8 passed matched controls and interrupted timed dialogue on RX 6800 XT. Q8 also passed chaptered publication. Render trials are pending for Q6, Q4 and CPU text encoding. |
+| Linux x86_64 on CPU | Hamr's pinned Breeze build for Q8. The same Hoppou formats for smaller CPU profiles. | Q8 passed real render, forced interruption, recovery, offline speech checking and decoded playback. Long-book turnaround and other precisions need trials. |
 | Windows x86_64 with AVX2 | The upstream Hoppou Windows ZIP, same matched model files | **CPU Q8 tested.** Setup, checked publication and forced-exit recovery passed on native Windows. The Vulkan preview still needs a physical Windows GPU trial. [Hosted run](https://github.com/MimirLab/hamr/actions/runs/44863152453) |
 | Apple Silicon | Swift/MLX BF16 and affine INT8 are first candidates | Research. Needs an owned Apple adapter and target-device trials. |
 | NVIDIA with a working Vulkan driver | The Hoppou route above | Native CUDA remains a separate comparison. |
 | AMD Strix Halo | Vulkan as available through Hoppou | Speakrail ROCm remains a separate comparison. |
 
 Linux needs the Vulkan loader even when using the CPU profile. Windows uses the loader installed by the graphics driver. For Windows use PowerShell with Git, uv, Python 3.12, FFmpeg and ffprobe available. mpv is used for playback.
+
+### Timed whispers
+
+The updated Linux build can direct an explicit whispered quotation inside one continuous reading. It can cover both quotations when the same speaker continues across a reporting clause. Hamr measures the spoken boundaries with its installed checkers and uses ordinary narration when timing remains uncertain. Previously completed books keep their saved takes. Run `hamr setup` and select the matching F16 or Q8 profile to activate the updated runtime for new books. Linux uses the Ubuntu 22.04 build. Windows and the other Linux model profiles use their pinned upstream runtime. [Corresponding source and build provenance](https://github.com/MimirLab/hamr/releases/download/v0.4.6/breeze-frame-guidance-42dff8e-source.tar.gz)
+
+### Set up on Windows
 
 ```powershell
 git clone https://github.com/MimirLab/hamr.git

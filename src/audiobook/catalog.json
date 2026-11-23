@@ -25,6 +25,29 @@
         "url": "https://github.com/HoppouAI/Breeze-TTS-2.cpp/releases/download/v0.1.7/breeze-tts-2-v0.1.7-windows-x64-vulkan.zip",
         "bytes": 72930161,
         "sha256": "63fb117e5c6b04e33ac513d6ca80c621d01bdbdebcf7a8486f872d181ae3c88f"
+      },
+      "profile_archives": {
+        "linux_x86_64": [
+          {
+            "revision": "42dff8e20a4cd52c014aadfbdec921f6319b4f32",
+            "profiles": ["vulkan-f16", "vulkan-q8", "cpu-q8"],
+            "filename": "breeze-frame-guidance-linux-x64.tar.gz",
+            "url": "https://github.com/MimirLab/hamr/releases/download/v0.4.6/breeze-frame-guidance-linux-x64.tar.gz",
+            "bytes": 18391266,
+            "sha256": "9a48d45fdd8fbc210c53a9aedc41d750c52edd762bbf1dbd9736690a9e98ef4c",
+            "frame_guidance": {
+              "version": 1,
+              "encoding": "multipart",
+              "frame_samples": 1920,
+              "chunk_frames": 10
+            },
+            "frame_guidance_windows": {
+              "version": 1,
+              "max_windows": 8,
+              "speech_end": true
+            }
+          }
+        ]
       }
     },
     "audio-cpp": {

@@ -1,3 +1,9 @@
+# hamr 0.4.6
+
+- Hamr can time an explicit whisper inside a passage and follow a continuing speaker through a second quotation. Both quotes and the intervening narration stay in one speech request. Each directed take is independently checked for words and timing. Resume can pick up saved trials, and the book report includes the decision.
+- The updated Linux runtime has passed setup, render, forced interruption, recovery, and decoded playback on CPU Q8, Vulkan Q8, and Vulkan F16. Run `hamr setup` to install it for one of these profiles. See [engine support](docs/ENGINES.md#timed-whispers) for platform coverage and the corresponding source.
+- If two installed checkers point to the same substituted word in a held ordinary passage, Hamr can try the passage again automatically. A fresh take must pass the usual checks, and the disputed original is retained with its repair record. Neighboring recordings are reused.
+
 # hamr 0.4.5
 
 Hamr respects a sentence boundary after a finished quotation. In `“Stay here.” The trees whispered.` the second sentence stays ordinary narration. In `“Stay here,” she whispered.` the reporting clause still directs the spoken line. This applies to new books across text, Markdown, EPUB, and searchable and scanned PDF. Existing jobs retain their saved reading.
