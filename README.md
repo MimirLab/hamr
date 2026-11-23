@@ -21,11 +21,11 @@ What are you reading? A field guide belongs with Nigel. A book about the univers
 
 | Voice | Reach for it when… | Hear the introduction |
 | --- | --- | --- |
-| **Nigel Thornberry** | You'd like someone to get genuinely excited about a footprint. | [▶ Nigel](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/nigel-thornberry.mp3) |
-| **Carl Sagan** | The book has a way of making the room feel a little bigger. | [▶ Sagan](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/carl-sagan.mp3) |
-| **Cave Johnson** | The experiment probably goes better if nobody reads the liability waiver. | [▶ Cave](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/cave-johnson.mp3) |
-| **Dr. Orpheus** | There's a cellar door, and naturally you're going to open it. | [▶ Orpheus](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/dr-orpheus.mp3) |
-| **HAL 9000** | A voice this calm should be reassuring. | [▶ HAL](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/hal-9000.mp3) |
+| **Nigel Thornberry** | You'd like someone to get genuinely excited about a footprint. | [▶ Nigel](https://raw.githubusercontent.com/MimirLab/hamr/9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/nigel-thornberry.mp3) |
+| **Carl Sagan** | The book has a way of making the room feel a little bigger. | [▶ Sagan](https://raw.githubusercontent.com/MimirLab/hamr/9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/carl-sagan.mp3) |
+| **Cave Johnson** | The experiment probably goes better if nobody reads the liability waiver. | [▶ Cave](https://raw.githubusercontent.com/MimirLab/hamr/9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/cave-johnson.mp3) |
+| **Dr. Orpheus** | There's a cellar door, and naturally you're going to open it. | [▶ Orpheus](https://raw.githubusercontent.com/MimirLab/hamr/9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/dr-orpheus.mp3) |
+| **HAL 9000** | A voice this calm should be reassuring. | [▶ HAL](https://raw.githubusercontent.com/MimirLab/hamr/9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/hal-9000.mp3) |
 
 **[Meet all 45 voices →](docs/CAST.md)** Each character introduces themselves. The introductions are balanced for browsing the cast, and the same clips play offline with `hamr voice sample CHARACTER --play`, even before model setup.
 
@@ -37,7 +37,7 @@ What are you reading? A field guide belongs with Nigel. A book about the univers
 >
 > “Run for the bridge!” she shouted.
 
-**[▶ Plain reading](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/demo/lantern-plain.mp3)** · **[▶ Expressive reading](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/demo/lantern-expressive.mp3)** · [Read the source](docs/demo/lantern.md)
+**[▶ Plain reading](https://raw.githubusercontent.com/MimirLab/hamr/9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/demo/lantern-plain.mp3)** · **[▶ Expressive reading](https://raw.githubusercontent.com/MimirLab/hamr/9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/demo/lantern-expressive.mp3)** · [Read the source](docs/demo/lantern.md)
 
 Same passage, same Nigel. Listen to the two halves of the whispered line and then to the warning. In the expressive take, Hamr uses *she whispered* to direct the speech on both sides of the attribution, then brings the narrator back in gently for the latch.
 
