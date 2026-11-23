@@ -151,7 +151,7 @@ def test_missing_output_mount_is_recoverable(job):
 def test_enospc_after_clip_checkpoint(job,monkeypatch):
     import audiobook.jobs as module
     s,j,_=job; original=module.publish
-    def fail(*args): raise OSError(28,'No space left on device',j['output_parent'])
+    def fail(*args,**kwargs): raise OSError(28,'No space left on device',j['output_parent'])
     monkeypatch.setattr(module,'publish',fail)
     with pytest.raises(Error,match='No space left on device') as failure: render(s,j['id'])
     assert j['output_parent'] in failure.value.message

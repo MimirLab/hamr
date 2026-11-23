@@ -303,7 +303,8 @@ def generate_with_timing(store, job, selected, parallel, engine_session):
                 yield unit,clip,data,receipt,0
 
 
-def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_session=None):
+def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_session=None,
+           *, record_run_metrics=None):
     if max_new_takes is not None and (type(max_new_takes) is not int or not 1<=max_new_takes<=4096):
         raise Error('render_budget','Choose one to4096 new takes per render batch.')
     with store.lock():
@@ -312,6 +313,8 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
         if output: j['output_parent']=str(Path(output).absolute())
         final=final_path(j)
         if verify_publication(final,j):
+            if record_run_metrics:
+                record_run_metrics(j)
             if j.get('audio_gate') and j.get('audio_gate_approved_plan')!=j['plan']['plan_sha256']:
                 j['status']='needs_review'; store.save(j); return summary(store,j)
             j['status']='ready'; j['error']=None; store.save(j); return summary(store,j)
@@ -390,7 +393,7 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
                     store.save(j); return summary(store,j)
             if j['plan']['issues']:
                 j['status']='needs_review'; store.save(j); return summary(store,j)
-            j['status']='assembling'; store.save(j); publish(store,j)
+            j['status']='assembling'; store.save(j); publish(store,j,record_run_metrics=record_run_metrics)
             fault('before_ready_db'); j['status']='ready'; store.save(j); fault('after_ready_db')
             if scratch.exists(): store.safe_remove(scratch)
             return summary(store,j)
@@ -419,7 +422,7 @@ def escape_meta(s):
     if '\0' in s:raise Error('metadata_control','Metadata contains an unsupported null character.')
     return re.sub(r'([\\=;#\n])',lambda m:'\\'+m[1],s)
 
-def publish(store,j):
+def publish(store,j,*,record_run_metrics=None):
     parent=Path(j['output_parent'])
     # Do not recreate a vanished destination mount/directory: require explicit existing parent.
     if not parent.is_dir(): raise Error('output_unavailable',f'Output directory is unavailable: {parent}','Create or reconnect that directory, then resume.')
@@ -559,6 +562,8 @@ def publish(store,j):
             source+='<details><summary>Reading used in the audiobook</summary><pre style="white-space:pre-wrap">'+html.escape(decision['spoken'])+'</pre><p>'+html.escape(decision['reason'])+'</p></details>'
         source+='</section>'
     atomic(stage/'source.html',source.encode())
+    if record_run_metrics:
+        record_run_metrics(j)
     metrics = {**j['metrics'], 'semantic_qa':speech_check_status(j)}
     qa_message = ('Container and required offline speech checks passed.' if metrics['semantic_qa']=='passed'
                   else 'Container checks passed. Offline speech checking was not required for this publication.')

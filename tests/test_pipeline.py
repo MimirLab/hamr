@@ -26,6 +26,8 @@ def test_cached_pipeline_runs_required_qa_before_real_ffmpeg_publication(tmp_pat
     assert result['metrics']['semantic_qa']=='passed'
     report=json.loads((Path(result['output'])/'report.json').read_text())
     assert report['metrics']['semantic_qa']=='passed' and 'offline speech checks passed' in report['qa']
+    assert report['metrics']==result['metrics']
+    assert result['metrics']['clips_rendered']==0 and result['metrics']['clips_reused']==result['utterances']
     assert result['pipeline_progress']['phase']=='complete' and result['pipeline_progress']['remaining_unique_takes']==0
     state=json.loads((s.path(j)/'pipeline.json').read_text());assert state['phase']=='complete' and not state['retakes']
     assert state['remaining_unique_takes']==0 and state['pending_unique_observations']==0
@@ -45,9 +47,14 @@ def test_bounded_pipeline_resumes_cached_work_and_observations_without_resetting
     monkeypatch.setattr(jobs,'Engine',Engine)
     first=pipeline.run(s,j['id'],Path('/unused'),Path('/unused'),max_new_takes=1)
     assert first['status']=='paused' and len(calls)==1 and not jobs.final_path(s.get(j['id'])).exists()
+    assert first['metrics']['clips_rendered']==1 and first['metrics']['clips_reused']==0
     first_pcm={k:jobs.valid_clip(s,k)['sha256'] for k in s.get(j['id'])['clips'].values()}
     second=pipeline.run(s,j['id'],Path('/unused'),Path('/unused'),max_new_takes=1)
     assert second['status']=='ready' and len(calls)==2
+    assert second['metrics']['clips_rendered']==1 and second['metrics']['clips_reused']==1
+    report=json.loads((Path(second['output'])/'report.json').read_text())
+    assert report['metrics']==second['metrics']==jobs.summary(s,s.get(j['id']))['metrics']
+    assert 0 < second['metrics']['wall_seconds_this_run'] <= second['pipeline_progress']['elapsed_seconds_this_run']
     assert all(jobs.valid_clip(s,k)['sha256']==sha for k,sha in first_pcm.items())
     state=json.loads((s.path(j)/'pipeline.json').read_text())
     assert len(state['runs'])==2 and state['remaining_unique_takes']==0

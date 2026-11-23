@@ -82,7 +82,10 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
     if batch_rest_seconds and not resident:raise Error('pipeline_budget','Batch rest requires a resident engine.')
     if type(overlap_batch_rest) is not bool or (overlap_batch_rest and not (resident and batch_rest_seconds)):
         raise Error('pipeline_budget','Overlapping CPU review with rest requires resident mode and a positive batch rest.')
-    path=store.path(store.get(jid))/'pipeline.json';started=time.monotonic();generated=0
+    path=store.path(store.get(jid))/'pipeline.json'
+    started = time.monotonic()
+    generated = retries = 0
+    existing_clips = None
     if path.is_symlink():raise Error('unsafe_path','Pipeline checkpoint cannot be a symlink.')
     code={str(p):filehash(p) for p in Path(__file__).parent.glob('*.py')}
     from .backend import ResidentEngineSession
@@ -144,6 +147,23 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
             if j['status']=='cancelled':raise Error('cancelled','This job was cancelled.')
             if j['status']=='paused' and (j.get('error') or {}).get('code')=='user_paused':raise KeyboardInterrupt
             return j
+        def record_run_metrics(j):
+            # The assembly pass reuses everything synthesized earlier in
+            # this run. Account for reuses only from its starting cache.
+            cached = existing_clips or set()
+            metrics = j.setdefault('metrics',{})
+            metrics.update(
+                wall_seconds_this_run=time.monotonic()-started,
+                clips_rendered=generated,
+                clips_reused=sum(clip in cached for clip in j['clips'].values()),
+                retries=retries,
+            )
+        def finish_without_publication():
+            with writer():
+                j = current()
+                record_run_metrics(j)
+                store.save(j)
+            return jobs.summary(store,j)
         def observe(selected,chosen_model):
             with writer():
                 rows,identity,checkpoint=qa_cache.observe(store,current(),selected,python,chosen_model)
@@ -214,9 +234,11 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                 fault('after_automatic_retake_commit')
                 j=store.get(jid);state['retakes']=j['automatic_retakes']
                 owner=binding(j);state.update(binding=owner,plan_sha256=j['plan']['plan_sha256']);progress('bounded_retake_queued')
-        def source_hold(j):
+        def source_hold():
             with writer():
-                j=current();j['status']='needs_review';j['error']={'code':'source_review','message':'Source regions remain unresolved; verified clear speech is retained.','action':'Inspect the source locations and apply a source-supported repair.'};store.save(j)
+                j=current();j['status']='needs_review';j['error']={'code':'source_review','message':'Source regions remain unresolved; verified clear speech is retained.','action':'Inspect the source locations and apply a source-supported repair.'}
+                record_run_metrics(j)
+                store.save(j)
             progress('source_review',source_locations=len(j['plan']['issues']),publication_attempted=False)
             return jobs.summary(store,j)
         with writer():
@@ -238,19 +260,23 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
             while True:
                 batch_completed=None
                 j=current()
-                if j['plan']['issues'] and not prepare_clear:return source_hold(j)
+                if j['plan']['issues'] and not prepare_clear:return source_hold()
                 required={jobs.clip_key(u,j) for u in j['plan']['utterances']}
-                missing=[k for k in required if not jobs.valid_clip(store,k)]
+                missing={k for k in required if not jobs.valid_clip(store,k)}
+                if existing_clips is None:
+                    existing_clips = required - missing
                 progress('rendering' if missing else 'observing',total_unique_takes=len(required),remaining_unique_takes=len(missing))
                 if missing:
                     budget=batch_takes if max_new_takes is None else min(batch_takes,max_new_takes-generated)
                     if budget<=0:
-                        progress('paused_at_run_limit');return jobs.summary(store,current())
+                        progress('paused_at_run_limit');return finish_without_publication()
                     result=wait_writer(lambda:jobs.render(store,jid,max_new_takes=budget,**({'engine_session':engine_session} if resident else {})))
                     # Rendering has returned only after all this batch's streams
                     # finished and their complete PCM was durably committed.
                     batch_completed=time.monotonic()
-                    generated+=result.get('metrics',{}).get('clips_rendered',0)
+                    batch_metrics = result.get('metrics',{})
+                    generated += batch_metrics.get('clips_rendered',0)
+                    retries += batch_metrics.get('retries',0)
                     j=current()
                 selected=[];seen=set();unrendered=False
                 for u in j['plan']['utterances']:
@@ -286,7 +312,7 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                 progress(state['phase'],remaining_unique_takes=len(remaining))
                 if remaining:
                     if max_new_takes is not None and generated>=max_new_takes:
-                        progress('paused_at_run_limit',remaining_unique_takes=len(remaining));return jobs.summary(store,current())
+                        progress('paused_at_run_limit',remaining_unique_takes=len(remaining));return finish_without_publication()
                     if resident and batch_rest_seconds:
                         now=time.monotonic()
                         credit=min(batch_rest_seconds,max(0,now-batch_completed)) if overlap_batch_rest and batch_completed is not None else 0
@@ -304,20 +330,23 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                             time.sleep(min(.25,max(0,deadline-time.monotonic())))
                         current()  # A fresh full check before the next iteration.
                     continue
-                if j['plan']['issues']:return source_hold(j)
+                if j['plan']['issues']:return source_hold()
                 progress('required_QA')
                 wait_writer(lambda:qa.check(store,jid,python,model,all_clips=True,require_review=True));j=current()
                 if not j.get('audio_review'):
                     if engine_session is not None:
                         engine_session.release()
-                    progress('assembling');result=wait_writer(lambda:jobs.render(store,jid,allow_synthesis=False))
+                    progress('assembling')
+                    result=wait_writer(lambda:jobs.render(store,jid,allow_synthesis=False,record_run_metrics=record_run_metrics))
                     progress('complete' if result['status']=='ready' else 'publication_held',output=result['output'],acceptances_added=0)
+                    if result['status']!='ready':
+                        return finish_without_publication()
                     return jobs.summary(store,current())
                 pending={r['utterance'] for r in j['audio_review']};report=loadjson(store.path(j)/f'qa-r{j["revision"]}.json')
                 flagged=[r for r in report['rows'] if r['utterance'] in pending]
                 confirmed=retake_candidates(flagged,j)
                 if not confirmed:
-                    progress('speech_review',speech_locations=len(j['audio_review']),acceptances_added=0);return jobs.summary(store,j)
+                    progress('speech_review',speech_locations=len(j['audio_review']),acceptances_added=0);return finish_without_publication()
                 queue_retakes(confirmed)
         except BaseException as exc:
             progress('interrupted' if isinstance(exc,KeyboardInterrupt) else 'stopped',error=str(exc),automatic_boot_resume=False)
