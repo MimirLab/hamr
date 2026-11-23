@@ -11,7 +11,8 @@ from .speech_compare import comparison_tokens,quantities,negations,mathematical_
 def binding(job):
     speech=[{k:v for k,v in u.items() if k!='id'} for u in job['plan']['utterances']]
     return key({'document':job['document'],'speech':speech,'policy':job['plan']['policy'],
-                'aliases':job['plan']['aliases'],'voice':job['voice'],'backend':job['backend']})
+                'aliases':job['plan']['aliases'],'voice':job['voice'],'backend':job['backend'],
+                **({'quote_timing_models':job['quote_timing_models']} if 'quote_timing_models' in job else {})})
 
 
 def critical(expected,observed,protected=None,reference=None):
@@ -201,6 +202,8 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
             if latest['revision']!=job['revision'] or binding(latest)!=starting_binding:
                 raise Error('pipeline_plan_changed','The saved job changed before this pipeline started.')
             latest['backend']=job['backend']
+            if 'quote_timing_models' in job:
+                latest['quote_timing_models']=job['quote_timing_models']
             if performance_bound:
                 latest['plan']=job['plan']
                 writejson(store.path(latest)/'plan.json',latest['plan'])

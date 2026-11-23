@@ -1,14 +1,16 @@
 from __future__ import annotations
 import ctypes,errno,html,json,os,re,shutil,signal,subprocess,time,uuid
 from concurrent.futures import ThreadPoolExecutor,wait,FIRST_COMPLETED
+from contextlib import closing,nullcontext
 from dataclasses import asdict
+from itertools import groupby
 from pathlib import Path
 from .core import Block,Document,Error,RATE,Store,atomic,digest,dumps,fault,filehash,key,loadjson,syncdir,syncfile,writejson
 from .importers import inspect,cached_inspect,IMPORT_REVISION
 from .planner import plan,RULES
 from .backend import Engine,validate_pcm,validate_request
 from .cast import resolve_voice
-from . import mastering,mastering_continuity,performance
+from . import mastering,mastering_continuity,performance,quote_timing
 
 
 def rename_new(src,dst):
@@ -50,6 +52,7 @@ def create(store,source,voice=None,policy=None,output=None,aliases=None,label=No
             if j['backend']['settings'].get('text_encoder')=='cpu': raise Error('parallel_limit','Concurrent CPU text encoding is not qualified.')
             j['backend']['settings']={**j['backend']['settings'],'parallel':parallel}
         performance.bind(p,j['backend'],saved_voice)
+        quote_timing.bind(store,j)
         writejson(path/'plan.json',p); store.save(j); return summary(store,j)
     except BaseException:
         store.safe_remove(path); raise
@@ -59,6 +62,7 @@ def bind_speech(store,job):
         if not (store.root/'settings.json').is_file():
             raise Error('setup_required','No Breeze backend configured.','Run hamr setup.')
         job['backend']=loadjson(store.root/'settings.json')
+    quote_timing.bind(store,job)
     return performance.bind(job['plan'],job['backend'],job['voice'],
                             fallbacks=job.get('performance_fallbacks',()))
 
@@ -70,6 +74,8 @@ def clip_key(u,j):
               'cfg_scale':options.get('cfg_scale',1),'codec':'hoppou-s16le-24000',
               'receipt_revision':j.get('speech_contract',1)}
     if active:=performance.request_identity(u):identity['performance']=active
+    if quote_timing.active(j,u):
+        identity['quote_timing']=[u['quote_timing'],j['quote_timing_models']]
     return key(identity)
 
 
@@ -253,6 +259,42 @@ def generate_takes(engine,j,todo,parallel):
     finally: pool.shutdown(wait=True,cancel_futures=True)
 
 
+def generate_with_timing(store, job, selected, parallel, engine_session):
+    if not any(quote_timing.active(job,unit) for unit,_ in selected):
+        context = engine_session.use(job['backend']) if engine_session else Engine(store,job['backend'])
+        with context as engine:
+            yield from generate_takes(engine,job,selected,parallel)
+        return
+
+    from .backend import ResidentEngineSession
+
+    context = nullcontext(engine_session) if engine_session else ResidentEngineSession(store,factory=Engine)
+    with context as session:
+        def synthesize(text,options):
+            try:
+                with session.use(job['backend']) as engine:
+                    return engine.speech(text,job['voice'],**options)
+            finally:
+                # Speech recognition runs after the model releases memory.
+                session.release()
+
+        for timed, units in groupby(selected,lambda item:bool(quote_timing.active(job,item[0]))):
+            if not timed:
+                with session.use(job['backend']) as engine:
+                    yield from generate_takes(engine,job,units,parallel)
+                continue
+            session.release()
+            for unit,clip in units:
+                started = time.monotonic()
+                try:
+                    data,receipt = quote_timing.render(store,job,unit,clip,synthesize)
+                except Error:
+                    job['failed_take']={'utterance':unit['id'],'key':clip,'seed':unit.get('seed',42)}
+                    raise
+                receipt['request_wall_seconds']=time.monotonic()-started
+                yield unit,clip,data,receipt,0
+
+
 def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_session=None):
     if max_new_takes is not None and (type(max_new_takes) is not int or not 1<=max_new_takes<=4096):
         raise Error('render_budget','Choose one to4096 new takes per render batch.')
@@ -301,8 +343,9 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
                     try:validate_request(request_text,j['voice'],options.get('instruction'))
                     except Error:
                         j['failed_take']={'utterance':take['id'],'key':clip_key(take,j),'seed':take.get('seed',42)};raise
-                with (engine_session.use(j['backend']) if engine_session is not None else Engine(store,j['backend'])) as engine:
-                    for u,k,data,receipt,attempt in generate_takes(engine,j,[(u,k) for k,u in selected],parallel):
+                with closing(generate_with_timing(
+                        store,j,[(u,k) for k,u in selected],parallel,engine_session)) as takes:
+                    for u,k,data,receipt,attempt in takes:
                         retries+=attempt
                         dest=store.root/'clips'/k
                         if dest.exists(): store.safe_remove(dest)
@@ -310,6 +353,8 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
                         receipt.update({'key':k,'utterance_sha256':digest(u['text'].encode()),'backend_sha256':key(j['backend']),'voice_sha256':key(j['voice']),'attempts':attempt+1})
                         atomic(temp/'audio.pcm',data); writejson(temp/'receipt.json',receipt); syncdir(temp)
                         fault('before_clip_rename'); rename_new(temp,dest); fault('after_clip_rename')
+                        if receipt.get('quote_timing'):
+                            store.safe_remove(store.path(j)/'quote-timing'/k)
                         for uid in occurrences[k]: j['clips'][uid]=k
                         j.pop('failed_take',None); rendered+=1
                         elapsed=time.monotonic()-started
@@ -509,7 +554,10 @@ def publish(store,j):
     metrics = {**j['metrics'], 'semantic_qa':speech_check_status(j)}
     qa_message = ('Container and required offline speech checks passed.' if metrics['semantic_qa']=='passed'
                   else 'Container checks passed. Offline speech checking was not required for this publication.')
-    writejson(stage/'report.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'metrics':metrics,'warnings':j['plan']['warnings']+metadata_receipt['warnings'],'issues':j['plan']['issues'],'qa':qa_message,'backend':j['backend'],'voice':{k:v for k,v in j['voice'].items() if k!='transcript'},'publication_metadata':metadata_receipt,'mastering':master_report,'container_duration':actual,'decoded_audio':decoded_audio,'pcm_samples':total,'created':time.time()})
+    timing = [{'utterance':unit['id'],**receipt['quote_timing']}
+              for unit,receipt in zip(units,receipts,strict=True) if receipt.get('quote_timing')]
+    writejson(stage/'report.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'metrics':metrics,'warnings':j['plan']['warnings']+metadata_receipt['warnings'],'issues':j['plan']['issues'],'qa':qa_message,'backend':j['backend'],'voice':{k:v for k,v in j['voice'].items() if k!='transcript'},'publication_metadata':metadata_receipt,'mastering':master_report,'container_duration':actual,'decoded_audio':decoded_audio,'pcm_samples':total,'created':time.time(),
+                                  **({'quote_timing':timing} if timing else {})})
     (stage/'chapters.ffmeta').unlink()
     files={p.name:filehash(p) for p in stage.iterdir() if p.name!='owner.json'}
     writejson(stage/'manifest.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'plan_sha256':j['plan']['plan_sha256'],'source_sha256':j['document']['source_sha256'],'files':files})
@@ -522,6 +570,7 @@ def publish(store,j):
 def take_selection(u):
     identity={'text':u['text'],'sources':u['sources']}
     if active:=performance.request_identity(u):identity['performance']=active
+    if timing:=u.get('quote_timing'):identity['quote_timing']=timing
     return key(identity)
 
 
@@ -677,6 +726,10 @@ def cleanup(store,purge_job=None,apply=False):
         for j in jobs:
             scratch=store.path(j)/'scratch'
             if scratch.exists() and not scratch.is_symlink(): candidates.append(scratch)
+            timing=store.path(j)/'quote-timing'
+            if timing.is_dir() and not (timing.is_symlink() or timing.is_junction()):
+                candidates.extend(p for p in timing.iterdir() if p.is_dir() and not (p.is_symlink() or p.is_junction())
+                                  and re.fullmatch('[0-9a-f]{64}',p.name) and valid_clip(store,p.name))
         staging=store.root/'runtime'/'voice-staging'
         if staging.is_dir() and not (staging.is_symlink() or staging.is_junction()):
             for stage in staging.iterdir():

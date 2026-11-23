@@ -177,7 +177,8 @@ def _assess(job, receipts, readings):
         scene_ids = {scenes[bid] for bid in unit['sources'] if bid in scenes}
         roles = {blocks[bid]['role'] for bid in unit['sources'] if bid in blocks}
         protection = None
-        if unit.get('performance') or unit.get('performance_candidate') or unit.get('performance_state'):
+        if (unit.get('performance') or unit.get('performance_candidate') or unit.get('performance_state')
+                or receipt.get('quote_timing',{}).get('selected')=='directed'):
             protection = 'directed_or_possible_performance'
         elif (len(scene_ids) != 1 or roles != {'body'} or unit.get('literal_repeat')
               or unit.get('delivery_boundary') == 'authored_lines'
