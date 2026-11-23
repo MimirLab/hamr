@@ -1226,3 +1226,37 @@ pipeline.run(Store(Path(sys.argv[1])),sys.argv[2],Path('/fixture'),Path('/fixtur
     assert pipeline.run(resumed,job['id'],Path('/fixture'),Path('/fixture'))['status']=='ready'
     assert not resumed.get(job['id']).get('performance_fallbacks')
     assert jobs.valid_clip(store,clip)==first
+
+
+@pytest.mark.parametrize(('text', 'recipe'), [
+    ('The steps creaked. “We will,” she whispered, “stay until dawn.” The hinge rattled.', 'whisper'),
+    ('“We will,” whispered the watchman, “stay until dawn.” The hinge rattled.', 'whisper'),
+    ('The steps creaked. “We will,” Ada murmured, “stay until dawn.”', 'murmured'),
+    ('“We will,” whispered the watchman, “stay until dawn.” (He did.)', 'whisper'),
+])
+def test_narration_around_interrupted_turn_keeps_both_source_spans(tmp_path, text, recipe):
+    default = plan_source(tmp_path, text, 'auto')
+    unit, = default['utterances']
+    candidate = unit['performance_candidate']
+    evidence, = candidate['evidence']
+    start, end = evidence['turn_span']
+    assert text[start:end].startswith('“We will,”')
+    assert text[start:end].endswith('“stay until dawn.”')
+    assert evidence['form'] == 'embedded_interrupted_quotation'
+    assert [text[a:b] for a, b in evidence['quotation_spans']] == ['“We will,”', '“stay until dawn.”']
+    assert candidate['recipe'] == recipe
+    assert candidate['synthesis'] == candidate['speech'] == unit['text'] == text
+    assert 'around and between' in candidate['instruction']
+
+    earlier = planner.plan(inspect(tmp_path/'book.md'), delivery_context=11)
+    assert earlier['performance']['candidates'] == 0
+
+
+@pytest.mark.parametrize('text', [
+    'The steps creaked. “Stay here,” she said. “Go now,” he whispered.',
+    'The steps creaked. “You go first,” Ada said, “Wait outside.” The hinge rattled.',
+    'The steps creaked. “We will,” she whispered, ‘stay until dawn.’ The hinge rattled.',
+    'The steps creaked. “We will,” she whispered, “stay until dawn.” “I heard you,” he said.',
+])
+def test_surrounding_narration_does_not_join_distinct_or_ambiguous_turns(tmp_path, text):
+    assert plan_source(tmp_path, text, 'auto')['performance']['candidates'] == 0

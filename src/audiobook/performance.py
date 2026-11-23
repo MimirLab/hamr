@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 11
+CONTEXT_VERSION = 12
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -186,25 +186,30 @@ def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTI
     return None
 
 
-def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION):
-    """Find an attributed line with at most one narrator sentence on each side."""
+def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION, allow_interrupted=False):
+    """Find one attributed turn with at most one narrator sentence on each side."""
     if len(source)>480:
         return None
     quotes = list(re.finditer(QUOTATION,source))
-    if len(quotes)!=1:
+    interrupted = allow_interrupted and len(quotes)==2
+    if len(quotes)!=1 and not interrupted:
         return None
-    quote, = quotes
     sentences = list(sentence_spans(source))
-    before = [part for part in sentences if part['end']<=quote.start()]
+    before = [part for part in sentences if part['end']<=quotes[0].start()]
     if len(before)>1:
         return None
     start = before[-1]['end'] if before else 0
     for part in sentences:
-        if part['end']<quote.end():
+        if part['end']<quotes[-1].end():
             continue
         stop=len(source[:part['end']].rstrip())
         if candidate:=dialogue_attribution(source[start:stop],cue_pattern,postposed,actor=actor):
+            if interrupted and (not candidate.groupdict().get('continuation')
+                                or quotes[0][0][0]!=quotes[-1][0][0]):
+                return None
             tail=source[stop:].strip()
+            if interrupted and re.fullmatch(r'\([^()]+[.!?]\)', tail):
+                tail=tail[1:-1].strip()
             if tail and (tail[-1] not in '.!?' or len(list(sentence_spans(tail)))!=1):
                 return None
             if start or tail:
@@ -760,7 +765,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             following_quote = turn[1]
         elif inline_rules and (inline_event:=inline_vocal_event(source,neutral,sources[0],inline_rules,actor)):
             pass
-        elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed,actor=actor)) and (
+        elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed,actor=actor,
+                                                            allow_interrupted=version>=12)) and (
                 kind:=verbs.get(attribution_phrase(owned[0]))):
             direction = kind, owned[0]
             surrounding = owned[1:]
@@ -808,8 +814,11 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 offset,stop=surrounding
                 start+=offset
                 end+=offset
-                if not role_instruction:
-                    instruction+=' Read any narration around the quotation in the usual reference voice.'
+                if continuation:
+                    instruction = recipe.get('continued_turn_instruction') or instruction
+                    instruction += ' Read the narration around and between the quotes in the usual reference voice.'
+                elif not role_instruction:
+                    instruction += ' Read any narration around the quotation in the usual reference voice.'
             candidate = {'recipe':kind, 'speech':neutral, 'synthesis':neutral,
                          'instruction':instruction, 'cfg_scale':recipe.get('cfg_scale',1),
                          'source':{'block':sources[0], 'span':[start,end]},
@@ -832,8 +841,12 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 candidate['evidence'][0]['policy_cue']=attribution_phrase(attribution)
             if surrounding:
                 candidate['contextual']=True
-                candidate['evidence'][0].update(form='embedded_quotation',turn_span=[offset,stop],
-                    quotation_spans=[[offset+i for i in attribution.span('quote')]])
+                spans = [attribution.span('quote')]
+                if continuation:
+                    spans.append(attribution.span('continuation'))
+                candidate['evidence'][0].update(
+                    form='embedded_interrupted_quotation' if continuation else 'embedded_quotation',
+                    turn_span=[offset,stop], quotation_spans=[[offset+i for i in span] for span in spans])
             if described:
                 offset = surrounding[0] if surrounding else 0
                 evidence = candidate['evidence'][0]

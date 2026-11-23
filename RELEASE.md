@@ -12,6 +12,8 @@ Blind listening across all 45 cast voices identified 22 preferred cleaned refere
 
 ### Expressive narration
 
+- An attribution inside a quoted sentence can direct both spoken fragments, even with narrator sentences around the turn. The whole passage stays in one request.
+
 - Dialogue can take its direction from a fuller attribution such as “the doctor replied firmly” or “she said, her voice barely audible.” Hamr uses the reporting clause to tie the delivery to the right speaker.
 - If the same turn continues in a second complete quotation in the paragraph, Hamr sends both quotes and the intervening attribution together. This lets a whisper or another attributed delivery carry into the second line without adding an audio join.
 - Adjacent quotations across two aligned native PDF lines can stay in one speech request. If a paragraph tag covers both, Hamr can continue the delivery across the wrap. For an untagged wrap, Breeze handles the passage in its usual reading voice.
