@@ -127,6 +127,64 @@ def recheck_dialogue_initials(image, words, read_line):
     return corrections
 
 
+def recheck_pipe_pronouns(image, words):
+    """Resolve a standalone OCR pipe when its grammar and printed glyph agree."""
+    if not any(row[11]=='|' for row in words):
+        return []
+    subordinate = {'after','before','if','once','since','until','when','while'}
+    first_person = {'am','can','could','will','would','shall','should','must','have','had','was',
+                    'know','think','come','go','get','return','leave','say','hear','see','reach','arrive'}
+    gray = image.convert('L')
+
+    def vertical_stroke(row):
+        x,y,w,h = map(int,row[6:10])
+        top = max(0,y-1)
+        view = gray.crop((max(0,x-4),top,min(gray.width,x+w+4),min(gray.height,y+h+1)))
+        ink = view.point(lambda value: 255 if value<170 else 0)
+        if not (bounds:=ink.getbbox()):
+            return None
+        left,_,right,_ = bounds
+        start = right-1
+        while start>left and ink.crop((start-1,0,start,ink.height)).getbbox():
+            start -= 1
+        stroke = ink.crop((start,0,right,ink.height))
+        _,first,_,last = stroke.getbbox()
+        thickness = right-start
+        if thickness*3 >= last-first or sum(stroke.histogram()[1:]) < .9*thickness*(last-first):
+            return None
+        return (top+first,top+last,thickness)
+
+    lines = {}
+    for index,row in enumerate(words):
+        lines.setdefault(tuple(row[1:5]),[]).append(index)
+    corrections = []
+    for indices in lines.values():
+        text = [words[i][11] for i in indices]
+        anchors = [indices[i] for i,token in enumerate(text[:-1])
+                   if token.lstrip('“"‘\'')=='I' and text[i+1].casefold().rstrip(',.;!?') in first_person]
+        if not anchors:
+            continue
+        for position in range(1,len(text)-1):
+            if (text[position]!='|' or text[position-1].casefold() not in subordinate
+                    or text[position+1].casefold().rstrip(',.;!?') not in first_person):
+                continue
+            index = indices[position]
+            stroke = vertical_stroke(words[index])
+            if not stroke:
+                continue
+            for anchor in anchors:
+                exemplar = vertical_stroke(words[anchor])
+                if exemplar and all(abs(a-b)<=1 for a,b in zip(stroke,exemplar,strict=True)):
+                    row = words[index]
+                    corrections.append({'original':'|','text':'I','reason':'matching_pronoun_on_line',
+                                        'rect_pixels':list(map(int,row[6:10])),'confidence':float(row[10]),
+                                        'exemplar_rect_pixels':list(map(int,words[anchor][6:10])),
+                                        'stroke':list(stroke),'exemplar_stroke':list(exemplar)})
+                    words[index] = [*row[:11],'I']
+                    break
+    return corrections
+
+
 class Observer:
     """Identify the OCR engine and acquire a process only after a cache miss."""
     def __init__(self, cache=None, config=None):
@@ -206,7 +264,9 @@ class Observer:
                     except (subprocess.SubprocessError,OSError):
                         return []
 
-                if corrections := recheck_dialogue_initials(image,words,read_line):
+                corrections = recheck_dialogue_initials(image,words,read_line)
+                corrections += recheck_pipe_pronouns(image,words)
+                if corrections:
                     evidence['ocr_rechecks'] = corrections
             if offline:
                 evidence['offline_checkpoint'] = True

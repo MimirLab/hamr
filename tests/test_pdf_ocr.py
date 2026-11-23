@@ -116,6 +116,33 @@ def test_quoted_initial_rechecked_before_planning(monkeypatch, line_reads, expec
         assert 'ocr_rechecks' not in doc.inventory[0]
 
 
+@pytest.mark.parametrize(('connector','stem','bar_bottom','expected'),[
+    ('until','come',43,'I'),
+    ('until','come',49,'|'),
+    ('until','sum',43,'|'),
+    ('or','come',43,'|'),
+])
+def test_ocr_pipe_needs_prose_and_a_matching_glyph(connector,stem,bar_bottom,expected):
+    from audiobook.pdf_visual import recheck_pipe_pronouns
+
+    page = Image.new('L',(230,80),255)
+    draw = ImageDraw.Draw(page)
+    draw.rectangle((40,20,42,bar_bottom),fill=0)
+    draw.rectangle((154,20,157,43),fill=0)
+    words = [
+        ['5','1','1','1','1',str(position),str(x),'20',str(width),str(height),'94',token]
+        for position,(token,x,width,height) in enumerate((
+            (connector,8,18,24),('|',40,1,bar_bottom-19),(stem,65,39,24),
+            ('“I',140,18,24),('can',180,30,24)
+        ),1)
+    ]
+    correction = recheck_pipe_pronouns(page,words)
+    assert words[1][11]==expected
+    assert bool(correction)==(expected=='I')
+    if correction:
+        assert correction[0]['original']=='|' and correction[0]['reason']=='matching_pronoun_on_line'
+
+
 def test_native_cache_does_not_probe_ocr(tmp_path,monkeypatch):
     from audiobook.importers import ADAPTERS, cached_inspect
 
