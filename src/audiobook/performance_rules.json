@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "compatible_registry_sha256": [
+    "0ed1b1c97ebe7dcd0a127a199a800d6811deb5d297ae9cbbb65b9ae83da6ef67",
     "5dafbc09aceaa011aca0e34bcb4b65458714015882c569e978b52727e6d92bbe",
     "d5a5def411723715e4e674ab5f2c84aac150fc64c45cdea9b502b5156be70da3",
     "428a3bfe182375225c78b64826b927b23bfa43f73eabdeba1cb1b6ee909bd17a",
@@ -75,6 +76,7 @@
     "murmured": {
       "cues": ["murmured", "said under his breath", "said under her breath"],
       "instruction": "Read the quotation low and gently voiced, with clear words in the reference voice. Let the attribution return to the usual narration.",
+      "softened_instruction": "Read the quoted {target} gently. Use the usual reference narration for all other words.",
       "role_instruction": "Read only the quotation softly, keeping every consonant clear. Read the surrounding lines and attribution in the usual reference narrator voice.",
       "interrupted_turn_instruction": "Quiet, close dialogue in both quotes. Full natural narration for the words between them. Keep the reference voice clear throughout."
     },
@@ -231,6 +233,8 @@
                  "{owner} words were barely a whisper"]},
       {"recipe":"murmured", "signal":"spoken_low",
        "frames":["{owner} voice was barely audible", "{owner} words were barely audible", "{owner} voice was low and even"]},
+      {"recipe":"murmured", "signal":"softened_delivery", "since":31,
+       "frames":["{owner} voice had softened", "{owner} voice had softened too"]},
       {"recipe":"measured", "signal":"spoken_slowly",
        "frames":["{owner} words came one at a time", "{owner} words came slowly"]}
     ],

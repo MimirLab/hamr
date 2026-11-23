@@ -211,6 +211,48 @@ def test_after_quote_cues_require_the_delivered_voice_and_same_owner(tmp_path,te
     assert plan_source(tmp_path,text)['performance']['candidates']==0
 
 
+@pytest.mark.parametrize(('text','signal','quote','cue'),[
+    ('Louisa turned to him. Her features softened. “What will you do?” she asked him. '
+     'And her voice had softened too.', 'softened_delivery', '“What will you do?”', 'her voice had softened too'),
+    ('The hallway was empty. “Stay here,” she said. Her voice was barely audible.',
+     'spoken_low', '“Stay here,”', 'Her voice was barely audible'),
+    ('The gate closed. It began to rain. “Where will you go?” Ada asked her. Ada’s voice had softened.',
+     'softened_delivery', '“Where will you go?”', 'Ada’s voice had softened'),
+])
+def test_trailing_delivered_voice_can_follow_narration_and_a_listener(tmp_path,text,signal,quote,cue):
+    source = tmp_path/'book.md'
+    source.write_text(text)
+    plan = planner.plan(inspect(source))
+    unit, = plan['utterances']
+    candidate = unit['performance_candidate']
+    evidence, = candidate['evidence']
+    assert candidate['recipe']=='murmured'
+    assert evidence['signal']==signal
+    assert text[slice(*evidence['span'])]==cue
+    assert text[slice(*evidence['quotation_spans'][0])]==quote
+    assert candidate['synthesis']==candidate['speech']==text
+    if signal=='softened_delivery':
+        assert candidate['instruction'].startswith('Read the quoted question gently.')
+        assert 'usual reference narration for all other words' in candidate['instruction']
+    else:
+        assert 'opening narration in the usual reference voice' in candidate['instruction']
+    assert planner.plan(inspect(source),delivery_context=30)['performance']['candidates']==0
+    assert planner.plan(inspect(source),{'performance':'off'})['performance']['candidates']==0
+
+
+@pytest.mark.parametrize('text',[
+    'The door closed. “What now?” she asked him. His voice had softened too.',
+    'The door closed. “What now?” she asked him. Her features had softened too.',
+    'The door closed. “What now?” she asked him. Her voice had not softened.',
+    'The door closed. “What now?” she asked him. Her voice would have softened.',
+    'The door closed. “What now?” she asked him. Her voice softened as she spoke to Ada.',
+    'The door closed. “What now?” she asked him. Her voice had softened. “This way,” Ada said.',
+    'The door closed. “Leave.” She asked him. Her voice had softened.',
+])
+def test_trailing_delivered_voice_does_not_follow_the_listener_or_a_new_turn(tmp_path,text):
+    assert plan_source(tmp_path,text,'auto')['performance']['candidates']==0
+
+
 def test_recipe_tuning_changes_only_the_affected_render_identity(tmp_path):
     source=tmp_path/'book.md'
     source.write_text(f'{WHISPER}\n\nAn ordinary line remained outside the conversation.')

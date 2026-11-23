@@ -12,7 +12,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 29
+CONTEXT_VERSION = 31
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -360,15 +360,22 @@ def native_quote_flow(left, right, config, context_version=None):
     """Identify adjacent PDF lines that can share an intact speech request."""
     from .pdf_layout import adjacent_native_lines
 
-    if (not isinstance(config, dict) or not re.fullmatch(QUOTATION, right.source)
+    version = context_version or CONTEXT_VERSION
+    continuation = re.fullmatch(QUOTATION, right.source)
+    description = (version>=31 and re.search(r'\b(?:voice|words)\b',right.source,re.I)
+                   and re.search(QUOTATION,left.source))
+    if (not isinstance(config, dict) or not (continuation or description)
             or not adjacent_native_lines(left, right)
             or len(left.source) + len(right.source) > 480):
         return None
     registry = loadjson(RULES_FILE)
-    custom = attribution_preferences(config, registry['directions'])
-    version = context_version or CONTEXT_VERSION
-    verbs, cues, postposed = attribution_rules(registry, version, custom)
     source = left.source + ' ' + right.source
+    if description and trailing_voice_description(source,registry['context'],'direct',version):
+        return 'pdf_voice_description'
+    if not continuation:
+        return None
+    custom = attribution_preferences(config, registry['directions'])
+    verbs, cues, postposed = attribution_rules(registry, version, custom)
     turn = attributed_turn_continuation(source, cues, postposed, actor=attribution_actor(version),
                                          context_version=version)
     if turn and (kind := verbs.get(attribution_phrase(turn[0]))) and not registry['directions'][kind].get('progression'):
@@ -487,6 +494,8 @@ def speaker_evidence(actor, setup, patterns, *, allow_local_pronoun=False, conte
     owners = (*named_possessive,*possessives) if pronoun or allow_local_pronoun else named_possessive
     normalized = normalize_space(setup).casefold()
     for entry in patterns:
+        if context_version < entry.get('since',1):
+            continue
         frames = entry['frames']
         if context_version >= 17:
             frames = [*frames, *entry.get('register_frames', ())]
@@ -542,19 +551,46 @@ def dialogue_context(source, config, previous, preference, context_version):
     return recipe, [item for _,item in matching], owner is None
 
 
-def trailing_voice_description(source, config, preference):
+def trailing_voice_description(source, config, preference, context_version):
     """A description of the delivered words can support the preceding quote."""
-    if preference=='off' or not (owned:=embedded_attribution(source,'|'.join(NEUTRAL_REPORTING))):
+    if preference=='off':
+        return None
+    cue_pattern = '|'.join(NEUTRAL_REPORTING)
+    offset = 0
+    if context_version>=31:
+        actor = attribution_actor(context_version)
+        owned = embedded_attribution(source,cue_pattern,actor=actor,allow_colon=True,
+                                     context_version=context_version)
+        if not owned:
+            # An exact reporting clause still owns its quote after earlier
+            # narration. The object of “asked” is the listener, not its owner.
+            quotes = list(re.finditer(QUOTATION,source))
+            if len(quotes)!=1:
+                return None
+            offset = quotes[0].start()
+            asked = r'asked (?:him|her|them|me|us|you)'
+            owned = embedded_attribution(source[offset:],f'{cue_pattern}|{asked}',actor=actor,
+                                         context_version=context_version)
+    else:
+        owned = embedded_attribution(source,cue_pattern)
+    if not owned:
         return None
     line,start,stop=owned
-    tail=source[stop:].strip()
-    if start or not tail:
+    stop += offset
+    tail = source[stop:].lstrip()
+    if not tail or (start and context_version<31):
         return None
-    if entry:=speaker_evidence(line['actor'],tail[:-1],config['trailing_voice']):
-        tail_start=stop+len(source[stop:])-len(source[stop:].lstrip())
-        evidence={'kind':'trailing_voice_description','span':[tail_start,tail_start+len(tail)-1],
-                  'signal':entry['signal'],'quotation_spans':[list(line.span('quote'))]}
-        return entry['recipe'], [evidence], False
+    tail_start = len(source)-len(tail)
+    body = tail.rstrip()[:-1]
+    if context_version>=31 and body.startswith(('And ', 'and ')):
+        body = body[4:]
+        tail_start += 4
+    if entry:=speaker_evidence(line['actor'],body,config['trailing_voice'],context_version=context_version):
+        turn_start = offset+start
+        evidence={'kind':'trailing_voice_description','span':[tail_start,tail_start+len(body)],
+                  'signal':entry['signal'],
+                  'quotation_spans':[[turn_start+point for point in line.span('quote')]]}
+        return entry['recipe'], [evidence], bool(turn_start)
     return None
 
 
@@ -1251,7 +1287,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 kind,evidence,has_lead=context
             elif (context:=contextual_direction(source,registry['context'],previous,preference,version)):
                 kind,evidence,has_lead=context
-            elif modern_context and (context:=trailing_voice_description(source,registry['context'],preference)):
+            elif modern_context and (context:=trailing_voice_description(source,registry['context'],preference,version)):
                 kind,evidence,has_lead=context
             else:
                 if version>=20 and mode=='auto' and preference!='off' and 'whispered' in source.lower():
@@ -1264,6 +1300,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             recipe=recipes[kind]
             instruction=recipe['instruction']
             attached = evidence[0]['kind']=='attached_voice_description'
+            trailing = evidence[0]['kind']=='trailing_voice_description'
             opening_instruction = (registry['context']['attached_voice'][kind].get('opening_instruction')
                                    if attached and evidence[0]['position']=='before' else None)
             if opening_instruction:
@@ -1272,8 +1309,13 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 instruction = recipe['interrupted_turn_instruction']
             elif has_lead:
                 instruction='Read the opening narration in the usual reference voice. '+instruction
-            if evidence[0]['kind']=='trailing_voice_description':
-                instruction+=' Read the description after the quotation in the usual reference voice.'
+            if trailing:
+                if evidence[0]['signal']=='softened_delivery':
+                    quoted = source[slice(*evidence[0]['quotation_spans'][0])]
+                    target = 'question' if quoted[1:-1].rstrip().endswith('?') else 'words'
+                    instruction = recipe['softened_instruction'].format(target=target)
+                else:
+                    instruction+=' Read the description after the quotation in the usual reference voice.'
             span = carry['span'] if carry else [0,len(source)]
             if attached:
                 span = evidence[0]['span']

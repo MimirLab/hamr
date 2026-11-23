@@ -96,3 +96,35 @@ def test_pdf_quote_flow_respects_visible_or_spoken_boundaries(tmp_path, followin
     assert second['text'] == following
     assert first['performance_candidate']['recipe'] == 'whisper'
     assert 'performance_candidate' not in second
+
+
+@pytest.mark.parametrize(('tail','layout','joined'), [
+    ('And her voice had softened too.', {}, True),
+    ('And her voice had softened too.', {'tags':((0, 1),)}, True),
+    ('And her voice had softened too.', {'tags':((0,), (1,))}, False),
+    ('And her voice had softened too.', {'leading':35}, False),
+    ('And his voice had softened too.', {}, False),
+])
+def test_pdf_gives_trailing_voice_description_to_the_previous_reporter(tmp_path,tail,layout,joined):
+    question = 'The door closed. "What now?" she asked him.'
+    source = tmp_path/'story.pdf'
+    source.write_bytes(quote_pdf(question,tail,**layout))
+    document = inspect(source)
+    assert [block.source for block in document.blocks] == [question,tail]
+    assert [unit['text'] for unit in planner.plan(document,delivery_context=30)['utterances']] == [question,tail]
+    result = planner.plan(document)
+    if not joined:
+        assert [unit['text'] for unit in result['utterances']] == [question,tail]
+        assert not result['performance']['candidates']
+        return
+    unit, = result['utterances']
+    assert unit['text']==question+' '+tail
+    assert unit['delivery_boundary']=='pdf_voice_description'
+    direction = unit['performance_candidate']
+    assert direction['recipe']=='murmured'
+    evidence, = direction['evidence']
+    assert evidence['block']==document.blocks[1].id
+    assert tail[slice(*evidence['span'])]=='her voice had softened too'
+    quote, = evidence['quotation_parts']
+    assert quote['block']==document.blocks[0].id
+    assert question[slice(*quote['span'])]=='"What now?"'
