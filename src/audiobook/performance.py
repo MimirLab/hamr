@@ -4,6 +4,7 @@ from difflib import SequenceMatcher
 from functools import cache
 from pathlib import Path
 import re
+import struct
 import sys
 
 from .boundaries import sentence_spans
@@ -39,6 +40,29 @@ NEUTRAL_REPORTING = ('said','added','answered','replied','continued','asked','re
 POSSESSIVES = {'he':'his','she':'her','they':'their','i':'my','we':'our'}
 PRIVATE_KINDS = {'literal', 'hidden', 'generated_label', 'object_label', 'note_reference'}
 SAMPLING_LIMITS = {'temperature':(.1,2), 'top_k':(1,256), 'top_p':(.05,1), 'repetition_penalty':(.8,1.4)}
+FRAME_GUIDANCE_CAPABILITY = {'version':1, 'encoding':'multipart', 'frame_samples':1920, 'chunk_frames':10}
+
+
+def supports_frame_guidance(backend):
+    return backend.get('frame_guidance') == FRAME_GUIDANCE_CAPABILITY
+
+
+def validated_frame_guidance(value):
+    required = {'start_frame', 'end_frame', 'scale'}
+    if not isinstance(value, dict) or required - value.keys() or value.keys() - required - {'base_scale', 'release_frames'}:
+        raise Error('frame_guidance', 'Supply start_frame, end_frame and scale, with optional base_scale and release_frames.')
+    start, end, scale = (value[field] for field in ('start_frame', 'end_frame', 'scale'))
+    release, base = value.get('release_frames', 0), value.get('base_scale', 0)
+    if (not all(type(number) is int for number in (start, end, release))
+            or not 0 <= start < end <= 1500 or not 0 <= release <= 1500 - end):
+        raise Error('frame_guidance', 'The held interval and release must fit inside the 1,500-frame speech request.')
+    if any(type(number) not in (float, int) or not 0 <= number <= 3.4028234663852886e38
+           for number in (scale, base)):
+        raise Error('frame_guidance', 'Use finite nonnegative guidance scales.')
+    def as_float32(number):
+        return struct.unpack('f', struct.pack('f', number))[0]
+    return {'start_frame':start, 'end_frame':end, 'release_frames':release,
+            'scale':as_float32(scale), 'base_scale':as_float32(base)}
 
 
 def validate_guidance(value, parallel=1):
@@ -771,12 +795,16 @@ def passage_instructions(config, blocks):
     required = {'text','instruction'}
     checked = {}
     for block_id, entry in entries.items():
-        if (block_id not in blocks or not isinstance(entry, dict) or entry.keys()-required-{'tuning'}
+        if (block_id not in blocks or not isinstance(entry, dict) or entry.keys()-required-{'tuning','frame_guidance'}
                 or not all(isinstance(entry.get(key), str) and entry[key].strip() for key in required)):
             raise Error('performance_policy', f'Passage instruction for {block_id} needs a known source block, exact text, and a nonempty instruction.')
         checked[block_id] = dict(entry)
         if 'tuning' in entry:
             checked[block_id]['tuning'] = validated_tuning(entry['tuning'])
+        if 'frame_guidance' in entry:
+            if 'cfg_scale' in entry.get('tuning', {}):
+                raise Error('frame_guidance', 'Set base_scale on the frame schedule when supplying a schedule.')
+            checked[block_id]['frame_guidance'] = validated_frame_guidance(entry['frame_guidance'])
     return checked
 
 
@@ -816,6 +844,9 @@ def apply_passage_instructions(units, entries, blocks, document_digest, registry
         if tuning:=entry.get('tuning'):
             candidate['tuning'] = {**candidate.get('tuning',{}),**tuning}
             candidate['cfg_scale'] = tuning.get('cfg_scale',candidate['cfg_scale'])
+        if schedule:=entry.get('frame_guidance'):
+            candidate['frame_guidance'] = schedule
+            candidate['cfg_scale'] = schedule['base_scale']
         candidate['evidence'] = [*candidate['evidence'], {'kind': 'source_policy_instruction', **source}]
         validate_request(candidate['synthesis'], instruction=candidate['instruction'])
         candidate['id'] = candidate_id(document_digest, candidate)
@@ -1246,6 +1277,8 @@ def candidate_id(source_digest, candidate):
     if tuning:=candidate.get('tuning'):identity.append(tuning)
     if 'passage_instruction' in candidate:
         identity.append(('passage_instruction', candidate['passage_instruction']))
+    if schedule:=candidate.get('frame_guidance'):
+        identity.append(('frame_guidance', schedule))
     if candidate.get('composition'):
         identity.append(('composed_request',candidate['synthesis'],candidate['instruction']))
     return key(identity)
@@ -1322,6 +1355,9 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
     active_ids=set()
     for unit,candidate in candidates:
         cid = candidate['id']
+        scheduled = 'frame_guidance' in candidate
+        if scheduled and not (reference and supports_frame_guidance(backend)):
+            raise Error('frame_guidance_unavailable', 'This passage needs a voice reference and a backend with frame-local guidance.')
         if cid in fallback_ids:
             unit['performance_state'] = 'neutral_fallback'
             continue
@@ -1356,11 +1392,11 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
                             (recipe in automatic['direct_attribution'] and direct_attribution))
         policy_direction = any('policy_cue' in e for e in candidate.get('evidence', ()))
         directed = (prose and (full_delivery or legacy_direction or policy_direction)
-                    or pinned_direction and 'passage_instruction' in candidate)
+                    or pinned_direction and 'passage_instruction' in candidate or scheduled)
         enabled = backend.get('runtime_revision') and (summary['mode']=='experimental' or qualified or directed)
         if enabled:
             unit['text'] = candidate['speech']
-            if execution['parallel']!=1 and candidate['cfg_scale']!=1:
+            if execution['parallel']!=1 and candidate['cfg_scale']!=1 and not scheduled:
                 if candidate.get('tuning'):
                     raise Error('speech_guidance','Stronger custom guidance requires serial generation.')
                 candidate={**candidate,'cfg_scale':1}
@@ -1396,6 +1432,8 @@ def request(unit):
     if performance:
         text = performance['synthesis']
         options.update(instruction=performance.get('instruction'), cfg_scale=performance['cfg_scale'])
+        if schedule:=performance.get('frame_guidance'):
+            options['frame_guidance']=schedule
         if samples:={k:v for k,v in performance.get('tuning',{}).items() if k!='cfg_scale'}:
             options['sampling']=samples
     return text, options
@@ -1413,6 +1451,7 @@ def request_identity(unit):
     if active:
         identity={field:active.get(field) for field in ('recipe','synthesis','instruction','cfg_scale','revision')}
         if tuning:=active.get('tuning'):identity['tuning']=tuning
+        if schedule:=active.get('frame_guidance'):identity['frame_guidance']=schedule
         return identity
     return None
 

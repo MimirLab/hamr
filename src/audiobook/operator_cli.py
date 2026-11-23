@@ -66,6 +66,8 @@ def capabilities(parser):
                                      'dialogue_recipes':sorted(set(rules['directions'])-{'quiet_scene'}),
                                      'attribution_cues':'performance.attribution_cues',
                                      'passage_instructions':'performance.passage_instructions',
+                                     'frame_guidance':{'field':'frame_guidance','protocol':1,
+                                                       'scope':'Passage instructions and preview comparisons with a compatible backend'},
                                      'policy_flag':'--document-policy'},
             'voice_preparation': {'default_mode':'auto','mode_flag':'--wash','setup_flag':'--wash-only',
                                   'profiles':list(PROFILES),'host_advice':'doctor.voice_preparation',

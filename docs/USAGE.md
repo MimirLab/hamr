@@ -201,6 +201,8 @@ Run `hamr repair JOB --document-policy POLICY.json`, then `hamr resume JOB`. The
 
 To keep the audition's guidance or sampling for that passage, add a `"tuning"` object beside `"text"` and `"instruction"`, such as `"tuning": {"cfg_scale": 2, "top_k": 48}`. Its settings override those from the recipe for that passage. Omitted settings still come from the recipe or engine.
 
+With a configured frame-guidance backend, a passage instruction or a named preview take can include `"frame_guidance": {"start_frame": 58, "end_frame": 75, "scale": 1.5, "release_frames": 2}`. Frames are zero-indexed, the end is exclusive, and each frame represents 80 ms on protocol 1. The release interpolates back to `base_scale`, which defaults to zero. Use a schedule timed to the passage's own spoken audio. Hamr checks what the backend confirms and records how many frames were actually generated. Use `"frame_guidance": null` in a preview variant to hear the passage with ordinary guidance.
+
 To apply recipe-specific guidance or sampling to a book, put the settings in its source-bound policy and use `--document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
 
 ```json

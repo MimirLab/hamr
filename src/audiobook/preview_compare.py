@@ -9,7 +9,7 @@ from .backend import Engine, validate_request
 from .core import Error, RATE, atomic, digest, filehash, key, loadjson, writejson
 
 
-VARIANT_FIELDS = {'seed', 'instruction', 'markers', 'cfg_scale', *performance.SAMPLING_LIMITS}
+VARIANT_FIELDS = {'seed', 'instruction', 'markers', 'cfg_scale', 'frame_guidance', *performance.SAMPLING_LIMITS}
 
 
 def read_controls(path):
@@ -44,9 +44,17 @@ def requests(unit, voice, backend, controls):
         if type(markers) is not bool:
             raise Error('preview_compare_markers', f'{name}: markers must be true or false.')
         text = saved_text if markers else unit['text']
-        cfg_scale = controls_for_take.get('cfg_scale', options.get('cfg_scale', 1))
-        performance.validate_guidance(cfg_scale, parallel)
-        options['cfg_scale'] = float(cfg_scale)
+        saved_schedule = options.pop('frame_guidance', None)
+        schedule = controls_for_take.get('frame_guidance', saved_schedule)
+        if schedule is not None:
+            if 'cfg_scale' in controls_for_take:
+                raise Error('frame_guidance', 'Set base_scale on the preview schedule.')
+            options['frame_guidance'] = performance.validated_frame_guidance(schedule)
+            options['cfg_scale'] = options['frame_guidance']['base_scale']
+        else:
+            cfg_scale = controls_for_take.get('cfg_scale', 1 if saved_schedule else options.get('cfg_scale', 1))
+            performance.validate_guidance(cfg_scale, parallel)
+            options['cfg_scale'] = float(cfg_scale)
         sampling = performance.validated_sampling({
             **options.get('sampling', {}),
             **{field: controls_for_take[field] for field in performance.SAMPLING_LIMITS

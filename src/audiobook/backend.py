@@ -356,14 +356,31 @@ class Engine:
         if not actual or (expected_cpu and not actual[1].lower().startswith('cpu')) or (not expected_cpu and not actual[1].startswith('Vulkan')):
             raise Error('device_unverified','Breeze did not prove the requested execution backend.','Check backend/device availability; unexpected CPU fallback is rejected.')
         return actual[1].rstrip(',')
-    def speech(self,text,voice=None,instruction=None,seed=42,*,cfg_scale=1,sampling=None):
-        from .performance import validate_guidance, validated_sampling
+    def speech(self,text,voice=None,instruction=None,seed=42,*,cfg_scale=1,sampling=None,frame_guidance=None):
+        from .performance import (FRAME_GUIDANCE_CAPABILITY, supports_frame_guidance, validate_guidance,
+                                  validated_frame_guidance, validated_sampling)
 
         validate_request(text,voice,instruction)
-        validate_guidance(cfg_scale, (getattr(self,'identity',None) or {}).get('settings',{}).get('parallel',1))
+        identity = getattr(self, 'identity', {}) or {}
+        applied = {}
+        if frame_guidance is None:
+            validate_guidance(cfg_scale, identity.get('settings', {}).get('parallel', 1))
+        else:
+            frame_guidance = validated_frame_guidance(frame_guidance)
+            if (not voice or not supports_frame_guidance(identity)
+                    or getattr(self, 'health', {}).get('frame_guidance') != FRAME_GUIDANCE_CAPABILITY):
+                raise Error('frame_guidance_unavailable', 'The running backend did not verify frame-local guidance.')
+            cfg_scale = frame_guidance['base_scale']
+            window = f"{frame_guidance['start_frame']}:{frame_guidance['end_frame']}:{frame_guidance['scale']:.9g}"
+            applied = {'X-Breeze-Guidance-Window':window, 'X-Breeze-Guidance-Base':format(cfg_scale,'.9g'),
+                       'X-Breeze-Guidance-Release':str(frame_guidance['release_frames']),
+                       'X-Breeze-Guidance-Chunks':str(FRAME_GUIDANCE_CAPABILITY['chunk_frames'])}
         logpath=self.store.root/'runtime'/'backend.log' if getattr(self,'store',None) is not None else None
         log_offset=logpath.stat().st_size if logpath and logpath.exists() else 0
         fields={'text':text,'split_chars':'0','max_new_tokens':'1500','seed':str(seed),'cfg_scale':format(cfg_scale,'g')}
+        if applied:
+            fields.update(cfg_scale=applied['X-Breeze-Guidance-Base'], guidance_window=window,
+                          guidance_release=applied['X-Breeze-Guidance-Release'])
         if sampling:
             fields.update({name:str(value) for name,value in validated_sampling(sampling).items()})
         files=None; fh=None
@@ -378,6 +395,8 @@ class Engine:
                 with self.client.stream('POST','/v1/audio/speech',data=fields,files=files) as r:
                     if r.status_code!=200: raise Error('speech_http',f'Breeze speech failed with HTTP {r.status_code}.','Resume; the job retains verified clips.')
                     if r.headers.get('x-sample-rate')!=str(RATE) or r.headers.get('x-sample-format')!='s16le': raise Error('pcm_format','Unexpected streamed PCM format.')
+                    if any(r.headers.get(header) != value for header, value in applied.items()):
+                        raise Error('frame_guidance_unconfirmed', 'The backend did not confirm the requested frame schedule.')
                     data=bytearray()
                     for chunk in r.iter_bytes():
                         data.extend(chunk)
@@ -396,6 +415,12 @@ class Engine:
                         raise Error('generation_failed','Breeze reported a generation failure despite a normally completed HTTP stream.','Inspect the owned backend log; committed prior takes are retained. Resume explicitly after resolving the failure.')
                 actual=self.verify_device(logtext)
                 data,receipt=validate_pcm(bytes(data),text); receipt['actual_device']=actual
+                if frame_guidance is not None:
+                    frames, remainder = divmod(receipt['samples'], FRAME_GUIDANCE_CAPABILITY['frame_samples'])
+                    if remainder or frames <= frame_guidance['start_frame']:
+                        raise Error('frame_guidance_unreached', 'The returned speech did not reach the held guidance interval.')
+                    receipt['frame_guidance'] = {**frame_guidance, 'generated_frames':frames,
+                                                 'chunk_frames':FRAME_GUIDANCE_CAPABILITY['chunk_frames']}
                 request={'transport':'hoppou-http','endpoint':'/v1/audio/speech','fields':dict(fields),
                          'reference_audio_sha256':voice['reference_sha256'] if voice else None,
                          'scope':'Exact logical request fields; encoding is checked independently, not a raw wire capture.'}
