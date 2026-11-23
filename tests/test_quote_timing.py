@@ -53,6 +53,24 @@ def test_refinement_preserves_the_onset_and_waits_for_the_actual_exit():
     assert directed.contains(refined)
 
 
+def test_ordinary_timing_uses_compiled_offsets_after_word_expansion(tmp_path):
+    text = ('Dr. Hale waited by the door. He looked at the lamp. '
+            '“Keep Dr. Hale quiet,” he whispered. “We have to leave before dawn.”')
+    source = tmp_path/'story.md'
+    source.write_text(text)
+    document = inspect(source)
+    unit, = planner.plan(document)['utterances']
+    assert unit['text'].startswith('Doctor Hale')
+    first, second = unit['quote_timing']['quotations']
+    assert unit['text'][slice(*first)] == '“Keep Doctor Hale quiet,”'
+    assert unit['text'][slice(*second)] == '“We have to leave before dawn.”'
+    prior, = planner.plan(document, delivery_context=21)['utterances']
+    assert 'quote_timing' not in prior
+    assert quote_timing.scope(text.replace('whispered', 'said'), unit['text'], 22) is None
+    different_quotes = '“Stop,” she said. ' + unit['text']
+    assert quote_timing.scope(text, different_quotes, 22) is None
+
+
 def test_continuation_verifies_both_windows_and_keeps_a_still_valid_first_window():
     frame = quote_timing.FRAME
     first = quote_timing.Edges(frame,2*frame,5*frame,7*frame)

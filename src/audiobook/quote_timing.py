@@ -79,13 +79,21 @@ def primary_word_groups(parts, labels):
 
 
 def scope(source, spoken, context_version):
-    # Transform layout whitespace but establish ownership before using a spoken
-    # offset. Rephrasing and numeric expansion can change that offset.
-    if performance.normalize_space(source) != spoken:
-        return None
+    source = performance.normalize_space(source)
     quoted = owned_whisper(spoken, context_version)
     if not quoted:
         return None
+    if source != spoken:
+        if context_version < 22:
+            return None
+        source_owned = owned_whisper(source, context_version)
+        if not source_owned:
+            return None
+        # The spoken compiler can expand words anywhere in the paragraph.
+        # Establish ownership on each text and compare quote order before
+        # using the offsets of the version actually sent to Breeze.
+        if quotation_indexes(source, source_owned, context_version) != quotation_indexes(spoken, quoted, context_version):
+            return None
     if not words(spoken[:quoted[0][0]]) or any(not words(spoken[a+1:b-1]) for a,b in quoted):
         return None
     if len(quoted)>1:
@@ -97,6 +105,12 @@ def scope(source, spoken, context_version):
     if len(words(spoken[stop:]))<2:
         return None
     return {'quotation': [start,stop], 'version': VERSION}
+
+
+def quotation_indexes(text, owned, context_version):
+    quoted = performance.quotation_text(text, context_version)
+    ranges = [match.span() for match in re.finditer(performance.QUOTATION, quoted)]
+    return len(ranges), tuple(index for index, span in enumerate(ranges) if span in owned)
 
 
 @dataclass(frozen=True)
