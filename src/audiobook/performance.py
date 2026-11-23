@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 13
+CONTEXT_VERSION = 14
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -271,7 +271,7 @@ def focus_direction(source, config):
     return focus,evidence
 
 
-def typographic_focus(source, spoken, spans, config, actor):
+def typographic_focus(source, spoken, spans, config, actor, *, owned_span=None):
     """Use a single marked personal pronoun inside a complete spoken turn."""
     marks = [span for span in spans if span['kind'] in ('emphasis','font_style')]
     if not marks or len(source)>480:
@@ -284,7 +284,7 @@ def typographic_focus(source, spoken, spans, config, actor):
         return None
     standalone = source.strip()==quote[0] and quote[0][-2] in '.!?'
     reporting = '|'.join(NEUTRAL_REPORTING)
-    if not (standalone or dialogue_attribution(source,reporting,actor=actor)
+    if not (owned_span==quote.span() or standalone or dialogue_attribution(source,reporting,actor=actor)
             or embedded_attribution(source,reporting,actor=actor)):
         return None
     authored = {}
@@ -497,7 +497,7 @@ def inline_event_rules(registry, version):
             if (since := recipe.get('inline_since')) is not None and since<=version}
 
 
-def inline_event_site(source, recipes, actor):
+def inline_event_site(source, recipes, actor, *, owned_span=None):
     if len(source)>480 or not any(marker in source for marker in '[('):
         return None
     marks = list(literal_pattern(RULES_FILE).finditer(source))
@@ -517,24 +517,38 @@ def inline_event_site(source, recipes, actor):
     if not kind:
         return None
     reporting = '|'.join(NEUTRAL_REPORTING)
-    if not (dialogue_attribution(source,reporting,actor=actor) or embedded_attribution(source,reporting,actor=actor)):
+    if not (owned_span==quote.span() or dialogue_attribution(source,reporting,actor=actor)
+            or embedded_attribution(source,reporting,actor=actor)):
         return None
     return kind, quote, mark
 
 
-def pdf_inline_event_continues(left, right, context_version):
+def pdf_inline_event_continues(left, right, context_version, config=None):
     if (left.role!='body' or right.role!='body' or left.issue or right.issue
             or left.chapter!=right.chapter or left.locator.get('page')!=right.locator.get('page')
             or not right.source.lstrip().startswith(('[','('))):
         return False
     source = ' '.join(delivery_text(block, True) for block in (left,right))
     version = context_version or CONTEXT_VERSION
-    rules = inline_event_rules(loadjson(RULES_FILE),version)
-    return inline_event_site(source,rules,attribution_actor(version)) is not None
+    registry = loadjson(RULES_FILE)
+    rules = inline_event_rules(registry,version)
+    actor = attribution_actor(version)
+    owned_span = None
+    if version >= 14:
+        custom = attribution_preferences(config or {}, registry['directions'])
+        verbs,cues,postposed = attribution_rules(registry,version,custom)
+        match = dialogue_attribution(source,cues,postposed,actor=actor)
+        if not match and (embedded:=embedded_attribution(source,cues,postposed,actor=actor)):
+            match,offset,_ = embedded
+        else:
+            offset = 0
+        if match and attribution_phrase(match) in verbs:
+            owned_span = tuple(offset+i for i in match.span('quote'))
+    return inline_event_site(source,rules,actor,owned_span=owned_span) is not None
 
 
-def inline_vocal_event(source, speech, block, recipes, actor):
-    if not (located := inline_event_site(source,recipes,actor)):
+def inline_vocal_event(source, speech, block, recipes, actor, *, owned_span=None):
+    if not (located := inline_event_site(source,recipes,actor,owned_span=owned_span)):
         return None
     kind, quote, mark = located
     spoken_quotes = list(re.finditer(QUOTATION,speech))
@@ -561,6 +575,44 @@ def inline_vocal_event(source, speech, block, recipes, actor):
         'event':{'kind':kind,'position':'within','word_offset':len(comparison_tokens(prefix)),
                  **{field:recipe[field] for field in ('asr_labels','asr_annotations')}},
     }
+
+
+def compose_quotation_cues(candidate, source, neutral, blocks, actor, owned_span, inline_rules, registry):
+    """Retain independent authored event and stress evidence within one owned quotation."""
+    event = candidate.get('event')
+    delivery = candidate['recipe'] if owned_span and not event else None
+    inline = (inline_vocal_event(source,neutral,blocks[0].id,inline_rules,actor,owned_span=owned_span)
+              if delivery and inline_rules else None)
+    focus = None
+    if len(blocks)==1:
+        focus = typographic_focus(source,neutral,blocks[0].locator.get('inline_semantics',()),
+                                 registry['context']['emphasis'],actor,owned_span=owned_span)
+    if not (inline or focus):
+        return
+    templates = registry['composition']
+    instruction = candidate['instruction']
+    components = {}
+    if delivery:
+        components['delivery'] = delivery
+        if inline and delivery in templates['delivery_with_event']:
+            instruction = templates['delivery_with_event'][delivery]
+    if inline:
+        candidate.update(speech=inline['speech'],synthesis=inline['synthesis'],event=inline['event'])
+        candidate['evidence'][0].setdefault('quotation_spans',[list(owned_span)])
+        candidate['evidence'].extend(inline['evidence'])
+        instruction += ' '+templates['vocal_event'][inline['recipe']]
+    if event or inline:
+        components['vocal_event'] = candidate['event']['kind']
+    if focus:
+        phrase,evidence = focus
+        components['focus'] = phrase
+        candidate['evidence'].append(evidence)
+        instruction += ' '+templates['focus'].format(phrase=phrase)
+    if inline and delivery in templates['delivery_with_event']:
+        returned = ('embedded_return_to_narrator' if candidate['evidence'][0].get('turn_span')
+                    else 'return_to_narrator')
+        instruction += ' '+templates[returned]
+    candidate.update(instruction=instruction,composition=components)
 
 
 def contextual_direction(source, config, previous=None, preference='corroborated'):
@@ -1005,11 +1057,19 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 candidate['voice_suffixes']=suffixes
         else:
             continue
+        if version>=14:
+            owned_span = None
+            if direction and not (continuation or following_quote or recipe.get('progression')):
+                offset = surrounding[0] if surrounding else 0
+                owned_span = tuple(offset+i for i in attribution.span('quote'))
+            if owned_span or inline_event:
+                compose_quotation_cues(candidate,source,neutral,blocks,actor,owned_span,inline_rules,registry)
         if joined_pdf:
             locate_pdf_candidate(candidate,blocks)
         narrated_context = surrounding or candidate.get('evidence',[{}])[0].get('kind') in (
             'trailing_voice_description','attached_voice_description')
-        if (direction or candidate.get('contextual')) and not focus and not candidate.get('anchor') and not narrated_context:
+        if ((direction or candidate.get('contextual')) and not focus and not candidate.get('anchor')
+                and not narrated_context and not candidate.get('composition')):
             if marker:=recipe.get('quote_marker'):
                 quotes=list(re.finditer(QUOTATION,candidate['speech']))
                 if len(quotes)==1:
@@ -1072,6 +1132,8 @@ def candidate_id(source_digest, candidate):
     if tuning:=candidate.get('tuning'):identity.append(tuning)
     if 'passage_instruction' in candidate:
         identity.append(('passage_instruction', candidate['passage_instruction']))
+    if candidate.get('composition'):
+        identity.append(('composed_request',candidate['synthesis'],candidate['instruction']))
     return key(identity)
 
 

@@ -729,6 +729,57 @@ def test_inline_authored_sigh_is_one_automatic_request(tmp_path,monkeypatch,caps
         assert performance.lexical_observation(unit,uncertain)==uncertain
 
 
+def test_composed_whisper_keeps_authored_sigh_and_stress_in_one_default_request(tmp_path,monkeypatch,capsys):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    store = Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    source = tmp_path/'book.md'
+    source.write_text('“Did *you* see the door move? [sigh] The passage is empty,” Ada whispered.')
+    document = inspect(source)
+    older = planner.plan(document,delivery_context=13)
+    assert 'event' not in older['utterances'][0]['performance_candidate']
+
+    assert cli.main(['--home',str(store.root),'queue',str(source),'--voice','cast:nigel-thornberry','--json'])==0
+    job = store.get(json.loads(capsys.readouterr().out)['job'])
+    unit, = job['plan']['utterances']
+    active = unit['performance']
+    assert active['composition']=={'delivery':'whisper','vocal_event':'sigh','focus':'you'}
+    assert unit['text']=='“Did you see the door move? The passage is empty,” Ada whispered.'
+    spoken,options = performance.request(unit)
+    assert spoken=='“Did you see the door move? (sigh) The passage is empty,” Ada whispered.'
+    assert options['instruction']==(
+        'Whisper the quoted words clearly. Give one brief natural sigh at the marked pause. '
+        'Give the marked word you one small natural stress. Read the attribution in the usual narrator voice.')
+    assert active['id']!=older['utterances'][0]['performance_candidate']['id']
+    attribution,event,emphasis = active['evidence']
+    block = document.blocks[0].source
+    assert block[slice(*attribution['span'])]=='whispered'
+    assert block[slice(*event['span'])]=='[sigh]'
+    assert block[slice(*emphasis['target_span'])]=='you'
+    assert active['event']['word_offset']==6
+    observed = 'Did you see the door move? [sighing] The passage is empty, Ada whispered.'
+    assert performance.lexical_observation(unit,observed)==observed.replace('[sighing] ','')
+    assert performance.lexical_observation(unit,observed.replace('door','floor'))==observed.replace('door','floor')
+
+
+@pytest.mark.parametrize(('text','components'),[
+    ('“Were *you* there? [sigh] The latch stayed shut,” Ada said.',{'vocal_event':'sigh','focus':'you'}),
+    ('“Were *you* there?” Ada whispered.',{'delivery':'whisper','focus':'you'}),
+    ('The lantern fell. “Quiet. [cough] Wait here,” Ada whispered. The latch slid.',
+     {'delivery':'whisper','vocal_event':'cough'}),
+    ('“Were *you* there, or were you at home? [sigh] The latch stayed shut,” Ada whispered.',
+     {'delivery':'whisper','vocal_event':'sigh'}),
+])
+def test_composition_preserves_each_owned_cue_and_rejects_ambiguous_stress(tmp_path,text,components):
+    result = plan_source(tmp_path,text,'auto')
+    unit, = result['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['composition']==components
+    if text.startswith('The lantern'):
+        assert candidate['speech']=='The lantern fell. “Quiet. Wait here,” Ada whispered. The latch slid.'
+        assert 'surrounding narration' in candidate['instruction']
+
+
 def test_inline_cough_uses_the_same_continuous_request_at_the_new_context_version(tmp_path,monkeypatch,capsys):
     monkeypatch.setattr(performance.sys,'platform','linux')
     store=Store(tmp_path/'state')
@@ -787,6 +838,29 @@ def test_inline_event_keeps_both_native_pdf_fragments(tmp_path,first_line,second
     assert [part['block'] for part in evidence['quotation_parts']]==[first,second]
     assert event['source']=={'block':second,'span':[0,len(cue)]}
     assert event['speech']==first_line+' '+second_line.removeprefix(cue+' ')
+
+
+def test_composed_pdf_welds_only_the_source_owned_event_seam(tmp_path):
+    from reportlab.pdfgen.canvas import Canvas
+
+    source = tmp_path/'book.pdf'
+    pdf = Canvas(str(source))
+    pdf.drawString(72,700,'"Did you see the door move?')
+    pdf.drawString(72,678,'[sigh] The passage is empty," Ada whispered.')
+    pdf.save()
+    document = inspect(source)
+    older = planner.plan(document,delivery_context=13)
+    assert len(older['utterances'])==2
+    unit, = planner.plan(document)['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['composition']=={'delivery':'whisper','vocal_event':'sigh'}
+    assert candidate['speech']=='"Did you see the door move? The passage is empty," Ada whispered.'
+    assert candidate['synthesis']=='"Did you see the door move? (sigh) The passage is empty," Ada whispered.'
+    attribution,event = candidate['evidence']
+    first,second = unit['sources']
+    assert attribution['block']==event['block']==second
+    assert event['span']==[0,6]
+    assert [part['block'] for part in event['quotation_parts']]==[first,second]
 
 
 def test_book_policy_adds_an_exact_attribution_without_changing_other_requests(tmp_path,monkeypatch,capsys):

@@ -124,6 +124,8 @@ Voice descriptions attached to the reporting clause can also direct one quotatio
 
 A written sigh or cough can also fall between two complete sentences in one attributed quotation. For example, in “The last box is empty. [sigh] At least we found the key,” she said, Hamr sends one continuous speech request and asks Breeze to place the sigh at the marked sentence break.
 
+If the same quotation is whispered, Hamr can keep the whisper and the authored sound in that request. It can also carry one unambiguous author-marked stress. The plan records the attribution, the marked sound, and the emphasized word separately. The sound marker tells Breeze where to act and is omitted from the expected spoken words.
+
 Authored sounds are available in the ordinary workflow. Listening evidence includes leading sighs for Nigel Thornberry and Cave Johnson on Linux CPU Q8, trailing sighs on Linux Vulkan Q8, and Nigel's opening chuckle on Vulkan Q8 and F16. The plan records the direction that ran. Delivery varies with the voice, engine and passage.
 
 Save plain delivery for new books with `hamr settings --performance off`. Add `--mode study` or `--mode procedure` for a technical reading policy. Use `hamr settings --mode listen --performance auto` to restore expressive listening. A per-book flag or an explicitly selected listening profile can override the saved preference. Existing jobs keep their delivery until you choose a revision. Use `hamr repair JOB --performance auto` to apply the current expressive rules to an existing job.

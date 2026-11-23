@@ -11,8 +11,21 @@
     "741865068c5676e2ed1b669433c0b2a8e607d3b42850410e5068f918bc3f3f80",
     "f4fb01cac3d06b8ad3050362c4d60bb204a1dbf9545b50a723983166f42d7d41",
     "5bcfb76db468f8419feffde9bff44fe76d106dbe262a02cd52e9d12c71c62b91",
-    "42149012fe8820489f3b6061267f1ea29dccd0c3c2fc2e5a62597a93bec0e268"
+    "42149012fe8820489f3b6061267f1ea29dccd0c3c2fc2e5a62597a93bec0e268",
+    "9eb6e476f4232806c60941c087fefb170655737b105b159df9ebe806c2015775"
   ],
+  "composition": {
+    "delivery_with_event": {
+      "whisper": "Whisper the quoted words clearly."
+    },
+    "vocal_event": {
+      "sigh": "Give one brief natural sigh at the marked pause.",
+      "cough": "Give one brief cough at the marked pause."
+    },
+    "focus": "Give the marked word {phrase} one small natural stress.",
+    "return_to_narrator": "Read the attribution in the usual narrator voice.",
+    "embedded_return_to_narrator": "Read the surrounding narration and attribution in the usual narrator voice."
+  },
   "directions": {
     "whisper": {
       "cues": ["whispered"],

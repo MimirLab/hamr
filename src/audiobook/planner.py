@@ -478,7 +478,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                             quote_pairs[b.id, next_block.id] = quote_flow
                             continue_passage = True
                         elif join_inline_events:
-                            continue_passage = pdf_inline_event_continues(b, next_block, delivery_context)
+                            continue_passage = pdf_inline_event_continues(
+                                b, next_block, delivery_context, document_policy.get('performance', {}))
                 if not continue_passage:
                     flush()
                     if utterances:utterances[-1]['pause_samples']=8400
