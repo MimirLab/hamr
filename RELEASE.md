@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev1
+
+- Timed whispers now check the narrator's reporting words when they come out weak. Hamr compares the phrase with the same words in an ordinary take, and can choose another reading when both speech checkers confirm a substantial local drop. The comparison appears in the finished book's `quote_timing` report. [Expressive narration guide](docs/USAGE.md#expressive-narration)
+- When a character cuts off a word and another character immediately echoes those letters as a name, Hamr can use that echo to clarify the unfinished sound. The source and companion retain the printed fragment.
+
 # hamr 0.4.8
 
 - An explicitly whispered quotation can start a passage. Hamr measures it against the ordinary narration that follows, checks the words and delivery boundaries, and keeps the passage in one speech request.
