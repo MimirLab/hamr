@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from audiobook import backend, cli, hardware
+from audiobook import backend, cli, hardware, performance
 from audiobook.core import Error, Store, loadjson, writejson
 
 
@@ -117,6 +117,39 @@ def test_unsupported_platform_rejected_before_acquisition(tmp_path, monkeypatch,
         backend.setup(Store(tmp_path / 'state'), 'vulkan-f16')
     assert failure.value.code == 'unsupported_platform'
     assert transfers == []
+
+
+@pytest.mark.parametrize('confirmed',[True,False])
+def test_profile_archive_confirms_timing_before_activation(tmp_path,monkeypatch,assets,confirmed):
+    catalog,payloads,transfers=assets
+    runtime=catalog['runtimes']['hoppou']
+    stable=runtime['linux_x86_64']
+    alternate={**stable,'filename':'timed-breeze.tar.gz','url':'https://setup-fixture.invalid/timed',
+               'profiles':['vulkan-q8'],'revision':'timed-backend',
+               'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY}
+    runtime['profile_archives']={'linux_x86_64':[alternate]}
+    payloads[alternate['url']]=payloads[stable['url']]
+    writejson(backend.CATALOG,catalog)
+    store=Store(tmp_path/'state')
+    settings=store.root/'settings.json'
+    writejson(settings,{'profile':'already-active'})
+
+    class Compatible:
+        health={'actual_device':'fixture', **({'frame_guidance':alternate['frame_guidance']} if confirmed else {})}
+        def __enter__(self): return self
+        def __exit__(self,*_): pass
+
+    monkeypatch.setattr(backend,'Engine',lambda *_:Compatible())
+    if confirmed:
+        result=backend.setup(store,'vulkan-q8')
+        assert result['identity']['runtime_revision']==alternate['revision']
+        assert loadjson(settings)['frame_guidance']==alternate['frame_guidance']
+    else:
+        with pytest.raises(Error) as failure:
+            backend.setup(store,'vulkan-q8')
+        assert failure.value.code=='frame_guidance_unavailable'
+        assert loadjson(settings)=={'profile':'already-active'}
+    assert alternate['url'] in transfers and stable['url'] not in transfers
 
 
 def test_setup_replaces_mismatched_runtime_without_overwriting_prior_job_pins(tmp_path,monkeypatch,assets):

@@ -1317,15 +1317,26 @@ def pinned_backends():
     return runtime['revision'], profiles, archives
 
 
+@cache
+def compatible_runtime_archives():
+    runtime = loadjson(CATALOG_FILE)['runtimes']['hoppou']
+    return {(platform, profile, entry['revision'], entry['sha256'])
+            for platform, entries in runtime.get('profile_archives', {}).items()
+            for entry in entries for profile in entry['profiles']}
+
+
 def supports_prose_direction(backend):
     runtime, models, archives = pinned_backends()
     platform = backend.get('runtime_platform') or {'linux': 'linux_x86_64', 'win32': 'windows_x86_64'}.get(sys.platform)
-    model = models.get(backend.get('profile'))
+    profile = backend.get('profile')
+    model = models.get(profile)
+    if model is None or backend.get('model_sha256') != model:
+        return False
     # Older verified setups predate the archive field. The pinned runtime and
     # model still identify the instruction-only transport in those setups.
-    return (platform in archives and model is not None and backend.get('model_sha256') == model
-            and backend.get('runtime_revision') == runtime
-            and backend.get('runtime_archive_sha256') in (None, archives[platform]))
+    revision, archive = backend.get('runtime_revision'), backend.get('runtime_archive_sha256')
+    return ((platform in archives and revision == runtime and archive in (None, archives[platform]))
+            or (platform,profile,revision,archive) in compatible_runtime_archives())
 
 
 def bind(plan, backend, voice, *, fallbacks=(), previous=None):

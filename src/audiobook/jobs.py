@@ -218,9 +218,17 @@ def summary(store,j):
                 action='Free memory and resume, or switch to the lower-memory checker.\n' + action
             error={**error,'action':action}
     metrics = {**j.get('metrics', {}), 'semantic_qa':speech_check_status(j)}
-    result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(valid_clip(store,k) is not None for k in set(j['clips'].values())),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
+    checked = {k:valid_clip(store,k) for k in set(j['clips'].values())}
+    result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(r is not None for r in checked.values()),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
     result['mastering']=j.get('mastering','off')
-    if delivery:=performance.status(j):result['performance']=delivery
+    if delivery:=performance.status(j):
+        scoped = [u for u in j['plan']['utterances'] if quote_timing.active(j,u)]
+        if scoped:
+            outcomes = [(checked.get(j['clips'].get(u['id'])) or {}).get('quote_timing',{}).get('selected')
+                        for u in scoped]
+            delivery['timed_quotations'] = {'directed':outcomes.count('directed'),
+                                           'ordinary':outcomes.count('ordinary'),'pending':outcomes.count(None)}
+        result['performance']=delivery
     return result
 
 def generate_takes(engine,j,todo,parallel):

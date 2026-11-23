@@ -17,6 +17,14 @@ def runtime_key(system=None, arch=None):
     return {'Linux': 'linux_x86_64', 'Windows': 'windows_x86_64'}.get(system)
 
 
+def hoppou_archives(runtime, variant, profile):
+    """Return qualified replacements and the original archive for this profile."""
+    return [
+        *(entry for entry in runtime.get('profile_archives',{}).get(variant,()) if profile in entry['profiles']),
+        {'revision':runtime['revision'],**runtime[variant]},
+    ]
+
+
 def extract_hoppou(archive, target, variant):
     if variant == 'linux_x86_64':
         with tarfile.open(archive) as bundle:

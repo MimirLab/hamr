@@ -6,7 +6,7 @@ from .core import Error,RATE,atomic,digest,filehash,key,loadjson,run,writejson
 from .deadlines import wall_budget
 from .setup_progress import size_text
 from .platform_support import spawn_owned,close_windows_job
-from .runtime_catalog import runtime_key,extract_hoppou
+from .runtime_catalog import runtime_key,extract_hoppou,hoppou_archives
 
 CATALOG=Path(__file__).with_name('catalog.json')
 DOWNLOAD_STALL_SECONDS=90
@@ -169,13 +169,16 @@ def verified_runtime(root,archive,archive_sha,variant,progress):
 
 
 def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_ocr_activate=None):
+    from .performance import FRAME_GUIDANCE_CAPABILITY
+
     c=loadjson(CATALOG); profiles={p['id']:p for p in c['profiles']}; p=profiles.get(profile)
     if not p or p['runtime']!='hoppou': raise Error('unsupported_profile',f'Backend profile {profile!r} is unknown or catalog-only in this build.','Run hamr profiles for the built-in CPU/Vulkan model choices; selecting one downloads its pinned runtime and weights.')
     variant=runtime_key(platform.system(),platform.machine())
     if variant is None or variant not in c['runtimes']['hoppou']:
         raise Error('unsupported_platform','This speech runtime is available for x86_64 Linux and Windows.','Run hamr profiles to see the supported builds and research candidates.')
     with store.lock():
-        r=c['runtimes']['hoppou'][variant]; package=c['packages'][p['packages'][0]]; root=store.root/'assets'/profile
+        r=hoppou_archives(c['runtimes']['hoppou'],variant,profile)[0]
+        package=c['packages'][p['packages'][0]]; root=store.root/'assets'/profile
         if root.is_symlink() or root.is_junction(): raise Error('unsafe_path','Backend assets must use an owned Hamr directory.')
         root.mkdir(exist_ok=True)
         license_file=next(f for f in c['packages']['official']['files'] if f['path']=='LICENSE')
@@ -199,13 +202,22 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_o
         runtime,binary=verified_runtime(root,destinations[0][0],r['sha256'],variant,progress)
         windows=variant=='windows_x86_64'
         terms=destinations[-1][0]
-        identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':c['runtimes']['hoppou']['revision'],'runtime_archive_sha256':r['sha256'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(destinations[1][0]),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{x.relative_to(runtime).as_posix():filehash(x) for x in runtime.rglob('*.dll' if windows else '*.so*') if x.is_file()}}
+        identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':r['revision'],'runtime_archive_sha256':r['sha256'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(destinations[1][0]),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{x.relative_to(runtime).as_posix():filehash(x) for x in runtime.rglob('*.dll' if windows else '*.so*') if x.is_file()}}
+        if advertised:=r.get('frame_guidance'):
+            if advertised!=FRAME_GUIDANCE_CAPABILITY:
+                raise Error('frame_guidance_protocol','This Hamr version cannot use the runtime timing protocol.')
+            identity['frame_guidance']=advertised
         if windows: identity['runtime_platform']=variant
         # A real startup proves activation before replacing known-working settings.
         try:
             if progress: progress.stage(f'Starting {profile} to check that it loads')
             with Engine(store,identity) as e:
                 health=e.health
+                if advertised and health.get('frame_guidance')!=advertised:
+                    raise Error('frame_guidance_unavailable','The pinned runtime did not prove the selected timing protocol.',
+                                'Keep using the currently installed backend or retry setup with a matching Hamr build.')
+                if advertised:
+                    identity['adapter_capabilities']['direction']='instruction and frame guidance'
                 if windows or health.get('actual_device') is None:
                     if progress: progress.stage('Checking speech and the actual processing device')
                     _,proof=e.speech('This is a short speech check.')

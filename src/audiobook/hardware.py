@@ -185,15 +185,18 @@ def inspect_host(sysroot=Path('/sys'), procroot=Path('/proc'), command=_command)
 
 
 def profile_catalog(catalog, host=None):
+    from .runtime_catalog import hoppou_archives
+
     runtime_variants = catalog['runtimes']['hoppou']
     variant = runtime_key(host['system'],host['arch']) if host else runtime_key()
-    runtime = runtime_variants.get(variant, runtime_variants['linux_x86_64'])
+    asset_variant = variant if variant in runtime_variants else 'linux_x86_64'
     recipes = json.loads(Path(__file__).with_name('gguf_recipes.json').read_text(encoding='utf-8'))
     license_bytes = next(f['bytes'] for f in catalog['packages']['official']['files'] if f['path'] == 'LICENSE')
     result = []
     for entry in catalog['profiles']:
         row = {**entry, 'implemented': entry['runtime'] == 'hoppou' and entry['id'] in BUDGETS}
         if row['implemented']:
+            runtime = hoppou_archives(runtime_variants,asset_variant,entry['id'])[0]
             vram, ram, precision, tradeoff, tested = BUDGETS[row['id']]
             package = entry['packages'][0]
             recipe = recipes.get(package)
