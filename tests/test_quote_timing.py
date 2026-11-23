@@ -461,6 +461,7 @@ def test_default_quote_timing_uses_printed_name_positions_without_rewriting_the_
     ('I told Rachael no.', ('i','told','rebecca','no'), False),
     ('I told Rachael no.', ('i','told','rachel'), False),
     ('Alan told Allen no.', ('allen','told','alan','no'), False),
+    ('Alan told Allen no.', ('allan','told','allan','no'), False),
     ('Anne read Ann’s note.', ('ann','read',"anne's",'note'), False),
     ('I read Anne’s note.', ('i','read',"ann's",'note'), True),
     ('I read ann’s note.', ('i','read',"anne's",'note'), False),

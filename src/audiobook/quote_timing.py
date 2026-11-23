@@ -108,7 +108,8 @@ def name_observation_spellings(text):
     # Keep explicitly distinct written forms distinct within the same take.
     written = {name for name,_ in names.values()}
     return [[index,other+suffix,name+suffix] for index,(name,suffix) in names.items()
-            for other in groups[name] if other not in written]
+            if written.intersection(groups[name])=={name}
+            for other in groups[name] if other!=name]
 
 
 def source_spellings(decisions, *, include_names=False):
