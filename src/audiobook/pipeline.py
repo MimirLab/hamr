@@ -283,6 +283,8 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                 progress('required_QA')
                 wait_writer(lambda:qa.check(store,jid,python,model,all_clips=True,require_review=True));j=current()
                 if not j.get('audio_review'):
+                    if engine_session is not None:
+                        engine_session.release()
                     progress('assembling');result=wait_writer(lambda:jobs.render(store,jid,allow_synthesis=False))
                     progress('complete' if result['status']=='ready' else 'publication_held',output=result['output'],acceptances_added=0)
                     return jobs.summary(store,current())

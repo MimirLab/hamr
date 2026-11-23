@@ -13,7 +13,7 @@ from PIL import Image
 from audiobook.backend import validate_pcm
 from audiobook.core import Store,RATE,atomic,writejson,Error,filehash
 from audiobook.jobs import create,clip_key,render,repair,valid_clip,verify_publication
-from audiobook.media import packet_hash,verify_container,merge_overrides
+from audiobook.media import packet_hash,verify_container,verify_audio_decode,merge_overrides
 from audiobook.importers import epub
 
 
@@ -104,6 +104,28 @@ def test_a_playable_but_shortened_container_is_rejected(tmp_path):
     assert not verify_publication(out,store.get(job['id']))
 
 
+def test_chapter_duration_cannot_hide_missing_decoded_audio(tmp_path):
+    source=tmp_path/'book.md'
+    source.write_text('# One\n\nThe first passage.\n\n# Two\n\nThe last passage.')
+    store,job=prepared(tmp_path,source)
+    output=Path(render(store,job['id'],allow_synthesis=False)['output'])
+    companion=json.loads((output/'companion.json').read_text())
+    expected=companion['samples']
+    report=json.loads((output/'report.json').read_text())
+    assert report['decoded_audio']['samples']==expected+report['decoded_audio']['difference_from_timeline']
+
+    shortened=tmp_path/'shortened audio.m4b'
+    subprocess.run(['ffmpeg','-v','error','-nostdin','-i',output/'book.m4b',
+                    '-map','0:a:0','-map_metadata','0','-map_chapters','0',
+                    '-af',f'atrim=end_sample={expected-2200}','-c:a','aac',
+                    '-movflags','+faststart+disable_chpl','-f','mp4',shortened],check=True)
+    verify_container(shortened,companion['chapters'],expected)
+    with pytest.raises(Error) as failure:
+        verify_audio_decode(shortened,expected)
+    assert failure.value.code=='audio_decode_length'
+    assert f'{expected:,} samples' in failure.value.message
+
+
 @pytest.mark.parametrize('text',['Compare x < y, then x --> y.','A <c.red>word</c> & an ampersand.',
                                  'Literal &lt;i&gt;italic&lt;/i&gt; and &amp; ampersand.'])
 def test_webvtt_round_trips_literal_narration(tmp_path,text):
@@ -133,6 +155,7 @@ def test_failed_full_audio_decode_does_not_publish(tmp_path,monkeypatch):
     assert failure.value.code=='audio_decode_failed'
     assert not jobs.final_path(job).exists()
     assert valid_clip(store,clip_key(job['plan']['utterances'][0],job))
+    assert f'resume {job["id"]} --no-synthesis' in failure.value.action
 
 
 def test_invalid_metadata_update_is_atomic_and_does_not_restore_cleared_values(tmp_path):

@@ -21,13 +21,13 @@ What are you reading? A field guide belongs with Nigel. A book about the univers
 
 | Voice | Reach for it when… | Hear the introduction |
 | --- | --- | --- |
-| **Nigel Thornberry** | You'd like someone to get genuinely excited about a footprint. | [▶ Nigel](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/nigel-thornberry.mp3) |
-| **Carl Sagan** | The book has a way of making the room feel a little bigger. | [▶ Sagan](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/carl-sagan.mp3) |
-| **Cave Johnson** | The experiment probably goes better if nobody reads the liability waiver. | [▶ Cave](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/cave-johnson.mp3) |
-| **Dr. Orpheus** | There's a cellar door, and naturally you're going to open it. | [▶ Orpheus](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/dr-orpheus.mp3) |
-| **HAL 9000** | A voice this calm should be reassuring. | [▶ HAL](https://cdn.jsdelivr.net/gh/MimirLab/hamr@main/docs/listen/hal-9000.mp3) |
+| **Nigel Thornberry** | You'd like someone to get genuinely excited about a footprint. | [▶ Nigel](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/nigel-thornberry.mp3) |
+| **Carl Sagan** | The book has a way of making the room feel a little bigger. | [▶ Sagan](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/carl-sagan.mp3) |
+| **Cave Johnson** | The experiment probably goes better if nobody reads the liability waiver. | [▶ Cave](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/cave-johnson.mp3) |
+| **Dr. Orpheus** | There's a cellar door, and naturally you're going to open it. | [▶ Orpheus](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/dr-orpheus.mp3) |
+| **HAL 9000** | A voice this calm should be reassuring. | [▶ HAL](https://cdn.jsdelivr.net/gh/MimirLab/hamr@9ed6f5d933fcf0c781380d6b132f585e9989e609/docs/listen/hal-9000.mp3) |
 
-**[Meet all 45 voices →](docs/CAST.md)** Each character introduces themselves. The same introductions play offline with `hamr voice sample CHARACTER --play`, even before model setup.
+**[Meet all 45 voices →](docs/CAST.md)** Each character introduces themselves. The introductions are balanced for browsing the cast, and the same clips play offline with `hamr voice sample CHARACTER --play`, even before model setup.
 
 ## Expressive narration
 
@@ -54,6 +54,8 @@ hamr open "$HOME/Downloads/My book.epub" --voice cast:nigel-thornberry
 ```
 
 Review the reading plan and enter `y`. Hamr renders and checks the speech, then prints the job ID and the path to a chaptered `book.m4b` under `~/Audiobooks/JOB-r1/`. The folder includes the original document and a timed companion. The same command accepts PDF, Markdown, and text files.
+
+Hamr balances the finished book’s playback level while preserving the differences between whispers, narration, and shouts. It counts quiet margins at ordinary joins so the pauses in the recording and assembly work together. [Audio mastering](docs/USAGE.md#audio-mastering)
 
 Use `--output DIRECTORY` to choose a destination, `--play` to start listening when it finishes, or `--yes` to run unattended. If interrupted, run `hamr resume JOB` with the job ID it printed. [See how recovery works](#resume-and-repair)
 

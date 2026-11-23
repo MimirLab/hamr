@@ -52,6 +52,7 @@ def schema(parser):
 
 def capabilities(parser):
     from .core import loadjson
+    from .mastering import DEFAULT, MODES
     from .performance import RULES_FILE
     from .wash_setup import PROFILES
 
@@ -72,6 +73,8 @@ def capabilities(parser):
                                     'review_replies_flag':'--context-review','reviewer':'local_file',
                                     'review_endpoint_flag':'--context-review-endpoint','review_endpoint_transport':'loopback_http',
                                     'details':'plan.decisions[].context_events', 'scores':'heuristic'},
+            'mastering': {'default_for_new_jobs': DEFAULT, 'modes': list(MODES), 'flag': '--mastering',
+                          'report': 'report.json', 'requires_synthesis_for_remaster': False},
             'exit_status': {'success': 0, 'error': 2, 'needs_review': 3, 'interrupted': 130}}
 
 
@@ -138,6 +141,7 @@ def snapshot(root, job, *, content=False, verify=False):
                                         '--expect-revision', str(revision), '--json']})
     result = {
         'schema_version': 1, 'job': jid, 'revision': revision, 'status': status,
+        'mastering': job.get('mastering', 'off'),
         'updated': job['updated'], 'source_sha256': job['document']['source_sha256'],
         'plan_sha256': job['plan']['plan_sha256'],
         'progress': job.get('progress', {}),

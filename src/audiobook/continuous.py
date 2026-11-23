@@ -37,7 +37,32 @@ def protected_cuts(text, spans):
     return forbidden
 
 
-def passages(text,max_words=120,max_bytes=1000,separate_incomplete=False,max_sentence_words=120,whole_sentences=False,protected=()):
+def _balance_closing_sentence(result, fits, max_words, forbidden):
+    if len(result) < 2:
+        return
+    left, right = result[-2:]
+    if any(piece['boundary'] != 'sentence' or piece['over_budget'] for piece in (left, right)):
+        return
+    ending = list(sentence_spans(right['text']))
+    if len(ending) != 1 or len(ending[0]['text'].split()) >= max_words // 3:
+        return
+    offset = sum(len(piece['text']) + 1 for piece in result[:-2])
+    left_text = left['text']
+    candidates = []
+    for sentence in list(sentence_spans(left_text))[1:]:
+        cut = sentence['start']
+        first = left_text[:cut].rstrip()
+        second = left_text[cut:].lstrip() + ' ' + right['text']
+        imbalance = abs(len(first.split()) - len(second.split()))
+        if offset + len(first) not in forbidden and fits(first) and fits(second):
+            candidates.append((imbalance, cut, first, second))
+    if candidates:
+        difference, _, first, second = min(candidates)
+        if difference < abs(len(left_text.split()) - len(right['text'].split())):
+            left['text'], right['text'] = first, second
+
+
+def passages(text,max_words=120,max_bytes=1000,separate_incomplete=False,max_sentence_words=120,whole_sentences=False,protected=(),balance_tail=False):
     """Prefer complete sentences; reserve bounded fallbacks for long literals.
 
     The exact token sequence is preserved. A single oversized token is returned
@@ -91,4 +116,6 @@ def passages(text,max_words=120,max_bytes=1000,separate_incomplete=False,max_sen
             position+=len(chunk)+1
             words=words[cut:]
     if pending:append(pending,'sentence' if re.search(r'[.!?]["”’\')\]]*$',pending) else 'incomplete')
+    if balance_tail:
+        _balance_closing_sentence(result, fits, max_words, forbidden)
     return result

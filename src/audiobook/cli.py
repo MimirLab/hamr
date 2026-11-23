@@ -213,6 +213,7 @@ def policy(a):
     return selected
 
 def parser():
+    from .mastering import MODES as mastering_modes, DEFAULT as mastering_default
     p=argparse.ArgumentParser(prog='hamr',description='hamr — local audiobooks with character voices, source review and recoverable rendering. Models acquired only by setup.'); p.add_argument('--version',action='version',version=__version__)
     p.add_argument('--home',type=Path,help='Private app state (or HAMR_HOME; AUDIOBOOK_HOME is also supported)'); p.add_argument('--json',action='store_true',help='Versioned JSON, no prompts')
     subs=p.add_subparsers(dest='command',required=True,metavar='COMMAND')
@@ -245,6 +246,9 @@ def parser():
     for name in ['plan','queue','open']:
         q=sub(name,{'plan':'Inspect and plan without model setup','queue':'Persist a headless job','open':'Review and start a document'}[name]); add_source(q)
         if name!='plan': q.add_argument('--voice',help='Saved voice name or cast:CHARACTER'); q.add_argument('--output',type=Path); q.add_argument('--parallel',type=int,choices=range(1,5),default=1,help='Concurrent generation streams; default 1'); q.add_argument('--label',help='Publication label appended to title, for example AI-generated comparison')
+        if name!='plan':
+            q.add_argument('--mastering',choices=mastering_modes,default=mastering_default,
+                           help='Balance finished book volume (natural, default) or leave the original playback level (off)')
         if name=='open':
             q.add_argument('--yes',action='store_true')
             q.add_argument('--play',action='store_true',help='Play the M4B after publication')
@@ -257,6 +261,7 @@ def parser():
     q=sub('repair','Change only a scoped pronunciation, verified passage or saved voice'); q.add_argument('job'); q.add_argument('--pronounce'); q.add_argument('--repackage',action='store_true'); q.add_argument('--reimport',action='store_true'); q.add_argument('--upgrade-rules',action='store_true'); q.add_argument('--retake'); q.add_argument('--block'); q.add_argument('--text-file',type=Path); q.add_argument('--voice'); q.add_argument('--document-policy',type=Path);q.add_argument('--metadata',type=Path,help='Source-preserving publication metadata overrides as JSON; null clears, inherit resets')
     q.add_argument('--context',type=Path,help='Replace contextual reading settings and replan'); add_context_review(q)
     add_performance(q)
+    q.add_argument('--mastering',choices=mastering_modes,help='Reassemble using the accepted narration with this mastering mode')
     q.add_argument('--chapters',help='Replace source chapter occurrence selection; all restores complete source order.')
     q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
     for state in ['pause','cancel']:
@@ -549,7 +554,7 @@ def dispatch(argv=None):
                     if answer not in ('y','yes'): return 0
                     break
             result=create(s,a.source,voice,policy(a),a.output,a.aliases,label=a.label,parallel=a.parallel,
-                          context_reviewer=a.context_review_endpoint)
+                          context_reviewer=a.context_review_endpoint,mastering_mode=a.mastering)
             if a.command=='open': result=finish_book(s,result['job'],announce=not jm)
             if not jm: emit(result)
             if a.command=='open' and a.play and result['status']=='ready': play_output(result,quiet=jm)
@@ -574,11 +579,11 @@ def dispatch(argv=None):
             j=s.get(a.job); emit({'schema_version':1,'job':j['id'],'plan':j['plan']} if a.content else summary(s,j),True)
         elif a.command=='repair':
             if a.block and not a.text_file: raise Error('repair_text','--block requires --text-file containing a verified reading.')
-            if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters,a.context,a.context_review,a.context_review_endpoint,a.performance]): raise Error('repair_required','Specify a scoped repair, --document-policy, --context, --metadata, --chapters or --performance.')
+            if not any([a.pronounce,a.block,a.voice,a.retake,a.repackage,a.reimport,a.upgrade_rules,a.document_policy,a.metadata,a.chapters,a.context,a.context_review,a.context_review_endpoint,a.performance,a.mastering]): raise Error('repair_required','Specify a scoped repair, --document-policy, --context, --metadata, --chapters, --performance or --mastering.')
             from .context_config import read as read_context
             emit(repair(s,a.job,a.pronounce,a.block,a.text_file.read_text() if a.text_file else None,a.voice,a.retake,a.reimport,a.upgrade_rules,loadjson(a.document_policy) if a.document_policy else None,loadjson(a.metadata) if a.metadata else None,chapters=a.chapters,expect_revision=a.expect_revision,
                         context=read_context(a.context) if a.context else None,context_review=read_context(a.context_review) if a.context_review else None,
-                        context_reviewer=a.context_review_endpoint,performance_mode=a.performance),jm)
+                        context_reviewer=a.context_review_endpoint,performance_mode=a.performance,mastering_mode=a.mastering),jm)
         elif a.command in ('pause','cancel'):
             with s.lock():
                 j=s.get(a.job); j['status']='paused' if a.command=='pause' else 'cancelled'

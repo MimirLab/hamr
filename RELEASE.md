@@ -1,5 +1,11 @@
 # Upcoming changes
 
+### Audio mastering
+
+New books balance their overall volume automatically. The CPU mastering pass uses one gain for the entire book, preserving the levels of whispers and shouts relative to the surrounding narration. Hamr checks the decoded M4B before publication, including its audio sample count independently of the chapter markers. Hamr can correct an isolated level jump against steady neutral narration, credit quiet margins at ordinary joins, and smooth an isolated discontinuity at the edge of a take. It records each edit in the book report and derives companion timing from the finished sequence. Existing checked books can be remastered without resynthesizing speech.
+
+All 45 cast introductions have also been balanced for more consistent listening in the guide and in `hamr voice sample`. [Mastering and remastering commands](docs/USAGE.md#audio-mastering)
+
 ### Voice reference preparation
 
 Custom voice import can recover a reference affected by steady electrical hum before Breeze sees it. Install the local CPU preparation worker with `hamr setup --wash-only`. Hamr retains the original media and records what it selected. The lighter FastEnhancer profile is available for explicitly requested preparation comparisons. [Preparation and hardware choices](docs/USAGE.md#prepare-a-voice-reference)
@@ -12,6 +18,7 @@ Blind listening across all 45 cast voices identified 22 preferred cleaned refere
 
 ### Expressive narration
 
+- When a plain paragraph needs multiple speech requests, Hamr can give a short closing sentence some preceding context. It keeps complete sentences together and uses the same request limits.
 - Dialogue can take its direction from a fuller attribution such as “the doctor replied firmly” or “she said, her voice barely audible.” Hamr uses the reporting clause to tie the delivery to the right speaker.
 - An authored sigh or cough between complete sentences can be performed inside one continuous quotation.
 - An author-marked pronoun can carry the stress in a spoken line. EPUB stylesheet italics and Markdown emphasis can supply that cue. The plan records the marked word and its source location.

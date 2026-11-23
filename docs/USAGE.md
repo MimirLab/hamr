@@ -78,7 +78,7 @@ Use `--notes after_paragraph|inline|companion` to control linked notes. `--chapt
 
 ### Check how a document will be read
 
-Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-16` rules.
+Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-17` rules. When a plain paragraph needs two requests, Hamr can move a complete sentence across the split so the final sentence keeps some preceding context.
 
 - Markdown note definitions can contain several paragraphs or list items. A code span containing a note marker stays literal. Missing, duplicate and nested note targets need review when selected for speech.
 - Plain `.txt` files accept UTF-8 or BOM-marked UTF-16/UTF-32. Blank lines separate paragraphs. The source locations retain exact decoded lines and line endings. Convert files from other encodings before opening them.
@@ -299,6 +299,25 @@ Add `--resident --batch-takes 1 --batch-rest-seconds 10` to retain one owned mod
 Source locations, planned speech and committed takes remain inspectable through `show --content`, `excerpt` and offline `qa`. Source review and speech review are separate publication gates.
 
 The default planner keeps complete paragraphs and sentences together within its input budget. It separates an unfinished tail from preceding complete sentences and holds unfinished sentences at known source gaps. A single complete sentence can use up to 160 words and 1,000 UTF-8 bytes. A 136-word control passed speech and playback checks. Longer inputs use recorded clause or forced boundaries. Saved plans retain their rules until explicitly upgraded. Verified document policies can defer a photograph caption until its interrupted paragraph finishes, with a spoken “Illustration caption” cue, or give a synopsis a standalone boundary.
+
+## Audio mastering
+
+New books use natural mastering automatically. After speech verification, Hamr measures the book and applies gain on the CPU with FFmpeg. Intentional changes in delivery keep their relative levels. The original takes stay available for recovery and revision.
+
+For an isolated level jump, Hamr compares the take to steady neutral narration on both sides within the same chapter and scene. When the active speech and peak measurements agree, it can correct up to 3 dB. It counts quiet margins already present at ordinary narration joins toward the planned pause, up to 120 milliseconds or half the inserted pause. A fade of eight samples can smooth an isolated discontinuity on the very edge of a take. Dialogue, expressive cues, authored sounds, and scene and chapter boundaries are excluded from these joins.
+
+The target is −19 LUFS for the mono audiobook. Hamr limits book-wide boost to 6 dB and checks the decoded M4B against a −2 dBTP ceiling. On a peak overshoot it lowers gain and encodes again from the saved recordings. Peaks or very short material can keep a book below target. `report.json` records level findings, corrections, and the decoded measurements. When a join is adjusted, the timed companion records the planned and actual inserted pauses. Chapter and subtitle times follow the finished sample sequence. Every export checks the decoded audio length against that sample sequence, independently of the chapter markers. If the check fails, Hamr retains the verified speech and prints the exact resume command.
+
+Use `--mastering off` on `open` or `queue` to keep the assembly's original playback level. Saved jobs retain the mastering recipe they were created with. An explicit remaster uses the current recipe. To master an existing book from its checked takes:
+
+```sh
+hamr repair JOB --mastering natural
+hamr resume JOB --no-synthesis
+```
+
+Hamr makes a new edition and keeps the previous one playable. When a saved take is missing or needs speech checking, `hamr resume JOB` uses the ordinary recovery workflow. Use `hamr repair JOB --mastering off` to make an edition at the original playback level. A metadata-only revision copies the existing audio packets.
+
+Cast introductions are balanced separately for browsing. They are the clips you hear from the cast guide and `hamr voice sample CHARACTER --play`.
 
 ## Recovery and repair
 

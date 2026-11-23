@@ -84,9 +84,44 @@ jobs:
           if ($publicationExit -ne 0 -or $result.status -ne 'ready') { throw "The control book did not publish. $publication" }
           if ($result.performance.mode -ne 'auto' -or $result.performance.active -ne 1) { throw 'Normal open did not direct the whisper.' }
           $m4b = Join-Path $result.output 'book.m4b'
+          $report = Get-Content -Raw (Join-Path $result.output 'report.json') | ConvertFrom-Json
+          if ($result.mastering -ne 'natural' -or $report.mastering.mode -ne 'natural' -or
+              $null -eq $report.mastering.decoded.true_peak_dbtp -or $report.mastering.decoded.true_peak_dbtp -gt -2) {
+            throw 'Normal open did not publish a peak-checked natural master.'
+          }
           ffprobe -v error -show_entries format=duration -of json $m4b
           $inspection = (& $hamr --home 'speech state' agent inspect $result.job --verify | Out-String) | ConvertFrom-Json
           if (-not $inspection.publication_verified) { throw 'Publication checksums did not verify.' }
+
+          $originalAudio = (Get-FileHash -LiteralPath $m4b).Hash
+          $originalTiming = (Get-FileHash -LiteralPath (Join-Path $result.output 'companion.vtt')).Hash
+          $revision = (& $hamr --home 'speech state' repair $result.job --mastering natural --expect-revision $result.revision --json | Out-String) | ConvertFrom-Json
+          $PSNativeCommandUseErrorActionPreference = $false
+          $env:AUDIOBOOK_FAULT = 'after_mastering_analysis'
+          try {
+            & $hamr --home 'speech state' resume $result.job --no-synthesis --json
+            $interruptedMaster = $LASTEXITCODE
+          } finally {
+            Remove-Item Env:AUDIOBOOK_FAULT
+            $PSNativeCommandUseErrorActionPreference = $true
+          }
+          if ($interruptedMaster -ne 86 -or (Test-Path -LiteralPath $revision.planned_output)) {
+            throw 'The interrupted master should retain its analysis without publishing a partial edition.'
+          }
+          $remaster = (& $hamr --home 'speech state' resume $result.job --no-synthesis --json | Out-String) | ConvertFrom-Json
+          if ($remaster.status -ne 'ready' -or $remaster.metrics.clips_rendered -ne 0) {
+            throw 'Could not finish the remaster from saved speech.'
+          }
+          $mastering = (Get-Content -Raw (Join-Path $remaster.output 'report.json') | ConvertFrom-Json).mastering
+          if (-not $mastering.analysis_cache_reused -or $null -eq $mastering.decoded.true_peak_dbtp -or
+              $mastering.decoded.true_peak_dbtp -gt -2) {
+            throw 'The resumed edition did not pass the peak check using saved analysis.'
+          }
+          if ((Get-FileHash -LiteralPath $m4b).Hash -ne $originalAudio -or
+              (Get-FileHash -LiteralPath (Join-Path $remaster.output 'companion.vtt')).Hash -ne $originalTiming) {
+            throw 'Remastering changed the previous edition or companion timing.'
+          }
+          ffmpeg -v error -xerror -nostdin -i (Join-Path $remaster.output 'book.m4b') -map '0:a:0' -f null -
 
           Set-Content 'Recovery control.md' 'A small bird sang in the garden.'
           $queued = (& $hamr --home 'speech state' queue 'Recovery control.md' --output 'published' --voice cast:nigel-thornberry --json | Out-String) | ConvertFrom-Json

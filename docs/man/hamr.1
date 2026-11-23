@@ -1,4 +1,4 @@
-.TH HAMR 1 "2026-11-22" "hamr 0.4.1" "User Commands"
+.TH HAMR 1 "2026-11-22" "hamr 0.4.2" "User Commands"
 .SH NAME
 hamr \- turn EPUB, PDF, Markdown and plain-text documents into local audiobooks
 .SH SYNOPSIS
@@ -7,7 +7,7 @@ hamr \- turn EPUB, PDF, Markdown and plain-text documents into local audiobooks
 .SH DESCRIPTION
 .B hamr
 reads a document, renders narration using Breeze TTS2, checks the speech
-locally, and assembles a chaptered M4B with a source companion.
+locally, and assembles a mastered, chaptered M4B with a source companion.
 An unresolved source or speech finding holds publication for review.
 The packaged speech engine targets Linux x86-64 with AVX2.
 Windows x64 CPU Q8 has passed checked publication and interruption
@@ -86,7 +86,9 @@ to confirm in advance, and
 .B \-\-play
 to play the finished book. Omit
 .BI \-\-output " DIRECTORY"
-to write under ~/Audiobooks.
+to write under ~/Audiobooks. Use
+.B \-\-mastering off
+to keep the original playback level on a new or queued book.
 .TP
 .B "plan, profile, queue, worker"
 Inspect a proposed reading, save reading preferences, create a queued
@@ -116,6 +118,13 @@ speech check or review a specific passage.
 .B "repair, qa, review"
 Apply a scoped correction, compare speech to the plan, or record and
 resolve a listening finding.
+Use
+.B "hamr repair JOB --mastering natural"
+followed by
+.B "hamr resume JOB --no-synthesis"
+to master a new edition from the saved and checked recordings.
+The default mastering applies one gain to the whole book and checks the
+encoded playback peaks. Timing and the previous edition are preserved.
 .TP
 .B "pause, cancel, cleanup"
 Mark an idle job paused or cancelled, or inspect unreferenced data.

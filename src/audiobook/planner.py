@@ -2,8 +2,9 @@ from __future__ import annotations
 import re
 from .core import Document,key,Error,digest
 
-RULES='faithful-16'
-CONTEXTUAL_RULES=('faithful-14','faithful-15',RULES)
+RULES='faithful-17'
+PERFORMANCE_RULES=('faithful-16',RULES)
+CONTEXTUAL_RULES=('faithful-14','faithful-15',*PERFORMANCE_RULES)
 SOURCE_STRUCTURE=('faithful-12','faithful-13',*CONTEXTUAL_RULES)
 NORMALIZATION_TRACE=('faithful-13',*CONTEXTUAL_RULES)
 MODERN=('faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
@@ -26,7 +27,7 @@ def normalize(text,aliases=None,rule_revision=RULES,abbreviation_audit=None,pres
     # Literal spelling is distinct from the runtime's performance-cue syntax.
     from .linguistic import literal_cues
     text=literal_cues(text,current=rule_revision in CONTEXTUAL_RULES)
-    if rule_revision==RULES:
+    if rule_revision in PERFORMANCE_RULES:
         from .performance import neutralize_controls
         text=neutralize_controls(text)
     if rule_revision in ('faithful-5','faithful-6','faithful-7','faithful-8','faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE):
@@ -232,9 +233,13 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 pieces=[{'text':joined,'boundary':'authored_lines','over_budget':len(joined.split())>160 or len(joined.encode())>1000}]
             elif protected or continuous and not repetitions:
                 from .continuous import passages
+                from .performance import MARKER,QUOTATION
                 limit=120 if continuous else 65
                 sentence_limit=(160 if rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) else 120) if continuous else limit
-                pieces=passages(joined,max_words=limit,separate_incomplete=continuous and (rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) or anchor=='paragraph'),max_sentence_words=sentence_limit,whole_sentences=whole_sentences,protected=protected)
+                balance_tail=(rule_revision==RULES and continuous and len(source_ids)==1
+                              and doc.blocks[source_positions[source_ids[0]]].role=='body'
+                              and not re.search(f'{QUOTATION}|{MARKER}',joined))
+                pieces=passages(joined,max_words=limit,separate_incomplete=continuous and (rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) or anchor=='paragraph'),max_sentence_words=sentence_limit,whole_sentences=whole_sentences,protected=protected,balance_tail=balance_tail)
             else:pieces=[{'text':part,'boundary':'legacy','over_budget':False} for part in split(joined,rule_revision=rule_revision)]
             for piece in pieces:
                 part=piece['text']
@@ -502,7 +507,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     if rule_revision in SOURCE_STRUCTURE:
         from .review_grouping import source_groups
         result['review_groups']=source_groups(doc.json(),result)
-    if rule_revision==RULES:
+    if rule_revision in PERFORMANCE_RULES:
         from .performance import annotate
         annotate(result,doc,automatic_prose=automatic_prose,context_version=delivery_context)
     result['plan_sha256']=key(result)

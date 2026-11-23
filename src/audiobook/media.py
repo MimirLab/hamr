@@ -106,11 +106,29 @@ def verify_container(path,chapters,samples):
     return probe
 
 
-def verify_audio_decode(path):
-    """Decode every staged AAC frame before making the publication visible."""
+def verify_audio_decode(path, expected_samples):
+    """Check the decoded sample clock independently of MP4 chapter duration."""
     try:
-        run(['ffmpeg','-v','error','-xerror','-nostdin','-i',path,'-map','0:a:0','-f','null','-'])
+        result=run(['ffmpeg','-v','error','-xerror','-nostdin','-i',path,'-map','0:a:0',
+                    '-af','asetpts=N/SR/TB','-stats_period','60','-progress','pipe:1','-f','null','-'])
     except Error as exc:
         if exc.code!='subprocess_failed': raise
-        raise Error('audio_decode_failed','The finished M4B failed a full audio decode.',
-                    'Run hamr resume JOB_ID to rebuild the container from the saved speech.') from exc
+        raise Error('audio_decode_failed','The finished M4B failed a full audio decode.') from exc
+    progress=dict(line.split('=',1) for line in result.stdout.decode(errors='replace').splitlines()
+                  if '=' in line)
+    try:
+        if progress.get('progress')!='end':
+            raise ValueError
+        microseconds=int(progress['out_time_us'])
+        if microseconds<=0:
+            raise ValueError
+    except (KeyError,ValueError) as exc:
+        raise Error('audio_decode_failed','FFmpeg did not report the length of the finished audio.') from exc
+    decoded_samples=(microseconds*RATE+500_000)//1_000_000
+    # A movie edit-list tick can round by 1 ms. Some AAC decoders also
+    # emit the final frame's padding (up to 1023 samples).
+    difference=decoded_samples-expected_samples
+    if difference < -RATE//1000 or difference > 1023+RATE//1000:
+        raise Error('audio_decode_length',f'The finished audio decoded to {decoded_samples:,} samples. '
+                    f'The checked narration and pauses require {expected_samples:,} samples.')
+    return {'samples':decoded_samples,'difference_from_timeline':difference}

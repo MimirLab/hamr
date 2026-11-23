@@ -8,7 +8,7 @@ from .importers import inspect,cached_inspect,IMPORT_REVISION
 from .planner import plan,RULES
 from .backend import Engine,validate_pcm,validate_request
 from .cast import resolve_voice
-from . import performance
+from . import mastering,mastering_continuity,performance
 
 
 def rename_new(src,dst):
@@ -29,7 +29,9 @@ def rename_new(src,dst):
 def document(j):
     d=j['document']; return Document(d['title'],d['format'],d['source_sha256'],[Block(**b) for b in d['blocks']],d['language'],d['inventory'],d['warnings'],d.get('metadata',{}))
 
-def create(store,source,voice=None,policy=None,output=None,aliases=None,label=None,parallel=1,*,context_reviewer=None):
+def create(store,source,voice=None,policy=None,output=None,aliases=None,label=None,parallel=1,*,context_reviewer=None,mastering_mode=mastering.DEFAULT):
+    if mastering_mode not in mastering.MODES:
+        raise Error('mastering_mode', 'Choose natural or off for mastering.')
     source=Path(source).absolute()
     jid=uuid.uuid4().hex[:16]; path=store.root/'jobs'/jid; path.mkdir(mode=0o700)
     try:
@@ -40,6 +42,8 @@ def create(store,source,voice=None,policy=None,output=None,aliases=None,label=No
         if p.get('document_title'):doc.title=p['document_title']
         saved_voice=resolve_voice(store,voice) if voice else None
         j={'schema_version':1,'id':jid,'status':'queued','revision':1,'snapshot':str(snapshot),'source_name':source.name,'publication_label':label,'document':doc.json(),'plan':p,'voice':saved_voice,'backend':loadjson(store.root/'settings.json') if (store.root/'settings.json').exists() else None,'output_parent':str(Path(output or Path.home()/'Audiobooks').absolute()),'clips':{},'repairs':[],'error':None,'created':time.time(),'speech_contract':2,'audio_gate':True}
+        j['mastering']=mastering_mode
+        j['mastering_contract']=2
         if parallel!=1:
             if type(parallel) is not int or not 1<=parallel<=4: raise Error('parallel_limit','Choose one to four concurrent streams.')
             if j['backend'] is None: raise Error('setup_required','Configure a backend before selecting concurrent streams.')
@@ -209,6 +213,7 @@ def summary(store,j):
             error={**error,'action':action}
     metrics = {**j.get('metrics', {}), 'semantic_qa':speech_check_status(j)}
     result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(valid_clip(store,k) is not None for k in set(j['clips'].values())),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
+    result['mastering']=j.get('mastering','off')
     if delivery:=performance.status(j):result['performance']=delivery
     return result
 
@@ -343,9 +348,13 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
             raise Error(j['error']['code'],j['error']['message'],j['error']['action']) from e
 
 
-def timeline(utterances,receipts):
+def timeline(utterances,receipts,edits=None):
     pos=0; rows=[]; chapters=[]
-    for u,r in zip(utterances,receipts):
+    edits=edits or {}
+    for u,r in zip(utterances,receipts,strict=True):
+        edit=edits.get(u['id'],{})
+        if 'pause_samples' in edit:
+            u={**u,'pause_samples':edit['pause_samples'],'planned_pause_samples':u['pause_samples']}
         if not chapters or (chapters[-1]['title'],chapters[-1].get('chapter_id'))!=(u['chapter'],u.get('chapter_id')):
             chapters.append({'title':u['chapter'],'start_sample':pos,**({'chapter_id':u['chapter_id']} if u.get('chapter_id') is not None else {})})
         end=pos+r['samples']; rows.append({**u,'start_sample':pos,'end_sample':end,'start':pos/RATE,'end':end/RATE,'destination':'source.html#'+u['sources'][0]})
@@ -375,41 +384,86 @@ def publish(store,j):
     stage.mkdir(mode=0o700); writejson(stage/'owner.json',{'job':j['id'],'revision':j['revision']})
     receipts=[valid_clip(store,j['clips'][u['id']]) for u in j['plan']['utterances']]
     if not receipts or any(r is None for r in receipts): raise Error('clips_missing','Verified clips are missing.','Resume to rerender missing takes.')
-    rows,chapters,total=timeline(j['plan']['utterances'],receipts)
-    if shutil.disk_usage(parent).free<max(50*1024*1024,total*2//3+Path(j['snapshot']).stat().st_size): raise Error('disk_space','Insufficient space on output filesystem.','Free space at the selected output destination and resume.')
-    metadata=';FFMETADATA1\ntitle='+escape_meta(j['document']['title']+(' — '+j['publication_label'] if j.get('publication_label') else ''))+'\nartist='+escape_meta(j['voice']['name'])+'\n'
-    for c in chapters: metadata+=f'[CHAPTER]\nTIMEBASE=1/{RATE}\nSTART={c["start_sample"]}\nEND={c["end_sample"]}\ntitle={escape_meta(c["title"])}\n'
-    atomic(stage/'chapters.ffmeta',metadata.encode()); fault('during_assembly')
+    from .installation import command
     from .media import tag_publication,verify_container,verify_audio_decode,packet_hash
     previous=j.get('metadata_repackage');previous_hash=None
+    book=stage/'book.m4b'
+    units=j['plan']['utterances']
+    takes=[(store.root/'clips'/j['clips'][u['id']]/'audio.pcm',u['pause_samples']) for u in units]
+    mode=j.get('mastering','off')
+    master_report={'mode':mode}
+    edits={}
+    input_reading=None
+    retry=command(store.root,'resume',j['id'],'--no-synthesis')
+    disable=command(store.root,'repair',j['id'],'--mastering','off')
+    recover=(f'Resolve the audio or storage error, then retry.\n{retry}\n'
+             f'To make an edition with mastering off, run this command, then retry the resume command.\n{disable}')
     if previous:
         source=Path(previous['audio'])
-        if filehash(source)!=previous['sha256'] or previous['plan_sha256']!=j['plan']['plan_sha256']:raise Error('repackage_source_changed','The previous publication changed; original PCM remains available.')
+        if filehash(source)!=previous['sha256'] or previous['plan_sha256']!=j['plan']['plan_sha256']:
+            raise Error('repackage_source_changed','The previous publication changed; original PCM remains available.')
+        if mode=='natural':
+            prior_report=source.with_name('report.json')
+            if filehash(prior_report)!=previous.get('report_sha256'):
+                raise Error('repackage_source_changed','The previous mastering report changed.',
+                            'Create a fresh edition with repair --mastering natural, then resume.')
+            master_report=loadjson(prior_report)['mastering']
+            edits=master_report.get('take_levels',{}).get('continuity',{}).get('edits',{})
+    elif mode=='natural':
+        try:
+            input_reading,diagnostics,reused=mastering.analyze(store.path(j)/'mastering-analysis.json',j,takes,receipts)
+        except Error as exc:
+            raise Error(exc.code,exc.message+' Checked narration is retained.',recover) from exc
+        edits=diagnostics.get('continuity',{}).get('edits',{})
+        fault('after_mastering_analysis')
+    rows,chapters,total=timeline(units,receipts,edits)
+    if shutil.disk_usage(parent).free<max(50*1024*1024,total*2//3+Path(j['snapshot']).stat().st_size):
+        raise Error('disk_space','Insufficient space on output filesystem.','Free space at the selected output destination and resume.')
+    chapter_metadata=';FFMETADATA1\ntitle='+escape_meta(j['document']['title']+(' — '+j['publication_label'] if j.get('publication_label') else ''))+'\nartist='+escape_meta(j['voice']['name'])+'\n'
+    for c in chapters:
+        chapter_metadata+=f'[CHAPTER]\nTIMEBASE=1/{RATE}\nSTART={c["start_sample"]}\nEND={c["end_sample"]}\ntitle={escape_meta(c["title"])}\n'
+    atomic(stage/'chapters.ffmeta',chapter_metadata.encode()); fault('during_assembly')
+    common=['ffmpeg','-v','error','-xerror','-nostdin','-y']
+    metadata=['-f','ffmetadata','-i',str(stage/'chapters.ffmeta'),'-map','0:a:0',
+              '-map_metadata','1','-map_chapters','1']
+    output=['-movflags','+faststart+disable_chpl','-f','mp4',str(book)]
+    encode_recovery=f'Check the destination storage and FFmpeg, then retry.\n{retry}'
+
+    def encode(gain):
+        volume=['-af',f'volume={gain:.2f}dB:precision=double'] if gain else []
+        if edits:
+            pcm_input=mastering.FLOAT_INPUT
+            audio=mastering_continuity.render(takes,units,edits)
+        else:
+            pcm_input=mastering.PCM_INPUT
+            audio=mastering.rendered_pcm(takes)
+        mastering.run_audio([*common,*pcm_input,*metadata,*volume,
+                             '-ar',str(RATE),'-c:a','aac','-b:a','64k',*output],
+                            audio,error_code='encode_failed',message='AAC assembly failed.',action=encode_recovery)
+
+    if previous:
         previous_hash=packet_hash(source)
-        args=['ffmpeg','-v','error','-nostdin','-i',str(source),'-f','ffmetadata','-i',str(stage/'chapters.ffmeta'),'-map','0:a:0','-map_metadata','1','-map_chapters','1','-c:a','copy','-movflags','+faststart+disable_chpl','-f','mp4',str(stage/'book.m4b')]
+        mastering.run_audio([*common,'-i',str(source),*metadata,'-c:a','copy',*output],
+                            error_code='encode_failed',message='AAC stream copy failed.',action=encode_recovery)
+        master_report['audio_stream_copy']=True
+    elif input_reading is not None:
+        try:
+            master_report.update(mastering.encode_checked(book,input_reading,mastering.BOOK,encode),
+                                 analysis_cache_reused=reused,take_levels=diagnostics)
+        except Error as exc:
+            raise Error(exc.code,exc.message+' Checked narration is retained.',recover) from exc
     else:
-        args=['ffmpeg','-v','error','-nostdin','-f','s16le','-ar',str(RATE),'-ac','1','-i','pipe:0','-f','ffmetadata','-i',str(stage/'chapters.ffmeta'),'-map','0:a','-map_metadata','1','-map_chapters','1','-ar',str(RATE),'-c:a','aac','-b:a','64k','-movflags','+faststart+disable_chpl','-f','mp4',str(stage/'book.m4b')]
-    log=(stage/'encode.log').open('wb')
-    try:proc=subprocess.Popen(args,stdin=subprocess.DEVNULL if previous else subprocess.PIPE,stdout=subprocess.DEVNULL,stderr=log)
-    except BaseException:
-        log.close();raise
-    try:
-        if not previous:
-            for u in j['plan']['utterances']:
-                with (store.root/'clips'/j['clips'][u['id']]/'audio.pcm').open('rb') as f:
-                    while data:=f.read(1024*256): proc.stdin.write(data)
-                proc.stdin.write(b'\x00\x00'*u['pause_samples'])
-            proc.stdin.close()
-        code=proc.wait()
-        if code: raise Error('encode_failed','AAC assembly failed.','Check destination storage and ffmpeg; resume.')
-    finally:
-        if proc.poll() is None: proc.terminate(); proc.wait()
-        log.close()
-    metadata_receipt=tag_publication(stage/'book.m4b',j)
+        encode(0)
+    metadata_receipt=tag_publication(book,j)
     metadata_receipt['audio_stream_copy']=bool(previous)
     if previous_hash and metadata_receipt['audio_packet_sha256']!=previous_hash:raise Error('repackage_audio_changed','Metadata-only remux changed audio packets.')
-    probe=verify_container(stage/'book.m4b',chapters,total);actual=float(probe['format']['duration'])
-    verify_audio_decode(stage/'book.m4b')
+    try:
+        probe=verify_container(book,chapters,total)
+        decoded_audio=verify_audio_decode(book,total)
+    except Error as exc:
+        raise Error(exc.code,exc.message+' Checked narration is retained.',
+                    f'Rebuild and check the output from the saved speech.\n{retry}') from exc
+    actual=float(probe['format']['duration'])
     original='original'+Path(j['snapshot']).suffix
     shutil.copyfile(j['snapshot'],stage/original)
     if filehash(stage/original)!=j['document']['source_sha256']: raise Error('source_copy','Publication source copy differs from the immutable input.')
@@ -446,8 +500,8 @@ def publish(store,j):
     metrics = {**j['metrics'], 'semantic_qa':speech_check_status(j)}
     qa_message = ('Container and required offline speech checks passed.' if metrics['semantic_qa']=='passed'
                   else 'Container checks passed. Offline speech checking was not required for this publication.')
-    writejson(stage/'report.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'metrics':metrics,'warnings':j['plan']['warnings']+metadata_receipt['warnings'],'issues':j['plan']['issues'],'qa':qa_message,'backend':j['backend'],'voice':{k:v for k,v in j['voice'].items() if k!='transcript'},'publication_metadata':metadata_receipt,'container_duration':actual,'pcm_samples':total,'created':time.time()})
-    for name in ('chapters.ffmeta','encode.log'): (stage/name).unlink()
+    writejson(stage/'report.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'metrics':metrics,'warnings':j['plan']['warnings']+metadata_receipt['warnings'],'issues':j['plan']['issues'],'qa':qa_message,'backend':j['backend'],'voice':{k:v for k,v in j['voice'].items() if k!='transcript'},'publication_metadata':metadata_receipt,'mastering':master_report,'container_duration':actual,'decoded_audio':decoded_audio,'pcm_samples':total,'created':time.time()})
+    (stage/'chapters.ffmeta').unlink()
     files={p.name:filehash(p) for p in stage.iterdir() if p.name!='owner.json'}
     writejson(stage/'manifest.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'plan_sha256':j['plan']['plan_sha256'],'source_sha256':j['document']['source_sha256'],'files':files})
     for p in stage.iterdir():
@@ -462,7 +516,7 @@ def take_selection(u):
     return key(identity)
 
 
-def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None,context=None,context_review=None,context_reviewer=None,automatic=None,performance_mode=None):
+def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None,context=None,context_review=None,context_reviewer=None,automatic=None,performance_mode=None,mastering_mode=None):
     with store.lock():
         from .core import check_revision
         j=store.get(jid)
@@ -477,6 +531,11 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             target=next((u for u in j['plan']['utterances'] if u['id']==retake),None)
             if target is None: raise Error('unknown_utterance','Retake ID does not belong to this approved plan.')
         previous={'audio':str(old_output/'book.m4b'),'sha256':filehash(old_output/'book.m4b'),'plan_sha256':old_plan} if verify_publication(old_output,j) else None
+        if mastering_mode is not None:
+            if mastering_mode not in mastering.MODES:
+                raise Error('mastering_mode', 'Choose natural or off for mastering.')
+            j['mastering']=mastering_mode
+            j['mastering_contract']=2
         if metadata is not None:
             from .media import merge_overrides
             j['metadata_overrides']=merge_overrides(j.get('metadata_overrides',{}),metadata)
@@ -550,8 +609,9 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         if document_policy is not None:
             selected_policy['document']=document_policy
             j['repairs'].append({'kind':'document_policy','policy_sha256':key(document_policy),'source_sha256':doc.source_sha256})
-        if any(value is not None for value in (alias,block_id,voice,retake,document_policy,chapters,context,
-                                               context_review,context_reviewer,performance_mode)) or reimport or upgrade_rules:
+        replan=(reimport or upgrade_rules or any(value is not None for value in (
+            alias,block_id,voice,retake,document_policy,chapters,context,context_review,context_reviewer,performance_mode)))
+        if replan:
             j['document']=doc.json(); j['plan']=plan(doc,selected_policy,aliases,rule_revision=revision,
                                                    context_reviewer=context_reviewer,automatic_prose=automatic_prose,
                                                    delivery_context=delivery_context)
@@ -563,12 +623,18 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             destinations=Counter(take_selection(u) for u in j['plan']['utterances'])
             if any(destinations[identity]!=1 for identity in rebased_takes):conflict()
         if j['plan'].get('document_title'):j['document']['title']=j['plan']['document_title']
-        for u in j['plan']['utterances']:
-            seed=takes.get(take_selection(u))
-            if seed: u['seed']=seed
-        j['plan'].pop('plan_sha256',None); j['plan']['plan_sha256']=key(j['plan']); j['revision']+=1; j['status']='queued'; j['error']=None
+        if replan:
+            for u in j['plan']['utterances']:
+                seed=takes.get(take_selection(u))
+                if seed: u['seed']=seed
+            j['plan'].pop('plan_sha256',None)
+            j['plan']['plan_sha256']=key(j['plan'])
+        j['revision']+=1; j['status']='queued'; j['error']=None
         j.pop('metadata_repackage',None)
-        if previous and old_plan==j['plan']['plan_sha256'] and old_voice==j['voice']:j['metadata_repackage']=previous
+        if previous and mastering_mode is None and old_plan==j['plan']['plan_sha256'] and old_voice==j['voice']:
+            if j.get('mastering')=='natural':
+                previous['report_sha256']=loadjson(old_output/'manifest.json')['files']['report.json']
+            j['metadata_repackage']=previous
         if j.get('audio_gate') and (voice or j.get('audio_gate_checked_plan')!=j['plan']['plan_sha256']):
             # Position IDs may move after rechunking. Keep historical QA reports,
             # but expose no old-position repair commands or premature acceptances.

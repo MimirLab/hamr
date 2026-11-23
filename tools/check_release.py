@@ -22,7 +22,7 @@ PRIVATE_TEXT = (
 )
 ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock', 'install.sh',
               'install.ps1', 'tools/inspect_gguf.py', 'tools/compare_breeze.py', 'tools/mix_hoppou.py',
-              'tools/performance_review.py', 'docs/ENGINES.md',
+              'tools/performance_review.py', 'tools/master_cast_gallery.py', 'docs/ENGINES.md',
               'PKG-INFO', '.gitignore', 'AGENTS.md', 'tools/check_release.py',
               'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md', 'docs/listen/manifest.json',
               'docs/art/hamr-storyforge.png', 'docs/art/hamr-listener.png',
@@ -127,8 +127,17 @@ def audit(path, version):
     if introductions:
         try:
             manifest = json.loads(files[preview_prefix + 'manifest.json'])
-            if (set(manifest) != {'schema_version', 'kind', 'recordings'}
-                    or manifest['schema_version'] != 1 or manifest['kind'] != 'hamr-generated-introductions'):
+            schema = manifest['schema_version']
+            expected_fields = {'schema_version', 'kind', 'recordings'}
+            if schema == 2:
+                expected_fields.add('mastering')
+                mastering = manifest['mastering']
+                if (set(mastering) != {'source_commit', 'meter', 'target_lufs', 'max_boost_db',
+                                      'input_ceiling_dbtp', 'export_ceiling_dbtp'}
+                        or not re.fullmatch(r'[0-9a-f]{40}', mastering['source_commit'])):
+                    raise ValueError('Missing original introduction revision')
+            if (set(manifest) != expected_fields or schema not in (1, 2)
+                    or manifest['kind'] != 'hamr-generated-introductions'):
                 raise ValueError('Invalid introduction manifest')
             recordings = manifest['recordings']
             if ({r['character'] for r in recordings} != {c['id'] for c in cast}
@@ -136,7 +145,12 @@ def audit(path, version):
                 raise ValueError('Introduction cast differs')
             expected_introductions = {preview_prefix + 'manifest.json'}
             for recording in recordings:
-                if (set(recording) != {'character', 'file', 'text', 'sha256', 'seconds'}
+                fields = {'character', 'file', 'text', 'sha256', 'seconds'}
+                if schema == 2:
+                    fields.add('source_sha256')
+                    if not re.fullmatch(r'[0-9a-f]{64}', recording['source_sha256']):
+                        raise ValueError('Invalid original introduction checksum')
+                if (set(recording) != fields
                         or recording['file'] != recording['character'] + '.mp3'
                         or not isinstance(recording['text'], str) or not recording['text'].strip()
                         or type(recording['seconds']) not in (int, float) or not 0 < recording['seconds'] <= 60):

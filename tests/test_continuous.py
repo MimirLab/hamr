@@ -1,6 +1,7 @@
 import json
 from audiobook.core import Block,Document,digest
 from audiobook.continuous import passages
+from audiobook.boundaries import sentence_spans
 from audiobook.planner import plan
 
 
@@ -125,3 +126,24 @@ def test_verified_standalone_synopsis_never_runs_into_the_following_body():
     p=plan(doc,{'document':policy})
     assert [u['text'] for u in p['utterances']]==[blocks[0].source,blocks[1].source]
     assert p['utterances'][0]['pause_samples']==8400
+
+
+def test_normal_planner_shares_sentence_context_with_a_short_paragraph_ending():
+    sentences = [
+        'The gardener chose a sheltered corner near a low wall where the air was still and the young trees could grow without being beaten by every storm.',
+        'The ground rose gently toward the house so the narrow paths shed their water quickly whenever rain swept over the countryside in the evening.',
+        'In the middle of the garden the children kept a spare basket for the small apples that fell before they were quite ripe.',
+        'The oldest tree had branches that reached all the way above the gate and made a pleasant shadow for anyone waiting along the path.',
+        'At the far end of the wall a bird appeared in the cool light and listened for a moment before flying on.',
+        'Then the garden fell quiet again.',
+    ]
+    text = ' '.join(sentences)
+    doc = Document('The garden', 'markdown', 'source', [Block('paragraph', text, {})])
+    older = plan(doc, rule_revision='faithful-16')['utterances']
+    latest = plan(doc)['utterances']
+    assert len(older) == len(latest) == 2
+    assert older[-1]['text'] == sentences[-1]
+    assert len(list(sentence_spans(latest[-1]['text']))) >= 2
+    assert [u['sources'] for u in latest] == [['paragraph'], ['paragraph']]
+    assert ' '.join(u['text'] for u in latest) == text
+    assert all(len(u['text'].split()) <= 120 and u['delivery_boundary'] == 'sentence' for u in latest)
