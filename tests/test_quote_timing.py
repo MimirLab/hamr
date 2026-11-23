@@ -82,6 +82,19 @@ def test_compiled_spellings_do_not_change_neighboring_or_unlicensed_words():
     assert quote_timing.observation_spellings(observed[1:],expected,spellings) == observed[1:]
 
 
+def test_source_spelling_can_normalize_an_exact_prefix_without_hiding_extra_words():
+    expected = ['doctor','hale','shone','the','lamp']
+    spellings = [[0,'dr','doctor']]
+    observed = [{'word':word} for word in ('dr','hale','shone','the','lamp','on')]
+    normal = quote_timing.observation_spellings(observed,expected,spellings,allow_trailing=True)
+    assert [row['word'] for row in normal]==[*expected,'on']
+    for change in (['dr','hale','the','lamp'],['dr','hale','shone','the','light','on'],
+                   ['dr','hale','then','shone','the','lamp','on']):
+        wrong = [{'word':word} for word in change]
+        assert quote_timing.observation_spellings(wrong,expected,spellings,allow_trailing=True)==wrong
+    assert quote_timing.observation_spellings(observed,expected,spellings)==observed
+
+
 def test_corroboration_requires_independent_words_near_all_quote_edges():
     text = 'He waited. “Stay here,” he whispered.'
     target = quote_timing.owned_whisper(text,23)[0]

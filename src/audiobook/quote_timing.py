@@ -88,14 +88,16 @@ def source_spellings(decisions):
     return choices
 
 
-def observation_spellings(rows, expected, spellings):
+def observation_spellings(rows, expected, spellings, *, allow_trailing=False):
     """Apply a printed form only at a known word position in the complete take."""
-    if not spellings or len(rows) != len(expected):
+    if not spellings or len(rows)<len(expected) or (len(rows)>len(expected) and not allow_trailing):
         return rows
     updated = list(rows)
     for index, printed, spoken in spellings:
-        if 0<=index<len(rows) and rows[index]['word'] == printed and expected[index] == spoken:
+        if 0<=index<len(expected) and rows[index]['word'] == printed and expected[index] == spoken:
             updated[index] = {**rows[index], 'word':spoken}
+    if len(rows)>len(expected) and [row['word'] for row in updated[:len(expected)]]!=expected:
+        return rows
     return updated
 
 
@@ -346,7 +348,7 @@ def bind(store, job):
                 models.append({'path':str(directory), 'files':{name:fingerprint(directory/name) for name in MODEL_FILES}})
             if models[0]['files']['model.bin'] != models[1]['files']['model.bin']:
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
-                                              'models':models, 'timing_algorithm':6}
+                                              'models':models, 'timing_algorithm':7}
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
                     try:
                         _, identity = asr_fluid.observer_identity()
@@ -445,7 +447,8 @@ def timed_transcripts(recipe, trial, receipt, text, spellings):
     if not observations:
         return []
     expected = words(text)
-    return [observation_spellings(rows,expected,spellings) for rows in observations]
+    allow_trailing = recipe.get('timing_algorithm',3)>=7
+    return [observation_spellings(rows,expected,spellings,allow_trailing=allow_trailing) for rows in observations]
 
 
 def measure_take(recipe, trial, receipt, text, quotations, spellings):
