@@ -11,6 +11,7 @@ SCHEDULE = {'start_frame':1, 'end_frame':3, 'scale':1.5, 'release_frames':1}
 LATER = {'start_frame':5, 'end_frame':7, 'scale':1.5, 'release_frames':1}
 PROFILE = {'runtime_revision':'frame-prototype', 'settings':{'device':'cpu'},
            'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY}
+NARRATION_PROFILE = {**PROFILE,'narration_conditioning':performance.NARRATION_CONDITIONING_VERSION}
 
 
 @pytest.fixture
@@ -65,6 +66,71 @@ def test_scheduled_passage_pins_its_clip_and_preview_options(tmp_path, voice):
     updated,untouched = changed['utterances']
     assert jobs.clip_key(updated,baseline)!=jobs.clip_key(first,baseline)
     assert jobs.clip_key(neighbor,baseline)==jobs.clip_key(untouched,baseline)
+
+
+def test_narration_conditioning_pins_the_request_and_preview(tmp_path, voice):
+    source = tmp_path/'story.md'
+    source.write_text('Wait by the door.\n\nThe sky was clear.')
+    document = inspect(source)
+    block = {'text':'Wait by the door.','instruction':'Whisper softly.',
+             'frame_guidance':SCHEDULE,'narration_instruction':'Speak in the narrator’s natural voice.'}
+    policy = {'document':{'source_sha256':document.source_sha256,
+                          'performance':{'passage_instructions':{document.blocks[0].id:block}}}}
+
+    with pytest.raises(Error) as error:
+        performance.bind(planner.plan(document,policy),PROFILE,voice)
+    assert error.value.code=='narration_conditioning_unavailable'
+
+    book = planner.plan(document,policy)
+    performance.bind(book,NARRATION_PROFILE,voice)
+    first, unaffected = book['utterances']
+    assert performance.request(first)[1]['narration_instruction']==block['narration_instruction']
+    controls = {'saved':{},'original':{'narration_instruction':None},'plain':{'frame_guidance':None}}
+    saved, original, plain = [options for _,_,options in preview_compare.requests(first,voice,NARRATION_PROFILE,controls)]
+    assert saved['narration_instruction']==block['narration_instruction']
+    assert 'narration_instruction' not in original and 'frame_guidance' in original
+    assert 'narration_instruction' not in plain and 'frame_guidance' not in plain
+
+    block['narration_instruction'] = 'Speak in a fully voiced narration.'
+    updated = planner.plan(document,policy)
+    performance.bind(updated,NARRATION_PROFILE,voice)
+    other, same = updated['utterances']
+    binding = {'voice':voice,'backend':NARRATION_PROFILE}
+    assert jobs.clip_key(first,binding)!=jobs.clip_key(other,binding)
+    assert jobs.clip_key(unaffected,binding)==jobs.clip_key(same,binding)
+
+
+@pytest.mark.parametrize(('health','header','expected'),[
+    (1,'1',None), (True,'1','narration_conditioning_unavailable'),
+    (1,None,'frame_guidance_unconfirmed'),
+])
+def test_narration_conditioning_requires_live_confirmation(voice,health,header,expected):
+    count = 4*performance.FRAME_GUIDANCE_CAPABILITY['frame_samples']
+    audio = (8000*np.sin(np.arange(count)*.1)).astype('<i2').tobytes()
+    headers = {'X-Sample-Rate':'24000','X-Sample-Format':'s16le',
+               'X-Breeze-Guidance-Window':'1:3:1.5','X-Breeze-Guidance-Chunks':'10',
+               'X-Breeze-Guidance-Base':'0','X-Breeze-Guidance-Release':'1'}
+    if header:
+        headers['X-Breeze-Narration-Conditioning'] = header
+    engine = backend.Engine.__new__(backend.Engine)
+    engine.identity = NARRATION_PROFILE
+    engine.health = {**NARRATION_PROFILE,'narration_conditioning':health}
+    engine.read_log = lambda: 'backend: CPU\n'
+
+    def server(request):
+        assert b'Fully voiced narration.' in request.read()
+        return httpx.Response(200,headers=headers,content=audio)
+
+    options = {'frame_guidance':SCHEDULE,'narration_instruction':'Fully voiced narration.'}
+    with httpx.Client(base_url='http://127.0.0.1',transport=httpx.MockTransport(server)) as client:
+        engine.client = client
+        if expected:
+            with pytest.raises(Error) as error:
+                engine.speech('Wait by the door.',voice,**options)
+            assert error.value.code==expected
+        else:
+            data, receipt = engine.speech('Wait by the door.',voice,**options)
+            assert data==audio and receipt['request']['fields']['narration_instruction']==options['narration_instruction']
 
 
 @pytest.mark.parametrize(('confirmed','frames','extra_samples','expected_error'),[

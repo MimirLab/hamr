@@ -169,7 +169,7 @@ def verified_runtime(root,archive,archive_sha,variant,progress):
 
 
 def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_ocr_activate=None):
-    from .performance import FRAME_GUIDANCE_CAPABILITY, FRAME_WINDOWS_CAPABILITY
+    from .performance import FRAME_GUIDANCE_CAPABILITY, FRAME_WINDOWS_CAPABILITY, NARRATION_CONDITIONING_VERSION
 
     c=loadjson(CATALOG); profiles={p['id']:p for p in c['profiles']}; p=profiles.get(profile)
     if not p or p['runtime']!='hoppou': raise Error('unsupported_profile',f'Backend profile {profile!r} is unknown or catalog-only in this build.','Run hamr profiles for the built-in CPU/Vulkan model choices; selecting one downloads its pinned runtime and weights.')
@@ -203,10 +203,12 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_o
         windows=variant=='windows_x86_64'
         terms=destinations[-1][0]
         identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':r['revision'],'runtime_archive_sha256':r['sha256'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(destinations[1][0]),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{x.relative_to(runtime).as_posix():filehash(x) for x in runtime.rglob('*.dll' if windows else '*.so*') if x.is_file()}}
-        protocols = {'frame_guidance':FRAME_GUIDANCE_CAPABILITY,'frame_guidance_windows':FRAME_WINDOWS_CAPABILITY}
+        protocols = {'frame_guidance':FRAME_GUIDANCE_CAPABILITY,'frame_guidance_windows':FRAME_WINDOWS_CAPABILITY,
+                     'narration_conditioning':NARRATION_CONDITIONING_VERSION}
         advertised = {name:r[name] for name in protocols if name in r}
-        if (any(advertised[name]!=protocols[name] for name in advertised)
-                or ('frame_guidance_windows' in advertised and 'frame_guidance' not in advertised)):
+        if (any(type(value) is not type(protocols[name]) or value!=protocols[name]
+                for name,value in advertised.items())
+                or (advertised and 'frame_guidance' not in advertised)):
             raise Error('frame_guidance_protocol','This Hamr version cannot use the runtime timing protocol.')
         identity.update(advertised)
         if windows: identity['runtime_platform']=variant
@@ -215,7 +217,8 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_o
             if progress: progress.stage(f'Starting {profile} to check that it loads')
             with Engine(store,identity) as e:
                 health=e.health
-                if any(health.get(name)!=value for name,value in advertised.items()):
+                if any(type(health.get(name)) is not type(value) or health[name]!=value
+                       for name,value in advertised.items()):
                     raise Error('frame_guidance_unavailable','The pinned runtime did not prove the selected timing protocol.',
                                 'Keep using the currently installed backend or retry setup with a matching Hamr build.')
                 if advertised:
@@ -370,12 +373,16 @@ class Engine:
         if not actual or (expected_cpu and not actual[1].lower().startswith('cpu')) or (not expected_cpu and not actual[1].startswith('Vulkan')):
             raise Error('device_unverified','Breeze did not prove the requested execution backend.','Check backend/device availability; unexpected CPU fallback is rejected.')
         return actual[1].rstrip(',')
-    def speech(self,text,voice=None,instruction=None,seed=42,*,cfg_scale=1,sampling=None,frame_guidance=None):
-        from .performance import (FRAME_GUIDANCE_CAPABILITY, supports_frame_guidance, validate_guidance,
+    def speech(self,text,voice=None,instruction=None,seed=42,*,cfg_scale=1,sampling=None,
+               frame_guidance=None,narration_instruction=None):
+        from .performance import (FRAME_GUIDANCE_CAPABILITY, NARRATION_CONDITIONING_VERSION,
+                                  supports_frame_guidance, supports_narration_conditioning,
+                                  validate_guidance, validate_narration_instruction,
                                   validated_frame_guidance, validated_sampling)
 
         validate_request(text,voice,instruction)
         identity = getattr(self, 'identity', {}) or {}
+        health = getattr(self,'health',{})
         applied = {}
         guidance_fields = {}
         if frame_guidance is None:
@@ -384,7 +391,7 @@ class Engine:
             frame_guidance = validated_frame_guidance(frame_guidance)
             multiple = 'windows' in frame_guidance
             if (not voice or not supports_frame_guidance(identity,multiple=multiple)
-                    or not supports_frame_guidance(getattr(self,'health',{}),multiple=multiple)):
+                    or not supports_frame_guidance(health,multiple=multiple)):
                 raise Error('frame_guidance_unavailable', 'The running backend did not verify frame-local guidance.')
             cfg_scale = frame_guidance['base_scale']
             guidance_fields['cfg_scale'] = format(cfg_scale,'.9g')
@@ -401,6 +408,13 @@ class Engine:
                 release = str(frame_guidance['release_frames'])
                 guidance_fields.update(guidance_window=window,guidance_release=release)
                 applied.update({'X-Breeze-Guidance-Window':window,'X-Breeze-Guidance-Release':release})
+        if narration_instruction is not None:
+            validate_narration_instruction(narration_instruction,frame_guidance)
+            if not supports_narration_conditioning(identity) or not supports_narration_conditioning(health):
+                raise Error('narration_conditioning_unavailable',
+                            'The running backend did not verify separate narration conditioning.')
+            guidance_fields['narration_instruction'] = narration_instruction
+            applied['X-Breeze-Narration-Conditioning'] = str(NARRATION_CONDITIONING_VERSION)
         logpath=self.store.root/'runtime'/'backend.log' if getattr(self,'store',None) is not None else None
         log_offset=logpath.stat().st_size if logpath and logpath.exists() else 0
         fields={'text':text,'split_chars':'0','max_new_tokens':'1500','seed':str(seed),'cfg_scale':format(cfg_scale,'g')}

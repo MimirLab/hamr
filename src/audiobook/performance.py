@@ -42,11 +42,24 @@ PRIVATE_KINDS = {'literal', 'hidden', 'generated_label', 'object_label', 'note_r
 SAMPLING_LIMITS = {'temperature':(.1,2), 'top_k':(1,256), 'top_p':(.05,1), 'repetition_penalty':(.8,1.4)}
 FRAME_GUIDANCE_CAPABILITY = {'version':1, 'encoding':'multipart', 'frame_samples':1920, 'chunk_frames':10}
 FRAME_WINDOWS_CAPABILITY = {'version':1, 'max_windows':8, 'speech_end':True}
+NARRATION_CONDITIONING_VERSION = 1
 
 
 def supports_frame_guidance(backend, *, multiple=False):
     return (backend.get('frame_guidance') == FRAME_GUIDANCE_CAPABILITY
             and (not multiple or backend.get('frame_guidance_windows') == FRAME_WINDOWS_CAPABILITY))
+
+
+def supports_narration_conditioning(backend):
+    value = backend.get('narration_conditioning')
+    return type(value) is int and value == NARRATION_CONDITIONING_VERSION
+
+
+def validate_narration_instruction(instruction, schedule):
+    if (not schedule or schedule['base_scale']!=0 or not isinstance(instruction,str)
+            or not instruction.strip() or len(instruction.encode('utf-8'))>1024
+            or any(token in instruction for token in ('<ins_','[S'))):
+        raise Error('narration_conditioning','A narration instruction needs plain direction text and zero-base frame guidance.')
 
 
 def guidance_scale(number):
@@ -824,7 +837,8 @@ def passage_instructions(config, blocks):
     required = {'text','instruction'}
     checked = {}
     for block_id, entry in entries.items():
-        if (block_id not in blocks or not isinstance(entry, dict) or entry.keys()-required-{'tuning','frame_guidance'}
+        if (block_id not in blocks or not isinstance(entry, dict)
+                or entry.keys()-required-{'tuning','frame_guidance','narration_instruction'}
                 or not all(isinstance(entry.get(key), str) and entry[key].strip() for key in required)):
             raise Error('performance_policy', f'Passage instruction for {block_id} needs a known source block, exact text, and a nonempty instruction.')
         checked[block_id] = dict(entry)
@@ -834,6 +848,8 @@ def passage_instructions(config, blocks):
             if 'cfg_scale' in entry.get('tuning', {}):
                 raise Error('frame_guidance', 'Set base_scale on the frame schedule when supplying a schedule.')
             checked[block_id]['frame_guidance'] = validated_frame_guidance(entry['frame_guidance'])
+        if 'narration_instruction' in entry:
+            validate_narration_instruction(entry['narration_instruction'],checked[block_id].get('frame_guidance'))
     return checked
 
 
@@ -876,6 +892,8 @@ def apply_passage_instructions(units, entries, blocks, document_digest, registry
         if schedule:=entry.get('frame_guidance'):
             candidate['frame_guidance'] = schedule
             candidate['cfg_scale'] = schedule['base_scale']
+        if narration:=entry.get('narration_instruction'):
+            candidate['narration_instruction'] = narration
         candidate['evidence'] = [*candidate['evidence'], {'kind': 'source_policy_instruction', **source}]
         validate_request(candidate['synthesis'], instruction=candidate['instruction'])
         candidate['id'] = candidate_id(document_digest, candidate)
@@ -1314,6 +1332,8 @@ def candidate_id(source_digest, candidate):
         identity.append(('passage_instruction', candidate['passage_instruction']))
     if schedule:=candidate.get('frame_guidance'):
         identity.append(('frame_guidance', schedule))
+    if narration:=candidate.get('narration_instruction'):
+        identity.append(('narration_instruction',narration))
     if candidate.get('composition'):
         identity.append(('composed_request',candidate['synthesis'],candidate['instruction']))
     return key(identity)
@@ -1405,6 +1425,8 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
         scheduled = schedule is not None
         if scheduled and not (reference and supports_frame_guidance(backend,multiple='windows' in schedule)):
             raise Error('frame_guidance_unavailable', 'This passage needs a voice reference and a backend with frame-local guidance.')
+        if candidate.get('narration_instruction') and not supports_narration_conditioning(backend):
+            raise Error('narration_conditioning_unavailable','This passage needs a backend with separate narration conditioning.')
         if cid in fallback_ids:
             unit['performance_state'] = 'neutral_fallback'
             continue
@@ -1481,6 +1503,8 @@ def request(unit):
         options.update(instruction=performance.get('instruction'), cfg_scale=performance['cfg_scale'])
         if schedule:=performance.get('frame_guidance'):
             options['frame_guidance']=schedule
+        if narration:=performance.get('narration_instruction'):
+            options['narration_instruction']=narration
         if samples:={k:v for k,v in performance.get('tuning',{}).items() if k!='cfg_scale'}:
             options['sampling']=samples
     return text, options
@@ -1499,6 +1523,7 @@ def request_identity(unit):
         identity={field:active.get(field) for field in ('recipe','synthesis','instruction','cfg_scale','revision')}
         if tuning:=active.get('tuning'):identity['tuning']=tuning
         if schedule:=active.get('frame_guidance'):identity['frame_guidance']=schedule
+        if narration:=active.get('narration_instruction'):identity['narration_instruction']=narration
         return identity
     return None
 

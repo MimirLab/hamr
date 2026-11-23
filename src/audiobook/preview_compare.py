@@ -9,7 +9,8 @@ from .backend import Engine, validate_request
 from .core import Error, RATE, atomic, digest, filehash, key, loadjson, writejson
 
 
-VARIANT_FIELDS = {'seed', 'instruction', 'markers', 'cfg_scale', 'frame_guidance', *performance.SAMPLING_LIMITS}
+VARIANT_FIELDS = {'seed', 'instruction', 'markers', 'cfg_scale', 'frame_guidance',
+                  'narration_instruction', *performance.SAMPLING_LIMITS}
 
 
 def read_controls(path):
@@ -55,6 +56,11 @@ def requests(unit, voice, backend, controls):
             cfg_scale = controls_for_take.get('cfg_scale', 1 if saved_schedule else options.get('cfg_scale', 1))
             performance.validate_guidance(cfg_scale, parallel)
             options['cfg_scale'] = float(cfg_scale)
+        saved_narration = options.pop('narration_instruction', None)
+        narration = controls_for_take.get('narration_instruction',saved_narration if schedule is not None else None)
+        if narration is not None:
+            performance.validate_narration_instruction(narration,options.get('frame_guidance'))
+            options['narration_instruction'] = narration
         sampling = performance.validated_sampling({
             **options.get('sampling', {}),
             **{field: controls_for_take[field] for field in performance.SAMPLING_LIMITS
