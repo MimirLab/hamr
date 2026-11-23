@@ -437,6 +437,48 @@ def test_source_spelling_can_normalize_an_exact_prefix_without_hiding_extra_word
     assert quote_timing.observation_spellings(observed,expected,spellings)==observed
 
 
+def test_default_quote_timing_uses_printed_name_positions_without_rewriting_the_book(tmp_path):
+    text = ('Rachael lifted her head. Anne looked toward the candle. “No, wait,” she whispered. '
+            'Alan’s note was on the table.')
+    source = tmp_path/'names.md'
+    source.write_text(text)
+    doc = inspect(source)
+    unit, = planner.plan(doc)['utterances']
+    expected = quote_timing.words(text)
+    spellings = unit['quote_timing']['source_spellings']
+    assert [expected.index('rachael'),'rachel','rachael'] in spellings
+    assert [expected.index('anne'),'ann','anne'] in spellings
+    assert [expected.index("alan's"),"allen's","alan's"] in spellings
+    assert unit['text']==text and quote_timing.words(unit['text'])==expected
+    old, = planner.plan(doc,delivery_context=32)['utterances']
+    assert 'source_spellings' not in old['quote_timing']
+
+
+@pytest.mark.parametrize(('text','actual','matches'),[
+    ('I told Rachael no.', ('i','told','rachel','no'), True),
+    ('I told Rachael no.', ('i','told','rachel','know'), False),
+    ('I counted four for Rachael.', ('i','counted','for','for','rachel'), False),
+    ('I told Rachael no.', ('i','told','rebecca','no'), False),
+    ('I told Rachael no.', ('i','told','rachel'), False),
+    ('Alan told Allen no.', ('allen','told','alan','no'), False),
+    ('Anne read Ann’s note.', ('ann','read',"anne's",'note'), False),
+    ('I read Anne’s note.', ('i','read',"ann's",'note'), True),
+    ('I read ann’s note.', ('i','read',"anne's",'note'), False),
+    ('I read file_Ann.', ('i','read','file','anne'), False),
+    ('Stephen and Jane waited.', ('steven','and','jayne','waited'), True),
+    ('Sean called Brian.', ('shawn','called','bryan'), True),
+    ('Louisa called Dan.', ('louise','called','dawn'), False),
+])
+def test_name_spellings_preserve_word_positions_and_lexical_contrasts(text,actual,matches):
+    expected = quote_timing.words(text)
+    original = [{'word':word,'start':i/2,'end':i/2+.24} for i,word in enumerate(actual)]
+    spellings = quote_timing.name_observation_spellings(text)
+    verified = quote_timing.observation_spellings(original,expected,spellings)
+    assert ([word['word'] for word in verified]==expected) is matches
+    assert [word['word'] for word in original]==list(actual)
+    assert [(word['start'],word['end']) for word in verified]==[(word['start'],word['end']) for word in original]
+
+
 def test_corroboration_requires_independent_words_near_all_quote_edges():
     text = 'He waited. “Stay here,” he whispered.'
     target = quote_timing.owned_whisper(text,23)[0]

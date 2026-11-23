@@ -27,6 +27,7 @@ WORKER = Path(__file__).with_name('timing_worker.py')
 MODEL_FILES = ('model.bin', 'config.json', 'tokenizer.json', 'vocabulary.txt')
 WORD = re.compile(r"[a-z]+(?:'[a-z]+)?|\d+")
 SOURCE_WORD = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)?|\d+")
+NAME_SPELLINGS = Path(__file__).with_name('timing_name_spellings.json')
 OBSERVER_WORD_BREAKS = {'alright': ('all','right'), 'maybe': ('may','be')}
 OBSERVER_PHRASES = '|'.join(r'[ \t]+'.join(parts) for parts in OBSERVER_WORD_BREAKS.values())
 OBSERVER_ALTERNATIVES = {
@@ -81,13 +82,45 @@ def words(text):
     return WORD.findall(text.lower().replace('’', "'"))
 
 
-def source_spellings(decisions):
-    """Index single-word spellings licensed by the compiler's expansion trace."""
+@lru_cache(maxsize=1)
+def name_spelling_groups():
+    return {name:group for group in loadjson(NAME_SPELLINGS)['groups'] for name in group}
+
+
+def name_observation_spellings(text):
+    """Match verified name spellings at their original word positions."""
+    tokens = list(SOURCE_WORD.finditer(text))
+    observed_words = [match[0].lower().replace('’',"'") for match in tokens]
+    if observed_words!=words(text):
+        return []
+    names = {}
+    groups = name_spelling_groups()
+    for index,match in enumerate(tokens):
+        start,end = match.span()
+        if ((start and (text[start-1].isalnum() or text[start-1]=='_'))
+                or (end<len(text) and (text[end].isalnum() or text[end]=='_'))):
+            continue
+        surface = match[0].replace('’',"'")
+        stem = surface.removesuffix("'s")
+        name = stem.lower()
+        if stem.istitle() and name in groups:
+            names[index] = name,surface[len(stem):]
+    # Keep explicitly distinct written forms distinct within the same take.
+    written = {name for name,_ in names.values()}
+    return [[index,other+suffix,name+suffix] for index,(name,suffix) in names.items()
+            for other in groups[name] if other not in written]
+
+
+def source_spellings(decisions, *, include_names=False):
+    """Index observer spellings using the compiled wording and its expansion trace."""
     choices = []
     offset = 0
+    readings = []
     for decision in decisions:
         audit = decision.get('abbreviations', {})
         compiled = words(decision['spoken'])
+        if include_names:
+            readings.append(decision['spoken'])
         edits = audit.get('readings', ())
         if edits:
             raw = (decision['source'] if audit['input_basis'] == 'block_source' else audit['input'])
@@ -110,6 +143,8 @@ def source_spellings(decisions):
                 if expanded == compiled:
                     choices.extend(found)
         offset += len(compiled)
+    if include_names:
+        choices.extend(name_observation_spellings(' '.join(readings)))
     return choices
 
 

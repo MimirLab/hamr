@@ -239,6 +239,8 @@ Set `source_sha256` to the file hash from `hamr plan`. Guidance accepts 1, 2, 2.
 
 Hamr keeps a directed take when speech recognition flags it. A possible wording error can hold publication for listening review. When the surrounding words match, a short interjection or recognized cue label at the position of an authored sound is recorded as uncertain. A recognizer can transcribe an actual chuckle as “mm-hmm.” The raw transcript stays in the QA report.
 
+The timing check can recognize the same pronunciation at a printed name, such as hearing “Rachael” and transcribing “Rachel.” Hamr keeps the book’s spelling in its narration request and companion files. The spelling table uses the CMU Pronouncing Dictionary and Mark Kantrowitz and Bill Ross’s Names Corpus, with credits included in the package.
+
 Compare two unprompted readings of the same committed take with `hamr transcribe JOB --utterance u00003 --json`. The report gives the PCM hash, native transcripts, word disagreements, and any intervals of exact digital silence lasting at least a quarter second. You can also run `hamr transcribe clip.wav --json` on a local excerpt up to 125 seconds. Neither command changes the take, job, or publication review. Use the actual audio to decide questions of performance, pronunciation, or sound quality.
 
 ### Speech verifier presets

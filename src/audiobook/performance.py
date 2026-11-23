@@ -13,7 +13,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 32
+CONTEXT_VERSION = 33
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -1318,7 +1318,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 if version>=20 and mode=='auto' and preference!='off' and 'whispered' in source.lower():
                     from .quote_timing import scope, source_spellings
                     if target:=scope(source,neutral,version):
-                        if version>=23 and (spellings:=source_spellings(decisions[b.id] for b in blocks)):
+                        if version>=23 and (spellings:=source_spellings(
+                                (decisions[b.id] for b in blocks), include_names=version>=33)):
                             target['source_spellings'] = spellings
                         unit['quote_timing'] = target
                 continue

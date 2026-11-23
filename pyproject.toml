@@ -43,6 +43,7 @@ artifacts = [
 [tool.hatch.build.targets.sdist]
 only-include = [
     "src/audiobook", "src/hamr", "tools/check_release.py", "tools/inspect_gguf.py", "tools/compare_breeze.py", "tools/mix_hoppou.py",
+    "tools/build_timing_name_spellings.py",
     "tools/performance_review.py", "tools/master_cast_gallery.py",
     "tests", "fixtures/technical.md", ".gitignore",
     "README.md", "RELEASE.md", "AGENTS.md", "LICENSE", "pyproject.toml", "uv.lock", "install.sh", "install.ps1",

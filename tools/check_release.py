@@ -22,12 +22,14 @@ PRIVATE_TEXT = (
 )
 ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock', 'install.sh',
               'install.ps1', 'tools/inspect_gguf.py', 'tools/compare_breeze.py', 'tools/mix_hoppou.py',
+              'tools/build_timing_name_spellings.py',
               'tools/performance_review.py', 'tools/master_cast_gallery.py', 'docs/ENGINES.md',
               'PKG-INFO', '.gitignore', 'AGENTS.md', 'tools/check_release.py',
               'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md', 'docs/listen/manifest.json',
               'docs/art/hamr-storyforge.png', 'docs/art/hamr-listener.png',
               'docs/demo/lantern.md', 'docs/demo/lantern-plain.mp3', 'docs/demo/lantern-expressive.mp3',
               'docs/man/hamr.1', 'docs/man/audiobook.1'}
+TIMING_NAME_ASSETS = {'audiobook/timing_name_spellings.json', 'audiobook/timing_name_spellings_LICENSE.txt'}
 
 
 def read_archive(path):
@@ -78,7 +80,8 @@ def audit(path, version):
         allowed_source = not wheel and (name in ROOT_FILES or re.fullmatch(r'tests/[a-z0-9_]+\.py', name)
                                        or re.fullmatch(r'docs/listen/[a-z0-9-]+\.mp3', name)
                                        or name == 'fixtures/technical.md')
-        if not (allowed_runtime or allowed_metadata or allowed_source or allowed_preview or allowed_manual):
+        if not (allowed_runtime or runtime in TIMING_NAME_ASSETS or allowed_metadata or allowed_source
+                or allowed_preview or allowed_manual):
             raise ReleaseError(f'Unexpected release file: {name}')
         if not name.endswith('/reference.wav'):
             for pattern in PRIVATE_TEXT:
@@ -95,6 +98,9 @@ def audit(path, version):
     if package + 'audiobook/wash_setup.py' in files:
         if package + 'audiobook/wash-runtime.lock' not in files:
             raise ReleaseError('Missing the pinned voice preparation runtime.')
+    if b'timing_name_spellings.json' in files.get(package + 'audiobook/quote_timing.py',b''):
+        if not {package+name for name in TIMING_NAME_ASSETS} <= files.keys():
+            raise ReleaseError('Missing timing name spellings or their attribution and license.')
     try:
         cast_document = json.loads(files[package + 'audiobook/cast.json'])
         cast = cast_document['characters']
