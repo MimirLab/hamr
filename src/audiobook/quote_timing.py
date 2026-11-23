@@ -349,7 +349,7 @@ def bind(store, job):
                 directory = Path(saved[field])
                 models.append({'path':str(directory), 'files':{name:fingerprint(directory/name) for name in MODEL_FILES}})
             if models[0]['files']['model.bin'] != models[1]['files']['model.bin']:
-                revision = 8 if supports_inline_whisper(job['backend']) else 7
+                revision = 9 if supports_inline_whisper(job['backend']) else 7
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
                                               'models':models, 'timing_algorithm':revision}
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
@@ -613,19 +613,20 @@ def inline_request(text, quotations):
     return ''.join([*parts,text[cursor:]]),scopes
 
 
-def inline_schedule(fragments, measured, *, terminal):
+def inline_schedule(fragments, measured, *, terminal, prefer_fragment_starts=True):
     """Calibrate one continuous window per quote from measured words and causal frames."""
     scopes = {}
     for window in fragments:
-        pair = scopes.setdefault(window['scope'],[window['start_frame'],window['end_frame']])
-        pair[1] = window['end_frame']
+        scopes.setdefault(window['scope'],[]).append(window)
     if list(scopes)!=list(range(1,len(measured)+1)):
         return None
     windows = []
     for index,edge in enumerate(measured,1):
-        start,end = scopes[index]
-        if not edge.valid_start(start):
-            start = max((edge.before+FRAME-1)//FRAME,edge.start//FRAME)
+        fragments = scopes[index]
+        end = fragments[-1]['end_frame']
+        starts = fragments if prefer_fragment_starts else fragments[:1]
+        fallback = max((edge.before+FRAME-1)//FRAME,edge.start//FRAME)
+        start = next((piece['start_frame'] for piece in starts if edge.valid_start(piece['start_frame'])),fallback)
         end = min(edge.after//FRAME,max((edge.end+FRAME-1)//FRAME,end))
         if terminal and index==len(measured):
             end = 'speech'
@@ -682,7 +683,9 @@ def inline_take(checkpoint, job, text, ordinary, target, quotations, instruction
         report['reason'] = 'guidance_outside_quote'
         if index==0:
             terminal = not words(text[quotations[-1][1]:])
-            if not (schedule:=inline_schedule(windows,measured,terminal=terminal)):
+            prefer_fragments = job['quote_timing_models'].get('timing_algorithm',8)>=9
+            if not (schedule:=inline_schedule(windows,measured,terminal=terminal,
+                                               prefer_fragment_starts=prefer_fragments)):
                 break
             options = {**common,'frame_guidance':schedule}
     return None,trials

@@ -124,12 +124,13 @@ def test_inline_cues_keep_exact_words_and_utf8_scope():
     ]
 
 
-def test_inline_calibration_recovers_fragmented_scope_after_interruption(tmp_path,monkeypatch):
+@pytest.mark.parametrize(('algorithm','second_start'),[(8,10),(9,9)])
+def test_inline_calibration_recovers_fragmented_scope_after_interruption(tmp_path,monkeypatch,algorithm,second_start):
     frame = quote_timing.FRAME
     text = 'The hall was empty. “Keep the lamp low,” he whispered. “We have to leave before dawn.”'
     unit = {'text':text,'quote_timing':quote_timing.scope(text,text,24)}
     store = Store(tmp_path/'state')
-    job = {'id':'abc123','quote_timing_models':{'timing_algorithm':8},
+    job = {'id':'abc123','quote_timing_models':{'timing_algorithm':algorithm},
            'backend':{'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY,
                       'frame_guidance_windows':performance.FRAME_WINDOWS_CAPABILITY,
                       'quote_guidance':performance.QUOTE_GUIDANCE_VERSION,
@@ -152,10 +153,10 @@ def test_inline_calibration_recovers_fragmented_scope_after_interruption(tmp_pat
                 windows[0]['end_frame'] = 6
                 windows[1]['start_frame'] = 8
                 windows[1]['end_frame'] = 9
-                windows.append({'scope':2,'start_frame':10,'end_frame':12,'release_frames':0})
+                windows.append({'scope':2,'start_frame':9,'end_frame':12,'release_frames':0})
             receipt['quote_guidance'] = {'scopes':spans,'generated_frames':12,'windows':windows}
         if schedule:=options.get('frame_guidance'):
-            assert [(row['start_frame'],row['end_frame']) for row in schedule['windows']]==[(1,5),(10,'speech')]
+            assert [(row['start_frame'],row['end_frame']) for row in schedule['windows']]==[(1,5),(second_start,'speech')]
             receipt['frame_guidance'] = schedule
         return pcm,receipt
 
