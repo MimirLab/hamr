@@ -596,8 +596,8 @@ def eligible(block, decision, disabled, role='body', modes=('listen',), *, all_f
 
 def performance_preferences(document_policy, known):
     config = document_policy.get('performance', {})
-    if not isinstance(config, dict) or set(config)-{'disabled_blocks','contextual_dialogue','tuning','attribution_cues'}:
-        raise Error('performance_policy', 'Performance policy supports disabled_blocks, contextual_dialogue, tuning and attribution_cues.')
+    if not isinstance(config, dict) or set(config)-{'disabled_blocks','contextual_dialogue','tuning','attribution_cues','passage_instructions'}:
+        raise Error('performance_policy', 'Performance policy supports disabled_blocks, contextual_dialogue, tuning, attribution_cues and passage_instructions.')
     blocks = config.get('disabled_blocks', [])
     if not isinstance(blocks,list) or any(not isinstance(block,str) or block not in known for block in blocks):
         raise Error('performance_policy', 'Performance policy names unknown source blocks.')
@@ -617,6 +617,65 @@ def attribution_preferences(config, recipes):
                 or recipe=='quiet_scene'):
             raise Error('performance_policy','Use a lowercase reporting phrase and a dialogue recipe in attribution_cues.')
     return cues
+
+
+def passage_instructions(config, blocks):
+    entries = config.get('passage_instructions', {})
+    if not isinstance(entries, dict):
+        raise Error('performance_policy', 'Passage instructions must map source block IDs to text and instruction.')
+    for block_id, entry in entries.items():
+        if (block_id not in blocks or not isinstance(entry, dict) or set(entry) != {'text', 'instruction'}
+                or not all(isinstance(value, str) and value.strip() for value in entry.values())):
+            raise Error('performance_policy', f'Passage instruction for {block_id} needs a known source block, exact text, and a nonempty instruction.')
+    return entries
+
+
+def apply_passage_instructions(units, entries, blocks, document_digest, registry_sha, revision):
+    from .backend import validate_request
+
+    targets = {}
+    for unit in units:
+        speech = unit.get('performance_candidate', {}).get('speech', unit['text'])
+        for block_id in unit['sources']:
+            if block_id in entries and entries[block_id]['text'] == speech:
+                targets.setdefault(block_id, []).append(unit)
+    added = 0
+    redirects = {}
+    seen = set()
+    for block_id, entry in entries.items():
+        matches = targets.get(block_id, ())
+        if len(matches) != 1:
+            raise Error('performance_instruction_scope',
+                        f'Passage instruction for {block_id} matched {len(matches)} rendered passages.',
+                        'Use hamr plan or hamr show JOB --content to copy the exact spoken text for one passage.')
+        unit, = matches
+        if unit['id'] in seen:
+            raise Error('performance_instruction_scope', f'More than one passage instruction matches {unit["id"]}.')
+        seen.add(unit['id'])
+        source = {'block': block_id, 'span': [0, len(blocks[block_id].source)]}
+        prior = unit.get('performance_candidate')
+        candidate = dict(prior) if prior else {
+            'recipe': 'passage_instruction', 'speech': unit['text'], 'synthesis': unit['text'],
+            'source': source, 'neutral': unit['text'], 'cfg_scale': 1, 'contextual': True,
+            'evidence': [], 'registry_sha256': registry_sha, 'revision': revision,
+        }
+        candidate.pop('anchor', None)
+        candidate.pop('voice_suffixes', None)
+        candidate['passage_instruction'] = entry['instruction']
+        candidate['instruction'] = entry['instruction']
+        candidate['evidence'] = [*candidate['evidence'], {'kind': 'source_policy_instruction', **source}]
+        validate_request(candidate['synthesis'], instruction=candidate['instruction'])
+        candidate['id'] = candidate_id(document_digest, candidate)
+        unit['performance_candidate'] = candidate
+        if prior:
+            redirects[prior['id']] = candidate['id']
+        else:
+            added += 1
+    for unit in units:
+        candidate = unit.get('performance_candidate')
+        if candidate and candidate.get('anchor') in redirects:
+            candidate['anchor'] = redirects[candidate['anchor']]
+    return added
 
 
 def add_gentle_entries(units, by_id, decisions, occurrences, disabled, digest, registry, registry_sha, *, all_formats):
@@ -701,12 +760,16 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     custom = attribution_preferences(document_policy.get('performance',{}),recipes)
     tuning=tuning_preferences(document_policy.get('performance',{}),
                               mode=='experimental' or (mode=='auto' and full_delivery),registry)
+    by_id = {b.id:b for b in document.blocks}
+    instructions = passage_instructions(document_policy.get('performance', {}), by_id)
     if mode == 'off':
         plan['performance'] = {'mode':mode, 'bound':True, 'active':0, 'candidates':0}
         if document.format == 'pdf' and version >= 11:
             plan['performance']['context_version'] = version
         if document_policy.get('performance',{}).get('tuning'):
             plan['performance']['tuning_state']='inactive'
+        if instructions:
+            plan['performance']['instruction_state']='inactive'
         return
     verbs,cue_pattern,postposed = attribution_rules(registry,version,custom)
     actor = attribution_actor(version)
@@ -714,7 +777,6 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     inline_rules = inline_event_rules(registry,version)
     modern_context = version >= 2
     events = {label:kind for kind,item in registry['events'].items() for label in item['spellings']}
-    by_id = {b.id:b for b in document.blocks}
     decisions = {d['block']:d for d in plan['decisions']}
     source_order = {b.id:i for i,b in enumerate(document.blocks)}
     occurrences = Counter(bid for u in plan['utterances'] for bid in u['sources'])
@@ -989,6 +1051,9 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                     redirects[prior]=candidate['id']
             for candidate in tunes:
                 if candidate.get('anchor') in redirects:candidate['anchor']=redirects[candidate['anchor']]
+    if instructions:
+        candidates += apply_passage_instructions(plan['utterances'], instructions, by_id,
+                                                document.source_sha256, registry_sha, registry['schema_version'])
     if full_delivery or candidates or 'performance' in plan['policy']:
         plan['performance'] = {'mode':mode, 'bound':not candidates, 'candidates':candidates,
                                'active':0, 'registry_sha256':registry_sha}
@@ -998,11 +1063,15 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             plan['performance']['context_version'] = version
         if document_policy.get('performance',{}).get('tuning'):
             plan['performance']['tuning_state']='active' if tuning else 'inactive'
+        if instructions:
+            plan['performance']['instruction_state']='planned'
 
 
 def candidate_id(source_digest, candidate):
     identity=[source_digest,candidate['source'],candidate['recipe'],candidate['neutral']]
     if tuning:=candidate.get('tuning'):identity.append(tuning)
+    if 'passage_instruction' in candidate:
+        identity.append(('passage_instruction', candidate['passage_instruction']))
     return key(identity)
 
 
@@ -1066,8 +1135,8 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
                       'platform':platform}
     reference = key({'reference_sha256':voice['reference_sha256'],'transcript':voice['transcript']}) if (
         voice.get('reference_sha256') and voice.get('transcript')) else None
-    prose = (compatible_registry and summary.get('automatic_scope') == 'prose' and reference is not None
-             and supports_prose_direction(backend))
+    pinned_direction = compatible_registry and reference is not None and supports_prose_direction(backend)
+    prose = pinned_direction and summary.get('automatic_scope') == 'prose'
     automatic = registry['automatic_directions']
     full_delivery = summary.get('context_version',1)>=3
     settings = backend.get('settings',{})
@@ -1110,7 +1179,8 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
         legacy_direction = candidate.get('instruction') and (recipe in automatic['prose'] or
                             (recipe in automatic['direct_attribution'] and direct_attribution))
         policy_direction = any('policy_cue' in e for e in candidate.get('evidence', ()))
-        directed = prose and (full_delivery or legacy_direction or policy_direction)
+        directed = (prose and (full_delivery or legacy_direction or policy_direction)
+                    or pinned_direction and 'passage_instruction' in candidate)
         enabled = backend.get('runtime_revision') and (summary['mode']=='experimental' or qualified or directed)
         if enabled:
             unit['text'] = candidate['speech']
@@ -1134,6 +1204,10 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
         else:
             unit['performance_state'] = 'unqualified'
     summary['active'] = sum('performance' in unit for unit in plan['utterances'])
+    if summary.get('instruction_state') == 'planned':
+        count = sum('passage_instruction' in unit.get('performance', {}) for unit in plan['utterances'])
+        requested = sum('passage_instruction' in candidate for _, candidate in candidates)
+        summary['instruction_state'] = 'active' if count == requested else 'partially_active' if count else 'inactive'
     summary['bound'] = True
     plan['plan_sha256'] = key({k:v for k,v in plan.items() if k!='plan_sha256'})
     return True

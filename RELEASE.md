@@ -12,6 +12,8 @@ Blind listening across all 45 cast voices identified 22 preferred cleaned refere
 
 ### Expressive narration
 
+- A source-bound document policy can apply an auditioned Breeze instruction to one exact passage.
+
 - An attribution inside a quoted sentence can direct both spoken fragments, even with narrator sentences around the turn. The whole passage stays in one request.
 
 - Dialogue can take its direction from a fuller attribution such as “the doctor replied firmly” or “she said, her voice barely audible.” Hamr uses the reporting clause to tie the delivery to the right speaker.

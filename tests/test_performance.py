@@ -1260,3 +1260,53 @@ def test_narration_around_interrupted_turn_keeps_both_source_spans(tmp_path, tex
 ])
 def test_surrounding_narration_does_not_join_distinct_or_ambiguous_turns(tmp_path, text):
     assert plan_source(tmp_path, text, 'auto')['performance']['candidates'] == 0
+
+
+def test_passage_instruction_replaces_one_request_and_keeps_older_job_defaults(tmp_path):
+    source = tmp_path/'book.md'
+    source.write_text(f'{WHISPER}\n\nThe river was quiet.\n\nThe lamps were lit.')
+    doc = inspect(source)
+    block = next(b for b in doc.blocks if b.source == WHISPER)
+    phrase = 'Use a low voice for the line. Read the attribution naturally.'
+    default = planner.plan(doc)
+    runtime, models, archives = performance.pinned_backends()
+    backend = {'profile':'cpu-q8','runtime_revision':runtime,'runtime_platform':'linux_x86_64',
+               'runtime_archive_sha256':archives['linux_x86_64'],'model_sha256':models['cpu-q8'],
+               'settings':{'device':'cpu'}}
+    voice = {**VOICE,'reference_sha256':'e'*64,'transcript':'Reference words.'}
+    assert performance.bind(default, backend, voice)
+    pinned = {u['performance_candidate']['id']:u for u in default['utterances'] if 'performance_candidate' in u}
+    policy = {'document':{'source_sha256':doc.source_sha256,
+                         'performance':{'passage_instructions':{block.id:{'text':WHISPER,'instruction':phrase}}}}}
+    changed = planner.plan(doc, policy)
+    assert changed['performance']['instruction_state'] == 'planned'
+    assert performance.bind(changed, backend, voice, previous=pinned)
+    assert changed['performance']['instruction_state'] == 'active'
+    current, *other = changed['utterances']
+    original, *unaffected = default['utterances']
+    assert performance.request(current)[0] == performance.request(original)[0] == WHISPER
+    assert performance.request(current)[1]['instruction'] == phrase
+    assert current['performance']['evidence'][-1]['kind'] == 'source_policy_instruction'
+    assert performance.request_identity(current) != performance.request_identity(original)
+    assert [performance.request(unit) for unit in other] == [performance.request(unit) for unit in unaffected]
+    assert [performance.request_identity(unit) for unit in other] == [
+        performance.request_identity(unit) for unit in unaffected]
+    off = planner.plan(doc, {**policy, 'performance':'off'})
+    assert off['performance']['instruction_state'] == 'inactive'
+    assert all('performance_candidate' not in unit for unit in off['utterances'])
+
+
+def test_passage_instruction_requires_exact_text_for_one_passage(tmp_path):
+    source = tmp_path/'book.md'
+    source.write_text('The river was quiet.\n\nThe lamps were lit.')
+    doc = inspect(source)
+    bid = next(b.id for b in doc.blocks if b.source == 'The river was quiet.')
+    policy = {'document':{'source_sha256':doc.source_sha256,'performance':{
+        'passage_instructions':{bid:{'text':'The lamps were lit.', 'instruction':'A gentle opening.'}},
+    }}}
+    with pytest.raises(backend.Error, match='matched 0 rendered passages'):
+        planner.plan(doc, policy)
+    policy['document']['performance']['passage_instructions'][bid]['text'] = 'The river was quiet.'
+    result = planner.plan(doc, policy)
+    assert result['utterances'][0]['performance_candidate']['recipe']=='passage_instruction'
+    assert 'performance_candidate' not in result['utterances'][1]
