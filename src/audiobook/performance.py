@@ -12,7 +12,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 25
+CONTEXT_VERSION = 29
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -1039,6 +1039,9 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     decisions = {d['block']:d for d in plan['decisions']}
     source_order = {b.id:i for i,b in enumerate(document.blocks)}
     occurrences = Counter(bid for u in plan['utterances'] for bid in u['sources'])
+    if version>=29 and mode=='auto' and preference!='off':
+        from . import fragments
+        fragments.annotate(plan['utterances'],by_id,decisions,source_order,occurrences,disabled)
     by_source_candidate={}
     candidates = 0
     registry_sha = key(registry)
@@ -1535,6 +1538,9 @@ def request(unit):
             options['narration_instruction']=narration
         if samples:={k:v for k,v in performance.get('tuning',{}).items() if k!='cfg_scale'}:
             options['sampling']=samples
+    if unit.get('fragment_echo'):
+        from .fragments import synthesis_text
+        text = synthesis_text(unit,text)
     return text, options
 
 
@@ -1565,6 +1571,9 @@ def status(job):
 
 
 def lexical_observation(unit, observed):
+    if unit.get('fragment_echo'):
+        from .fragments import lexical_observation as fragment_observation
+        observed = fragment_observation(unit,observed)
     event = (unit.get('performance') or {}).get('event')
     if not event:
         return observed

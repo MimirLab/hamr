@@ -596,8 +596,11 @@ def publish(store,j,*,record_run_metrics=None):
                   else 'Container checks passed. Offline speech checking was not required for this publication.')
     timing = [{'utterance':unit['id'],**receipt['quote_timing']}
               for unit,receipt in zip(units,receipts,strict=True) if receipt.get('quote_timing')]
+    echoes = [{'utterance':unit['id'],**unit['fragment_echo']}
+               for unit in units if unit.get('fragment_echo')]
     writejson(stage/'report.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'metrics':metrics,'warnings':j['plan']['warnings']+metadata_receipt['warnings'],'issues':j['plan']['issues'],'qa':qa_message,'backend':j['backend'],'voice':{k:v for k,v in j['voice'].items() if k!='transcript'},'publication_metadata':metadata_receipt,'mastering':master_report,'container_duration':actual,'decoded_audio':decoded_audio,'pcm_samples':total,'created':time.time(),
-                                  **({'quote_timing':timing} if timing else {})})
+                                  **({'quote_timing':timing} if timing else {}),
+                                  **({'fragment_echoes':echoes} if echoes else {})})
     (stage/'chapters.ffmeta').unlink()
     files={p.name:filehash(p) for p in stage.iterdir() if p.name!='owner.json'}
     writejson(stage/'manifest.json',{'schema_version':1,'job':j['id'],'revision':j['revision'],'plan_sha256':j['plan']['plan_sha256'],'source_sha256':j['document']['source_sha256'],'files':files})
@@ -611,6 +614,7 @@ def take_selection(u):
     identity={'text':u['text'],'sources':u['sources']}
     if active:=performance.request_identity(u):identity['performance']=active
     if timing:=u.get('quote_timing'):identity['quote_timing']=timing
+    if echo:=u.get('fragment_echo'):identity['fragment_echo']=echo
     return key(identity)
 
 
