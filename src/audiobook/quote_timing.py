@@ -455,9 +455,8 @@ def bind(store, job):
                     for unit in job['plan']['utterances'] if (target:=unit.get('quote_timing')))
                 revision = 11 if has_opening else 9 if supports_inline_whisper(job['backend']) else 7
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
-                                              'models':models, 'timing_algorithm':revision}
-                if guidance:
-                    job['quote_timing_models']['narrator_return'] = NARRATOR_RETURN_VERSION
+                                              'models':models, 'timing_algorithm':revision,
+                                              'narrator_return':NARRATOR_RETURN_VERSION}
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
                     try:
                         _, identity = asr_fluid.observer_identity()

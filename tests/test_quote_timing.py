@@ -1,7 +1,9 @@
+import sys
+
 import pytest
 
 from audiobook import performance, planner, quote_timing
-from audiobook.core import Store, digest
+from audiobook.core import Store, digest, writejson
 from audiobook.importers import inspect
 
 
@@ -90,6 +92,28 @@ def test_opening_quote_compares_with_the_following_narrator():
     second = quote_timing.Edges(2*sample,2*sample,3*sample,3*sample)
     assert quote_timing.maximum_quote_power(quiet+narrator,[first]) == .25
     assert quote_timing.maximum_quote_power(quiet+narrator+quiet+louder,[first,second]) == .25
+
+
+def test_new_scoped_whisper_pins_reporting_check_and_preserves_saved_recipe(tmp_path):
+    store = Store(tmp_path/'state')
+    config = {'schema_version':1,'python':sys.executable,'requested_profile':'whisper'}
+    for key in ('model','second_model'):
+        path = tmp_path/key
+        path.mkdir()
+        for name in quote_timing.MODEL_FILES:
+            (path/name).write_text(key)
+        config[key] = str(path)
+    writejson(store.root/'speech-checks.json',config)
+    target = quote_timing.scope(TEXT,TEXT,performance.CONTEXT_VERSION)
+    job = {'backend':{'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY},
+           'voice':{'reference_sha256':'test'},'plan':{'utterances':[{'quote_timing':target}]}}
+    quote_timing.bind(store,job)
+    assert job['quote_timing_models']['narrator_return']==quote_timing.NARRATOR_RETURN_VERSION
+    assert quote_timing.verified_models(job['quote_timing_models'])
+    saved = {'timing_algorithm':7}
+    job['quote_timing_models'] = saved
+    quote_timing.bind(store,job)
+    assert job['quote_timing_models']=={'timing_algorithm':7}
 
 
 @pytest.mark.parametrize(('level','selected'),[(180,'ordinary'),(100,'directed')])
