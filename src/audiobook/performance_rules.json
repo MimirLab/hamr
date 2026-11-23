@@ -12,8 +12,36 @@
     "f4fb01cac3d06b8ad3050362c4d60bb204a1dbf9545b50a723983166f42d7d41",
     "5bcfb76db468f8419feffde9bff44fe76d106dbe262a02cd52e9d12c71c62b91",
     "42149012fe8820489f3b6061267f1ea29dccd0c3c2fc2e5a62597a93bec0e268",
-    "9eb6e476f4232806c60941c087fefb170655737b105b159df9ebe806c2015775"
+    "9eb6e476f4232806c60941c087fefb170655737b105b159df9ebe806c2015775",
+    "91c894458b8449a9a0f984faddf784699c57100a9c43ae98cf8e15365f6b47c4"
   ],
+  "attributed_modifiers": {
+    "whispered": {
+      "eagerly": "eager_anticipation",
+      "shyly": "shy_warmth",
+      "presently": null
+    }
+  },
+  "compound_attribution": {
+    "delivery": {
+      "whisper": {
+        "single": "Whisper the quoted words clearly.",
+        "question": "Whisper the quoted question clearly.",
+        "continued": "Read both quoted parts in the same light whisper."
+      }
+    },
+    "attribution": "Read the attribution normally, in the usual narrator voice.",
+    "surrounding": "Read the surrounding narration in the usual narrator voice.",
+    "affect": {
+      "eager_anticipation": {
+        "single": "Give the quoted words a little eager anticipation.",
+        "question": "Give the question a little eager anticipation."
+      },
+      "shy_warmth": {
+        "single": "Let the quoted words carry a small, hesitant warmth."
+      }
+    }
+  },
   "composition": {
     "delivery_with_event": {
       "whisper": "Whisper the quoted words clearly."

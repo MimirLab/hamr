@@ -780,6 +780,59 @@ def test_composition_preserves_each_owned_cue_and_rejects_ambiguous_stress(tmp_p
         assert 'surrounding narration' in candidate['instruction']
 
 
+@pytest.mark.parametrize(('text','affect','modifier','quoted'),[
+    ('“Are you ready?” she whispered eagerly.','eager_anticipation','eagerly',['“Are you ready?”']),
+    ('Ada whispered eagerly, “We found the key.”','eager_anticipation','eagerly',['“We found the key.”']),
+    ('“Wait here,” whispered Ada shyly.','shy_warmth','shyly',['“Wait here,”']),
+    ('“We could,” whispered Ada shyly, “leave before dark.”',
+     'shy_warmth','shyly',['“We could,”','“leave before dark.”']),
+    ('The room was quiet. “Please wait,” the night watchman whispered shyly.',
+     'shy_warmth','shyly',['“Please wait,”']),
+])
+def test_attributed_affect_owns_only_the_quoted_spans(tmp_path,text,affect,modifier,quoted):
+    source = tmp_path/'book.md'
+    source.write_text(text)
+    doc = inspect(source)
+    old, = planner.plan(doc,delivery_context=14)['utterances']
+    assert not old.get('performance_candidate')
+    default = planner.plan(doc)
+    unit, = default['utterances']
+    assert default['performance']['mode']=='auto'
+    candidate=unit['performance_candidate']
+    assert candidate['composition']=={'delivery':'whisper','affect':affect}
+    assert candidate['synthesis']==candidate['speech']==text
+    evidence, = (row for row in candidate['evidence'] if row['kind']=='attributed_affect')
+    assert text[slice(*evidence['span'])]==modifier
+    assert [text[slice(*span)] for span in evidence['quotation_spans']]==quoted
+    if text.startswith('The room'):
+        assert 'surrounding narration in the usual narrator voice' in candidate['instruction']
+
+
+@pytest.mark.parametrize(('text','recipe'),[
+    ('“Now,” Ada whispered presently.','whisper'),
+    ('“Now,” Ada never whispered eagerly.',None),
+    ('“Now,” Ada might have whispered eagerly.',None),
+    ('Ada listened eagerly. “Now,” Lee said.',None),
+    ('“Ada whispered eagerly,” Lee said.',None),
+    ('“Now,” whispered Ada. “Wait,” Lee said shyly.',None),
+])
+def test_timing_and_unowned_modifiers_do_not_supply_affect(tmp_path,text,recipe):
+    unit, = plan_source(tmp_path,text,'auto')['utterances']
+    candidate = unit.get('performance_candidate',{})
+    assert candidate.get('recipe')==recipe and 'composition' not in candidate
+
+
+def test_whisper_affect_and_authored_sound_can_share_a_request(tmp_path):
+    text='“Did *you* call? [sigh] I am listening,” Ada whispered shyly.'
+    unit, = plan_source(tmp_path,text,'auto')['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['composition']=={'delivery':'whisper','affect':'shy_warmth',
+                                       'vocal_event':'sigh','focus':'you'}
+    assert candidate['speech']=='“Did you call? I am listening,” Ada whispered shyly.'
+    assert candidate['synthesis']=='“Did you call? (sigh) I am listening,” Ada whispered shyly.'
+    assert 'hesitant warmth' in candidate['instruction']
+
+
 def test_inline_cough_uses_the_same_continuous_request_at_the_new_context_version(tmp_path,monkeypatch,capsys):
     monkeypatch.setattr(performance.sys,'platform','linux')
     store=Store(tmp_path/'state')

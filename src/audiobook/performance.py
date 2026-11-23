@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 14
+CONTEXT_VERSION = 15
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -135,6 +135,13 @@ def attribution_actor(version):
     return ROLE_ATTRIBUTION if version>=8 else ATTRIBUTION
 
 
+def attributed_modifiers(registry, version):
+    if version<15:
+        return {}
+    return {f'{verb} {word}':affect for verb,modifiers in registry['attributed_modifiers'].items()
+            for word,affect in modifiers.items()}
+
+
 def attribution_rules(registry, version, custom):
     recipes = registry['directions']
     specific = {cue:kind for kind,item in recipes.items() if version>=item.get('since',1) for cue in item['cues']}
@@ -145,16 +152,20 @@ def attribution_rules(registry, version, custom):
     verbs = {f'{verb} {modifier}':kind for kind,terms in modifiers.items()
              for verb in reporting['verbs'] for modifier in terms}
     verbs.update(specific)
+    compound = attributed_modifiers(registry,version)
+    verbs.update({phrase:specific[phrase.split(' ',1)[0]] for phrase in compound})
     verbs.update(custom)
     neutral = '|'.join(map(re.escape,dict.fromkeys([*NEUTRAL_REPORTING,*verbs])))
     postposed = None
     if version>=4 or custom:
+        heads = list(dict.fromkeys([*reporting['verbs'],*(phrase.split(' ',1)[0] for phrase in compound)]))
         terms = sorted({tail for phrase in verbs for head,_,tail in [phrase.partition(' ')]
-                        if head in reporting['verbs'] and tail})
-        base = '|'.join(map(re.escape,reporting['verbs']))
+                        if head in heads and tail})
+        base = '|'.join(map(re.escape,heads))
         ending = '|'.join(map(re.escape,terms))
+        tail = r'(?:\s*[.!?]|,\s*(?P<continuation>'+QUOTATION+r')\s*[.!?]?)' if compound else r'\s*[.!?]'
         postposed = re.compile(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<inverted>(?P<verb>'+base+
-                               r')\s+(?P<actor>'+attribution_actor(version)+r')\s+(?P<modifier>'+ending+r'))\s*[.!?]')
+                               r')\s+(?P<actor>'+attribution_actor(version)+r')\s+(?P<modifier>'+ending+r'))'+tail)
     return verbs,neutral,postposed
 
 
@@ -164,10 +175,17 @@ def attribution_phrase(match):
     return match['verb']
 
 
+def continuing_quotation(match):
+    first,second = match['quote'],match['continuation']
+    return (first[0]==second[0] and first[-2] in ',.!?'
+            and re.match(r'[a-z]',second[1:].lstrip()))
+
+
 def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION):
     # A recognized manner following the speaker belongs to the reporting verb.
     if postposed is not None and (match:=postposed.fullmatch(source)):
-        return match
+        if not match.groupdict().get('continuation') or continuing_quotation(match):
+            return match
     after = re.fullmatch(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<actor>'+actor+r')'+
                          r'\s+(?P<verb>'+cue_pattern+r')\s*[.!?]', source)
     inverted = re.fullmatch(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<inverted>'
@@ -233,7 +251,7 @@ def attributed_turn_continuation(source, cue_pattern, postposed, *, actor):
     return None
 
 
-def native_quote_flow(left, right, config):
+def native_quote_flow(left, right, config, context_version=None):
     """Identify adjacent PDF lines that can share an intact speech request."""
     from .pdf_layout import adjacent_native_lines
 
@@ -243,9 +261,10 @@ def native_quote_flow(left, right, config):
         return None
     registry = loadjson(RULES_FILE)
     custom = attribution_preferences(config, registry['directions'])
-    verbs, cues, postposed = attribution_rules(registry, CONTEXT_VERSION, custom)
+    version = context_version or CONTEXT_VERSION
+    verbs, cues, postposed = attribution_rules(registry, version, custom)
     source = left.source + ' ' + right.source
-    turn = attributed_turn_continuation(source, cues, postposed, actor=attribution_actor(CONTEXT_VERSION))
+    turn = attributed_turn_continuation(source, cues, postposed, actor=attribution_actor(version))
     if turn and (kind := verbs.get(attribution_phrase(turn[0]))) and not registry['directions'][kind].get('progression'):
         if left.locator.get('tagged_paragraph') is not None:
             return 'tagged_pdf_quotation'
@@ -591,10 +610,10 @@ def compose_quotation_cues(candidate, source, neutral, blocks, actor, owned_span
         return
     templates = registry['composition']
     instruction = candidate['instruction']
-    components = {}
+    components = dict(candidate.get('composition',{}))
     if delivery:
         components['delivery'] = delivery
-        if inline and delivery in templates['delivery_with_event']:
+        if inline and 'affect' not in components and delivery in templates['delivery_with_event']:
             instruction = templates['delivery_with_event'][delivery]
     if inline:
         candidate.update(speech=inline['speech'],synthesis=inline['synthesis'],event=inline['event'])
@@ -608,11 +627,34 @@ def compose_quotation_cues(candidate, source, neutral, blocks, actor, owned_span
         components['focus'] = phrase
         candidate['evidence'].append(evidence)
         instruction += ' '+templates['focus'].format(phrase=phrase)
-    if inline and delivery in templates['delivery_with_event']:
+    if inline and 'affect' not in components and delivery in templates['delivery_with_event']:
         returned = ('embedded_return_to_narrator' if candidate['evidence'][0].get('turn_span')
                     else 'return_to_narrator')
         instruction += ' '+templates[returned]
     candidate.update(instruction=instruction,composition=components)
+
+
+def apply_attributed_affect(candidate, attribution, phrase, affect, templates, surrounding, following_quote):
+    """Set an affect on the same quotation as its spoken delivery."""
+    offset = surrounding[0] if surrounding else 0
+    quotes = [attribution.span('quote')]
+    if following_quote:
+        quotes.append(following_quote)
+    elif attribution.groupdict().get('continuation'):
+        quotes.append(attribution.span('continuation'))
+    form = 'continued' if len(quotes)>1 else 'question' if attribution['quote'][-2]=='?' else 'single'
+    act = templates['affect'][affect]
+    instruction = ' '.join((templates['delivery'][candidate['recipe']][form], templates['attribution'],
+                            act.get(form,act['single'])))
+    if surrounding:
+        instruction += ' '+templates['surrounding']
+    modifier = phrase.rsplit(' ',1)[-1]
+    end = offset+attribution.end('modifier' if attribution.groupdict().get('modifier') else 'verb')
+    quote_spans = [[offset+i for i in span] for span in quotes]
+    candidate['evidence'][0].setdefault('quotation_spans',quote_spans)
+    candidate['evidence'].append({'kind':'attributed_affect','span':[end-len(modifier),end],
+                                  'affect':affect,'quotation_spans':quote_spans})
+    candidate.update(instruction=instruction,composition={'delivery':candidate['recipe'],'affect':affect})
 
 
 def contextual_direction(source, config, previous=None, preference='corroborated'):
@@ -824,6 +866,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             plan['performance']['instruction_state']='inactive'
         return
     verbs,cue_pattern,postposed = attribution_rules(registry,version,custom)
+    affects = attributed_modifiers(registry,version)
     actor = attribution_actor(version)
     voice_rules = voice_description_rules(registry['context']['attached_voice']) if version>=5 else None
     inline_rules = inline_event_rules(registry,version)
@@ -968,6 +1011,10 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 evidence.setdefault('quotation_spans',[[offset+i for i in attribution.span('quote')]])
             if joined_pdf:
                 candidate['evidence'][0].setdefault('quotation_spans',[list(attribution.span('quote'))])
+            phrase = attribution_phrase(attribution)
+            if phrase not in custom and (affect:=affects.get(phrase)):
+                apply_attributed_affect(candidate,attribution,phrase,affect,registry['compound_attribution'],
+                                         surrounding,following_quote)
             if suffixes:=recipe.get('voice_suffixes'):
                 candidate['voice_suffixes']=suffixes
         elif focus:

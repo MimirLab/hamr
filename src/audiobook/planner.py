@@ -474,7 +474,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                     if next_block.id not in heading_ids and next_block.id not in overrides:
                         from .performance import native_quote_flow, pdf_inline_event_continues
                         if (pdf_dialogue_flow and b.id not in overrides and
-                                (quote_flow := native_quote_flow(b, next_block, document_policy.get('performance', {})))):
+                                (quote_flow := native_quote_flow(
+                                    b, next_block, document_policy.get('performance', {}), delivery_context))):
                             quote_pairs[b.id, next_block.id] = quote_flow
                             continue_passage = True
                         elif join_inline_events:
