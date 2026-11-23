@@ -76,3 +76,36 @@ def test_partial_hardlink_cannot_truncate_an_unrelated_file(tmp_path):
     os.link(sentinel,tmp_path/'model.part')
     with pytest.raises(Error) as failure:backend.acquire('https://example.invalid/asset',tmp_path/'model','0'*64,100)
     assert failure.value.code=='unsafe_path' and sentinel.read_bytes()==before
+
+
+@pytest.mark.parametrize('short_twice',[False,True])
+def test_short_eof_retries_from_received_bytes(tmp_path,short_twice):
+    content=b'the same pinned asset on each request'*100
+    dest=tmp_path/'model'
+    requests=[]
+
+    class Handler(Quiet):
+        def do_GET(self):
+            header=self.headers.get('Range')
+            offset=int(header.removeprefix('bytes=').removesuffix('-')) if header else 0
+            requests.append(offset)
+            self.send_response(206 if offset else 200)
+            if offset:
+                self.send_header('Content-Range',f'bytes {offset}-{len(content)-1}/{len(content)}')
+            self.send_header('Content-Length',str(len(content)-offset))
+            self.end_headers()
+            truncate=len(requests)==1 or (len(requests)==2 and short_twice)
+            stop=offset+7 if truncate else len(content)
+            self.wfile.write(content[offset:stop])
+            self.close_connection=True
+
+    with server(Handler) as url:
+        if short_twice:
+            with pytest.raises(Error,match=r'14\.0 B of') as caught:
+                backend.acquire(url,dest,digest(content),len(content))
+            assert caught.value.code=='download_incomplete'
+            assert (tmp_path/'model.part').read_bytes()==content[:14]
+            assert not dest.exists()
+        backend.acquire(url,dest,digest(content),len(content))
+    assert requests==([0,7,14] if short_twice else [0,7])
+    assert dest.read_bytes()==content and not (tmp_path/'model.part').exists()

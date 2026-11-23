@@ -74,7 +74,12 @@ jobs:
           Set-Location $work
           Set-Content 'Garden control.md' '"Keep the gate closed," she whispered.'
           New-Item -ItemType Directory -Force -Path 'published' | Out-Null
-          $setup = (& $hamr --home 'speech state' setup --profile cpu-q8 --json | Out-String) | ConvertFrom-Json
+          $PSNativeCommandUseErrorActionPreference = $false
+          $setupJson = & $hamr --home 'speech state' setup --profile cpu-q8 --json | Out-String
+          $setupExit = $LASTEXITCODE
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($setupExit -ne 0) { throw "Speech setup exited with code $setupExit. $setupJson" }
+          $setup = $setupJson | ConvertFrom-Json
           if ($setup.health.actual_device -notlike 'CPU*') { throw 'The CPU runtime was not verified.' }
           $PSNativeCommandUseErrorActionPreference = $false
           $publication = & $hamr --home 'speech state' open 'Garden control.md' --output 'published' --voice cast:nigel-thornberry --yes --json | Out-String

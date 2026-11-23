@@ -95,8 +95,16 @@ def acquire(url,dst,expected,size,*,progress=None,label=None):
     try:
         options={'progress':progress,'label':label} if progress else {}
         transfer_asset(url,part,offset,size,**options)
+        received=part.stat().st_size
+        if offset<received<size:
+            if progress: progress.stage(f'{label} ended early. Resuming from {size_text(received)}.')
+            transfer_asset(url,part,received,size,**options)
+            received=part.stat().st_size
+        if received<size:
+            raise Error('download_incomplete',f'{label} ended after {size_text(received)} of {size_text(size)}.',
+                        'Run setup again to resume this download.')
         if progress: progress.stage(f'Verifying {label}')
-        if part.stat().st_size!=size or filehash(part)!=expected: raise Error('download_integrity','Downloaded asset does not match pinned size/digest.','Run setup again; the partial will be revalidated.')
+        if received!=size or filehash(part)!=expected: raise Error('download_integrity','Downloaded asset does not match pinned size/digest.','Run setup again; the partial will be revalidated.')
         os.replace(part,dst); identity.unlink(missing_ok=True)
     except (OSError,http.client.HTTPException) as e: raise Error('download_failed',f'Asset acquisition failed ({type(e).__name__}).','Check connectivity and disk space; repeat setup to resume.') from e
 

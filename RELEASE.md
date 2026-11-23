@@ -3,6 +3,7 @@
 - Dialogue attributed “in a hushed tone” or introduced by “she lowered her voice” can use a softer speaking voice. Explicit whisper cues direct a whisper. The reporting clause or immediate setup must belong to the same turn.
 - Expressive narration can recognize a single quotation with a straight mark at one end and a curly mark at the other, a combination produced by some scanned PDF pages. The extracted characters and source locations are preserved.
 - “He muttered” can give the quoted words a low, private delivery. Hamr asks Breeze to keep the words clear and the narration around the line in its usual voice.
+- Setup can resume a transfer that ends early after receiving part of a model. If the transfer ends early again, Hamr reports how much it saved so setup can resume from there.
 
 # hamr 0.4.3
 
