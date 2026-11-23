@@ -360,7 +360,10 @@ def bind(store, job):
                 directory = Path(saved[field])
                 models.append({'path':str(directory), 'files':{name:fingerprint(directory/name) for name in MODEL_FILES}})
             if models[0]['files']['model.bin'] != models[1]['files']['model.bin']:
-                revision = 9 if supports_inline_whisper(job['backend']) else 7
+                has_opening = any(
+                    target.get('version')==OPENING_VERSION and 'quotation' in target
+                    for unit in job['plan']['utterances'] if (target:=unit.get('quote_timing')))
+                revision = 10 if has_opening else 9 if supports_inline_whisper(job['backend']) else 7
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
                                               'models':models, 'timing_algorithm':revision}
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
@@ -739,7 +742,9 @@ def render(store, job, unit, clip, synthesize):
     reason = 'timing_models_changed'
     schedule = ANCHOR
     seed = ordinary['seed']
-    attempts = 4 if multiple else 3
+    ordinary_anchor = opening and not multiple and recipe.get('timing_algorithm',3)>=10
+    saved_ordinary = None
+    attempts = 4 if multiple or ordinary_anchor else 3
     allow_short_taper = multiple and recipe.get('timing_algorithm',3)>=4
     allow_exit_overlap = recipe.get('timing_algorithm',3)>=5
     decoder = {}
@@ -766,7 +771,9 @@ def render(store, job, unit, clip, synthesize):
             trial = checkpoint/str(index)
             owned_checkpoint(trial)
             anchoring = schedule==ANCHOR
-            options = {**ordinary,'seed':seed,'instruction':instruction,'frame_guidance':schedule}
+            options = {**ordinary,'seed':seed}
+            if not (ordinary_anchor and anchoring):
+                options.update(instruction=instruction,frame_guidance=schedule)
             result = read_take(trial,options)
             reused = result is not None
             if result is None:
@@ -783,6 +790,10 @@ def render(store, job, unit, clip, synthesize):
                 fault('after_quote_anchor' if anchoring else 'after_quote_candidate')
             data,receipt = result
             history.append({'pcm_sha256':receipt['sha256'],'schedule':schedule,'checkpoint_reused':reused})
+            if ordinary_anchor and anchoring:
+                history[-1].update(schedule=None,anchor='ordinary')
+                if seed==ordinary['seed']:
+                    saved_ordinary = result
             overlaps = {}
             try:
                 spellings = target.get('source_spellings')
@@ -821,6 +832,14 @@ def render(store, job, unit, clip, synthesize):
                         history[-1]['maximum_quote_power_ratio'] = contrast
                         if contrast is None or contrast>QUIET_QUOTE_POWER:
                             reason = 'insufficient_contrast'
+                            if ordinary_anchor and contrast is not None and schedule['release_frames']:
+                                # Use a little more of the existing interval at
+                                # full strength, then check the actual new take.
+                                stronger = {**schedule,'end_frame':schedule['end_frame']+1,
+                                            'release_frames':schedule['release_frames']-1}
+                                if not any(row['schedule']==stronger for row in history):
+                                    schedule = stronger
+                                    continue
                             break
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,
                         **({'exit_taper_covers_last_word':True} if tapered else {}),**decoder}}
@@ -842,5 +861,5 @@ def render(store, job, unit, clip, synthesize):
                 break
             schedule = proposal
             reason = 'corrected_take_outside_quote'
-    data,receipt = synthesize(text,ordinary)
+    data,receipt = saved_ordinary if saved_ordinary is not None else synthesize(text,ordinary)
     return data,{**receipt,'quote_timing':{**target,'selected':'ordinary','reason':reason,'trials':history,**decoder}}

@@ -124,6 +124,44 @@ def test_opening_fallback_verifies_contrast_on_the_actual_take(tmp_path,monkeypa
         assert data == speech
 
 
+@pytest.mark.parametrize('quiet_final',[False,True])
+def test_opening_ordinary_anchor_is_reused_or_corrected(tmp_path,monkeypatch,quiet_final):
+    frame = quote_timing.FRAME
+    text = '“Wait by the lamp,” she whispered. The rain stopped. No one came.'
+    unit = {'text':text,'quote_timing':quote_timing.scope(text,text,25)}
+    store = Store(tmp_path/'state')
+    job = {'id':'abc123','backend':{},'quote_timing_models':{'timing_algorithm':10}}
+    store.path(job).mkdir(exist_ok=True)
+    measures = quote_timing.Edges(0,0,3*frame,5*frame)
+    tail = bytes(4*frame)+(200).to_bytes(2,'little')*(2*frame)
+    ordinary = (250).to_bytes(2,'little')*(7*frame)
+    quiet = (100).to_bytes(2,'little')*(3*frame)+tail
+    loud = (180).to_bytes(2,'little')*(3*frame)+tail
+    requests = []
+
+    def synthesize(text,options):
+        requests.append(options)
+        schedule = options.get('frame_guidance')
+        audio = ordinary if schedule is None else quiet if quiet_final and schedule['end_frame']>3 else loud
+        return audio,{'sha256':digest(audio),'samples':len(audio)//2}
+
+    monkeypatch.setattr(quote_timing,'verified_models',lambda _:True)
+    monkeypatch.setattr(quote_timing,'measure_take',lambda *args:([measures],[]))
+    audio,receipt = quote_timing.render(store,job,unit,'a'*64,synthesize)
+    assert requests[0] == {'seed':42}
+    windows = [options['frame_guidance'] for options in requests[1:]]
+    assert [(window['end_frame'],window['release_frames']) for window in windows] == (
+        [(3,2),(4,1)] if quiet_final else [(3,2),(4,1),(5,0)])
+    report = receipt['quote_timing']
+    assert report['trials'][0]['anchor'] == 'ordinary' and report['trials'][0]['schedule'] is None
+    assert report['selected'] == ('directed' if quiet_final else 'ordinary')
+    assert audio == (quiet if quiet_final else ordinary)
+    requests.clear()
+    replayed,receipt = quote_timing.render(store,job,unit,'a'*64,synthesize)
+    assert not requests and replayed==audio
+    assert all(trial['checkpoint_reused'] for trial in receipt['quote_timing']['trials'])
+
+
 @pytest.mark.parametrize('window,accepted',[(3,True),(4,False)])
 def test_decoder_only_adopts_its_measured_scope(tmp_path, monkeypatch, window, accepted):
     frame = quote_timing.FRAME
