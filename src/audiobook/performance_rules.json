@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "compatible_registry_sha256": [
+    "d5a5def411723715e4e674ab5f2c84aac150fc64c45cdea9b502b5156be70da3",
     "428a3bfe182375225c78b64826b927b23bfa43f73eabdeba1cb1b6ee909bd17a",
     "bd17f798eaa725aba03d3e15c9259e2d541bc026c3d8ea02e0c8755d55dc147f",
     "1d1517d01add3db68907af30b4476e6d742fe4571eb18602e46476c3491f77d1",
@@ -74,6 +75,11 @@
       "cues": ["murmured", "said under his breath", "said under her breath"],
       "instruction": "Read the quotation low and gently voiced, with clear words in the reference voice. Let the attribution return to the usual narration.",
       "role_instruction": "Read only the quotation softly, keeping every consonant clear. Read the surrounding lines and attribution in the usual reference narrator voice."
+    },
+    "muttered": {
+      "cues": ["muttered"],
+      "since": 18,
+      "instruction": "Keep the quoted words low and private, like speaking under the breath. Make every word clear. Use the usual narrator voice for the attribution and surrounding text."
     },
     "measured": {
       "cues": [],

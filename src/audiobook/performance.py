@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 17
+CONTEXT_VERSION = 18
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'

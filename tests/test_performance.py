@@ -686,6 +686,31 @@ def test_unmatched_quote_and_inch_symbol_remain_literal(tmp_path):
     assert plan_source(tmp_path,text,'auto')['performance']['candidates']==0
 
 
+@pytest.mark.parametrize('text',[
+    '“The whole house will be down one of these days,” James muttered.',
+    '“I hate all this,” muttered Leonard.',
+    'The rain beat against the window. “Wait till dusk,” the old man muttered.',
+])
+def test_muttered_attribution_keeps_the_words_in_one_directed_request(tmp_path,text):
+    source=tmp_path/'book.md'
+    source.write_text(text)
+    document=inspect(source)
+    old,=planner.plan(document,delivery_context=17)['utterances']
+    ordinary,=planner.plan(document)['utterances']
+    assert 'performance_candidate' not in old
+    candidate=ordinary['performance_candidate']
+    assert candidate['recipe']=='muttered'
+    assert candidate['speech']==candidate['synthesis']==old['text']
+    start,stop=candidate['source']['span']
+    assert text[start:stop]=='muttered'
+    assert 'under the breath' in candidate['instruction']
+
+
+def test_a_narrated_mutter_does_not_direct_another_speakers_line(tmp_path):
+    text='James muttered to himself. “Open the shutters,” Ada said.'
+    assert plan_source(tmp_path,text,'auto')['performance']['candidates']==0
+
+
 @pytest.mark.parametrize(('text','actor','recipe'),[
     ('“Wait until the light goes out,” whispered the night watchman.', 'the night watchman', 'whisper'),
     ('The night watchman whispered, “Wait until the light goes out.”', 'The night watchman', 'whisper'),

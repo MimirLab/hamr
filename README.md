@@ -45,6 +45,8 @@ This is how an ordinary book runs. Hamr can follow clear cues for tone, pace, em
 
 An eager whisper can carry a written sigh and a moment of emphasis in one continuous reading. Audition variations on a saved passage with `hamr preview --compare`, then keep the chosen direction and settings with a targeted repair. [Compare and keep alternate takes](docs/USAGE.md#expressive-narration)
 
+“She lowered her voice” calls for softer speech. “To a whisper” makes the direction more specific, and “he muttered” gives the line a low, private delivery. A pair of quotation marks can still carry a cue when OCR reads one as curly and the other as straight.
+
 ## EPUB to audiobook in three commands
 
 [Install on Linux](#install-on-linux) or [install on Windows](docs/ENGINES.md#what-hamr-can-use), then replace the example filename. The preview is optional.

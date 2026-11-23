@@ -96,7 +96,7 @@ For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new s
 
 | What Hamr can direct | What triggers it |
 | --- | --- |
-| Speaking softly, whispering, shouting, or using deliberate pacing | An attributed reporting phrase such as “she answered quietly” or “Ada said slowly.” Nearby descriptions can also establish how the speaker delivered the line. |
+| Speaking softly, muttering, whispering, shouting, or using deliberate pacing | An attributed reporting phrase such as “she answered quietly,” “he muttered,” or “Ada said slowly.” Nearby descriptions can also establish how the speaker delivered the line. |
 | Surprise, reassurance, irony, amusement, affection, or distress | Clear attribution or local speaker evidence. An identifiable speaker change or conflicting evidence limits carryover. |
 | Growing urgency, fading delivery, or emphasis on a specific phrase | An authored change over multiple sentences, or a unique quoted phrase the author explicitly singles out. |
 | Sighs, chuckles, sobs and other nonverbal sounds | An explicit marker associated with a dialogue turn. |
