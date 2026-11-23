@@ -49,6 +49,8 @@ An eager whisper can carry a written sigh and a moment of emphasis in one contin
 
 On Linux with CPU Q8, Vulkan Q8, or Vulkan F16, Hamr can direct two whispered lines in the same passage and let the narrator return for the words between them. It follows where Breeze actually speaks the quoted words and can adjust the direction when a quote starts or ends at a different time. It checks the full passage before using the take. Run `hamr setup` to install the updated runtime. [Continuous dialogue and engine support](docs/ENGINES.md#timed-whispers)
 
+A whisper can also open the passage. Hamr can time it from an ordinary recording, then keep that recording if a directed take fails the word, timing, or level check.
+
 ## EPUB to audiobook in three commands
 
 [Install on Linux](#install-on-linux) or [install on Windows](docs/ENGINES.md#what-hamr-can-use), then replace the example filename. The preview is optional.

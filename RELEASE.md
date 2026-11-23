@@ -1,3 +1,9 @@
+# hamr 0.4.8
+
+- An explicitly whispered quotation can start a passage. Hamr measures it against the ordinary narration that follows, checks the words and delivery boundaries, and keeps the passage in one speech request.
+- For a single opening quotation, Hamr measures timing from its ordinary take first. It can reuse that exact audio if directed attempts fail. An interrupted run can pick up the saved take. Existing jobs retain their pinned timing method.
+- `hamr agent inspect JOB --content` reports the timed narration used in a published book. [Expressive narration guide](docs/USAGE.md#expressive-narration)
+
 # hamr 0.4.7
 
 - A whispered quote can follow the words Breeze actually speaks. Hamr can adjust the timing of an inline cue and check the resulting passage again. The narrator has its own direction between quoted lines. Resume reuses verified intermediate takes after an interruption.
