@@ -102,6 +102,8 @@ class Edges:
         })
 
     def contains(self, schedule):
+        if schedule['end_frame']=='speech':
+            return self.valid_start(schedule['start_frame'])
         hold = schedule['end_frame']*FRAME
         release = hold+schedule['release_frames']*FRAME
         return self.valid_start(schedule['start_frame']) and self.end <= hold and release <= self.after
@@ -240,7 +242,7 @@ def verified_models(recipe):
         return False
 
 
-def refine(measured, schedule):
+def refine(measured, schedule, *, ends_in_quote=False):
     if len(measured)==1:
         return measured[0].proposal(schedule)
     previous = schedule['windows'] if schedule is not None else [None]*len(measured)
@@ -250,6 +252,10 @@ def refine(measured, schedule):
         if chosen is None:
             return None
         windows.append({name:value for name,value in chosen.items() if name!='base_scale'})
+    if ends_in_quote:
+        # There is no following narration to protect. Use the speech's actual
+        # end, which is free to move as the director changes the last words.
+        windows[-1].update(end_frame='speech',release_frames=0)
     for left,right in zip(windows,windows[1:]):
         if left['end_frame'] > right['start_frame']:
             return None
@@ -269,6 +275,7 @@ def render(store, job, unit, clip, synthesize):
     checkpoint = root/clip
     owned_checkpoint(checkpoint)
     text, ordinary = performance.request(unit)
+    ends_in_quote = multiple and not words(text[quotations[-1][1]:])
     history = []
     reason = 'timing_models_changed'
     schedule = ANCHOR
@@ -310,7 +317,7 @@ def render(store, job, unit, clip, synthesize):
                 windows = schedule['windows'] if multiple else [schedule]
                 if all(edges.contains(window) for edges,window in zip(measured,windows,strict=True)):
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history}}
-            proposal = refine(measured,schedule if index else None)
+            proposal = refine(measured,schedule if index else None,ends_in_quote=ends_in_quote)
             if proposal is None or any(trial['schedule']==proposal for trial in history):
                 reason = 'no_clear_frame_window'
                 break

@@ -27,6 +27,8 @@ def voice(tmp_path):
     {'windows':[]}, {'windows':[LATER,SCHEDULE]},
     {'windows':[SCHEDULE,{**LATER,'start_frame':3}]},
     {'windows':[{**SCHEDULE,'base_scale':0}]},
+    {'windows':[{**SCHEDULE,'end_frame':'speech'},LATER]},
+    {'windows':[SCHEDULE,{**LATER,'end_frame':'speech'}]},
 ])
 def test_reject_invalid_schedule(value):
     with pytest.raises(Error) as error:
@@ -98,12 +100,14 @@ def test_http_requires_confirmation_and_complete_schedule(voice,confirmed,frames
             assert error.value.code==expected_error
 
 
-@pytest.mark.parametrize(('frames','windows','expected_error'),[
-    (8,'1:3:1.5:1,5:7:1.5:1',None),
-    (7,'1:3:1.5:1,5:7:1.5:1','frame_guidance_unreached'),
-    (8,'1:3:1.5:1','frame_guidance_unconfirmed'),
+@pytest.mark.parametrize(('frames','windows','terminal','expected_error'),[
+    (8,'1:3:1.5:1,5:7:1.5:1',False,None),
+    (7,'1:3:1.5:1,5:7:1.5:1',False,'frame_guidance_unreached'),
+    (8,'1:3:1.5:1',False,'frame_guidance_unconfirmed'),
+    (6,'1:3:1.5:1,5:-1:1.5:0',True,None),
+    (5,'1:3:1.5:1,5:-1:1.5:0',True,'frame_guidance_unreached'),
 ])
-def test_transport_checks_the_last_window_and_its_release(voice,frames,windows,expected_error):
+def test_transport_checks_the_last_window_and_its_release(voice,frames,windows,terminal,expected_error):
     profile = {**PROFILE,'frame_guidance_windows':performance.FRAME_WINDOWS_CAPABILITY}
     samples = (8192*np.sin(np.arange(frames*1920)*0.1)).astype('<i2').tobytes()
     headers = {'X-Sample-Rate':'24000','X-Sample-Format':'s16le','X-Breeze-Guidance-Base':'0',
@@ -112,18 +116,20 @@ def test_transport_checks_the_last_window_and_its_release(voice,frames,windows,e
     engine.identity = profile
     engine.health = profile
     engine.read_log = lambda: 'backend: CPU\n'
+    last = {**LATER,'end_frame':'speech','release_frames':0} if terminal else LATER
+    wire = b'1:3:1.5:1,5:-1:1.5:0' if terminal else b'1:3:1.5:1,5:7:1.5:1'
 
     def server(request):
-        assert b'1:3:1.5:1,5:7:1.5:1' in request.read()
+        assert wire in request.read()
         return httpx.Response(200,headers=headers,content=samples)
 
     with httpx.Client(base_url='http://127.0.0.1',transport=httpx.MockTransport(server)) as client:
         engine.client = client
-        schedule = {'windows':[SCHEDULE,LATER]}
+        schedule = {'windows':[SCHEDULE,last]}
         if expected_error:
             with pytest.raises(Error) as error:
                 engine.speech('Wait by the door.',voice,frame_guidance=schedule)
             assert error.value.code == expected_error
         else:
             data, receipt = engine.speech('Wait by the door.',voice,frame_guidance=schedule)
-            assert data == samples and receipt['frame_guidance']['windows'] == [SCHEDULE,LATER]
+            assert data == samples and receipt['frame_guidance']['windows'] == [SCHEDULE,last]

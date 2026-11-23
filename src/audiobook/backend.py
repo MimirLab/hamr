@@ -391,7 +391,8 @@ class Engine:
             applied = {'X-Breeze-Guidance-Base':guidance_fields['cfg_scale'],
                        'X-Breeze-Guidance-Chunks':str(FRAME_GUIDANCE_CAPABILITY['chunk_frames'])}
             if multiple:
-                windows = ','.join(f"{w['start_frame']}:{w['end_frame']}:{w['scale']:.9g}:{w['release_frames']}"
+                windows = ','.join(f"{w['start_frame']}:{-1 if w['end_frame']=='speech' else w['end_frame']}:"
+                                   f"{w['scale']:.9g}:{w['release_frames']}"
                                    for w in frame_guidance['windows'])
                 guidance_fields['guidance_windows'] = windows
                 applied['X-Breeze-Guidance-Windows'] = windows
@@ -441,7 +442,8 @@ class Engine:
                 if frame_guidance is not None:
                     frames, remainder = divmod(receipt['samples'], FRAME_GUIDANCE_CAPABILITY['frame_samples'])
                     last_window = frame_guidance.get('windows',[frame_guidance])[-1]
-                    required_frames = last_window['end_frame'] + last_window['release_frames']
+                    required_frames = (last_window['start_frame']+1 if last_window['end_frame']=='speech'
+                                       else last_window['end_frame']+last_window['release_frames'])
                     if remainder or frames < required_frames:
                         raise Error('frame_guidance_unreached',
                                     f'Breeze returned {frames} complete frames. The requested guidance needs {required_frames} complete frames.',

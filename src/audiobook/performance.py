@@ -41,7 +41,7 @@ POSSESSIVES = {'he':'his','she':'her','they':'their','i':'my','we':'our'}
 PRIVATE_KINDS = {'literal', 'hidden', 'generated_label', 'object_label', 'note_reference'}
 SAMPLING_LIMITS = {'temperature':(.1,2), 'top_k':(1,256), 'top_p':(.05,1), 'repetition_penalty':(.8,1.4)}
 FRAME_GUIDANCE_CAPABILITY = {'version':1, 'encoding':'multipart', 'frame_samples':1920, 'chunk_frames':10}
-FRAME_WINDOWS_CAPABILITY = {'version':1, 'max_windows':8}
+FRAME_WINDOWS_CAPABILITY = {'version':1, 'max_windows':8, 'speech_end':True}
 
 
 def supports_frame_guidance(backend, *, multiple=False):
@@ -62,15 +62,20 @@ def validated_windows(value):
         raise Error('frame_guidance', 'Supply one to eight ordered guidance windows and an optional base_scale.')
     result = []
     previous_end = 0
-    for window in windows:
+    for index,window in enumerate(windows):
         if not isinstance(window,dict) or window.keys()-{'start_frame','end_frame','scale','release_frames'}:
             raise Error('frame_guidance', 'Use start_frame, end_frame, scale and optional release_frames for each window.')
-        checked = validated_frame_guidance(window)
+        through_end = window.get('end_frame') == 'speech'
+        if through_end and (index != len(windows)-1 or window.get('release_frames',0)!=0):
+            raise Error('frame_guidance', 'A window ending at speech completion must be last and use zero release.')
+        checked = validated_frame_guidance({**window,'end_frame':1500} if through_end else window)
         del checked['base_scale']
         if checked['start_frame'] < previous_end:
             raise Error('frame_guidance', 'Guidance intervals and their releases must be ordered and cannot overlap.')
-        result.append(checked)
         previous_end = checked['end_frame'] + checked['release_frames']
+        if through_end:
+            checked['end_frame'] = 'speech'
+        result.append(checked)
     return {'windows':result, 'base_scale':guidance_scale(value.get('base_scale',0))}
 
 

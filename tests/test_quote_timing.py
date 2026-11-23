@@ -65,6 +65,11 @@ def test_continuation_verifies_both_windows_and_keeps_a_still_valid_first_window
     assert new['windows'][1]['release_frames'] == 1
     assert shortened.contains(new['windows'][1])
     assert not shortened.contains(initial['windows'][1])
+    terminal = quote_timing.refine([first,shortened],initial,ends_in_quote=True)
+    assert terminal['windows'][0] == initial['windows'][0]
+    assert terminal['windows'][1]['end_frame']=='speech'
+    assert terminal['windows'][1]['release_frames']==0
+    assert shortened.contains(terminal['windows'][1])
 
 
 @pytest.mark.parametrize('uncertain',[False,True])
