@@ -102,7 +102,7 @@ def observer_identity():
     return ffmpeg,key(identity)
 
 
-def observe_many(recipe, clips):
+def observe_many(recipe, clips, *, timestamps=False):
     available = memory_available()
     headroom = BOOK_RAM_HEADROOM if any(t['samples']>30*24000 for t in clips) else RAM_HEADROOM
     if available is None or available<headroom:
@@ -112,6 +112,8 @@ def observe_many(recipe, clips):
     model = Path(recipe.model)
     catalog = check_assets(model)
     request = {'model':str(model),'clips':clips,'ffmpeg':ffmpeg}
+    if timestamps:
+        request['timestamps'] = True
     try:
         result = subprocess.run([recipe.python,'-I',str(WORKER)],input=json.dumps(request).encode(),
                                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=True,timeout=max(180,30*len(clips)))
@@ -128,16 +130,25 @@ def observe_many(recipe, clips):
                 or row.get('processed_samples')!=sent['samples'] or not isinstance(row.get('text'),str)
                 or not isinstance(row.get('seconds'),(int,float)) or not math.isfinite(row['seconds']) or row['seconds']<0):
             raise Error('asr_contract','Fluid returned an unexpected take identity or transcript.')
+        if timestamps:
+            tokens, times = row.get('tokens'), row.get('timestamps')
+            if (not isinstance(tokens,list) or not tokens or not all(isinstance(token,str) for token in tokens)
+                    or not isinstance(times,list) or len(times)!=len(tokens)
+                    or any(not isinstance(t,(float,int)) or not 0<=t<=sent['samples']/24000+0.08 for t in times)
+                    or any(right<left for left,right in zip(times,times[1:]))):
+                raise Error('asr_contract','Fluid returned unexpected token timing for this take.')
     check_assets(model)
     metadata = {name:value for name,value in output.items() if name!='rows'}
     return [{**metadata,**row,'status':'observed','profile':PROFILE,'model_revision':catalog['revision'],
-             'observer_sha256':identity,'prompt':None,'vad':False,'cleanup':False,'timing_kind':'unavailable'}
+             'observer_sha256':identity,'prompt':None,'vad':False,'cleanup':False,
+             'timing_kind':'tokens' if timestamps else 'unavailable'}
             for row in output['rows']]
 
 
-def observe(profile, pcm, receipt):
+def observe(profile, pcm, receipt, *, timestamps=False):
     recipe = Recipe(profile['python'],profile['model'])
-    row, = observe_many(recipe,[{'pcm':str(pcm),'samples':receipt['samples'],'pcm_sha256':receipt['sha256']}])
+    row, = observe_many(recipe,[{'pcm':str(pcm),'samples':receipt['samples'],'pcm_sha256':receipt['sha256']}],
+                        timestamps=timestamps)
     return row
 
 

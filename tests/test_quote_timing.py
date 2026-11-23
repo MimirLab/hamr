@@ -64,11 +64,41 @@ def test_ordinary_timing_uses_compiled_offsets_after_word_expansion(tmp_path):
     first, second = unit['quote_timing']['quotations']
     assert unit['text'][slice(*first)] == '“Keep Doctor Hale quiet,”'
     assert unit['text'][slice(*second)] == '“We have to leave before dawn.”'
+    assert unit['quote_timing']['source_spellings'] == [[0,'dr','doctor'],[12,'dr','doctor']]
     prior, = planner.plan(document, delivery_context=21)['utterances']
     assert 'quote_timing' not in prior
     assert quote_timing.scope(text.replace('whispered', 'said'), unit['text'], 22) is None
     different_quotes = '“Stop,” she said. ' + unit['text']
     assert quote_timing.scope(text, different_quotes, 22) is None
+
+
+def test_compiled_spellings_do_not_change_neighboring_or_unlicensed_words():
+    expected = ['doctor','hale','said','doctor']
+    spellings = [[0,'dr','doctor']]
+    observed = [{'word':word} for word in ('dr','hale','said','dr')]
+    compared = quote_timing.observation_spellings(observed,expected,spellings)
+    assert [row['word'] for row in compared] == ['doctor','hale','said','dr']
+    assert observed[0]['word'] == 'dr'
+    assert quote_timing.observation_spellings(observed[1:],expected,spellings) == observed[1:]
+
+
+def test_corroboration_requires_independent_words_near_all_quote_edges():
+    text = 'He waited. “Stay here,” he whispered.'
+    target = quote_timing.owned_whisper(text,23)[0]
+    names = ['he','waited','stay','here','he','whispered']
+    bounds = [(0,.2),(.25,.6),(1,1.1),(1.15,1.32),(1.55,1.65),(1.7,2.0)]
+    primary = [{'word':name,'start':start,'end':end} for name,(start,end) in zip(names,bounds)]
+    independent = quote_timing.emitted_words({
+        'tokens':[' He',' waited','.',' Stay',' here',',',' he',' wh','ispered','.'],
+        'timestamps':[0,.24,.64,.88,1.12,1.36,1.52,1.68,1.76,2.0],
+        'text':'He waited. Stay here, he whispered.',
+    })
+    edges = quote_timing.corroborated_edges(text,target,primary,independent,52800)
+    assert edges == quote_timing.Edges(14400,21120,31680,36480)
+    independent[3]['word'] = 'there'
+    assert quote_timing.corroborated_edges(text,target,primary,independent,52800) is None
+    independent[3].update(word='here',first=1.48,last=1.56)
+    assert quote_timing.corroborated_edges(text,target,primary,independent,52800) is None
 
 
 def test_continuation_verifies_both_windows_and_keeps_a_still_valid_first_window():

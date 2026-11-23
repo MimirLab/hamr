@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 
-from . import performance
+from . import asr_fluid, performance
 from .boundaries import sentence_spans
 from .core import Error, RATE, atomic, digest, fault, filehash, key, loadjson, writejson
 
@@ -21,6 +21,7 @@ FRAME = performance.FRAME_GUIDANCE_CAPABILITY['frame_samples']
 ANCHOR = {'start_frame': 0, 'end_frame': 1, 'scale': 0, 'base_scale': 0}
 WORKER = Path(__file__).with_name('timing_worker.py')
 MODEL_FILES = ('model.bin', 'config.json', 'tokenizer.json', 'vocabulary.txt')
+WORD = re.compile(r"[a-z]+(?:'[a-z]+)?|\d+")
 
 
 def owned_whisper(text, context_version):
@@ -52,7 +53,50 @@ def owned_whisper(text, context_version):
 
 
 def words(text):
-    return re.findall(r"[a-z]+(?:'[a-z]+)?|\d+", text.lower().replace('’', "'"))
+    return WORD.findall(text.lower().replace('’', "'"))
+
+
+def source_spellings(decisions):
+    """Index single-word spellings licensed by the compiler's expansion trace."""
+    choices = []
+    offset = 0
+    for decision in decisions:
+        audit = decision.get('abbreviations', {})
+        compiled = words(decision['spoken'])
+        edits = audit.get('readings', ())
+        if edits:
+            raw = (decision['source'] if audit['input_basis'] == 'block_source' else audit['input'])
+            cursor = 0
+            expanded = []
+            found = []
+            for edit in edits:
+                start, stop = edit['input_start'], edit['input_end']
+                if not cursor <= start < stop <= len(raw) or raw[start:stop] != edit['source']:
+                    break
+                printed = words(edit['source'])
+                spoken = words(edit['spoken'])
+                expanded.extend(words(raw[cursor:start]))
+                if len(printed) == len(spoken) == 1 and printed != spoken:
+                    found.append([offset+len(expanded), printed[0], spoken[0]])
+                expanded.extend(spoken)
+                cursor = stop
+            else:
+                expanded.extend(words(raw[cursor:]))
+                if expanded == compiled:
+                    choices.extend(found)
+        offset += len(compiled)
+    return choices
+
+
+def observation_spellings(rows, expected, spellings):
+    """Apply a printed form only at a known word position in the complete take."""
+    if not spellings or len(rows) != len(expected):
+        return rows
+    updated = list(rows)
+    for index, printed, spoken in spellings:
+        if 0<=index<len(rows) and rows[index]['word'] == printed and expected[index] == spoken:
+            updated[index] = {**rows[index], 'word':spoken}
+    return updated
 
 
 def primary_word_groups(parts, labels):
@@ -194,6 +238,46 @@ def measurements(text, quotation, primary, secondary, *, samples=None):
     return Edges(*(round(value*RATE) for value in (before,start,stop,after)))
 
 
+def emitted_words(observation):
+    """Map token emission points to their words without inventing word ends."""
+    tokens = [token.lower().replace('’', "'") for token in observation['tokens']]
+    points = [time for token,time in zip(tokens,observation['timestamps'],strict=True) for _ in token]
+    lexemes = list(WORD.finditer(''.join(tokens)))
+    if [word[0] for word in lexemes] != words(observation['text']):
+        return None
+    return [{'word':word[0], 'first':points[word.start()], 'last':points[word.end()-1]}
+            for word in lexemes]
+
+
+def corroborated_edges(text, quotation, primary, independent, samples):
+    """Require the full words and nearby token emissions before trusting an edge."""
+    left, right = quotation
+    parts = text[:left],text[left+1:right-1],text[right:]
+    chunks = primary_word_groups(parts,[row['word'] for row in primary])
+    other = primary_word_groups(parts,[row['word'] for row in independent])
+    if chunks is None or other is None:
+        return None
+    begin, end = len(chunks[0]),len(chunks[0])+len(chunks[1])
+    head, tail = len(other[0]),len(other[0])+len(other[1])
+    pairs = [(primary[begin-1],independent[head-1]), (primary[begin],independent[head]),
+             (primary[end-1],independent[tail-1])]
+    if chunks[2]:
+        pairs.append((primary[end],independent[tail]))
+    # Fluid emits token positions on an 80 ms grid. Use them to corroborate
+    # the approximate word intervals, retaining the other model's word ends.
+    slop = 2*FRAME/RATE
+    if any(not timed['start']-slop<=heard['first']<=heard['last']<=timed['end']+slop
+           for timed,heard in pairs):
+        return None
+    before = max(primary[begin-1]['end'],independent[head-1]['last'])
+    start = min(primary[begin]['start'],independent[head]['first'])
+    stop = max(primary[end-1]['end'],independent[tail-1]['last'])
+    after = min(primary[end]['start'],independent[tail]['first']) if chunks[2] else samples/RATE
+    if not 0<=before<=start<stop<=after<=samples/RATE:
+        return None
+    return Edges(*(round(value*RATE) for value in (before,start,stop,after)))
+
+
 @lru_cache(maxsize=32)
 def cached_digest(path, size, modified, changed):
     return filehash(path)
@@ -210,7 +294,7 @@ def bind(store, job):
             or not (job.get('voice') or {}).get('reference_sha256')
             or not any(unit.get('quote_timing') for unit in job['plan']['utterances'])):
         return
-    from .checks_setup import configured
+    from .checks_setup import configured, configured_fluid
 
     if saved:=configured(store):
         try:
@@ -221,6 +305,14 @@ def bind(store, job):
             if models[0]['files']['model.bin'] != models[1]['files']['model.bin']:
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
                                               'models':models, 'timing_algorithm':3}
+                if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
+                    try:
+                        _, identity = asr_fluid.observer_identity()
+                        job['quote_timing_models']['fluid'] = {
+                            'observer_sha256':identity, 'model':fluid['model'], 'python':fluid['python'],
+                        }
+                    except Error:
+                        pass
         except OSError:
             return
 
@@ -293,6 +385,42 @@ def verified_models(recipe):
         return False
 
 
+def observe_fluid(recipe, path, receipt):
+    if asr_fluid.observer_identity()[1] != recipe['observer_sha256']:
+        return None
+    cache = path/'fluid-tokens.json'
+    row = asr_fluid.cached_observation(cache,recipe['observer_sha256'],receipt)
+    if row is None:
+        row = asr_fluid.observe(recipe,path/'audio.pcm',receipt,timestamps=True)
+        writejson(cache,{'observation':row, 'observation_sha256':key(row)})
+    if row.get('timing_kind') == 'tokens':
+        return emitted_words(row)
+    return None
+
+
+def measure_take(recipe, trial, receipt, text, quotations, spellings):
+    observations = observe(recipe,trial,receipt)
+    if not observations:
+        return [], []
+    samples = receipt['samples']
+    expected = words(text)
+    primary,secondary = [observation_spellings(rows,expected,spellings) for rows in observations]
+    measured = [measurements(text,span,primary,secondary,samples=samples) for span in quotations]
+    corroborated = []
+    if not all(measured) and recipe.get('fluid') and primary_word_groups((text,),[row['word'] for row in primary]):
+        try:
+            independent = observe_fluid(recipe['fluid'],trial,receipt)
+        except Error:
+            independent = None
+        if independent:
+            independent = observation_spellings(independent,expected,spellings)
+            for index, span in enumerate(quotations):
+                if measured[index] is None and (edges:=corroborated_edges(text,span,primary,independent,samples)):
+                    measured[index] = edges
+                    corroborated.append(index)
+    return measured,corroborated
+
+
 def refine(measured, schedule, *, ends_in_quote=False):
     if len(measured)==1:
         return measured[0].proposal(schedule)
@@ -353,11 +481,10 @@ def render(store, job, unit, clip, synthesize):
             data,receipt = result
             history.append({'pcm_sha256':receipt['sha256'],'schedule':schedule,'checkpoint_reused':reused})
             try:
-                observations = observe(recipe,trial,receipt)
-                measured = [measurements(text,span,*observations,samples=receipt['samples'])
-                            for span in quotations] if observations else []
+                measured, corroborated = measure_take(recipe,trial,receipt,text,quotations,
+                                                       target.get('source_spellings'))
             except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
-                measured = []
+                measured, corroborated = [], []
             if not measured or not all(measured):
                 reason = 'words_or_timing_uncertain'
                 break
@@ -365,6 +492,8 @@ def render(store, job, unit, clip, synthesize):
                 history[-1]['quote_edges_samples'] = [asdict(edges) for edges in measured]
             else:
                 history[-1]['edges_samples'] = asdict(measured[0])
+            if corroborated:
+                history[-1]['fluid_corroborated_quotes'] = corroborated
             if index:
                 windows = schedule['windows'] if multiple else [schedule]
                 pairs = list(zip(measured,windows,strict=True))

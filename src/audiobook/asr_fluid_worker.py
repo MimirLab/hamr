@@ -24,8 +24,10 @@ def read_take(request, ffmpeg, model):
     if abs(len(audio)-round(request['samples']*2/3))>1:
         raise ValueError('Resampled audio length differs from the requested take')
     started = time.monotonic()
-    text = model.recognize(audio,sample_rate=16000)
-    return {'pcm_sha256':sha256,'processed_samples':request['samples'],'text':text,
+    result = model.recognize(audio,sample_rate=16000)
+    transcript = ({'text':result} if isinstance(result,str) else
+                  {'text':result.text,'tokens':result.tokens,'timestamps':result.timestamps})
+    return {'pcm_sha256':sha256,'processed_samples':request['samples'],**transcript,
             'seconds':time.monotonic()-started,'input_frames_16khz':len(audio)}
 
 
@@ -39,6 +41,8 @@ def main():
     for graph in (model.asr._encoder,model.asr._decoder_joint):
         if graph.get_providers()!=['CPUExecutionProvider']:
             raise RuntimeError('Unexpected ONNX execution provider')
+    if request.get('timestamps'):
+        model = model.with_timestamps()
     metadata = {'schema_version':1,'provider':'CPUExecutionProvider','compute_type':'int8-weights',
                 'language_policy':'auto','runtime':{name:version(name) for name in ('onnx-asr','onnxruntime','numpy')}}
     if 'clips' in request:
