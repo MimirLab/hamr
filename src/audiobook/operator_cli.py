@@ -71,6 +71,7 @@ def capabilities(parser):
                                                        'narration_instruction_capability':'narration_conditioning',
                                                        'decoder_guidance_capability':'quote_guidance',
                                                        'scope':'Automatic quoted whispers, passage instructions and previews with a compatible backend',
+                                                       'status':'hamr agent inspect JOB → performance.timed_quotations',
                                                        'automatic_takes':'report.json quote_timing'},
                                      'policy_flag':'--document-policy'},
             'voice_preparation': {'default_mode':'auto','mode_flag':'--wash','setup_flag':'--wash-only',
@@ -120,8 +121,9 @@ def watch_token(db, root, job_id):
 
 
 def snapshot(root, job, *, content=False, verify=False):
+    from . import quote_timing
     from .performance import status as performance_status
-    from .jobs import final_path, verify_publication
+    from .jobs import final_path, publication_report, verify_publication
 
     jid = job['id']
     revision = job['revision']
@@ -174,6 +176,13 @@ def snapshot(root, job, *, content=False, verify=False):
     if content:
         result['plan'] = job['plan']
     if delivery:=performance_status(job):
+        if status == 'ready' and verified is not False and (report := publication_report(final,job)):
+            rows = report.get('quote_timing')
+            if isinstance(rows,list):
+                selections = {row['utterance']:row.get('selected') for row in rows
+                              if isinstance(row,dict) and isinstance(row.get('utterance'),str)}
+                if selections and (timed := quote_timing.summarize(job,selections.get)):
+                    delivery['timed_quotations'] = timed
         result['performance']=delivery
     if context:=job['plan'].get('contextual_resolution'):
         result['contextual_readings']={k:context[k] for k in ('configuration_sha256','score_kind','routes','review_provider') if k in context}

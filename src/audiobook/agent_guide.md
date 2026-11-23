@@ -20,6 +20,8 @@ Contextual decisions normally run automatically. `agent capabilities` reports th
 
 Ordinary listening applies expressive cues to EPUB, PDF, Markdown, and plain text. With English OCR installed, scanned PDF uses the same delivery rules. Inspect each utterance's `performance` and `performance_state` with `--content` to see the direction actually sent to Breeze. `--performance off` selects plain delivery for an individual job. Run `hamr status JOB --json` to see the offline speech-check result under `metrics.semantic_qa`.
 
+For a published book with timed dialogue, `performance.timed_quotations` in `hamr agent inspect JOB` counts recorded outcomes by passage. `report.json` includes detailed timing decisions. Use `--verify` to verify the full publication.
+
 Use `hamr preview JOB --utterance ID --compare FILE --json` to render matched alternatives without changing the job. Supply a local JSON map of names to overrides. Use an empty object for the saved request. Keep the seed and the other controls fixed when testing a single change. Open the returned manifest to check the effective requests and WAV hashes before using the previews as listening evidence.
 
 Use `policy.context` in the plan to inspect effective cue groups, initialisms, conventions and ranking weights. Use `context.tables` in the source-bound policy file to apply a convention to an exact table block ID. The `context_events` entries describe selected readings and uncertainty. The `context_structure` entries identify authored roles from the source adapter. Check `realization` to see when a candidate relies on the existing renderer.

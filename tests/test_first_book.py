@@ -5,8 +5,8 @@ import sys
 
 import pytest
 
-from audiobook import cli, installation, jobs, operator_cli
-from audiobook.core import Store, writejson
+from audiobook import cli, installation, jobs, operator_cli, performance
+from audiobook.core import Store, filehash, writejson
 from test_listening_findings import matching_observations
 from test_media import prepared
 
@@ -237,6 +237,43 @@ def test_agent_inspects_without_reconciling_or_exporting_text(tmp_path, capsys, 
     assert store.get(job['job']) == before
     result = invoke(store.root, capsys, 'agent', 'inspect', job['job'], '--content')
     assert 'A private line' in json.dumps(result['plan'])
+
+
+def test_agent_reports_timed_delivery_from_the_checked_report(tmp_path, capsys, monkeypatch):
+    store = Store(tmp_path / 'state')
+    source = tmp_path / 'Hallway.md'
+    source.write_text('The hallway was empty. A window shook in the wind. '
+                      '“Wait by the door,” she whispered. “I can see the stairs.”')
+    job = jobs.create(store, source, output=tmp_path)
+    payload = store.get(job['job'])
+    unit, = payload['plan']['utterances']
+    assert unit['quote_timing']
+    payload.update(status='ready', quote_timing_models={'fixture':True},
+                   voice={'reference_sha256':'fixture'},
+                   backend={'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY,
+                            'frame_guidance_windows':performance.FRAME_WINDOWS_CAPABILITY})
+    store.save(payload)
+    publication = jobs.final_path(payload)
+    publication.mkdir()
+    report = publication/'report.json'
+    writejson(report, {'quote_timing':[{'utterance':unit['id'], 'selected':'directed'}],
+                       'private_annotation':'The private reporting clause.'})
+    files = {name:'unused' for name in ('book.m4b','companion.json','companion.vtt','source.html','original.md')}
+    files['report.json'] = filehash(report)
+    writejson(publication/'manifest.json', {'job':payload['id'],'revision':payload['revision'],
+                                           'plan_sha256':payload['plan']['plan_sha256'],'files':files})
+    def full_publication_check(*_):
+        raise AssertionError('Inspection without --verify must avoid rehashing the book.')
+    monkeypatch.setattr(jobs,'verify_publication',full_publication_check)
+
+    result = invoke(store.root, capsys, 'agent', 'inspect', payload['id'])
+    assert result['performance']['timed_quotations'] == {'directed':1,'ordinary':0,'pending':0}
+    assert 'The private reporting clause.' not in json.dumps(result)
+    assert result['publication_verified'] is None
+
+    writejson(report, {'quote_timing':[{'utterance':unit['id'], 'selected':'ordinary'}]})
+    result = invoke(store.root, capsys, 'agent', 'inspect', payload['id'])
+    assert 'timed_quotations' not in result['performance']
 
 
 def test_watch_emits_one_initial_snapshot_and_never_hashes(tmp_path, capsys, monkeypatch):

@@ -371,6 +371,15 @@ def active(job, unit):
             and (job.get('voice') or {}).get('reference_sha256'))
 
 
+def summarize(job, selection_for):
+    outcomes = [selection_for(unit['id']) for unit in job['plan']['utterances'] if active(job,unit)]
+    if outcomes:
+        directed = outcomes.count('directed')
+        ordinary = outcomes.count('ordinary')
+        return {'directed':directed,'ordinary':ordinary,'pending':len(outcomes)-directed-ordinary}
+    return None
+
+
 def owned_checkpoint(path):
     if path.is_symlink() or path.is_junction() or (path.exists() and not path.is_dir()):
         raise Error('unsafe_path','The timing checkpoint must be an owned directory.')

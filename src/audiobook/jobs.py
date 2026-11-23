@@ -104,17 +104,45 @@ def take_signature(store,j):
         rows.append((k,receipt['sha256'],receipt['samples']))
     return key(rows)
 
-def verify_publication(path,j):
-    if path.is_symlink(): return False
+def publication_manifest(path,j):
+    if path.is_symlink(): return None
     try:
         m=loadjson(path/'manifest.json')
         required={'book.m4b','companion.json','companion.vtt','source.html','report.json','original'+Path(j['snapshot']).suffix}
-        if not isinstance(m,dict) or not isinstance(m.get('files'),dict) or not required<=set(m['files']):return False
-        if m['job']!=j['id'] or m['revision']!=j['revision'] or m['plan_sha256']!=j['plan']['plan_sha256']: return False
-        for name,sha in m['files'].items():
+        if not isinstance(m,dict) or not isinstance(m.get('files'),dict) or not required<=set(m['files']):return None
+        if m['job']==j['id'] and m['revision']==j['revision'] and m['plan_sha256']==j['plan']['plan_sha256']:
+            return m
+    except (OSError,ValueError,KeyError):
+        return None
+    return None
+
+
+def verify_publication(path,j):
+    manifest = publication_manifest(path,j)
+    if manifest is None:
+        return False
+    try:
+        for name,sha in manifest['files'].items():
             if Path(name).name!=name or (path/name).is_symlink() or filehash(path/name)!=sha: return False
         return True
     except (OSError,ValueError,KeyError): return False
+
+
+def publication_report(path,j):
+    """Read the current report using its manifest digest without rehashing the book."""
+    manifest = publication_manifest(path,j)
+    report = path/'report.json'
+    if manifest is None or report.is_symlink():
+        return None
+    try:
+        data = report.read_bytes()
+        if digest(data) == manifest['files']['report.json']:
+            result = json.loads(data)
+            if isinstance(result,dict):
+                return result
+    except (OSError,ValueError):
+        return None
+    return None
 
 def final_path(j): return Path(j['output_parent'])/(j['id']+f'-r{j["revision"]}')
 
@@ -222,12 +250,11 @@ def summary(store,j):
     result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(r is not None for r in checked.values()),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
     result['mastering']=j.get('mastering','off')
     if delivery:=performance.status(j):
-        scoped = [u for u in j['plan']['utterances'] if quote_timing.active(j,u)]
-        if scoped:
-            outcomes = [(checked.get(j['clips'].get(u['id'])) or {}).get('quote_timing',{}).get('selected')
-                        for u in scoped]
-            delivery['timed_quotations'] = {'directed':outcomes.count('directed'),
-                                           'ordinary':outcomes.count('ordinary'),'pending':outcomes.count(None)}
+        def selection(utterance):
+            receipt = checked.get(j['clips'].get(utterance)) or {}
+            return receipt.get('quote_timing',{}).get('selected')
+        if timed := quote_timing.summarize(j,selection):
+            delivery['timed_quotations'] = timed
         result['performance']=delivery
     return result
 
