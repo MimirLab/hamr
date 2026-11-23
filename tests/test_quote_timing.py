@@ -72,6 +72,41 @@ def test_continuation_verifies_both_windows_and_keeps_a_still_valid_first_window
     assert shortened.contains(terminal['windows'][1])
 
 
+def test_short_taper_can_cover_the_quoted_tail_without_reaching_narration():
+    frame = quote_timing.FRAME
+    taper = {'start_frame': 2, 'end_frame': 5, 'release_frames': 2}
+    edges = quote_timing.Edges(frame, 2*frame, 5*frame+frame//2, 7*frame)
+    assert not edges.contains(taper)
+    assert edges.contains(taper, allow_tapered_tail=True)
+    assert not edges.contains({**taper, 'release_frames': 0}, allow_tapered_tail=True)
+    assert not edges.contains({**taper, 'release_frames': 3}, allow_tapered_tail=True)
+    too_early = quote_timing.Edges(frame, 2*frame, 6*frame+1, 7*frame)
+    assert not too_early.contains(taper, allow_tapered_tail=True)
+
+
+def test_terminal_quote_edges_survive_printed_syllable_break_and_repeated_words():
+    text = '“I now have it over,” he whispered. “He was deter-mined. Anne, now have it over.”'
+    start, end = text.rindex('“'), len(text)
+    transcript = 'i now have it over he whispered he was determined anne now have it over'
+
+    def observe(heard):
+        return [{'word': word, 'start': index * 0.2, 'end': (index * 0.2) + 0.1}
+                for index, word in enumerate(heard.split())]
+
+    primary = observe(transcript)
+    secondary = observe(transcript.replace('anne', 'dan'))
+    edges = quote_timing.measurements(text, (start, end), primary, secondary, samples=72000)
+    assert edges == quote_timing.Edges(31200, 33600, 69600, 72000)
+    assert quote_timing.measurements(text, (start, end), primary,
+                                    observe(transcript.replace('determined', 'deter mined')),
+                                    samples=76800)
+    for wrong in ('he will', 'he said he was'):
+        assert quote_timing.measurements(text, (start, end), primary,
+                                        observe(transcript.replace('he was', wrong)), samples=72000) is None
+    assert quote_timing.measurements(text, (start, end), observe(transcript.replace('determined', 'deterred')),
+                                    secondary, samples=72000) is None
+
+
 @pytest.mark.parametrize('uncertain',[False,True])
 def test_restart_reuses_the_timing_anchor_and_retains_ordinary_fallback(tmp_path,monkeypatch,uncertain):
     store = Store(tmp_path/'home')

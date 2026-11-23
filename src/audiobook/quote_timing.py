@@ -55,6 +55,29 @@ def words(text):
     return re.findall(r"[a-z]+(?:'[a-z]+)?|\d+", text.lower().replace('’', "'"))
 
 
+def primary_word_groups(parts, labels):
+    groups = [words(part) for part in parts]
+    if labels == [word for group in groups for word in group]:
+        return groups
+
+    # A compound may be printed with a syllable break and transcribed as one
+    # word. Allow the observer to split or join only those source hyphens.
+    patterns = []
+    for part in parts:
+        terms = re.findall(r"[a-z]+(?:'[a-z]+)?(?:[-‐‑][a-z]+(?:'[a-z]+)?)*|\d+",
+                           part.lower().replace('’', "'"))
+        compounds = [' ?'.join(re.escape(word) for word in words(term)) for term in terms]
+        patterns.append(' '.join(compounds))
+    if not any(' ?' in pattern for pattern in patterns):
+        return None
+    joined = ' '.join(f'({pattern})' for pattern in patterns if pattern)
+    match = re.fullmatch(joined,' '.join(labels))
+    if match:
+        found = iter(match.groups())
+        return [next(found).split() if pattern else [] for pattern in patterns]
+    return None
+
+
 def scope(source, spoken, context_version):
     # Transform layout whitespace but establish ownership before using a spoken
     # offset. Rephrasing and numeric expansion can change that offset.
@@ -101,40 +124,53 @@ class Edges:
             'release_frames':min(2,available),
         })
 
-    def contains(self, schedule):
+    def contains(self, schedule, *, allow_tapered_tail=False):
         if schedule['end_frame']=='speech':
             return self.valid_start(schedule['start_frame'])
         hold = schedule['end_frame']*FRAME
         release = hold+schedule['release_frames']*FRAME
-        return self.valid_start(schedule['start_frame']) and self.end <= hold and release <= self.after
+        # At 80 ms per frame, the last part of a quotation can fit inside a
+        # taper even when no longer full-strength window fits before narration.
+        covered = self.end <= hold or (allow_tapered_tail and self.end <= min(hold+FRAME,release))
+        return self.valid_start(schedule['start_frame']) and covered and release <= self.after
 
 
 def measurements(text, quotation, primary, secondary, *, samples=None):
     """Use one complete timed transcript and confirm the local edges independently."""
     left, right = quotation
-    prefix, target, suffix = (words(part) for part in (text[:left],text[left+1:right-1],text[right:]))
+    parts = text[:left],text[left+1:right-1],text[right:]
+    groups = primary_word_groups(parts,[row['word'] for row in primary])
+    if groups is None:
+        return None
+    prefix, target, suffix = groups
     expected = prefix + target + suffix
     begin, end = len(prefix), len(prefix)+len(target)
-    if [row['word'] for row in primary] != expected:
-        return None
 
     labels = [row['word'] for row in secondary]
     if labels[:len(expected)] == expected:
-        start = min(primary[begin]['start'],secondary[begin]['start'])
-        before = max(primary[begin-1]['end'],secondary[begin-1]['end'])
-        other_index = end
+        other_begin, other_end = begin, end
+    elif other_groups := primary_word_groups(parts,labels):
+        other_begin = len(other_groups[0])
+        other_end = other_begin + len(other_groups[1])
     else:
-        tail = target[-3:]
-        edge = tail+suffix[:2]
-        candidates = [i+len(tail) for i in range(len(labels)) if labels[i:i+len(edge)] == edge]
-        if len(candidates) != 1:
+        lead, head = prefix[-2:], target[:3]
+        tail = target[-4:]
+        first = lead + head
+        last = tail + suffix[:2]
+        begins = [i+len(lead) for i in range(len(labels)) if labels[i:i+len(first)] == first]
+        if suffix:
+            ends = [i+len(tail) for i in range(len(labels)) if labels[i:i+len(last)] == last]
+        else:
+            ends = [len(labels)] if labels[-len(tail):] == tail else []
+        if len(begins) != 1 or len(ends) != 1 or begins[0] >= ends[0]:
             return None
-        (other_index,) = candidates
-        before, start = primary[begin-1]['end'],primary[begin]['start']
+        other_begin, other_end = begins[0], ends[0]
 
-    stop = max(primary[end-1]['end'],secondary[other_index-1]['end'])
+    before = max(primary[begin-1]['end'],secondary[other_begin-1]['end'])
+    start = min(primary[begin]['start'],secondary[other_begin]['start'])
+    stop = max(primary[end-1]['end'],secondary[other_end-1]['end'])
     if suffix:
-        after = min(primary[end]['start'],secondary[other_index]['start'])
+        after = min(primary[end]['start'],secondary[other_end]['start'])
     elif samples is not None:
         after = samples/RATE
     else:
@@ -169,7 +205,8 @@ def bind(store, job):
                 directory = Path(saved[field])
                 models.append({'path':str(directory), 'files':{name:fingerprint(directory/name) for name in MODEL_FILES}})
             if models[0]['files']['model.bin'] != models[1]['files']['model.bin']:
-                job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'], 'models':models}
+                job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
+                                              'models':models, 'timing_algorithm':3}
         except OSError:
             return
 
@@ -279,8 +316,9 @@ def render(store, job, unit, clip, synthesize):
     history = []
     reason = 'timing_models_changed'
     schedule = ANCHOR
+    attempts = 4 if multiple else 3
     if verified_models(recipe):
-        for index in range(4 if multiple else 3):
+        for index in range(attempts):
             trial = checkpoint/str(index)
             owned_checkpoint(trial)
             options = {**ordinary, 'instruction':instruction,'frame_guidance':schedule}
@@ -315,8 +353,13 @@ def render(store, job, unit, clip, synthesize):
                 history[-1]['edges_samples'] = asdict(measured[0])
             if index:
                 windows = schedule['windows'] if multiple else [schedule]
-                if all(edges.contains(window) for edges,window in zip(measured,windows,strict=True)):
+                pairs = list(zip(measured,windows,strict=True))
+                if all(edges.contains(window) for edges,window in pairs):
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history}}
+                if (multiple and index == attempts-1
+                        and all(edges.contains(window,allow_tapered_tail=True) for edges,window in pairs)):
+                    return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,
+                                                           'exit_taper_covers_last_word':True}}
             proposal = refine(measured,schedule if index else None,ends_in_quote=ends_in_quote)
             if proposal is None or any(trial['schedule']==proposal for trial in history):
                 reason = 'no_clear_frame_window'
