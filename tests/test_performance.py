@@ -711,6 +711,36 @@ def test_a_narrated_mutter_does_not_direct_another_speakers_line(tmp_path):
     assert plan_source(tmp_path,text,'auto')['performance']['candidates']==0
 
 
+@pytest.mark.parametrize('text',[
+    '“Stay here.” The trees whispered.',
+    'The rain stopped. “Wait for me.” The sea whispered. Then the fog rolled in.',
+    '“Stay here.” The wind murmured. “Let us go.”',
+])
+def test_full_stop_and_new_sentence_keep_a_narrated_sound_outside_the_quote(tmp_path,text):
+    source = tmp_path/'book.md'
+    source.write_text(text)
+    document = inspect(source)
+    old = planner.plan(document, delivery_context=18)
+    current = planner.plan(document)
+    assert old['performance']['candidates'] == 1
+    assert current['performance']['candidates'] == 0
+    assert [unit['text'] for unit in old['utterances']] == [unit['text'] for unit in current['utterances']]
+
+
+@pytest.mark.parametrize('text',[
+    '“Stay here,” the guard whispered.',
+    '“Are you sure?” Alice whispered.',
+    'She whispered, “Stay here.”',
+    '“Wait here...” Alice whispered.',
+    '“Stay here.” she whispered.',
+])
+def test_a_reporting_clause_still_owns_its_dialogue(tmp_path,text):
+    result = plan_source(tmp_path,text,'auto')
+    unit, = result['utterances']
+    assert unit['performance_candidate']['recipe'] == 'whisper'
+    assert unit['performance_candidate']['speech'] == text
+
+
 @pytest.mark.parametrize(('text','actor','recipe'),[
     ('“Wait until the light goes out,” whispered the night watchman.', 'the night watchman', 'whisper'),
     ('The night watchman whispered, “Wait until the light goes out.”', 'The night watchman', 'whisper'),

@@ -1,3 +1,7 @@
+# hamr 0.4.5
+
+Hamr respects a sentence boundary after a finished quotation. In `“Stay here.” The trees whispered.` the second sentence stays ordinary narration. In `“Stay here,” she whispered.` the reporting clause still directs the spoken line. This applies to new books across text, Markdown, EPUB, and searchable and scanned PDF. Existing jobs retain their saved reading.
+
 # hamr 0.4.4
 
 - Dialogue attributed “in a hushed tone” or introduced by “she lowered her voice” can use a softer speaking voice. Explicit whisper cues direct a whisper. The reporting clause or immediate setup must belong to the same turn.

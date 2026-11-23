@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 18
+CONTEXT_VERSION = 19
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -196,10 +196,22 @@ def continuing_quotation(match):
             and re.match(r'[a-z]',second[1:].lstrip()))
 
 
-def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION, allow_colon=False):
+def reporting_clause_continues_quote(match, context_version):
+    if context_version < 19 or match.start('actor') < match.start('quote'):
+        return True
+    quoted = match['quote'][1:-1].rstrip()
+    after = match.string[match.end('quote'):].lstrip()
+    # A full stop and a capitalized new clause end the preceding speech.
+    return not (quoted.endswith('.') and not quoted.endswith('...')
+                and after and after[0].isupper())
+
+
+def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION, allow_colon=False,
+                         context_version=1):
     # A recognized manner following the speaker belongs to the reporting verb.
     if postposed is not None and (match:=postposed.fullmatch(source)):
-        if not match.groupdict().get('continuation') or continuing_quotation(match):
+        if (reporting_clause_continues_quote(match, context_version)
+                and (not match.groupdict().get('continuation') or continuing_quotation(match))):
             return match
     after = re.fullmatch(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<actor>'+actor+r')'+
                          r'\s+(?P<verb>'+cue_pattern+r')\s*[.!?]', source)
@@ -208,20 +220,22 @@ def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTI
     separator = r'(?:,|\s*:)' if allow_colon else ','
     before = re.fullmatch(r'(?P<actor>'+actor+r')\s+(?P<verb>'+cue_pattern+
                           r')'+separator+r'\s*(?P<quote>'+QUOTATION+r')\s*[.!?]?', source)
-    if simple:=after or inverted or before:return simple
+    if simple:=after or inverted or before:
+        return simple if reporting_clause_continues_quote(simple, context_version) else None
     opening=r'(?P<quote>'+QUOTATION+r')\s+'
     ending=r',\s*(?P<continuation>'+QUOTATION+r')\s*[.!?]?'
     interrupted = re.fullmatch(opening+r'(?P<actor>'+actor+r')\s+(?P<verb>'+cue_pattern+r')'+ending,source)
     if not interrupted:
         interrupted=re.fullmatch(opening+r'(?P<inverted>(?P<verb>'+cue_pattern+r')\s+(?P<actor>'+actor+r'))'+ending,source)
-    if (interrupted and interrupted['quote'][-2] in ',.!?'
+    if (interrupted and reporting_clause_continues_quote(interrupted, context_version)
+            and interrupted['quote'][-2] in ',.!?'
             and re.match(r'[a-z]',interrupted['continuation'][1:].lstrip())):
         return interrupted
     return None
 
 
 def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION,
-                         allow_interrupted=False, allow_colon=False):
+                         allow_interrupted=False, allow_colon=False, context_version=1):
     """Find one attributed turn with at most one narrator sentence on each side."""
     if len(source)>480:
         return None
@@ -238,7 +252,8 @@ def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTI
         if part['end']<quotes[-1].end():
             continue
         stop=len(source[:part['end']].rstrip())
-        if candidate:=dialogue_attribution(source[start:stop],cue_pattern,postposed,actor=actor,allow_colon=allow_colon):
+        if candidate:=dialogue_attribution(source[start:stop],cue_pattern,postposed,actor=actor,
+                                            allow_colon=allow_colon,context_version=context_version):
             if interrupted and (not candidate.groupdict().get('continuation')
                                 or quotes[0][0][0]!=quotes[-1][0][0]):
                 return None
@@ -252,7 +267,7 @@ def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTI
     return None
 
 
-def attributed_turn_continuation(source, cue_pattern, postposed, *, actor):
+def attributed_turn_continuation(source, cue_pattern, postposed, *, actor, context_version=1):
     """Recognize a second complete quotation in the same imported paragraph."""
     quotes = list(re.finditer(QUOTATION, source))
     if len(quotes) != 2:
@@ -262,7 +277,8 @@ def attributed_turn_continuation(source, cue_pattern, postposed, *, actor):
             or second[0][-2] not in '.!?' or source[second.end():].strip() not in ('', '.', '!', '?')
             or not re.fullmatch(r'[^\n]+\.\s+', source[first.end():second.start()])):
         return None
-    reporting = dialogue_attribution(source[:second.start()].rstrip(), cue_pattern, postposed, actor=actor)
+    reporting = dialogue_attribution(source[:second.start()].rstrip(), cue_pattern, postposed,
+                                     actor=actor, context_version=context_version)
     if reporting and reporting.start('quote') == 0:
         return reporting, second.span()
     return None
@@ -281,7 +297,8 @@ def native_quote_flow(left, right, config, context_version=None):
     version = context_version or CONTEXT_VERSION
     verbs, cues, postposed = attribution_rules(registry, version, custom)
     source = left.source + ' ' + right.source
-    turn = attributed_turn_continuation(source, cues, postposed, actor=attribution_actor(version))
+    turn = attributed_turn_continuation(source, cues, postposed, actor=attribution_actor(version),
+                                         context_version=version)
     if turn and (kind := verbs.get(attribution_phrase(turn[0]))) and not registry['directions'][kind].get('progression'):
         if left.locator.get('tagged_paragraph') is not None:
             return 'tagged_pdf_quotation'
@@ -588,8 +605,10 @@ def pdf_inline_event_continues(left, right, context_version, config=None):
     if version >= 14:
         custom = attribution_preferences(config or {}, registry['directions'])
         verbs,cues,postposed = attribution_rules(registry,version,custom)
-        match = dialogue_attribution(source,cues,postposed,actor=actor,allow_colon=version>=16)
-        if not match and (embedded:=embedded_attribution(source,cues,postposed,actor=actor,allow_colon=version>=16)):
+        match = dialogue_attribution(source,cues,postposed,actor=actor,
+                                     allow_colon=version>=16,context_version=version)
+        if not match and (embedded:=embedded_attribution(source,cues,postposed,actor=actor,
+                                                         allow_colon=version>=16,context_version=version)):
             match,offset,_ = embedded
         else:
             offset = 0
@@ -949,23 +968,28 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         if len(blocks)==2 and not joined_pdf:
             next_source=quotation_text(delivery_text(blocks[1], full_delivery),version)
             if STANDALONE.fullmatch(source) and (
-                    event_attribution:=dialogue_attribution(next_source,cue_pattern,postposed,actor=actor)):
+                    event_attribution:=dialogue_attribution(next_source,cue_pattern,postposed,actor=actor,
+                                                            context_version=version)):
                 event = source, 'before', blocks[0], 0, ''
             elif STANDALONE.fullmatch(next_source) and (
-                    event_attribution:=dialogue_attribution(source,cue_pattern,postposed,actor=actor)):
+                    event_attribution:=dialogue_attribution(source,cue_pattern,postposed,actor=actor,
+                                                            context_version=version)):
                 event = next_source, 'after', blocks[1], 0, ''
-        elif (match:=dialogue_attribution(source,cue_pattern,postposed,actor=actor,allow_colon=allow_colon)) and (
+        elif (match:=dialogue_attribution(source,cue_pattern,postposed,actor=actor,allow_colon=allow_colon,
+                                          context_version=version)) and (
                 kind:=verbs.get(attribution_phrase(match))):
             direction = kind, match
         elif version >= 10 and (len(blocks) == 1 or unit.get('delivery_boundary') == 'tagged_pdf_quotation') and (
-                turn := attributed_turn_continuation(source, cue_pattern, postposed, actor=actor)) and (
+                turn := attributed_turn_continuation(source, cue_pattern, postposed, actor=actor,
+                                                       context_version=version)) and (
                 kind := verbs.get(attribution_phrase(turn[0]))):
             direction = kind, turn[0]
             following_quote = turn[1]
         elif inline_rules and (inline_event:=inline_vocal_event(source,neutral,sources[0],inline_rules,actor,version)):
             pass
         elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed,actor=actor,
-                                                            allow_interrupted=version>=12,allow_colon=allow_colon)) and (
+                                                            allow_interrupted=version>=12,allow_colon=allow_colon,
+                                                            context_version=version)) and (
                 kind:=verbs.get(attribution_phrase(owned[0]))):
             direction = kind, owned[0]
             surrounding = owned[1:]
@@ -976,10 +1000,11 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 registry['context']['emphasis'],actor)):
             pass
         elif (match:=LEADING.fullmatch(source)) and (
-                event_attribution:=dialogue_attribution(match['dialogue'],cue_pattern,postposed,actor=actor)):
+                event_attribution:=dialogue_attribution(match['dialogue'],cue_pattern,postposed,actor=actor,
+                                                        context_version=version)):
             event = match['cue'], 'before', blocks[0], match.start('cue'), ''
         elif (match:=TRAILING.fullmatch(source)) and (event_attribution:=dialogue_attribution(
-                match['dialogue']+(match['stop'] or ''),cue_pattern,postposed,actor=actor)):
+                match['dialogue']+(match['stop'] or ''),cue_pattern,postposed,actor=actor,context_version=version)):
             event = match['cue'], 'after', blocks[0], match.start('cue'), ''
         elif (speaker:=SPEAKER.fullmatch(source)) and (match:=LEADING.fullmatch(speaker['line'])):
             index=source_order[blocks[0].id]
