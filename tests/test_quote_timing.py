@@ -130,7 +130,7 @@ def test_opening_ordinary_anchor_is_reused_or_corrected(tmp_path,monkeypatch,qui
     text = '“Wait by the lamp,” she whispered. The rain stopped. No one came.'
     unit = {'text':text,'quote_timing':quote_timing.scope(text,text,25)}
     store = Store(tmp_path/'state')
-    job = {'id':'abc123','backend':{},'quote_timing_models':{'timing_algorithm':10}}
+    job = {'id':'abc123','backend':{},'quote_timing_models':{'timing_algorithm':11}}
     store.path(job).mkdir(exist_ok=True)
     measures = quote_timing.Edges(0,0,3*frame,5*frame)
     tail = bytes(4*frame)+(200).to_bytes(2,'little')*(2*frame)
@@ -170,6 +170,32 @@ def test_opening_ordinary_anchor_is_reused_or_corrected(tmp_path,monkeypatch,qui
     replayed,receipt = quote_timing.render(store,job,unit,'a'*64,synthesize)
     assert not requests and replayed==audio
     assert all(trial['checkpoint_reused'] for trial in receipt['quote_timing']['trials'])
+
+
+def test_opening_anchor_does_not_spend_the_contrast_retry_on_timing(tmp_path,monkeypatch):
+    frame = quote_timing.FRAME
+    text = '“Wait by the lamp,” she whispered. The rain stopped. No one came.'
+    unit = {'text':text,'quote_timing':quote_timing.scope(text,text,25)}
+    store = Store(tmp_path/'state')
+    job = {'id':'abc123','backend':{},'quote_timing_models':{'timing_algorithm':11}}
+    store.path(job).mkdir(exist_ok=True)
+    samples = (100).to_bytes(2,'little')*(8*frame)
+    calls = []
+
+    def synthesize(text,options):
+        calls.append(options)
+        return samples,{'sha256':digest(samples),'samples':len(samples)//2}
+
+    def measure(recipe,trial,*args):
+        end = (2+int(trial.name))*frame
+        return [quote_timing.Edges(0,0,end,end+2*frame)],[]
+
+    monkeypatch.setattr(quote_timing,'verified_models',lambda _:True)
+    monkeypatch.setattr(quote_timing,'measure_take',measure)
+    _,receipt = quote_timing.render(store,job,unit,'a'*64,synthesize)
+    assert len(calls)==3 and calls[0]=={'seed':42}
+    assert [options['frame_guidance']['end_frame'] for options in calls[1:]]==[2,3]
+    assert receipt['quote_timing']['selected']=='ordinary'
 
 
 @pytest.mark.parametrize('window,accepted',[(3,True),(4,False)])

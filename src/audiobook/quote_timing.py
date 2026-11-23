@@ -363,7 +363,7 @@ def bind(store, job):
                 has_opening = any(
                     target.get('version')==OPENING_VERSION and 'quotation' in target
                     for unit in job['plan']['utterances'] if (target:=unit.get('quote_timing')))
-                revision = 10 if has_opening else 9 if supports_inline_whisper(job['backend']) else 7
+                revision = 11 if has_opening else 9 if supports_inline_whisper(job['backend']) else 7
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
                                               'models':models, 'timing_algorithm':revision}
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
@@ -850,6 +850,10 @@ def render(store, job, unit, clip, synthesize):
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,
                         **({'exit_taper_covers_last_word':True} if tapered else {}),**decoder}}
             if index==attempts:
+                break
+            if ordinary_anchor and recipe['timing_algorithm']>=11 and index>=attempts-2:
+                # Reserve the extra take for a measured contrast correction
+                # after containment. Keep the ordinary timing retry budget.
                 break
             if index==0 and overlaps and recipe.get('timing_algorithm',3)>=6:
                 # Timing can move when the seed changes. Measure the alternate
