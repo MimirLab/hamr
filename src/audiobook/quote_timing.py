@@ -23,6 +23,7 @@ ANCHOR = {'start_frame': 0, 'end_frame': 1, 'scale': 0, 'base_scale': 0}
 WORKER = Path(__file__).with_name('timing_worker.py')
 MODEL_FILES = ('model.bin', 'config.json', 'tokenizer.json', 'vocabulary.txt')
 WORD = re.compile(r"[a-z]+(?:'[a-z]+)?|\d+")
+QUIET_QUOTE_POWER = 0.5
 
 
 def owned_whisper(text, context_version):
@@ -348,8 +349,9 @@ def bind(store, job):
                 directory = Path(saved[field])
                 models.append({'path':str(directory), 'files':{name:fingerprint(directory/name) for name in MODEL_FILES}})
             if models[0]['files']['model.bin'] != models[1]['files']['model.bin']:
+                revision = 8 if supports_inline_whisper(job['backend']) else 7
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
-                                              'models':models, 'timing_algorithm':7}
+                                              'models':models, 'timing_algorithm':revision}
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
                     try:
                         _, identity = asr_fluid.observer_identity()
@@ -523,29 +525,56 @@ def one_frame_taper(measured, schedule):
     return {**schedule,'windows':[ *windows[:index], window, *windows[index+1:]]}
 
 
+def supports_inline_whisper(backend):
+    return (performance.supports_quote_guidance(backend)
+            and performance.supports_narration_conditioning(backend)
+            and performance.supports_frame_guidance(backend,multiple=True))
+
+
+def checkpoint_take(trial, text, options, synthesize, fault_stage, *, identity=None):
+    owned_checkpoint(trial)
+    identity = options if identity is None else identity
+    if (saved:=read_take(trial,identity)) is not None:
+        return saved,True
+    data,receipt = synthesize(text,options)
+    atomic(trial/'audio.pcm',data)
+    writejson(trial/'receipt.json',{'request':identity,'audio':receipt})
+    fault(fault_stage)
+    return (data,receipt),False
+
+
+def verified_edges(job, trial, receipt, text, quotations, target):
+    try:
+        return measure_take(job['quote_timing_models'],trial,receipt,text,quotations,
+                            target.get('source_spellings'))
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
+        return [],[]
+
+
+def maximum_quote_power(data, measured):
+    """Measure the strongest quoted interval relative to opening narration."""
+    import numpy as np
+    pcm = np.frombuffer(data,dtype='<i2').astype('float64')
+    opening = pcm[:measured[0].before]
+    opening_power = np.mean(opening**2) if opening.size else 0
+    if opening_power>0 and all(0<=edge.start<edge.end<=len(pcm) for edge in measured):
+        return max(float(np.mean(pcm[edge.start:edge.end]**2)/opening_power) for edge in measured)
+    return None
+
+
 def decoder_take(trial, job, text, ordinary, target, quotations, instruction, synthesize):
     """Try one causal take and verify its actual speech and emitted frame intervals."""
-    import numpy as np
-
     scopes = [[len(text[:left+1].encode('utf-8')),len(text[:right-1].encode('utf-8'))]
               for left,right in quotations]
     options = {**ordinary,'instruction':instruction,'quote_guidance':scopes}
     if performance.supports_narration_conditioning(job['backend']):
         options['narration_instruction'] = NARRATION_INSTRUCTION
-    owned_checkpoint(trial)
-    result = read_take(trial,options)
-    reused = result is not None
-    if not reused:
-        try:
-            result = synthesize(text,options)
-        except Error as exc:
-            if exc.code not in ('quote_guidance_unavailable','quote_guidance_unconfirmed'):
-                raise
-            return None,{'reason':exc.code}
-        data,receipt = result
-        atomic(trial/'audio.pcm',data)
-        writejson(trial/'receipt.json',{'request':options,'audio':receipt})
-        fault('after_quote_decoder')
+    try:
+        result,reused = checkpoint_take(trial,text,options,synthesize,'after_quote_decoder')
+    except Error as exc:
+        if exc.code not in ('quote_guidance_unavailable','quote_guidance_unconfirmed'):
+            raise
+        return None,{'reason':exc.code}
     data,receipt = result
     report = {'pcm_sha256':receipt['sha256'],'checkpoint_reused':reused}
     trace = receipt.get('quote_guidance') or {}
@@ -553,26 +582,110 @@ def decoder_take(trial, job, text, ordinary, target, quotations, instruction, sy
     report['windows'] = windows
     if trace.get('scopes')!=scopes or [w['scope'] for w in windows]!=list(range(1,len(scopes)+1)):
         return None,{**report,'reason':'guidance_scope_mismatch'}
-    try:
-        measured, corroborated = measure_take(job['quote_timing_models'],trial,receipt,text,quotations,
-                                             target.get('source_spellings'))
-    except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
-        measured, corroborated = [], []
+    measured,corroborated = verified_edges(job,trial,receipt,text,quotations,target)
     if len(measured)!=len(windows) or not all(measured):
         return None,{**report,'reason':'words_or_timing_uncertain'}
     report['quote_edges_samples'] = [asdict(edges) for edges in measured]
+    report['maximum_quote_power_ratio'] = contrast = maximum_quote_power(data,measured)
     if corroborated:
         report['fluid_corroborated_quotes'] = corroborated
     if not all(edges.contains(window) for edges,window in zip(measured,windows,strict=True)):
         return None,{**report,'reason':'guidance_outside_quote'}
     # A scoped whisper may be voiced, but a quote louder than the reading
     # around it is a poor automatic substitution. Keep the timed fallback.
-    pcm = np.frombuffer(data,dtype='<i2').astype('float64')
-    opening = pcm[:measured[0].before]
-    opening_power = np.mean(opening**2) if opening.size else 0
-    if opening_power<=0 or any(opening_power < np.mean(pcm[edge.start:edge.end]**2) for edge in measured):
+    if contrast is None or contrast>1:
         return None,{**report,'reason':'whisper_louder_than_opening'}
     return result,report
+
+
+def inline_request(text, quotations):
+    """Insert engine cues and keep their UTF-8 scopes separate from spoken offsets."""
+    parts, scopes = [], []
+    cursor = size = 0
+    for left,right in quotations:
+        lead = text[cursor:left+1]
+        line = '(whispering) '+text[left+1:right-1]
+        start = size + len(lead.encode('utf-8'))
+        size = start + len(line.encode('utf-8'))
+        scopes.append([start,size])
+        parts.extend((lead,line))
+        cursor = right-1
+    return ''.join([*parts,text[cursor:]]),scopes
+
+
+def inline_schedule(fragments, measured, *, terminal):
+    """Calibrate one continuous window per quote from measured words and causal frames."""
+    scopes = {}
+    for window in fragments:
+        pair = scopes.setdefault(window['scope'],[window['start_frame'],window['end_frame']])
+        pair[1] = window['end_frame']
+    if list(scopes)!=list(range(1,len(measured)+1)):
+        return None
+    windows = []
+    for index,edge in enumerate(measured,1):
+        start,end = scopes[index]
+        if not edge.valid_start(start):
+            start = max((edge.before+FRAME-1)//FRAME,edge.start//FRAME)
+        end = min(edge.after//FRAME,max((edge.end+FRAME-1)//FRAME,end))
+        if terminal and index==len(measured):
+            end = 'speech'
+        window = {'start_frame':start,'end_frame':end,'scale':1.5,'release_frames':0}
+        if (end!='speech' and end<=start) or not edge.contains(window):
+            return None
+        if windows and windows[-1]['end_frame']>start:
+            return None
+        windows.append(window)
+    return performance.validated_frame_guidance({'windows':windows,'base_scale':0})
+
+
+def inline_take(checkpoint, job, text, ordinary, target, quotations, instruction, synthesize):
+    """Try semantic cues and one independently verified adjustment of their timing."""
+    marked,scopes = inline_request(text,quotations)
+    common = {**ordinary,'instruction':instruction,'narration_instruction':NARRATION_INSTRUCTION}
+    options = {**common,'quote_guidance':scopes}
+    trials = []
+    for index in range(2):
+        trial = checkpoint/f'inline-{index}'
+        try:
+            result,reused = checkpoint_take(trial,marked,options,synthesize,'after_quote_inline',
+                                            identity={'text':marked,**options})
+        except Error as exc:
+            if exc.code not in ('quote_guidance_unavailable','quote_guidance_unconfirmed',
+                                'frame_guidance_unreached','frame_guidance_unavailable',
+                                'frame_guidance_unconfirmed','speech_input_limit'):
+                raise
+            trials.append({'reason':exc.code})
+            break
+        data,receipt = result
+        trace = receipt.get('quote_guidance' if index==0 else 'frame_guidance') or {}
+        windows = trace.get('windows',[])
+        report = {'pcm_sha256':receipt['sha256'],'checkpoint_reused':reused,'windows':windows}
+        trials.append(report)
+        if index==0 and trace.get('scopes')!=scopes:
+            report['reason'] = 'guidance_scope_mismatch'
+            break
+        measured, corroborated = verified_edges(job,trial,receipt,text,quotations,target)
+        if not windows or len(measured)!=len(quotations) or not all(measured):
+            report['reason'] = 'words_or_timing_uncertain'
+            break
+        report['quote_edges_samples'] = [asdict(edge) for edge in measured]
+        if corroborated:
+            report['fluid_corroborated_quotes'] = corroborated
+        report['maximum_quote_power_ratio'] = contrast = maximum_quote_power(data,measured)
+        if contrast is None or contrast>QUIET_QUOTE_POWER:
+            report['reason'] = 'insufficient_contrast'
+            break
+        if (len(windows)==len(quotations) and (index or
+                [window['scope'] for window in windows]==list(range(1,len(quotations)+1)))
+                and all(edge.contains(window) for edge,window in zip(measured,windows,strict=True))):
+            return result,trials
+        report['reason'] = 'guidance_outside_quote'
+        if index==0:
+            terminal = not words(text[quotations[-1][1]:])
+            if not (schedule:=inline_schedule(windows,measured,terminal=terminal)):
+                break
+            options = {**common,'frame_guidance':schedule}
+    return None,trials
 
 
 def render(store, job, unit, clip, synthesize):
@@ -601,6 +714,16 @@ def render(store, job, unit, clip, synthesize):
             decoded, attempt = decoder_take(checkpoint/'decoder',job,text,ordinary,target,quotations,
                                             instruction,synthesize)
             decoder['decoder_attempt'] = attempt
+            power = attempt.get('maximum_quote_power_ratio')
+            if (recipe.get('timing_algorithm',3)>=8 and supports_inline_whisper(job['backend'])
+                    and attempt.get('reason')!='quote_guidance_unavailable'
+                    and (decoded is None or power is None or power>QUIET_QUOTE_POWER)):
+                inline, trials = inline_take(checkpoint,job,text,ordinary,target,quotations,instruction,synthesize)
+                decoder['inline_attempts'] = trials
+                if inline is not None:
+                    data, receipt = inline
+                    return data,{**receipt,'quote_timing':{**target,'selected':'directed',
+                        'controller':'inline','trials':[],**decoder}}
             if decoded is not None:
                 data,receipt = decoded
                 return data,{**receipt,'quote_timing':{**target,'selected':'directed','controller':'decoder',

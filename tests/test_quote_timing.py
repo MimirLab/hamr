@@ -113,6 +113,73 @@ def test_ordinary_timing_uses_compiled_offsets_after_word_expansion(tmp_path):
     assert quote_timing.scope(text, different_quotes, 22) is None
 
 
+def test_inline_cues_keep_exact_words_and_utf8_scope():
+    text = 'The door creaked. “Écoute,” she whispered. “Wait here.”'
+    target = quote_timing.scope(text,text,24)
+    marked,scopes = quote_timing.inline_request(text,target['quotations'])
+    assert marked.replace('(whispering) ','')==text
+    packed = marked.encode('utf-8')
+    assert [packed[start:end].decode('utf-8') for start,end in scopes]==[
+        '(whispering) Écoute,','(whispering) Wait here.',
+    ]
+
+
+def test_inline_calibration_recovers_fragmented_scope_after_interruption(tmp_path,monkeypatch):
+    frame = quote_timing.FRAME
+    text = 'The hall was empty. “Keep the lamp low,” he whispered. “We have to leave before dawn.”'
+    unit = {'text':text,'quote_timing':quote_timing.scope(text,text,24)}
+    store = Store(tmp_path/'state')
+    job = {'id':'abc123','quote_timing_models':{'timing_algorithm':8},
+           'backend':{'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY,
+                      'frame_guidance_windows':performance.FRAME_WINDOWS_CAPABILITY,
+                      'quote_guidance':performance.QUOTE_GUIDANCE_VERSION,
+                      'narration_conditioning':performance.NARRATION_CONDITIONING_VERSION}}
+    store.path(job).mkdir(exist_ok=True)
+    loud = (800).to_bytes(2,'little')*(12*frame)
+    soft = loud[:2*frame]+(200).to_bytes(2,'little')*(11*frame)
+    edges = [quote_timing.Edges(frame,2*frame,5*frame,5*frame),
+             quote_timing.Edges(8*frame+1,10*frame,11*frame,12*frame)]
+    calls = []
+
+    def speak(delivery,options):
+        calls.append(delivery)
+        pcm = soft if '(whispering)' in delivery else loud
+        receipt = {'sha256':digest(pcm),'samples':len(pcm)//2}
+        if spans:=options.get('quote_guidance'):
+            windows = [{'scope':1,'start_frame':1,'end_frame':5,'release_frames':0},
+                       {'scope':2,'start_frame':9,'end_frame':11,'release_frames':0}]
+            if pcm==soft:
+                windows[0]['end_frame'] = 6
+                windows[1]['start_frame'] = 8
+                windows[1]['end_frame'] = 9
+                windows.append({'scope':2,'start_frame':10,'end_frame':12,'release_frames':0})
+            receipt['quote_guidance'] = {'scopes':spans,'generated_frames':12,'windows':windows}
+        if schedule:=options.get('frame_guidance'):
+            assert [(row['start_frame'],row['end_frame']) for row in schedule['windows']]==[(1,5),(10,'speech')]
+            receipt['frame_guidance'] = schedule
+        return pcm,receipt
+
+    def measured(recipe,trial,receipt,spoken,quotes,spellings):
+        assert spoken==text
+        return edges,[]
+
+    def interrupt(stage):
+        if stage=='after_quote_inline':
+            raise InterruptedError
+
+    monkeypatch.setattr(quote_timing,'verified_models',lambda _:True)
+    monkeypatch.setattr(quote_timing,'measure_take',measured)
+    monkeypatch.setattr(quote_timing,'fault',interrupt)
+    with pytest.raises(InterruptedError):
+        quote_timing.render(store,job,unit,'a'*64,speak)
+    monkeypatch.setattr(quote_timing,'fault',lambda stage:None)
+    data,receipt = quote_timing.render(store,job,unit,'a'*64,speak)
+    report = receipt['quote_timing']
+    assert report['selected']=='directed' and report['controller']=='inline' and data==soft
+    assert report['decoder_attempt']['checkpoint_reused']
+    assert report['inline_attempts'][0]['checkpoint_reused'] and len(calls)==3
+
+
 def test_compiled_spellings_do_not_change_neighboring_or_unlicensed_words():
     expected = ['doctor','hale','said','doctor']
     spellings = [[0,'dr','doctor']]
