@@ -132,6 +132,70 @@ def test_short_taper_can_cover_the_quoted_tail_without_reaching_narration():
     assert not too_early.contains(taper, allow_tapered_tail=True)
 
 
+@pytest.mark.parametrize(('first_end','second_start','wrong_word','eligible'),[
+    (4.34,4.30,False,True), (4.38,4.30,False,True), (4.39,4.30,False,False),
+    (4.34,4.30,True,False), (4.28,4.30,False,False),
+])
+def test_exit_overlap_only_proposes_after_two_complete_transcripts(first_end,second_start,wrong_word,eligible):
+    text = 'He waited by the door. “Keep the lamp low,” he whispered.'
+    span = (text.index('“'),text.index('”')+1)
+    labels = quote_timing.words(text)
+    primary = [{'word':word,'start':index*.4,'end':index*.4+.2} for index,word in enumerate(labels)]
+    primary[5].update(start=2.60,end=2.82)
+    primary[6].update(start=2.85,end=3.08)
+    primary[7].update(start=3.20,end=3.68)
+    primary[8].update(start=3.98,end=first_end)
+    primary[9].update(start=4.48,end=4.55)
+    primary[10].update(start=4.56,end=4.80)
+    secondary = [dict(row) for row in primary]
+    secondary[8]['end'] = 4.24
+    secondary[9]['start'] = second_start
+    if wrong_word:
+        secondary[10]['word'] = 'shouted'
+    hint = quote_timing.exit_overlap(text,span,primary,secondary,120000)
+    assert bool(hint)==eligible
+    if hint:
+        assert hint.proposal()['end_frame']==54
+        assert not hint.proposal()['release_frames']
+        assert quote_timing.measurements(text,span,primary,secondary,samples=120000) is None
+
+
+@pytest.mark.parametrize('algorithm',[5,6])
+@pytest.mark.parametrize(('verified_later','selected'),[(True,'directed'),(False,'ordinary')])
+def test_render_uses_overlap_only_to_propose_a_new_take(tmp_path,monkeypatch,algorithm,verified_later,selected):
+    text = 'He waited by the door. “Keep the lamp low,” he whispered.'
+    store = Store(tmp_path/'home')
+    job = {'id':'af23456789012345','quote_timing_models':{'timing_algorithm':algorithm}}
+    store.path(job).mkdir()
+    unit = {'text':text,'quote_timing':{'quotation':(text.index('“'),text.index('”')+1)}}
+    requests = []
+    frame = quote_timing.FRAME
+    valid = quote_timing.Edges(frame,2*frame,5*frame,6*frame)
+
+    def render(_,options):
+        requests.append(options)
+        pcm = bytes([len(requests),0])*19200
+        return pcm, {'sha256':digest(pcm),'samples':19200}
+
+    monkeypatch.setattr(quote_timing,'verified_models',lambda _:True)
+    monkeypatch.setattr(quote_timing,'timed_transcripts',lambda *args:([{}],[{}]))
+    monkeypatch.setattr(quote_timing,'exit_overlap',
+                        lambda *args:quote_timing.ExitOverlap(frame,2*frame,5*frame+1,5*frame))
+    monkeypatch.setattr(quote_timing,'measure_take',
+                        lambda *args:([valid if verified_later and len(requests)>1 else None],[]))
+    _, receipt = quote_timing.render(store,job,unit,'a'*64,render)
+    outcome = receipt['quote_timing']
+    assert outcome['selected']==selected
+    assert len(outcome['trials'])==(3 if algorithm==6 else 2)
+    assert outcome['trials'][0]['edges_samples'] is None
+    assert outcome['trials'][0]['exit_overlap_proposals']['0']['last_end']==5*frame+1
+    assert requests[1]['seed']==(43 if algorithm==6 else 42)
+    assert (requests[1]['frame_guidance']==quote_timing.ANCHOR)==(algorithm==6)
+    assert ('frame_guidance' in requests[-1])==verified_later
+    if not verified_later:
+        assert requests[-1] == {'seed':42}
+
+
 @pytest.mark.parametrize(('algorithm','safe_release','selected','directed_attempts'),[
     (3, True, 'ordinary', 4), (4, True, 'directed', 5), (4, False, 'ordinary', 5),
 ])

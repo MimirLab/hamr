@@ -193,6 +193,48 @@ class Edges:
         return self.valid_start(schedule['start_frame']) and covered and release <= self.after
 
 
+@dataclass(frozen=True)
+class ExitOverlap:
+    before: int
+    start: int
+    last_end: int
+    next_start: int
+
+    def proposal(self):
+        start = max((self.before+FRAME-1)//FRAME,self.start//FRAME)
+        # Snap the midpoint of the two estimates to the nearest frame. The
+        # next take must still establish an independent, measurable exit.
+        stop = (self.last_end+self.next_start+FRAME)//(2*FRAME)
+        if self.before <= start*FRAME <= self.start+FRAME and start < stop <= 1500:
+            return performance.validated_frame_guidance({'start_frame':start,'end_frame':stop,'scale':1.5})
+        return None
+
+
+def exit_overlap(text, quotation, primary, secondary, samples):
+    """Find a one-frame exit disagreement after two complete free transcripts."""
+    left, right = quotation
+    parts = text[:left],text[left+1:right-1],text[right:]
+    intervals = []
+    for rows in (primary,secondary):
+        groups = primary_word_groups(parts,[row['word'] for row in rows])
+        if groups is None:
+            return None
+        prefix, quoted, suffix = groups
+        if not (prefix and quoted and suffix):
+            return None
+        begin, end = len(prefix), len(prefix)+len(quoted)
+        times = (rows[begin-1]['end'],rows[begin]['start'],rows[end-1]['end'],rows[end]['start'])
+        if not (all(isfinite(point) for point in times) and 0<=times[0]<=times[1]<times[2]<=times[3]<=samples/RATE):
+            return None
+        intervals.append(tuple(round(point*RATE) for point in times))
+    first, second = intervals
+    overlap = ExitOverlap(max(first[0],second[0]),min(first[1],second[1]),
+                          max(first[2],second[2]),min(first[3],second[3]))
+    if overlap.before<=overlap.start<overlap.next_start and 0<overlap.last_end-overlap.next_start<=FRAME:
+        return overlap
+    return None
+
+
 def measurements(text, quotation, primary, secondary, *, samples=None):
     """Use one complete timed transcript and confirm the local edges independently."""
     left, right = quotation
@@ -304,7 +346,7 @@ def bind(store, job):
                 models.append({'path':str(directory), 'files':{name:fingerprint(directory/name) for name in MODEL_FILES}})
             if models[0]['files']['model.bin'] != models[1]['files']['model.bin']:
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
-                                              'models':models, 'timing_algorithm':4}
+                                              'models':models, 'timing_algorithm':6}
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
                     try:
                         _, identity = asr_fluid.observer_identity()
@@ -398,13 +440,21 @@ def observe_fluid(recipe, path, receipt):
     return None
 
 
-def measure_take(recipe, trial, receipt, text, quotations, spellings):
+def timed_transcripts(recipe, trial, receipt, text, spellings):
     observations = observe(recipe,trial,receipt)
     if not observations:
+        return []
+    expected = words(text)
+    return [observation_spellings(rows,expected,spellings) for rows in observations]
+
+
+def measure_take(recipe, trial, receipt, text, quotations, spellings):
+    transcripts = timed_transcripts(recipe,trial,receipt,text,spellings)
+    if not transcripts:
         return [], []
     samples = receipt['samples']
     expected = words(text)
-    primary,secondary = [observation_spellings(rows,expected,spellings) for rows in observations]
+    primary,secondary = transcripts
     measured = [measurements(text,span,primary,secondary,samples=samples) for span in quotations]
     corroborated = []
     if not all(measured) and recipe.get('fluid') and primary_word_groups((text,),[row['word'] for row in primary]):
@@ -421,13 +471,20 @@ def measure_take(recipe, trial, receipt, text, quotations, spellings):
     return measured,corroborated
 
 
-def refine(measured, schedule, *, ends_in_quote=False):
+def refine(measured, schedule, *, ends_in_quote=False, overlaps=None):
+    overlaps = overlaps or {}
     if len(measured)==1:
+        if 0 in overlaps:
+            return overlaps[0].proposal()
         return measured[0].proposal(schedule)
     previous = schedule['windows'] if schedule is not None else [None]*len(measured)
     windows = []
-    for edges, prior in zip(measured,previous,strict=True):
-        chosen = prior if prior and edges.contains(prior) else edges.proposal(prior)
+    for index, (edges, prior) in enumerate(zip(measured,previous,strict=True)):
+        overlap = overlaps.get(index)
+        if overlap:
+            chosen = overlap.proposal()
+        else:
+            chosen = prior if prior and edges.contains(prior) else edges.proposal(prior)
         if chosen is None:
             return None
         windows.append({name:value for name,value in chosen.items() if name!='base_scale'})
@@ -478,13 +535,16 @@ def render(store, job, unit, clip, synthesize):
     history = []
     reason = 'timing_models_changed'
     schedule = ANCHOR
+    seed = ordinary['seed']
     attempts = 4 if multiple else 3
     allow_short_taper = multiple and recipe.get('timing_algorithm',3)>=4
+    allow_exit_overlap = recipe.get('timing_algorithm',3)>=5
     if verified_models(recipe):
         for index in range(attempts+allow_short_taper):
             trial = checkpoint/str(index)
             owned_checkpoint(trial)
-            options = {**ordinary, 'instruction':instruction,'frame_guidance':schedule}
+            anchoring = schedule==ANCHOR
+            options = {**ordinary,'seed':seed,'instruction':instruction,'frame_guidance':schedule}
             result = read_take(trial,options)
             reused = result is not None
             if result is None:
@@ -498,24 +558,36 @@ def render(store, job, unit, clip, synthesize):
                 data,receipt = result
                 atomic(trial/'audio.pcm',data)
                 writejson(trial/'receipt.json',{'request':options,'audio':receipt})
-                fault('after_quote_anchor' if index == 0 else 'after_quote_candidate')
+                fault('after_quote_anchor' if anchoring else 'after_quote_candidate')
             data,receipt = result
             history.append({'pcm_sha256':receipt['sha256'],'schedule':schedule,'checkpoint_reused':reused})
+            overlaps = {}
             try:
+                spellings = target.get('source_spellings')
                 measured, corroborated = measure_take(recipe,trial,receipt,text,quotations,
-                                                       target.get('source_spellings'))
+                                                       spellings)
+                if allow_exit_overlap and measured and not all(measured) and index<attempts-1:
+                    missing = [position for position,edges in enumerate(measured) if edges is None]
+                    if len(missing)==1 and (transcripts:=timed_transcripts(recipe,trial,receipt,text,spellings)):
+                        position, = missing
+                        if hint:=exit_overlap(text,quotations[position],*transcripts,receipt['samples']):
+                            overlaps[position] = hint
             except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
                 measured, corroborated = [], []
-            if not measured or not all(measured):
+            if not measured or (not all(measured) and not overlaps):
                 reason = 'words_or_timing_uncertain'
                 break
+            if overlaps:
+                history[-1]['exit_overlap_proposals'] = {str(i):asdict(hint) for i,hint in overlaps.items()}
+            if allow_exit_overlap:
+                history[-1]['seed'] = seed
             if multiple:
-                history[-1]['quote_edges_samples'] = [asdict(edges) for edges in measured]
+                history[-1]['quote_edges_samples'] = [asdict(edges) if edges else None for edges in measured]
             else:
-                history[-1]['edges_samples'] = asdict(measured[0])
+                history[-1]['edges_samples'] = asdict(measured[0]) if measured[0] else None
             if corroborated:
                 history[-1]['fluid_corroborated_quotes'] = corroborated
-            if index:
+            if not anchoring and not overlaps:
                 windows = schedule['windows'] if multiple else [schedule]
                 pairs = list(zip(measured,windows,strict=True))
                 if all(edges.contains(window) for edges,window in pairs):
@@ -526,8 +598,13 @@ def render(store, job, unit, clip, synthesize):
                                                            'exit_taper_covers_last_word':True}}
             if index==attempts:
                 break
+            if index==0 and overlaps and recipe.get('timing_algorithm',3)>=6:
+                # Timing can move when the seed changes. Measure the alternate
+                # seed in ordinary delivery before using it for direction.
+                seed += 1 if seed<2**31-1 else -1
+                continue
             tried = [trial['schedule'] for trial in history]
-            proposal = refine(measured,schedule if index else None,ends_in_quote=ends_in_quote)
+            proposal = refine(measured,None if anchoring else schedule,ends_in_quote=ends_in_quote,overlaps=overlaps)
             if allow_short_taper and index==attempts-1:
                 if proposal is not None and proposal not in tried:
                     break
