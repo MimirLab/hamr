@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "compatible_registry_sha256": [
+    "5dafbc09aceaa011aca0e34bcb4b65458714015882c569e978b52727e6d92bbe",
     "d5a5def411723715e4e674ab5f2c84aac150fc64c45cdea9b502b5156be70da3",
     "428a3bfe182375225c78b64826b927b23bfa43f73eabdeba1cb1b6ee909bd17a",
     "bd17f798eaa725aba03d3e15c9259e2d541bc026c3d8ea02e0c8755d55dc147f",
@@ -74,7 +75,8 @@
     "murmured": {
       "cues": ["murmured", "said under his breath", "said under her breath"],
       "instruction": "Read the quotation low and gently voiced, with clear words in the reference voice. Let the attribution return to the usual narration.",
-      "role_instruction": "Read only the quotation softly, keeping every consonant clear. Read the surrounding lines and attribution in the usual reference narrator voice."
+      "role_instruction": "Read only the quotation softly, keeping every consonant clear. Read the surrounding lines and attribution in the usual reference narrator voice.",
+      "interrupted_turn_instruction": "Quiet, close dialogue in both quotes. Full natural narration for the words between them. Keep the reference voice clear throughout."
     },
     "muttered": {
       "cues": ["muttered"],
@@ -216,6 +218,10 @@
       "murmured": {
         "prepositional": ["in a barely audible voice", "in a barely audible tone"],
         "register_phrases": ["in a low voice", "in a low tone", "in a hushed voice", "in a hushed tone", "in hushed tones"],
+        "register_aliases": ["sotto voce", "in an undertone", "in a quiet voice", "in a quiet tone",
+          "scarcely above a whisper", "barely above a whisper", "hardly above a whisper",
+          "in a voice scarcely above a whisper", "in a voice barely above a whisper",
+          "in a voice hardly above a whisper"],
         "possessive": ["voice barely audible", "words barely audible"]
       }
     },

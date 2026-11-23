@@ -608,6 +608,14 @@ def test_normal_attribution_directs_only_the_owned_sentence(tmp_path,text,recipe
      'in a hushed tone', 'replied', 'murmured'),
     ('The hall was empty. The guard said in hushed tones: “Come this way.”',
      'in hushed tones', 'said', 'murmured'),
+    ('“Come back before dawn,” she said sotto voce.',
+     'sotto voce', 'said', 'murmured'),
+    ('“Come back before dawn,” she said, scarcely above a whisper.',
+     'scarcely above a whisper', 'said', 'murmured'),
+    ('Before anyone moved, the guard said in an undertone: “Leave the gate open.”',
+     'in an undertone', 'said', 'murmured'),
+    ('“Keep the light on,” replied the clerk in a voice barely above a whisper.',
+     'in a voice barely above a whisper', 'replied', 'murmured'),
 ])
 def test_default_attached_voice_description_keeps_the_complete_turn(tmp_path,text,cue,reporting,recipe):
     source=tmp_path/'book.md'
@@ -642,12 +650,47 @@ def test_saved_context_keeps_the_previous_lowered_voice_request(tmp_path):
     assert new['performance_candidate']['synthesis']==new['text']==old['text']
 
 
+def test_saved_context_does_not_pick_up_new_register_vocabulary(tmp_path):
+    source = tmp_path/'book.md'
+    source.write_text('“Come back before dawn,” she said sotto voce.')
+    document = inspect(source)
+    previous, = planner.plan(document,delivery_context=23)['utterances']
+    current, = planner.plan(document)['utterances']
+    assert previous.get('performance_candidate') is None
+    assert current['performance_candidate']['recipe']=='murmured'
+    assert current['text']==previous['text']
+
+
+@pytest.mark.parametrize(('text','cue','recipe'),[
+    ('“Dr. Sinclair,” he said in a voice scarcely above a whisper, “where did you meet my people?”',
+     'in a voice scarcely above a whisper','murmured'),
+])
+def test_attached_register_can_own_both_parts_of_an_interrupted_quote(tmp_path,text,cue,recipe):
+    source = tmp_path/'book.md'
+    source.write_text(text)
+    document = inspect(source)
+    unit, = planner.plan(document)['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['recipe']==recipe and candidate['speech']==candidate['synthesis']
+    assert 'both' in candidate['instruction'].lower()
+    evidence, = candidate['evidence']
+    assert evidence['position']=='between' and text[slice(*evidence['span'])]==cue
+    assert len(evidence['quotation_spans'])==2
+    assert all(text[slice(*bounds)].startswith('“') for bounds in evidence['quotation_spans'])
+    assert all('performance_candidate' not in u for u in planner.plan(document,delivery_context=23)['utterances'])
+
+
 @pytest.mark.parametrize('text',[
     '“I told him to speak in a low voice,” she said.',
     '“Is a hushed tone your best idea?” Ada said.',
     '“Stay here,” she said, as Ada lowered her voice.',
     'Ada lowered her voice. “Wait here,” Lee said.',
     'She did not lower her voice. “Wait here,” she said.',
+    '“The score says sotto voce,” she explained.',
+    '“Wait here,” she said, rather than speak in an undertone.',
+    '“Wait here,” she said. The breeze was scarcely above a whisper.',
+    '“Wait here,” she said to Ada, who answered in an undertone, “I will.”',
+    '“Wait here,” she said she would speak in a whisper, “until everyone is gone.”',
 ])
 def test_register_cues_require_ownership_in_the_default_plan(tmp_path,text):
     assert plan_source(tmp_path,text,'auto')['performance']['candidates']==0

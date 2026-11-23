@@ -12,7 +12,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 23
+CONTEXT_VERSION = 24
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -564,6 +564,9 @@ def voice_description_rules(config, context_version):
     if context_version >= 17:
         prepositional.update({phrase: recipe for recipe, entry in config.items()
                               for phrase in entry.get('register_phrases', ())})
+    if context_version >= 24:
+        prepositional.update({phrase: recipe for recipe, entry in config.items()
+                              for phrase in entry.get('register_aliases', ())})
     introductions = {**prepositional, **{phrase: recipe for recipe, entry in config.items()
                                         for phrase in entry.get('introductions', ())}}
     possessive = {phrase: recipe for recipe, entry in config.items() for phrase in entry['possessive']}
@@ -583,14 +586,31 @@ def voice_description_rules(config, context_version):
         rf'(?:(?:^|,\s+)(?:(?:[Tt]hen|[Aa]t last|[Aa]t length)\s+)?{reporting}|'
         rf'[, ]\s*and\s+(?P<verb_linked>{verbs}))\s*,?\s*'
         rf'(?P<prepositional>{introduction_phrase})(?:\s+to\s+{actor})?\s*[:,]$')
-    return before, after, introductions, prepositional, possessive
+    between = (re.compile(rf'\s*{reporting}\s*,?\s*(?P<prepositional>{voice_phrase})\s*,\s*')
+               if context_version >= 24 else None)
+    return before, after, between, introductions, prepositional, possessive
 
 
 def described_attribution(source, rules):
-    if len(source)>480 or len(quotes := list(re.finditer(QUOTATION, source)))!=1:
+    if len(source)>480:
+        return None
+    quotes = list(re.finditer(QUOTATION, source))
+    before, after, between, introductions, prepositional, possessive = rules
+    if len(quotes)==2 and between:
+        first,second = quotes
+        if first[0][-2]!=',' or not (
+                match:=between.fullmatch(source[first.end():second.start()])):
+            return None
+        verb = 'verb_after' if match['verb_after'] else 'verb_first'
+        offset = first.end()
+        evidence = {'kind':'attached_voice_description','position':'between',
+                    'span':[offset+i for i in match.span('prepositional')],
+                    'reporting_span':[offset+i for i in match.span(verb)],
+                    'quotation_spans':[list(quote.span()) for quote in quotes]}
+        return prepositional[match['prepositional']], [evidence], first.start()>0
+    if len(quotes)!=1:
         return None
     quote, = quotes
-    before, after, introductions, prepositional, possessive = rules
     lead = list(sentence_spans(source[:quote.start()]))
     opening = before.search(lead[-1]['text']) if lead else None
     if opening and opening['verb_linked']:
@@ -1245,6 +1265,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                                    if attached and evidence[0]['position']=='before' else None)
             if opening_instruction:
                 instruction = opening_instruction
+            elif attached and evidence[0]['position']=='between':
+                instruction = recipe['interrupted_turn_instruction']
             elif has_lead:
                 instruction='Read the opening narration in the usual reference voice. '+instruction
             if evidence[0]['kind']=='trailing_voice_description':

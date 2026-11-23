@@ -213,6 +213,8 @@ On a runtime that advertises `narration_conditioning`, add `"narration_instructi
 
 For automatically detected whispers, a runtime that advertises `quote_guidance` can try guiding the quotation during the first render. Hamr checks the words and the actual frames reported by the runtime. A take with uncertain timing or a louder quotation goes through the existing measured render and fallback. Inspect `quote_timing.decoder_attempt` in the book report to see the result.
 
+When a reporting clause describes its own quotation as spoken *sotto voce*, in an undertone, or scarcely above a whisper, Hamr uses a soft speaking delivery. If the reporting clause interrupts the quotation, Hamr keeps both quoted parts in the same delivery and includes every written word.
+
 To apply recipe-specific guidance or sampling to a book, put the settings in its source-bound policy and use `--document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
 
 ```json
