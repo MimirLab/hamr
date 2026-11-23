@@ -840,7 +840,8 @@ def test_inline_event_keeps_both_native_pdf_fragments(tmp_path,first_line,second
     assert event['speech']==first_line+' '+second_line.removeprefix(cue+' ')
 
 
-def test_composed_pdf_welds_only_the_source_owned_event_seam(tmp_path):
+def test_composed_pdf_welds_only_the_source_owned_event_seam(tmp_path,monkeypatch):
+    from bs4 import BeautifulSoup
     from reportlab.pdfgen.canvas import Canvas
 
     source = tmp_path/'book.pdf'
@@ -861,6 +862,22 @@ def test_composed_pdf_welds_only_the_source_owned_event_seam(tmp_path):
     assert attribution['block']==event['block']==second
     assert event['span']==[0,6]
     assert [part['block'] for part in event['quotation_parts']]==[first,second]
+
+    store = Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    monkeypatch.setattr(jobs,'Engine',FakeEngine)
+    monkeypatch.setattr(pipeline.qa_cache,'observer_identity',lambda *args:{'model_files':{}})
+    monkeypatch.setattr(pipeline.qa_cache,'observe',lambda *args:observation(*args,prefix=''))
+    queued = jobs.create(store,source,voice='cast:nigel-thornberry',output=tmp_path)
+    result = pipeline.run(store,queued['job'],Path('/fixture'),Path('/fixture'))
+    assert result['status']=='ready'
+    output = Path(result['output'])
+    companion = loadjson(output/'companion.json')
+    page = BeautifulSoup((output/'source.html').read_text(),'html.parser')
+    marker_block = page.find(id=second)
+    assert '[sigh]' in marker_block.find('pre').get_text()
+    assert marker_block.details.pre.get_text()==companion['segments'][0]['text']==candidate['speech']
 
 
 def test_book_policy_adds_an_exact_attribution_without_changing_other_requests(tmp_path,monkeypatch,capsys):

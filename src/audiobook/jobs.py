@@ -425,6 +425,13 @@ def publish(store,j):
         if direct is not None:context_time=direct
         pointers[b['id']]=context_time
     decisions_by_id={d['block']:d for d in j['plan']['decisions']}
+    inline_event_readings={}
+    for row in rows:
+        active=row.get('performance',{})
+        if active.get('event',{}).get('position')=='within':
+            for evidence in active.get('evidence',()):
+                if evidence['kind']=='authored_sentence_boundary':
+                    inline_event_readings[evidence.get('block',row['sources'][0])]=row['text']
     source='<!doctype html><meta charset="utf-8"><title>Timed source companion</title><h1>'+html.escape(j['document']['title'])+'</h1><p><a href="'+original+'">Open original source</a></p><audio controls src="book.m4b"></audio>'
     if j['document']['format']=='pdf':source+='<p>Scanned text can contain reading errors. Open the original page to check a number, table or diagram.</p>'
     for b in j['document']['blocks']:
@@ -439,7 +446,9 @@ def publish(store,j):
             if 'source.html#'+b['id'] in link['destinations']:
                 source+='<p><a href="#'+link['source_block']+'">Back to referring passage</a></p>'
         decision=decisions_by_id[b['id']]
-        if j['document']['format']=='pdf' and decision['action']=='speak' and ' '.join(decision['spoken'].split())!=' '.join(b['source'].split()):
+        if b['id'] in inline_event_readings:
+            source+='<details><summary>Spoken words in this passage</summary><pre style="white-space:pre-wrap">'+html.escape(inline_event_readings[b['id']])+'</pre></details>'
+        elif j['document']['format']=='pdf' and decision['action']=='speak' and ' '.join(decision['spoken'].split())!=' '.join(b['source'].split()):
             source+='<details><summary>Reading used in the audiobook</summary><pre style="white-space:pre-wrap">'+html.escape(decision['spoken'])+'</pre><p>'+html.escape(decision['reason'])+'</p></details>'
         source+='</section>'
     atomic(stage/'source.html',source.encode())
