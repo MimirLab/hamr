@@ -1,3 +1,10 @@
+# hamr 0.4.7
+
+- A whispered quote can follow the words Breeze actually speaks. Hamr can adjust the timing of an inline cue and check the resulting passage again. The narrator has its own direction between quoted lines. Resume reuses verified intermediate takes after an interruption.
+- Attached phrases such as “in an undertone,” “in a whisper,” and “under her breath” can guide the dialogue they describe. The ordinary expressive workflow was exercised with text, Markdown, EPUB, searchable PDF and scanned PDF. Scanned pages can corroborate a disputed pronoun against the printed line before committing a reading.
+- Run `hamr setup` to activate the new Linux runtime on Vulkan F16, Vulkan Q8 and CPU Q8. Each used the portable executable to publish a checked audiobook and play it to the end. The Windows runtime remains the upstream build. [Engine support](docs/ENGINES.md#timed-whispers)
+- Render reports count new and reused clips across the entire command, including normal resume. The CLI and finished book report show the same elapsed time and take counts.
+
 # hamr 0.4.6
 
 - Hamr can time an explicit whisper inside a passage and follow a continuing speaker through a second quotation. Both quotes and the intervening narration stay in one speech request. Each directed take is independently checked for words and timing. Resume can pick up saved trials, and the book report includes the decision.

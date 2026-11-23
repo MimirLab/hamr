@@ -19,7 +19,7 @@ Linux needs the Vulkan loader even when using the CPU profile. Windows uses the 
 
 ### Timed whispers
 
-The updated Linux build can direct an explicit whispered quotation inside one continuous reading. It can cover both quotations when the same speaker continues across a reporting clause. Hamr measures the spoken boundaries with its installed checkers and uses ordinary narration when timing remains uncertain. Previously completed books keep their saved takes. Run `hamr setup` and select the matching F16 or Q8 profile to activate the updated runtime for new books. Linux uses the Ubuntu 22.04 build. Windows and the other Linux model profiles use their pinned upstream runtime. [Corresponding source and build provenance](https://github.com/MimirLab/hamr/releases/download/v0.4.6/breeze-frame-guidance-42dff8e-source.tar.gz)
+The updated Linux build directs an explicit whispered quotation inside one continuous reading. It can cover both quotations when the same speaker continues across a reporting clause. Hamr can set two separate directions, one for the narrator and one for the words inside a quote. It verifies the decoded boundaries with its installed checkers and can adjust the cue if its first boundary estimate fails. It can use an independently measured take or ordinary narration when the timing remains uncertain. Run `hamr setup` with Vulkan F16, Vulkan Q8, or CPU Q8 to install this runtime. The portable build uses an Ubuntu 22.04 toolchain. Windows and the other Linux model profiles use the pinned upstream runtime. [Corresponding source and build instructions](https://github.com/MimirLab/hamr/releases/download/v0.4.7/breeze-quote-guidance-d488305-source.tar.gz)
 
 ### Set up on Windows
 

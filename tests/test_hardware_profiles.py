@@ -102,9 +102,11 @@ def test_every_model_has_cpu_and_vulkan_choices_with_bound_download_sizes():
     rows = hardware.profile_catalog(records,{'system':'Linux','arch':'x86_64'})
     mapping = {r['id']: r for r in rows}
     runtime = records['runtimes']['hoppou']
-    timed, = runtime['profile_archives']['linux_x86_64']
+    timed, previous = runtime['profile_archives']['linux_x86_64']
     timed_profiles = {'vulkan-f16','vulkan-q8','cpu-q8'}
     assert set(timed['profiles'])==timed_profiles
+    assert timed['quote_guidance']==timed['narration_conditioning']==1
+    assert set(previous['profiles'])==timed_profiles and previous['sha256']!=timed['sha256']
     terms = next(f['bytes'] for f in records['packages']['official']['files'] if f['path']=='LICENSE')
     assert sum(r['implemented'] for r in rows) == 9
     for variant in ('f16','q8','q6','q4'):

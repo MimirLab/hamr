@@ -47,7 +47,7 @@ An eager whisper can carry a written sigh and a moment of emphasis in one contin
 
 “She lowered her voice” calls for softer speech. “To a whisper” makes the direction more specific, and “he muttered” gives the line a low, private delivery. A pair of quotation marks can still carry a cue when OCR reads one as curly and the other as straight.
 
-On Linux with CPU Q8, Vulkan Q8, or Vulkan F16, Hamr can direct two whispered lines in the same passage and let the narrator return for the words between them. It measures the quotes on the actual reading and checks the directed take before using it. Run `hamr setup` to install the updated runtime. [Continuous dialogue and engine support](docs/ENGINES.md#timed-whispers)
+On Linux with CPU Q8, Vulkan Q8, or Vulkan F16, Hamr can direct two whispered lines in the same passage and let the narrator return for the words between them. It follows where Breeze actually speaks the quoted words and can adjust the direction when a quote starts or ends at a different time. It checks the full passage before using the take. Run `hamr setup` to install the updated runtime. [Continuous dialogue and engine support](docs/ENGINES.md#timed-whispers)
 
 ## EPUB to audiobook in three commands
 
