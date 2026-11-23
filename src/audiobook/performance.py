@@ -2,6 +2,7 @@
 from collections import Counter
 from difflib import SequenceMatcher
 from functools import cache
+from itertools import groupby
 from pathlib import Path
 import re
 import struct
@@ -12,7 +13,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 31
+CONTEXT_VERSION = 32
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -383,6 +384,30 @@ def native_quote_flow(left, right, config, context_version=None):
             return 'tagged_pdf_quotation'
         return 'adjacent_pdf_quotation'
     return None
+
+
+def native_voice_paragraphs(blocks, excluded, context_version=None):
+    """Keep the lead-in of a tagged paragraph when it owns a trailing voice cue."""
+    version = context_version or CONTEXT_VERSION
+    if version<32:
+        return []
+    from .pdf_layout import adjacent_native_lines
+
+    registry = loadjson(RULES_FILE)
+    paragraphs = []
+    groups = groupby(blocks,key=lambda block:(block.locator.get('page'),block.locator.get('tagged_paragraph')))
+    for (_,tag),run in groups:
+        if tag is None:
+            continue
+        lines = list(run)
+        if len(lines)<3 or any(line.id in excluded for line in lines):
+            continue
+        if not all(adjacent_native_lines(left,right) for left,right in zip(lines,lines[1:])):
+            continue
+        source = ' '.join(line.source for line in lines)
+        if trailing_voice_description(source,registry['context'],'direct',version):
+            paragraphs.append(tuple(line.id for line in lines))
+    return paragraphs
 
 
 def focus_direction(source, config):

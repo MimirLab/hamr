@@ -196,6 +196,13 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     decisions=[]; utterances=[]; buffer=[]; source_ids=[]; chapter=None;chapter_id=None;flow_issues=[];captions=[];after_source_gap=False
     protected_readings={}
     heading_ids={item['source_block'] for item in document_policy.get('structure',{}).get('chapters',[])}
+    tagged_voice_links = set()
+    if continuous and anchor=='paragraph' and pdf_dialogue_flow:
+        from .performance import native_voice_paragraphs
+
+        for paragraph in native_voice_paragraphs(doc.blocks,heading_ids|overrides.keys(),delivery_context):
+            quote_pairs[paragraph] = 'tagged_pdf_voice_description'
+            tagged_voice_links.update(zip(paragraph,paragraph[1:]))
     flow_disputes={}
     if continuous and doc.format=='pdf':
         from .pdf_flow import insertions
@@ -472,8 +479,9 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 if utterances:utterances[-1]['pause_samples']=14400
             if continuous and anchor=='paragraph' and not heading and re.search(r'[.!?]["”’\')\]]*$',spoken):
                 following = source_positions[b.id]+1
-                continue_passage = False
-                if ((pdf_dialogue_flow or join_inline_events) and effective['mode']=='listen'
+                continue_passage = (effective['mode']=='listen' and following<len(doc.blocks)
+                                    and (b.id,doc.blocks[following].id) in tagged_voice_links)
+                if (not continue_passage and (pdf_dialogue_flow or join_inline_events) and effective['mode']=='listen'
                         and following < len(doc.blocks) and len(buffer) == 1):
                     next_block = doc.blocks[following]
                     if next_block.id not in heading_ids and next_block.id not in overrides:

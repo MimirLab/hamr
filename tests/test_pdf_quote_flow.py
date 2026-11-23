@@ -8,11 +8,11 @@ FIRST = '"Wait for the lantern," she whispered.'
 SECOND = '"The latch is still closed."'
 
 
-def quote_pdf(first, following, *, tags=(), indent=0, leading=15):
-    """Make two visible lines and optionally attach page-local paragraph tags."""
+def quote_pdf(*lines, tags=(), indent=0, leading=15, width=595):
+    """Make visible lines and optionally attach page-local paragraph tags."""
     tagged = {line: group for group, lines in enumerate(tags, 8) for line in lines}
     contents = []
-    for index, text in enumerate((first, following)):
+    for index, text in enumerate(lines):
         if index in tagged:
             contents.append(f'/P <</MCID {index}>> BDC')
         contents.append(f'BT /F1 13 Tf 1 0 0 1 {65 + index * indent} {720 - index * leading} Tm ({text}) Tj ET')
@@ -24,14 +24,14 @@ def quote_pdf(first, following, *, tags=(), indent=0, leading=15):
     objects = [
         '<< /Type /Catalog /Pages 2 0 R' + catalog_tags + ' >>',
         '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 5 0 R'
+        f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {width} 842] /Contents 5 0 R'
         ' /Resources << /Font << /F1 4 0 R >> >>' + page_tags + ' >>',
         '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
         f'<< /Length {len(stream)} >>\nstream\n{stream}\nendstream',
     ]
     if tagged:
         paragraphs = ' '.join(f'{index} 0 R' for index in range(8, 8 + len(tags)))
-        parents = ' '.join(f'{tagged[index]} 0 R' if index in tagged else 'null' for index in (0, 1))
+        parents = ' '.join(f'{tagged[index]} 0 R' if index in tagged else 'null' for index in range(len(lines)))
         objects.extend([
             f'<< /Type /StructTreeRoot /K [{paragraphs}] /ParentTree 7 0 R >>',
             f'<< /Nums [0 [{parents}]] >>',
@@ -128,3 +128,38 @@ def test_pdf_gives_trailing_voice_description_to_the_previous_reporter(tmp_path,
     quote, = evidence['quotation_parts']
     assert quote['block']==document.blocks[0].id
     assert question[slice(*quote['span'])]=='"What now?"'
+
+
+@pytest.mark.parametrize(('tags','leading','keeps_context'),[
+    (((0,1,2),),15,True),
+    (((0,), (1,2)),15,False),
+    ((),15,False),
+    (((0,1,2),),36,False),
+])
+def test_tagged_pdf_keeps_lead_in_for_owned_voice_description(tmp_path,tags,leading,keeps_context):
+    opening = 'Ada put the letter down.'
+    question = 'She checked the seal. "What now?" she asked him.'
+    description = 'And her voice had softened too.'
+    source = tmp_path/'story.pdf'
+    source.write_bytes(quote_pdf(opening,question,description,tags=tags,leading=leading))
+    document = inspect(source)
+    assert [block.source for block in document.blocks]==[opening,question,description]
+    legacy = planner.plan(document,delivery_context=31)
+    assert legacy['utterances'][0]['text']==opening
+    result = planner.plan(document)
+    assert ' '.join(unit['text'] for unit in result['utterances'])==' '.join((opening,question,description))
+    if not keeps_context:
+        assert result['utterances'][0]['text']==opening
+        return
+    unit, = result['utterances']
+    assert unit['delivery_boundary']=='tagged_pdf_voice_description'
+    assert unit['sources']==[block.id for block in document.blocks]
+    evidence, = unit['performance_candidate']['evidence']
+    quote, = evidence['quotation_parts']
+    assert quote['block']==document.blocks[1].id
+    assert question[slice(*quote['span'])]=='"What now?"'
+    assert evidence['block']==document.blocks[2].id
+    assert description[slice(*evidence['span'])]=='her voice had softened too'
+    plain, = planner.plan(document,{'performance':'off'})['utterances']
+    assert plain['text']==unit['text'] and plain['delivery_boundary']==unit['delivery_boundary']
+    assert 'performance_candidate' not in plain
