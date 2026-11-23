@@ -58,6 +58,16 @@ def validated_sampling(fields):
     return {name:int(value) if name=='top_k' else float(value) for name,value in fields.items()}
 
 
+def validated_tuning(fields):
+    if not isinstance(fields,dict) or not fields:
+        raise Error('performance_sampling','Provide guidance or sampling settings as an object.')
+    sampling = validated_sampling({k:v for k,v in fields.items() if k!='cfg_scale'})
+    if 'cfg_scale' in fields:
+        validate_guidance(fields['cfg_scale'])
+        sampling['cfg_scale'] = float(fields['cfg_scale'])
+    return sampling
+
+
 def tuning_preferences(config, enabled, registry):
     overrides=config.get('tuning',{})
     if not isinstance(overrides,dict):
@@ -67,11 +77,7 @@ def tuning_preferences(config, enabled, registry):
     for recipe,fields in overrides.items():
         if recipe not in known or not isinstance(fields,dict) or not fields:
             raise Error('performance_sampling',f'Choose a known performance recipe with tuning settings: {recipe}.')
-        cfg=fields.get('cfg_scale')
-        if 'cfg_scale' in fields:
-            validate_guidance(cfg)
-        result[recipe]=validated_sampling({k:v for k,v in fields.items() if k!='cfg_scale'})
-        if cfg is not None:result[recipe]['cfg_scale']=float(cfg)
+        result[recipe]=validated_tuning(fields)
     return result if enabled else {}
 
 
@@ -717,11 +723,16 @@ def passage_instructions(config, blocks):
     entries = config.get('passage_instructions', {})
     if not isinstance(entries, dict):
         raise Error('performance_policy', 'Passage instructions must map source block IDs to text and instruction.')
+    required = {'text','instruction'}
+    checked = {}
     for block_id, entry in entries.items():
-        if (block_id not in blocks or not isinstance(entry, dict) or set(entry) != {'text', 'instruction'}
-                or not all(isinstance(value, str) and value.strip() for value in entry.values())):
+        if (block_id not in blocks or not isinstance(entry, dict) or entry.keys()-required-{'tuning'}
+                or not all(isinstance(entry.get(key), str) and entry[key].strip() for key in required)):
             raise Error('performance_policy', f'Passage instruction for {block_id} needs a known source block, exact text, and a nonempty instruction.')
-    return entries
+        checked[block_id] = dict(entry)
+        if 'tuning' in entry:
+            checked[block_id]['tuning'] = validated_tuning(entry['tuning'])
+    return checked
 
 
 def apply_passage_instructions(units, entries, blocks, document_digest, registry_sha, revision):
@@ -757,6 +768,9 @@ def apply_passage_instructions(units, entries, blocks, document_digest, registry
         candidate.pop('voice_suffixes', None)
         candidate['passage_instruction'] = entry['instruction']
         candidate['instruction'] = entry['instruction']
+        if tuning:=entry.get('tuning'):
+            candidate['tuning'] = {**candidate.get('tuning',{}),**tuning}
+            candidate['cfg_scale'] = tuning.get('cfg_scale',candidate['cfg_scale'])
         candidate['evidence'] = [*candidate['evidence'], {'kind': 'source_policy_instruction', **source}]
         validate_request(candidate['synthesis'], instruction=candidate['instruction'])
         candidate['id'] = candidate_id(document_digest, candidate)

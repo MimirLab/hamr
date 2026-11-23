@@ -1456,6 +1456,33 @@ def test_passage_instruction_requires_exact_text_for_one_passage(tmp_path):
     assert 'performance_candidate' not in result['utterances'][1]
 
 
+def test_passage_tuning_overrides_only_the_selected_occurrence_of_a_recipe(tmp_path):
+    source = tmp_path/'book.md'
+    other = '“Look through the window,” Ada whispered.'
+    source.write_text(WHISPER+'\n\n'+other)
+    doc = inspect(source)
+    profile = pinned_linux_profile('vulkan-q8')
+    voice = {**VOICE,'reference_sha256':'e'*64,'transcript':'Reference words.'}
+    policy = {'document':{'source_sha256':doc.source_sha256,'performance':{
+        'tuning':{'whisper':{'cfg_scale':2,'temperature':.7}},
+    }}}
+    ordinary = planner.plan(doc,policy)
+    performance.bind(ordinary,profile,voice)
+    selected = {'text':WHISPER,'instruction':'Whisper the line clearly.',
+                'tuning':{'cfg_scale':1,'top_k':48}}
+    policy['document']['performance']['passage_instructions'] = {doc.blocks[0].id:selected}
+    revised = planner.plan(doc,policy)
+    performance.bind(revised,profile,voice)
+    first, second = revised['utterances']
+    assert performance.request(first)==(WHISPER,{'seed':42,'instruction':selected['instruction'],
+                                                  'cfg_scale':1,'sampling':{'temperature':.7,'top_k':48}})
+    assert performance.request(second)==performance.request(ordinary['utterances'][1])
+    assert performance.request_identity(second)==performance.request_identity(ordinary['utterances'][1])
+    selected['tuning']['top_k'] = True
+    with pytest.raises(backend.Error,match='top_k'):
+        planner.plan(doc,policy)
+
+
 @pytest.mark.parametrize('text', [
     '“What do you want?” he gasped.',
     '“Your mother has not relented?” gasped the keeper.',
