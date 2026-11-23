@@ -575,6 +575,7 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
         else:
             # Build glyph lines, then use a large central gutter only with bilateral evidence.
             from .pdf_overlays import verified_overlays
+            from .pdf_tags import line_paragraph, paragraph_owners
             overlays=verified_overlays(page,tp) if entry['native_geometry_qualified'] else []
             if overlays:entry['duplicate_paint_observations']=overlays
             chars,outside,clipped=cached_glyphs if cached_glyphs is not None else crop_glyphs(tp,box)
@@ -598,6 +599,7 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
                 entry['route']='native_ruled_panels'
                 entry['table_source_glyphs']=len(claimed)
             lines=[]
+            authorship = paragraph_owners(page) if not panels else {}
             for ch,rect,index in (() if panels else chars):
                 l,b,r,t=rect
                 baseline=glyph_baseline(tp,index,box[1],b)
@@ -622,7 +624,11 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
                             if previous is not None and index!=previous+1 and last is not None and l-last>2 and not text.endswith(' '):text+=' '
                             text+=ch
                         last=r;previous=index
-                    if text.strip():segments.append({'text':text.strip(),'rect':[chunk[0][0],min(x[3][1] for x in chunk),chunk[-1][1],max(x[3][3] for x in chunk)],'y':line['y']})
+                    if text.strip():
+                        segment = {'text':text.strip(),'rect':[chunk[0][0],min(x[3][1] for x in chunk),chunk[-1][1],max(x[3][3] for x in chunk)],'y':line['y']}
+                        if authorship and (paragraph := line_paragraph(tp, chunk, authorship)) is not None:
+                            segment['tagged_paragraph'] = paragraph
+                        segments.append(segment)
             left=[s for s in segments if s['rect'][2]<w*.52]; right=[s for s in segments if s['rect'][0]>w*.48]
             two=len(left)>=3 and len(right)>=3 and max(s['rect'][2] for s in left)+12<min(s['rect'][0] for s in right)
             if two and not panels:
@@ -652,6 +658,8 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
                         local_issue='A raster mark overlaps this native line. Verify the original before speech.'
                 out.append(block(s['text'],locator,s.get('role','body'),chapter,['PDF glyph geometry',entry['route'],'Native whitespace and punctuation retained'],local_issue))
                 if local_issue:continue
+                if 'tagged_paragraph' in s:
+                    locator['tagged_paragraph'] = s['tagged_paragraph']
                 l,b,r,t=s['rect']
                 observations=[]
                 for overlay in overlays:

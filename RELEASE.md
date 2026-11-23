@@ -1,4 +1,4 @@
-# Upcoming changes
+# hamr 0.4.3
 
 ### Audio mastering
 
@@ -19,9 +19,15 @@ Blind listening across all 45 cast voices identified 22 preferred cleaned refere
 ### Expressive narration
 
 - When a plain paragraph needs multiple speech requests, Hamr can give a short closing sentence some preceding context. It keeps complete sentences together and uses the same request limits.
+- Direct attributions can convey a caught breath, an eager or shy whisper, or a delivery introduced by a colon.
+- An attribution inside a quoted sentence can direct both spoken fragments, even with narrator sentences around the turn. The whole passage stays in one request.
 - Dialogue can take its direction from a fuller attribution such as “the doctor replied firmly” or “she said, her voice barely audible.” Hamr uses the reporting clause to tie the delivery to the right speaker.
-- An authored sigh or cough between complete sentences can be performed inside one continuous quotation.
+- If the same turn continues in a second complete quotation in the paragraph, Hamr sends both quotes and the intervening attribution together. This lets a whisper or another attributed delivery carry into the second line without adding an audio join.
+- Adjacent quotations across two aligned native PDF lines can stay in one speech request. If a paragraph tag covers both, Hamr can continue the delivery across the wrap. For an untagged wrap, Breeze handles the passage in its usual reading voice.
+- An authored sigh or cough between complete sentences can stay in the same request as the quotation's delivery and emphasis. The companion shows the spoken words beside the original marker.
 - An author-marked pronoun can carry the stress in a spoken line. EPUB stylesheet italics and Markdown emphasis can supply that cue. The plan records the marked word and its source location.
+- `hamr preview --compare` auditions named seeds, directions, and sampling settings on the same saved passage. It saves the alternate WAVs with exact request receipts and leaves the book intact.
+- A source-bound document policy can keep the auditioned direction, guidance, and sampling for one exact passage. Repair reuses the neighboring takes.
 
 These changes run in ordinary listening mode. See the [expressive narration guide](docs/USAGE.md#expressive-narration) for examples, settings, and how to refresh an older EPUB.
 

@@ -14,6 +14,8 @@ from tempfile import NamedTemporaryFile
 from threading import Lock
 
 
+COMMENT_LIMIT = 4000
+
 PAGE = Template("""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
@@ -26,7 +28,12 @@ section { border-top: 1px solid #a89b83; margin-top: 1.4rem; padding-top: 1rem; 
 h1, h2 { line-height: 1.15; }
 h2 { margin: 0; font-size: 1.3rem; }
 blockquote { margin: 0 0 1rem; border-left: .2rem solid #a89b83; padding-left: .8rem; }
-.take { display: grid; grid-template-columns: 1.5rem 1fr; align-items: center; margin: .5rem 0; }
+.take { margin: .7rem 0; }
+.take-note { margin: 0 0 .25rem; }
+.comment-label { display: block; min-height: 0; border: 0; margin: .85rem 0 .25rem; padding: 0; font-weight: 600; cursor: text; }
+textarea { box-sizing: border-box; display: block; width: 100%; padding: .55rem; font: inherit; color: inherit;
+  background: #fffaf1; border: 1px solid #897c61; border-radius: .35rem; resize: vertical; }
+.save-comment { margin-top: .5rem; }
 audio { width: min(100%, 30rem); }
 fieldset { border: none; padding: 0; margin: 1rem 0 0; }
 legend { padding: 0; font-weight: 600; }
@@ -44,73 +51,98 @@ footer { margin-top: 1.5rem; }
 $sections
 <footer>
 <p id="status" role="status"></p>
-<button type="button" id="export">Download picks</button>
+<button type="button" id="export">Download feedback</button>
 $refresh
 </footer>
 </main>
 <script>
 const pack = $pack;
-const original = $picks;
+let picks = $picks;
+let comments = $comments;
 const fields = document.querySelectorAll('input[type="radio"]');
+const commentFields = document.querySelectorAll('textarea[data-review]');
 const status = document.querySelector('#status');
 const online = location.protocol === 'http:';
 const storageKey = 'hamr-performance:' + pack;
-let picks = original;
-const unsaved = {};
+const unsaved = { picks: {}, comments: {} };
 let pending = Promise.resolve();
 let edit = 0;
+
 function markSaved(key) {
   const state = document.getElementById('state-' + key);
-  if (state) state.textContent = 'Pick saved · awaiting follow-up';
+  if (!state) return;
+  const labels = [];
+  if (picks[key]) labels.push('Pick saved');
+  if (comments[key]) labels.push('Comment saved');
+  state.textContent = labels.length ? labels.join(' · ') + ' · awaiting follow-up' : 'Ready to listen';
 }
+
 if (!online) {
-  try { picks = { ...picks, ...JSON.parse(localStorage.getItem(storageKey) || '{}') }; } catch {}
+  try {
+    picks = { ...picks, ...JSON.parse(localStorage.getItem(storageKey) || '{}') };
+    comments = { ...comments, ...JSON.parse(localStorage.getItem(storageKey + ':comments') || '{}') };
+  } catch {}
 }
-for (const field of fields) {
-  field.checked = picks[field.name] === field.value;
-  field.addEventListener('change', () => {
-    picks = { ...picks, [field.name]: field.value };
-    if (!online) {
-      try {
-        localStorage.setItem(storageKey, JSON.stringify(picks));
-        status.textContent = 'Saved in this browser. Download picks to share them.';
-      } catch {
-        status.textContent = 'Download picks to keep your selections.';
-      }
-      return;
+
+function save(group, key, value) {
+  const current = group === 'picks' ? picks : comments;
+  current[key] = value;
+  if (!online) {
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(picks));
+      localStorage.setItem(storageKey + ':comments', JSON.stringify(comments));
+      status.textContent = 'Saved in this browser. Download feedback to share it.';
+    } catch {
+      status.textContent = 'Download feedback to keep these changes.';
     }
-    const version = ++edit;
-    unsaved[field.name] = field.value;
-    status.textContent = 'Saving…';
-    pending = pending.then(async () => {
-      const changes = { ...unsaved };
-      if (!Object.keys(changes).length) return;
-      try {
-        const result = await fetch('picks', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes)
-        });
-        if (!result.ok) throw new Error('Could not save picks');
-        for (const [key, choice] of Object.entries(changes)) {
-          if (unsaved[key] === choice) {
-            delete unsaved[key];
-            markSaved(key);
-          }
+    return;
+  }
+  const version = ++edit;
+  unsaved[group][key] = value;
+  status.textContent = 'Saving…';
+  pending = pending.then(async () => {
+    const changes = { picks: { ...unsaved.picks }, comments: { ...unsaved.comments } };
+    if (!Object.keys(changes.picks).length && !Object.keys(changes.comments).length) return;
+    try {
+      const result = await fetch('feedback', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes)
+      });
+      if (!result.ok) throw new Error('Could not save feedback');
+      for (const kind of Object.keys(changes)) {
+        for (const [id, saved] of Object.entries(changes[kind])) {
+          if (unsaved[kind][id] === saved) delete unsaved[kind][id];
         }
-        if (!Object.keys(unsaved).length) status.textContent = 'Picks saved.';
-      } catch {
-        if (edit === version) status.textContent = 'Could not save to disk. Download picks to keep them.';
       }
-    });
+      for (const id of new Set([...Object.keys(changes.picks), ...Object.keys(changes.comments)])) {
+        if (!(id in unsaved.picks) && !(id in unsaved.comments)) markSaved(id);
+      }
+      if (!Object.keys(unsaved.picks).length && !Object.keys(unsaved.comments).length) status.textContent = 'Feedback saved.';
+    } catch {
+      if (edit === version) status.textContent = 'Could not save to disk. Download feedback to keep it.';
+    }
   });
 }
-status.textContent = online ? 'Picks are saved as you go.' : 'Download picks to share them.';
+
+for (const field of fields) {
+  field.checked = picks[field.name] === field.value;
+  field.addEventListener('change', () => save('picks', field.name, field.value));
+}
+for (const field of commentFields) {
+  const key = field.dataset.review;
+  field.value = comments[key] || '';
+  field.addEventListener('change', () => save('comments', key, field.value));
+  document.getElementById('save-comment-' + key).addEventListener('click', () => save('comments', key, field.value));
+}
+status.textContent = online ? 'Picks save as you go. Comments save when you leave the field or select Save comment.' : 'Download feedback to share it.';
 for (const audio of document.querySelectorAll('audio')) {
   audio.addEventListener('play', () => {
     for (const other of document.querySelectorAll('audio')) if (other !== audio) other.pause();
   });
 }
 document.querySelector('#export').addEventListener('click', () => {
-  const file = new Blob([JSON.stringify({ pack, picks }, null, 2) + '\\n'], { type: 'application/json' });
+  const notes = { ...comments };
+  for (const field of commentFields) if (field.value || notes[field.dataset.review] !== undefined) notes[field.dataset.review] = field.value;
+  const file = new Blob([JSON.stringify({ pack, picks, comments: notes }, null, 2) + '\\n'], { type: 'application/json' });
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');
   link.href = url;
@@ -135,7 +167,13 @@ def load_pack(root):
         keys.add(key)
         if not all(isinstance(pair[k], str) for k in ('title', 'prompt', 'words')):
             raise ValueError('Each entry needs a title, a listening prompt, and the words being read.')
-        for side in take_options(pair):
+        sides = take_options(pair)
+        if 'variant_notes' in pair:
+            notes = pair['variant_notes']
+            if (not isinstance(notes, dict) or notes.keys() != set(sides)
+                    or not all(isinstance(note, str) and note.strip() for note in notes.values())):
+                raise ValueError('Variant notes must describe every audio option in the entry.')
+        for side in sides:
             name = pair[side]
             if not re.fullmatch(r'[a-zA-Z0-9_-]+\.wav', name):
                 raise ValueError('A take must name a WAV file in the pack directory.')
@@ -171,28 +209,54 @@ def load_picks(path, pairs):
     return picks
 
 
-def render(pack, picks, *, inbox=False):
+def check_comments(comments, pairs):
+    return isinstance(comments, dict) and all(
+        key in pairs and isinstance(note, str) and len(note) <= COMMENT_LIMIT
+        for key, note in comments.items())
+
+
+def load_comments(path, pairs):
+    comments = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+    if not check_comments(comments, pairs):
+        raise ValueError('Invalid saved listening comments.')
+    return comments
+
+
+def render(pack, picks, comments=None, *, inbox=False):
+    comments = comments or {}
     sections = []
     for pair in pack['pairs']:
         key = pair['id']
         title, prompt, words = (escape(pair[k]) for k in ('title', 'prompt', 'words'))
-        takes = ''.join(
-            f'<p class="take"><b>{side if side != "sample" else ""}</b><audio controls preload="none" '
-            f'aria-label="{title}, {side}" src="{pair[side]}"></audio></p>' for side in take_options(pair))
+        notes = pair.get('variant_notes', {})
+        players = []
+        for side in take_options(pair):
+            label = side if side != 'sample' else ''
+            if note := notes.get(side):
+                label = f'{label} · {note}' if label else note
+            caption = f'<p class="take-note">{escape(label)}</p>' if label else ''
+            players.append(f'<div class="take">{caption}<audio controls preload="none" '
+                           f'aria-label="{title}, {escape(label or side)}" src="{pair[side]}"></audio></div>')
         options = ''.join(
             f'<label><input type="radio" name="{key}" value="{value}">{label}</label>'
             for value, label in choices(pair))
         state = ''
         if inbox:
-            label = 'Pick saved · awaiting follow-up' if key in picks else 'Ready to listen'
-            state = f'<p class="state" id="state-{key}">{label}</p>'
+            labels = [label for value, label in ((picks.get(key), 'Pick saved'), (comments.get(key), 'Comment saved')) if value]
+            status = ' · '.join([*labels, 'awaiting follow-up']) if labels else 'Ready to listen'
+            state = f'<p class="state" id="state-{key}">{status}</p>'
         sections.append(f'<section>{state}<h2>{title}</h2><p>{prompt}</p><blockquote>{words}</blockquote>'
-                        f'{takes}<fieldset><legend>Your pick</legend>{options}</fieldset></section>')
+                        f'{"".join(players)}<fieldset><legend>Your pick</legend>{options}</fieldset>'
+                        f'<label class="comment-label" for="comment-{key}">Comment</label>'
+                        f'<textarea id="comment-{key}" data-review="{key}" rows="3" maxlength="{COMMENT_LIMIT}" '
+                        f'placeholder="What did you hear? A timestamp can help."></textarea>'
+                        f'<button class="save-comment" type="button" id="save-comment-{key}">Save comment</button></section>')
     title = 'Hamr listening inbox' if inbox else 'Hamr performance calibration'
-    intro = ('Your picks save on this computer. Entries stay here until I’ve processed your feedback.' if inbox else
-             'Each pair uses the same words, narrator, and seed. Keep the playback volume the same for both takes.')
+    intro = ('Your feedback saves on this computer. Entries stay here until I’ve processed it.' if inbox else
+             'Use the choices and comments to record what you heard.')
     return PAGE.substitute(title=title, intro=intro, sections='\n'.join(sections) or '<p>The inbox is clear.</p>',
                            pack=json.dumps(pack['id']), picks=json.dumps(picks),
+                           comments=json.dumps(comments).replace('<', r'\u003c'),
                            refresh='<a href="listen.html">Refresh inbox</a>' if inbox else '')
 
 
@@ -227,8 +291,8 @@ def serve(snapshot, record, port, *, inbox=False):
             if self.headers.get('Host') != f'127.0.0.1:{port}':
                 self.send_error(403)
             elif self.path in ('/', '/listen.html'):
-                pack, files, picks = snapshot()
-                self.send_data(render(pack, picks, inbox=inbox).encode(), 'text/html; charset=utf-8')
+                pack, files, picks, comments = snapshot()
+                self.send_data(render(pack, picks, comments, inbox=inbox).encode(), 'text/html; charset=utf-8')
             elif file := snapshot()[1].get(self.path):
                 if not (header := self.headers.get('Range')):
                     self.send_data(file.read_bytes(), 'audio/wav')
@@ -250,7 +314,7 @@ def serve(snapshot, record, port, *, inbox=False):
                 self.send_error(404)
 
         def do_POST(self):
-            if self.path != '/picks':
+            if self.path not in ('/picks', '/feedback'):
                 self.send_error(404)
                 return
             if self.headers.get('Origin') != origin or self.headers.get('Host') != f'127.0.0.1:{port}':
@@ -261,12 +325,22 @@ def serve(snapshot, record, port, *, inbox=False):
                 self.send_error(400)
                 return
             try:
-                picks = json.loads(self.rfile.read(int(length)))
+                feedback = json.loads(self.rfile.read(int(length)))
             except (ValueError, RecursionError):
                 self.send_error(400)
                 return
+            if self.path == '/feedback':
+                if not isinstance(feedback, dict) or feedback.keys() - {'picks', 'comments'}:
+                    self.send_error(400)
+                    return
+                picks, comments = feedback.get('picks', {}), feedback.get('comments', {})
+                if not isinstance(picks, dict) or not isinstance(comments, dict):
+                    self.send_error(400)
+                    return
+            else:
+                picks, comments = feedback, {}
             with write_lock:
-                error = record(picks)
+                error = record(picks, comments=comments)
             if error:
                 self.send_error(error)
                 return
@@ -284,9 +358,13 @@ class Inbox:
         self.audio = root / 'audio'
         self.audio.mkdir(mode=0o700, exist_ok=True)
         with closing(self.connect()) as db, db:
+            db.execute('BEGIN IMMEDIATE')
             db.execute('''CREATE TABLE IF NOT EXISTS entries (
-                id TEXT PRIMARY KEY, sample TEXT NOT NULL, source TEXT NOT NULL, pick TEXT, resolution TEXT
+                id TEXT PRIMARY KEY, sample TEXT NOT NULL, source TEXT NOT NULL, pick TEXT, resolution TEXT,
+                comment TEXT NOT NULL DEFAULT ''
             )''')
+            if 'comment' not in {row['name'] for row in db.execute('PRAGMA table_info(entries)')}:
+                db.execute("ALTER TABLE entries ADD COLUMN comment TEXT NOT NULL DEFAULT ''")
 
     def connect(self):
         db = sqlite3.connect(self.path)
@@ -294,7 +372,7 @@ class Inbox:
         return db
 
     def entries(self, *, completed=False):
-        query = 'SELECT id, sample, source, pick, resolution FROM entries'
+        query = 'SELECT id, sample, source, pick, comment, resolution FROM entries'
         if not completed:
             query += ' WHERE resolution IS NULL'
         with closing(self.connect()) as db:
@@ -305,6 +383,7 @@ class Inbox:
         pack, files = load_pack(directory)
         pairs = {pair['id']: pair for pair in pack['pairs']}
         picks = load_picks(directory / 'listening-picks.json', pairs)
+        comments = load_comments(directory / 'listening-comments.json', pairs)
         with closing(self.connect()) as db, db:
             db.execute('BEGIN IMMEDIATE')
             for key, pair in pairs.items():
@@ -326,35 +405,56 @@ class Inbox:
                 if key in picks:
                     db.execute('UPDATE entries SET pick = ? WHERE id = ? AND pick IS NULL AND resolution IS NULL',
                                (picks[key], review_id))
+                if key in comments:
+                    db.execute("UPDATE entries SET comment = ? WHERE id = ? AND comment = '' AND resolution IS NULL",
+                               (comments[key], review_id))
 
-    def snapshot(self):
+    def snapshot(self, *, include_comments=False):
         entries = self.entries()
         pack = {'id': 'hamr-listening-inbox', 'pairs': [row['sample'] for row in entries]}
         names = {pair[side] for pair in pack['pairs'] for side in take_options(pair)}
         files = {name: self.audio / Path(name).name for name in names}
-        return pack, files, {row['id']: row['pick'] for row in entries if row['pick']}
+        snapshot = (pack, files, {row['id']: row['pick'] for row in entries if row['pick']})
+        if include_comments:
+            return (*snapshot, {row['id']: row['comment'] for row in entries if row['comment']})
+        return snapshot
 
-    def record(self, picks, *, imported=False):
-        if not isinstance(picks, dict):
+    def record(self, picks, *, imported=False, comments=None):
+        comments = {} if comments is None else comments
+        if not isinstance(picks, dict) or not isinstance(comments, dict):
             return 400
         with closing(self.connect()) as db, db:
             db.execute('BEGIN IMMEDIATE')
-            for review_id, choice in picks.items():
-                row = db.execute('SELECT sample, pick, resolution FROM entries WHERE id = ?', (review_id,)).fetchone()
-                if not row or not check_picks({review_id: choice}, {review_id: json.loads(row['sample'])}):
+            for review_id in picks.keys() | comments.keys():
+                row = db.execute('SELECT sample, pick, comment, resolution FROM entries WHERE id = ?', (review_id,)).fetchone()
+                if not row:
                     return 400
-                if row['resolution'] is not None or (imported and row['pick'] not in (None, choice)):
+                pair = {review_id: json.loads(row['sample'])}
+                if review_id in picks and not check_picks({review_id: picks[review_id]}, pair):
+                    return 400
+                if review_id in comments and not check_comments({review_id: comments[review_id]}, pair):
+                    return 400
+                if row['resolution'] is not None:
+                    return 409
+                if imported and ((review_id in picks and row['pick'] not in (None, picks[review_id]))
+                                 or (review_id in comments and row['comment'] not in ('', comments[review_id]))):
                     return 409
             db.executemany('UPDATE entries SET pick = ? WHERE id = ?', ((v, k) for k, v in picks.items()))
+            db.executemany('UPDATE entries SET comment = ? WHERE id = ?', ((v, k) for k, v in comments.items()))
 
-    def complete(self, review_id, pick, result):
+    def complete(self, review_id, pick, result, *, expected_comment=None):
         if not result.strip():
-            raise ValueError('Record what was done with this pick before completing it.')
+            raise ValueError('Record what was done with this feedback before completing it.')
+        if pick is None and not (expected_comment or '').strip():
+            raise ValueError('Use the saved pick or exact comment to complete the entry.')
+        sql = 'UPDATE entries SET resolution = ? WHERE id = ? AND pick IS ? AND resolution IS NULL'
+        params = (result, review_id, pick)
+        if expected_comment is not None:
+            sql += ' AND comment = ?'
+            params += (expected_comment,)
         with closing(self.connect()) as db, db:
-            updated = db.execute('UPDATE entries SET resolution = ? WHERE id = ? AND pick = ? AND resolution IS NULL',
-                                 (result, review_id, pick))
-            if updated.rowcount != 1:
-                raise ValueError('No open entry matches that pick. Read the current inbox before completing it.')
+            if db.execute(sql, params).rowcount != 1:
+                raise ValueError('No open entry matches that pick and comment. Read the current inbox before completing it.')
 
 
 def inbox_main(argv):
@@ -369,8 +469,9 @@ def inbox_main(argv):
     importer.add_argument('file', type=Path)
     complete = commands.add_parser('complete', help='Remove a processed entry from the inbox and retain its history')
     complete.add_argument('entry')
-    complete.add_argument('--pick', required=True)
+    complete.add_argument('--pick', help='Require the saved pick to match')
     complete.add_argument('--result', required=True)
+    complete.add_argument('--expect-comment', help='Reject completion if the saved comment changed')
     web = commands.add_parser('serve', help='Serve the inbox on loopback')
     web.add_argument('--port', type=int, default=8772)
     args = parser.parse_args(argv)
@@ -382,17 +483,19 @@ def inbox_main(argv):
             print(json.dumps(inbox.entries(completed=args.all), ensure_ascii=False, indent=2))
         elif args.command == 'import-picks':
             ballot = json.loads(args.file.read_text(encoding='utf-8'))
-            picks = ballot['picks']
-            if not isinstance(picks, dict):
-                raise ValueError('The download does not contain listening picks.')
+            picks, comments = ballot['picks'], ballot.get('comments', {})
+            if not isinstance(picks, dict) or not isinstance(comments, dict):
+                raise ValueError('The download does not contain valid listening feedback.')
             if ballot['pack'] != 'hamr-listening-inbox':
-                picks = {f'{ballot["pack"]}:{k}': v for k, v in picks.items()}
-            if inbox.record(picks, imported=True):
-                raise ValueError('The download conflicts with an existing pick or a completed or unknown entry.')
+                prefix = ballot['pack'] + ':'
+                picks = {prefix+k: v for k, v in picks.items()}
+                comments = {prefix+k: v for k, v in comments.items()}
+            if inbox.record(picks, imported=True, comments=comments):
+                raise ValueError('The download conflicts with existing feedback or a completed or unknown entry.')
         elif args.command == 'complete':
-            inbox.complete(args.entry, args.pick, args.result)
+            inbox.complete(args.entry, args.pick, args.result, expected_comment=args.expect_comment)
         else:
-            serve(inbox.snapshot, inbox.record, args.port, inbox=True)
+            serve(lambda: inbox.snapshot(include_comments=True), inbox.record, args.port, inbox=True)
     except (OSError, ValueError, KeyError) as exc:
         parser.error(str(exc))
 
@@ -408,15 +511,20 @@ def main():
     pack, files = load_pack(root)
     pairs = {pair['id']: pair for pair in pack['pairs']}
     path = root / 'listening-picks.json'
-    (root / 'listen.html').write_text(render(pack, load_picks(path, pairs)), encoding='utf-8')
-    if args.serve:
-        def snapshot():
-            return pack, files, load_picks(path, pairs)
+    comments_path = root / 'listening-comments.json'
 
-        def record(picks):
-            if not check_picks(picks, pairs):
+    def snapshot():
+        return pack, files, load_picks(path, pairs), load_comments(comments_path, pairs)
+
+    (root / 'listen.html').write_text(render(pack, *snapshot()[2:]), encoding='utf-8')
+    if args.serve:
+        def record(picks, *, comments):
+            if not check_picks(picks, pairs) or not check_comments(comments, pairs):
                 return 400
-            save_picks(path, {**load_picks(path, pairs), **picks})
+            if picks:
+                save_picks(path, {**load_picks(path, pairs), **picks})
+            if comments:
+                save_picks(comments_path, {**load_comments(comments_path, pairs), **comments})
 
         serve(snapshot, record, args.serve)
 

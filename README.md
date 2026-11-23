@@ -43,6 +43,8 @@ Same passage, same Nigel. Listen to the two halves of the whispered line and the
 
 This is how an ordinary book runs. Hamr can follow clear cues for tone, pace, emphasis, and authored sounds such as a sigh or a laugh. It uses the same rules for EPUB, Markdown, text, and PDFs, including scans after OCR. Use `--performance off` for a plain reading of one book, or `hamr settings --performance off` to make that your preference. [Delivery guide](docs/USAGE.md#expressive-narration)
 
+An eager whisper can carry a written sigh and a moment of emphasis in one continuous reading. Audition variations on a saved passage with `hamr preview --compare`, then keep the chosen direction and settings with a targeted repair. [Compare and keep alternate takes](docs/USAGE.md#expressive-narration)
+
 ## EPUB to audiobook in three commands
 
 [Install on Linux](#install-on-linux) or [install on Windows](docs/ENGINES.md#what-hamr-can-use), then replace the example filename. The preview is optional.

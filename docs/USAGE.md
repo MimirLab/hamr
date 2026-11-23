@@ -102,11 +102,17 @@ For an existing job, use `hamr repair JOB --upgrade-rules` to opt into the new s
 | Sighs, chuckles, sobs and other nonverbal sounds | An explicit marker associated with a dialogue turn. |
 | Heading cadence and technical articulation | Heading structure, or a complete table or equation in study or procedure mode. |
 
+An attribution inside a quoted sentence can direct both parts of the same turn. In “We will,” she whispered, “stay until dawn,” the quoted words share the whisper and the words around and between them stay in the narrator voice. Hamr can send the entire paragraph in one request when the surrounding sentences and the quoted turn fit.
+
 Hamr can give Breeze a delivery instruction for clearly attributed dialogue and for prose with a clear local cue. An immediate setup such as “She lowered her voice” can shape the same speaker’s next line. Two different details can support a direction together, as when a character leans closer and their words become barely audible. Competing directions leave the reading plain. Additional delivery controls recognize reporting verbs before the speaker as well, as in “whispered Alice.” A quiet scene requires corroborating details, such as a silent room and a character holding their breath. The plan records the source spans and delivery cues behind a decision. Hamr requires an explicit authored marker to perform a sound.
 
 Authored sounds include sighs, laughter, chuckles, gasps, coughs, throat clearing, groans, sniffles, lip smacks, hiccups, sneezes, and sobs. Hamr attaches a sound to an identifiable dialogue turn. A written laugh at the start of an eligible line calls for a short chuckle. Clearly attributed dialogue can also carry delivery such as whispering, urgency, restraint, irony, or distress. These cues apply in listening mode to EPUB, searchable and scanned PDF, Markdown, and plain text. Scanned pages first need local English OCR. Hamr keeps each affected utterance intact and preserves the original wording in the companion.
 
 **Expressive delivery** is on in normal listening mode. On the built-in Breeze profiles, Hamr can direct clearly attributed dialogue, let a named speaker carry a supported tone into the next turn, and shape a gentle entrance after a whisper. It applies the instruction to the complete passage, keeping the narrator's attribution and the words on both sides of an interruption. It reads conflicting and uncertain cues plainly. PDF line breaks can split a cue across source fragments. The plan records the original PDF blocks and spans for those cues.
+
+“Wait for the lantern,” she whispered. “The latch is still closed.” When the same turn continues in a second complete quotation within the paragraph, Hamr can keep both lines in one Breeze request. The narrator still reads the attribution between them. The plan marks both quotation spans under `continued_quotation`.
+
+On a searchable PDF these quotations can sit on separate printed lines. Hamr can keep adjacent aligned lines together for speech. A shared authored paragraph tag lets the delivery carry across both quotations. With only line geometry, Breeze reads the combined passage in its usual voice. The companion retains both source locations. Use `hamr repair JOB --reimport --performance auto` to check an older PDF for paragraph tags.
 
 Phrases such as “she answered quietly” and “he said slowly” can shape the quoted line even when a short sentence of narration shares the paragraph. A description that clearly refers back to the speaker's voice can also guide the line just spoken. Hamr asks Breeze to read the surrounding narration in its usual voice.
 
@@ -117,6 +123,10 @@ The same rules recognize locally attached speaker descriptions, such as “whisp
 Voice descriptions attached to the reporting clause can also direct one quotation. “She said, her voice barely audible” asks for softer speech when the possessive refers to the same speaker. An introduction such as “She said, in a whisper:” directs the quotation that follows. Hamr records the reporting verb, voice description and quoted span together.
 
 A written sigh or cough can also fall between two complete sentences in one attributed quotation. For example, in “The last box is empty. [sigh] At least we found the key,” she said, Hamr sends one continuous speech request and asks Breeze to place the sigh at the marked sentence break.
+
+If the same quotation is whispered, Hamr can keep the whisper and the authored sound in that request. It can also carry one unambiguous author-marked stress. The plan records the attribution, the marked sound, and the emphasized word separately. The sound marker tells Breeze where to act and is omitted from the expected spoken words.
+
+An attribution can specify both delivery and emotion. “She whispered eagerly” asks for a whisper with a little anticipation, and “she whispered shyly” asks for a hesitant warmth. A direct lead-in such as `Mara whispered: “Wait by the door.”` scopes the direction to the quotation. If the attribution interrupts one continuous turn, both quoted parts share the delivery and the attribution uses the usual narrator voice.
 
 Authored sounds are available in the ordinary workflow. Listening evidence includes leading sighs for Nigel Thornberry and Cave Johnson on Linux CPU Q8, trailing sighs on Linux Vulkan Q8, and Nigel's opening chuckle on Vulkan Q8 and F16. The plan records the direction that ran. Delivery varies with the voice, engine and passage.
 
@@ -154,7 +164,44 @@ For a book's own reporting phrases, add exact lowercase phrases to its source-bo
 }
 ```
 
-For a matched audition, add recipe-specific guidance or sampling to the source-bound document policy and use `--document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
+To compare delivery before changing a book, save named settings in `takes.json` and preview one of its saved passages.
+
+```json
+{
+  "Saved reading": {},
+  "Plain control": {"instruction": null, "markers": false},
+  "Quieter reading": {"instruction": "Read the passage softly, with clear consonants."},
+  "Another seed": {"seed": 43}
+}
+```
+
+```sh
+hamr preview JOB --utterance u00003 --compare takes.json --play
+```
+
+All variants start from the same bound passage, voice and engine. An empty object uses the saved take's settings. `instruction` replaces Breeze's text direction. Use `null` to clear it and `"markers": false` to remove optional vocal cues from the synthesis text while keeping the planned words. You can also override a signed 32-bit `seed`, `cfg_scale`, or a sampling setting from the list below. Each variant inherits any settings it omits. The command returns the WAV paths and a local manifest with the original source locations, the exact requests and audio hashes. Use `--json` to read the result in a script. Rerun the same command after an interruption to reuse completed takes that pass a hash check. Comparisons leave the job, render cache, and published book intact.
+
+To keep an auditioned instruction on one saved passage, copy the source block ID and expected spoken text from `hamr show JOB --content`. Add the chosen instruction to the source-bound policy.
+
+```json
+{
+  "source_sha256": "SOURCE_FILE_SHA256",
+  "performance": {
+    "passage_instructions": {
+      "SOURCE_BLOCK_ID": {
+        "text": "The river was quiet.",
+        "instruction": "Read this line softly with a clear, natural ending."
+      }
+    }
+  }
+}
+```
+
+Run `hamr repair JOB --document-policy POLICY.json`, then `hamr resume JOB`. The source block and exact text must identify one rendered passage. The instruction is sent separately from those words. Other passages keep their existing directions. Plain mode leaves passage instructions inactive.
+
+To keep the audition's guidance or sampling for that passage, add a `"tuning"` object beside `"text"` and `"instruction"`, such as `"tuning": {"cfg_scale": 2, "top_k": 48}`. Its settings override those from the recipe for that passage. Omitted settings still come from the recipe or engine.
+
+To apply recipe-specific guidance or sampling to a book, put the settings in its source-bound policy and use `--document-policy POLICY.json`. Omitted controls use the pinned engine defaults. Custom guidance above 1 requires serial synthesis. Hamr keeps these fields in the exact request receipt and reuses recordings whose requests are unchanged.
 
 ```json
 {

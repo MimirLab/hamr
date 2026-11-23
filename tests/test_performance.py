@@ -84,6 +84,44 @@ def test_interrupted_dialogue_keeps_both_spans_and_attribution_in_one_request(tm
     assert [text[start:end] for start,end in evidence['quotation_spans']][1][1:-1]=='until the door opens.'
 
 
+@pytest.mark.parametrize(('text', 'attribution', 'quotes', 'recipe'), [
+    ('“Keep close,” Ada whispered. “We are almost there.”', 'whispered',
+     ['“Keep close,”', '“We are almost there.”'], 'whisper'),
+    ('“Wait here,” whispered the watchman. “I will bring the key.”', 'whispered',
+     ['“Wait here,”', '“I will bring the key.”'], 'whisper'),
+    ('“Mind the step!” cried the watchman. “The stone is loose!”', 'cried',
+     ['“Mind the step!”', '“The stone is loose!”'], 'forceful'),
+    ('“Hear me out,” said Ada firmly. “There is another way.”', 'firmly',
+     ['“Hear me out,”', '“There is another way.”'], 'firm'),
+])
+def test_attributed_turn_keeps_the_next_sentence_in_the_same_request(tmp_path, text, attribution, quotes, recipe):
+    runtime, models, archives = performance.pinned_backends()
+    backend_identity = {'profile': 'vulkan-q8', 'runtime_revision': runtime,
+                        'model_sha256': models['vulkan-q8'], 'runtime_platform': 'linux_x86_64',
+                        'runtime_archive_sha256': archives['linux_x86_64']}
+    voice = {'reference_sha256': 'a' * 64, 'transcript': 'Reference words.'}
+    policy = {'source_sha256': digest(text.encode()), 'performance': {'attribution_cues': {'cried': 'forceful'}}}
+    result = plan_source(tmp_path, text, 'auto', document=policy)
+    assert performance.bind(result, backend_identity, voice)
+    unit, = result['utterances']
+    spoken, fields = performance.request(unit)
+    assert spoken == text and 'both quotations' in fields['instruction']
+    assert unit['performance']['recipe'] == recipe
+    evidence, = unit['performance']['evidence']
+    assert evidence['form'] == 'continued_quotation'
+    assert text[slice(*evidence['span'])] == attribution
+    assert [text[slice(*span)] for span in evidence['quotation_spans']] == quotes
+    legacy = planner.plan(inspect(tmp_path / 'book.md'), {'performance': 'auto'}, delivery_context=9)
+    assert legacy['performance']['candidates'] == 0
+
+
+def test_attributed_turn_does_not_carry_across_a_new_paragraph(tmp_path):
+    result = plan_source(tmp_path, '“Stay here,” Ada whispered.\n\n“Where is Clara?”', 'auto')
+    first, second = result['utterances']
+    assert first['performance_candidate']['recipe'] == 'whisper'
+    assert 'performance_candidate' not in second
+
+
 @pytest.mark.parametrize(('text','recipe'),[
     ('“Bring me the brass key,” Ada said, stressing the word “brass”.','contrastive_emphasis'),
     ('“We can wait. We can still turn back. We have to go now,” Ada said, beginning softly and growing louder.','growing_force'),
@@ -691,6 +729,141 @@ def test_inline_authored_sigh_is_one_automatic_request(tmp_path,monkeypatch,caps
         assert performance.lexical_observation(unit,uncertain)==uncertain
 
 
+def test_composed_whisper_keeps_authored_sigh_and_stress_in_one_default_request(tmp_path,monkeypatch,capsys):
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    store = Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    source = tmp_path/'book.md'
+    source.write_text('“Did *you* see the door move? [sigh] The passage is empty,” Ada whispered.')
+    document = inspect(source)
+    older = planner.plan(document,delivery_context=13)
+    assert 'event' not in older['utterances'][0]['performance_candidate']
+
+    assert cli.main(['--home',str(store.root),'queue',str(source),'--voice','cast:nigel-thornberry','--json'])==0
+    job = store.get(json.loads(capsys.readouterr().out)['job'])
+    unit, = job['plan']['utterances']
+    active = unit['performance']
+    assert active['composition']=={'delivery':'whisper','vocal_event':'sigh','focus':'you'}
+    assert unit['text']=='“Did you see the door move? The passage is empty,” Ada whispered.'
+    spoken,options = performance.request(unit)
+    assert spoken=='“Did you see the door move? (sigh) The passage is empty,” Ada whispered.'
+    assert options['instruction']==(
+        'Whisper the quoted words clearly. Give one brief natural sigh at the marked pause. '
+        'Give the marked word you one small natural stress. Read the attribution in the usual narrator voice.')
+    assert active['id']!=older['utterances'][0]['performance_candidate']['id']
+    attribution,event,emphasis = active['evidence']
+    block = document.blocks[0].source
+    assert block[slice(*attribution['span'])]=='whispered'
+    assert block[slice(*event['span'])]=='[sigh]'
+    assert block[slice(*emphasis['target_span'])]=='you'
+    assert active['event']['word_offset']==6
+    observed = 'Did you see the door move? [sighing] The passage is empty, Ada whispered.'
+    assert performance.lexical_observation(unit,observed)==observed.replace('[sighing] ','')
+    assert performance.lexical_observation(unit,observed.replace('door','floor'))==observed.replace('door','floor')
+
+
+@pytest.mark.parametrize(('text','components'),[
+    ('“Were *you* there? [sigh] The latch stayed shut,” Ada said.',{'vocal_event':'sigh','focus':'you'}),
+    ('“Were *you* there?” Ada whispered.',{'delivery':'whisper','focus':'you'}),
+    ('The lantern fell. “Quiet. [cough] Wait here,” Ada whispered. The latch slid.',
+     {'delivery':'whisper','vocal_event':'cough'}),
+    ('“Were *you* there, or were you at home? [sigh] The latch stayed shut,” Ada whispered.',
+     {'delivery':'whisper','vocal_event':'sigh'}),
+])
+def test_composition_preserves_each_owned_cue_and_rejects_ambiguous_stress(tmp_path,text,components):
+    result = plan_source(tmp_path,text,'auto')
+    unit, = result['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['composition']==components
+    if text.startswith('The lantern'):
+        assert candidate['speech']=='The lantern fell. “Quiet. Wait here,” Ada whispered. The latch slid.'
+        assert 'surrounding narration' in candidate['instruction']
+
+
+@pytest.mark.parametrize(('text','affect','modifier','quoted'),[
+    ('“Are you ready?” she whispered eagerly.','eager_anticipation','eagerly',['“Are you ready?”']),
+    ('Ada whispered eagerly, “We found the key.”','eager_anticipation','eagerly',['“We found the key.”']),
+    ('“Wait here,” whispered Ada shyly.','shy_warmth','shyly',['“Wait here,”']),
+    ('“We could,” whispered Ada shyly, “leave before dark.”',
+     'shy_warmth','shyly',['“We could,”','“leave before dark.”']),
+    ('The room was quiet. “Please wait,” the night watchman whispered shyly.',
+     'shy_warmth','shyly',['“Please wait,”']),
+])
+def test_attributed_affect_owns_only_the_quoted_spans(tmp_path,text,affect,modifier,quoted):
+    source = tmp_path/'book.md'
+    source.write_text(text)
+    doc = inspect(source)
+    old, = planner.plan(doc,delivery_context=14)['utterances']
+    assert not old.get('performance_candidate')
+    default = planner.plan(doc)
+    unit, = default['utterances']
+    assert default['performance']['mode']=='auto'
+    candidate=unit['performance_candidate']
+    assert candidate['composition']=={'delivery':'whisper','affect':affect}
+    assert candidate['synthesis']==candidate['speech']==text
+    evidence, = (row for row in candidate['evidence'] if row['kind']=='attributed_affect')
+    assert text[slice(*evidence['span'])]==modifier
+    assert [text[slice(*span)] for span in evidence['quotation_spans']]==quoted
+    if text.startswith('The room'):
+        assert 'surrounding narration in the usual narrator voice' in candidate['instruction']
+
+
+@pytest.mark.parametrize(('text','recipe'),[
+    ('“Now,” Ada whispered presently.','whisper'),
+    ('“Now,” Ada never whispered eagerly.',None),
+    ('“Now,” Ada might have whispered eagerly.',None),
+    ('Ada listened eagerly. “Now,” Lee said.',None),
+    ('“Ada whispered eagerly,” Lee said.',None),
+    ('“Now,” whispered Ada. “Wait,” Lee said shyly.',None),
+])
+def test_timing_and_unowned_modifiers_do_not_supply_affect(tmp_path,text,recipe):
+    unit, = plan_source(tmp_path,text,'auto')['utterances']
+    candidate = unit.get('performance_candidate',{})
+    assert candidate.get('recipe')==recipe and 'composition' not in candidate
+
+
+def test_whisper_affect_and_authored_sound_can_share_a_request(tmp_path):
+    text='“Did *you* call? [sigh] I am listening,” Ada whispered shyly.'
+    unit, = plan_source(tmp_path,text,'auto')['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['composition']=={'delivery':'whisper','affect':'shy_warmth',
+                                       'vocal_event':'sigh','focus':'you'}
+    assert candidate['speech']=='“Did you call? I am listening,” Ada whispered shyly.'
+    assert candidate['synthesis']=='“Did you call? (sigh) I am listening,” Ada whispered shyly.'
+    assert 'hesitant warmth' in candidate['instruction']
+
+
+@pytest.mark.parametrize(('text','recipe','cue'),[
+    ('Mara whispered: “The child is asleep.”','whisper','whispered'),
+    ('The children were asleep. Mara whispered: “Wait by the door.”','whisper','whispered'),
+    ('The guard yelled: “Stand clear!”','forceful','yelled'),
+    ('Mara whispered eagerly: “Is this the place?”','whisper','whispered eagerly'),
+])
+def test_colon_introduces_one_owned_quotation(tmp_path,text,recipe,cue):
+    path = tmp_path/'book.md'
+    path.write_text(text)
+    doc = inspect(path)
+    prior, = planner.plan(doc,delivery_context=15)['utterances']
+    assert 'performance_candidate' not in prior
+    unit, = planner.plan(doc)['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['recipe']==recipe
+    assert candidate['speech']==text
+    assert text[slice(*candidate['source']['span'])]==cue
+    if text.startswith('The children'):
+        assert 'narration around the quotation' in candidate['instruction']
+
+
+@pytest.mark.parametrize('text',[
+    'Mara did not whisper: “The child is asleep.”',
+    'Mara would have whispered: “The child is asleep.”',
+    'A whispered warning: “The child is asleep.”',
+    'Mara read the word “whispered”: “The child is asleep.”',
+])
+def test_colon_does_not_supply_attributed_delivery_on_its_own(tmp_path,text):
+    assert all('performance_candidate' not in unit for unit in plan_source(tmp_path,text,'auto')['utterances'])
+
+
 def test_inline_cough_uses_the_same_continuous_request_at_the_new_context_version(tmp_path,monkeypatch,capsys):
     monkeypatch.setattr(performance.sys,'platform','linux')
     store=Store(tmp_path/'state')
@@ -749,6 +922,46 @@ def test_inline_event_keeps_both_native_pdf_fragments(tmp_path,first_line,second
     assert [part['block'] for part in evidence['quotation_parts']]==[first,second]
     assert event['source']=={'block':second,'span':[0,len(cue)]}
     assert event['speech']==first_line+' '+second_line.removeprefix(cue+' ')
+
+
+def test_composed_pdf_welds_only_the_source_owned_event_seam(tmp_path,monkeypatch):
+    from bs4 import BeautifulSoup
+    from reportlab.pdfgen.canvas import Canvas
+
+    source = tmp_path/'book.pdf'
+    pdf = Canvas(str(source))
+    pdf.drawString(72,700,'"Did you see the door move?')
+    pdf.drawString(72,678,'[sigh] The passage is empty," Ada whispered.')
+    pdf.save()
+    document = inspect(source)
+    older = planner.plan(document,delivery_context=13)
+    assert len(older['utterances'])==2
+    unit, = planner.plan(document)['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['composition']=={'delivery':'whisper','vocal_event':'sigh'}
+    assert candidate['speech']=='"Did you see the door move? The passage is empty," Ada whispered.'
+    assert candidate['synthesis']=='"Did you see the door move? (sigh) The passage is empty," Ada whispered.'
+    attribution,event = candidate['evidence']
+    first,second = unit['sources']
+    assert attribution['block']==event['block']==second
+    assert event['span']==[0,6]
+    assert [part['block'] for part in event['quotation_parts']]==[first,second]
+
+    store = Store(tmp_path/'state')
+    writejson(store.root/'settings.json',pinned_linux_profile('vulkan-q8'))
+    monkeypatch.setattr(performance.sys,'platform','linux')
+    monkeypatch.setattr(jobs,'Engine',FakeEngine)
+    monkeypatch.setattr(pipeline.qa_cache,'observer_identity',lambda *args:{'model_files':{}})
+    monkeypatch.setattr(pipeline.qa_cache,'observe',lambda *args:observation(*args,prefix=''))
+    queued = jobs.create(store,source,voice='cast:nigel-thornberry',output=tmp_path)
+    result = pipeline.run(store,queued['job'],Path('/fixture'),Path('/fixture'))
+    assert result['status']=='ready'
+    output = Path(result['output'])
+    companion = loadjson(output/'companion.json')
+    page = BeautifulSoup((output/'source.html').read_text(),'html.parser')
+    marker_block = page.find(id=second)
+    assert '[sigh]' in marker_block.find('pre').get_text()
+    assert marker_block.details.pre.get_text()==companion['segments'][0]['text']==candidate['speech']
 
 
 def test_book_policy_adds_an_exact_attribution_without_changing_other_requests(tmp_path,monkeypatch,capsys):
@@ -978,6 +1191,110 @@ def test_queue_binds_preview_and_render_to_same_directed_request(tmp_path,monkey
     assert clip['control_request']==preview
 
 
+def test_preview_comparison_preserves_book_and_records_each_effective_request(tmp_path, monkeypatch, capsys):
+    import wave
+
+    from audiobook import preview_compare
+
+    store, job = queued(tmp_path)
+    starts = []
+    spoken = []
+
+    class Engine(FakeEngine):
+        def __enter__(self):
+            starts.append(True)
+            return self
+
+        def speech(self, text, voice, **options):
+            spoken.append((text, voice, options))
+            return super().speech(text, voice, **options)
+
+    monkeypatch.setattr(preview_compare, 'Engine', Engine)
+    controls = tmp_path / 'compare.json'
+    writejson(controls, {'saved': {}, 'plain': {'instruction': None, 'markers': False},
+                        'new': {'seed': 0, 'instruction': 'A tired, fleeting breath.',
+                                'temperature': .7, 'top_k': 48, 'cfg_scale': 2},
+                        'saved again': {}})
+    previous = store.get(job['id'])
+    plan_file = store.path(job) / 'plan.json'
+    original_plan = plan_file.read_bytes()
+    assert cli.main(['--home', str(store.root), 'preview', job['id'], '--compare', str(controls), '--json']) == 0
+    result = json.loads(capsys.readouterr().out)
+    report = loadjson(Path(result['manifest']))
+    assert report['expected_words'] == '“I thought we had more time,” she said.'
+    assert not report['ready'] and len(starts) == 1 and len(spoken) == 3
+    assert [take['name'] for take in report['takes']] == ['saved', 'plain', 'new', 'saved again']
+    assert spoken[0][0].startswith('(sigh) ')
+    assert spoken[1] == (report['expected_words'], VOICE, {'seed': 42, 'instruction': None, 'cfg_scale': 1})
+    assert spoken[2][0] == spoken[0][0] and spoken[2][1] == VOICE
+    assert spoken[2][2] == {'seed': 0, 'instruction': 'A tired, fleeting breath.', 'cfg_scale': 2,
+                            'sampling': {'temperature': .7, 'top_k': 48}}
+    assert store.get(job['id']) == previous and plan_file.read_bytes() == original_plan
+    assert not list((store.root / 'clips').iterdir())
+    for summary, take in zip(result['takes'], report['takes'], strict=True):
+        wav = Path(summary['audio'])
+        assert digest(wav.read_bytes()) == take['audio_sha256']
+        with wave.open(str(wav), 'rb') as audio:
+            assert audio.readframes(audio.getnframes()) == TONE
+
+
+def test_preview_comparison_recovers_only_verified_takes_after_interruption(tmp_path, monkeypatch, capsys):
+    from audiobook import preview_compare
+    from audiobook.core import Error
+
+    store, job = queued(tmp_path)
+    controls = tmp_path / 'compare.json'
+    writejson(controls, {'saved': {}, 'second seed': {'seed': 43}})
+    command = ['--home', str(store.root), 'preview', job['id'], '--compare', str(controls), '--json']
+    seeds = []
+
+    class Engine(FakeEngine):
+        def speech(self, text, voice, **options):
+            seeds.append(options['seed'])
+            if seeds == [42, 43]:
+                raise Error('speech_deadline', 'Interrupted comparison.')
+            return super().speech(text, voice, **options)
+
+    monkeypatch.setattr(preview_compare, 'Engine', Engine)
+    assert cli.main(command) == 2
+    assert json.loads(capsys.readouterr().out)['error']['code'] == 'speech_deadline'
+    root = store.path(job) / 'auditions'
+    assert len(list(root.glob('*.take.json'))) == 1
+    assert cli.main(command) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert (result['new_takes'], result['reused_takes']) == (1, 1)
+    assert seeds == [42, 43, 43]
+    assert cli.main(command) == 0
+    repeat = json.loads(capsys.readouterr().out)
+    assert repeat['manifest'] == result['manifest']
+    assert (repeat['new_takes'], repeat['reused_takes']) == (0, 2)
+    assert seeds == [42, 43, 43]
+    Path(result['takes'][0]['audio']).write_bytes(b'changed')
+    assert cli.main(command) == 0
+    recovered = json.loads(capsys.readouterr().out)
+    assert recovered['manifest'] == result['manifest']
+    assert (recovered['new_takes'], recovered['reused_takes']) == (1, 1)
+    assert seeds == [42, 43, 43, 42]
+
+
+def test_preview_comparison_validates_all_settings_before_synthesis(tmp_path, monkeypatch, capsys):
+    from audiobook import preview_compare
+
+    store, job = queued(tmp_path)
+
+    def engine(*args):
+        pytest.fail('An invalid comparison must not start Breeze.')
+
+    monkeypatch.setattr(preview_compare, 'Engine', engine)
+    controls = tmp_path / 'compare.json'
+    writejson(controls, {'saved': {}, 'bad seed': {'seed': True}})
+    command = ['--home', str(store.root), 'preview', job['id'], '--compare', str(controls), '--json']
+    assert cli.main(command) == 2
+    failure = json.loads(capsys.readouterr().out)['error']
+    assert failure['code'] == 'preview_compare_seed' and 'bad seed' in failure['message']
+    assert not (store.path(job) / 'auditions').exists()
+
+
 def test_transcribe_compares_exact_take_without_changing_job(tmp_path,monkeypatch,capsys):
     from audiobook import asr_diagnostic, asr_fluid
 
@@ -1084,3 +1401,139 @@ pipeline.run(Store(Path(sys.argv[1])),sys.argv[2],Path('/fixture'),Path('/fixtur
     assert pipeline.run(resumed,job['id'],Path('/fixture'),Path('/fixture'))['status']=='ready'
     assert not resumed.get(job['id']).get('performance_fallbacks')
     assert jobs.valid_clip(store,clip)==first
+
+
+@pytest.mark.parametrize(('text', 'recipe'), [
+    ('The steps creaked. “We will,” she whispered, “stay until dawn.” The hinge rattled.', 'whisper'),
+    ('“We will,” whispered the watchman, “stay until dawn.” The hinge rattled.', 'whisper'),
+    ('The steps creaked. “We will,” Ada murmured, “stay until dawn.”', 'murmured'),
+    ('“We will,” whispered the watchman, “stay until dawn.” (He did.)', 'whisper'),
+])
+def test_narration_around_interrupted_turn_keeps_both_source_spans(tmp_path, text, recipe):
+    default = plan_source(tmp_path, text, 'auto')
+    unit, = default['utterances']
+    candidate = unit['performance_candidate']
+    evidence, = candidate['evidence']
+    start, end = evidence['turn_span']
+    assert text[start:end].startswith('“We will,”')
+    assert text[start:end].endswith('“stay until dawn.”')
+    assert evidence['form'] == 'embedded_interrupted_quotation'
+    assert [text[a:b] for a, b in evidence['quotation_spans']] == ['“We will,”', '“stay until dawn.”']
+    assert candidate['recipe'] == recipe
+    assert candidate['synthesis'] == candidate['speech'] == unit['text'] == text
+    assert 'around and between' in candidate['instruction']
+
+    earlier = planner.plan(inspect(tmp_path/'book.md'), delivery_context=11)
+    assert earlier['performance']['candidates'] == 0
+
+
+@pytest.mark.parametrize('text', [
+    'The steps creaked. “Stay here,” she said. “Go now,” he whispered.',
+    'The steps creaked. “You go first,” Ada said, “Wait outside.” The hinge rattled.',
+    'The steps creaked. “We will,” she whispered, ‘stay until dawn.’ The hinge rattled.',
+    'The steps creaked. “We will,” she whispered, “stay until dawn.” “I heard you,” he said.',
+])
+def test_surrounding_narration_does_not_join_distinct_or_ambiguous_turns(tmp_path, text):
+    assert plan_source(tmp_path, text, 'auto')['performance']['candidates'] == 0
+
+
+def test_passage_instruction_replaces_one_request_and_keeps_older_job_defaults(tmp_path):
+    source = tmp_path/'book.md'
+    source.write_text(f'{WHISPER}\n\nThe river was quiet.\n\nThe lamps were lit.')
+    doc = inspect(source)
+    block = next(b for b in doc.blocks if b.source == WHISPER)
+    phrase = 'Use a low voice for the line. Read the attribution naturally.'
+    default = planner.plan(doc)
+    runtime, models, archives = performance.pinned_backends()
+    backend = {'profile':'cpu-q8','runtime_revision':runtime,'runtime_platform':'linux_x86_64',
+               'runtime_archive_sha256':archives['linux_x86_64'],'model_sha256':models['cpu-q8'],
+               'settings':{'device':'cpu'}}
+    voice = {**VOICE,'reference_sha256':'e'*64,'transcript':'Reference words.'}
+    assert performance.bind(default, backend, voice)
+    pinned = {u['performance_candidate']['id']:u for u in default['utterances'] if 'performance_candidate' in u}
+    policy = {'document':{'source_sha256':doc.source_sha256,
+                         'performance':{'passage_instructions':{block.id:{'text':WHISPER,'instruction':phrase}}}}}
+    changed = planner.plan(doc, policy)
+    assert changed['performance']['instruction_state'] == 'planned'
+    assert performance.bind(changed, backend, voice, previous=pinned)
+    assert changed['performance']['instruction_state'] == 'active'
+    current, *other = changed['utterances']
+    original, *unaffected = default['utterances']
+    assert performance.request(current)[0] == performance.request(original)[0] == WHISPER
+    assert performance.request(current)[1]['instruction'] == phrase
+    assert current['performance']['evidence'][-1]['kind'] == 'source_policy_instruction'
+    assert performance.request_identity(current) != performance.request_identity(original)
+    assert [performance.request(unit) for unit in other] == [performance.request(unit) for unit in unaffected]
+    assert [performance.request_identity(unit) for unit in other] == [
+        performance.request_identity(unit) for unit in unaffected]
+    off = planner.plan(doc, {**policy, 'performance':'off'})
+    assert off['performance']['instruction_state'] == 'inactive'
+    assert all('performance_candidate' not in unit for unit in off['utterances'])
+
+
+def test_passage_instruction_requires_exact_text_for_one_passage(tmp_path):
+    source = tmp_path/'book.md'
+    source.write_text('The river was quiet.\n\nThe lamps were lit.')
+    doc = inspect(source)
+    bid = next(b.id for b in doc.blocks if b.source == 'The river was quiet.')
+    policy = {'document':{'source_sha256':doc.source_sha256,'performance':{
+        'passage_instructions':{bid:{'text':'The lamps were lit.', 'instruction':'A gentle opening.'}},
+    }}}
+    with pytest.raises(backend.Error, match='matched 0 rendered passages'):
+        planner.plan(doc, policy)
+    policy['document']['performance']['passage_instructions'][bid]['text'] = 'The river was quiet.'
+    result = planner.plan(doc, policy)
+    assert result['utterances'][0]['performance_candidate']['recipe']=='passage_instruction'
+    assert 'performance_candidate' not in result['utterances'][1]
+
+
+def test_passage_tuning_overrides_only_the_selected_occurrence_of_a_recipe(tmp_path):
+    source = tmp_path/'book.md'
+    other = '“Look through the window,” Ada whispered.'
+    source.write_text(WHISPER+'\n\n'+other)
+    doc = inspect(source)
+    profile = pinned_linux_profile('vulkan-q8')
+    voice = {**VOICE,'reference_sha256':'e'*64,'transcript':'Reference words.'}
+    policy = {'document':{'source_sha256':doc.source_sha256,'performance':{
+        'tuning':{'whisper':{'cfg_scale':2,'temperature':.7}},
+    }}}
+    ordinary = planner.plan(doc,policy)
+    performance.bind(ordinary,profile,voice)
+    selected = {'text':WHISPER,'instruction':'Whisper the line clearly.',
+                'tuning':{'cfg_scale':1,'top_k':48}}
+    policy['document']['performance']['passage_instructions'] = {doc.blocks[0].id:selected}
+    revised = planner.plan(doc,policy)
+    performance.bind(revised,profile,voice)
+    first, second = revised['utterances']
+    assert performance.request(first)==(WHISPER,{'seed':42,'instruction':selected['instruction'],
+                                                  'cfg_scale':1,'sampling':{'temperature':.7,'top_k':48}})
+    assert performance.request(second)==performance.request(ordinary['utterances'][1])
+    assert performance.request_identity(second)==performance.request_identity(ordinary['utterances'][1])
+    selected['tuning']['top_k'] = True
+    with pytest.raises(backend.Error,match='top_k'):
+        planner.plan(doc,policy)
+
+
+@pytest.mark.parametrize('text', [
+    '“What do you want?” he gasped.',
+    '“Your mother has not relented?” gasped the keeper.',
+    'The lantern dimmed. “Can you hear me?” Ada gasped.',
+])
+def test_gasped_applies_to_an_owned_quotation_without_adding_words(tmp_path, text):
+    plan = plan_source(tmp_path, text, 'auto')
+    unit, = plan['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['recipe'] == 'caught_breath'
+    assert candidate['speech'] == candidate['synthesis'] == unit['text'] == text
+    assert candidate['evidence'][0]['kind'] == 'direct_attribution'
+    legacy = planner.plan(inspect(tmp_path/'book.md'), delivery_context=12)
+    assert legacy['performance']['candidates'] == 0
+
+
+@pytest.mark.parametrize('text', [
+    'She gasped when the door opened.',
+    '“What do you want?” he said. Someone gasped in the hall.',
+    '“He gasped a little,” Ada said.',
+])
+def test_gasped_in_narration_or_reported_events_remains_ordinary(tmp_path, text):
+    assert plan_source(tmp_path,text,'auto')['performance']['candidates'] == 0

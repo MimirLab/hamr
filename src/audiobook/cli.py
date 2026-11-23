@@ -279,6 +279,7 @@ def parser():
     q.add_argument('--second-model',type=Path)
     q=sub('excerpt','Export consecutive committed takes while a render continues'); q.add_argument('job'); q.add_argument('--start',default='u00001'); q.add_argument('--count',type=int,default=4); q.add_argument('--output',type=Path,required=True)
     q=sub('preview','Audition an actual planned passage outside ready output'); q.add_argument('job'); q.add_argument('--utterance',default='u00001'); q.add_argument('--play',action='store_true')
+    q.add_argument('--compare',type=Path,help='Audition named overrides from a JSON file without changing the job')
     q=sub('play','Open ready M4B in the real target player'); q.add_argument('job'); q.add_argument('--start',type=float,default=0)
     q=sub('voice','Browse the built-in cast and manage reusable narrators'); v=q.add_subparsers(dest='voice_command',required=True)
     z=v.add_parser('list',help='List saved custom narrators'); z.add_argument('--json',action='store_true',default=argparse.SUPPRESS)
@@ -675,11 +676,27 @@ def dispatch(argv=None):
                 # Audition the same request that would be bound by render.
                 # Preview leaves a queued job unbound until actual rendering.
                 bind_speech(s,j)
-                with Engine(s,j['backend']) as e: data,receipt=speak(e,u,j['voice'])
-                dest=s.path(j)/'preview.wav'
-                with wave.open(str(dest),'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE); w.writeframes(data)
-                emit({'schema_version':1,'preview':str(dest),'ready':False,'sources':[b['locator'] for b in j['document']['blocks'] if b['id'] in u['sources']],'receipt':receipt},True)
-                if a.play: subprocess.run(['mpv','--no-video',str(dest)],check=True)
+                if a.compare:
+                    from .preview_compare import audition, read_controls
+                    comparison = audition(s, j, u, read_controls(a.compare))
+                else:
+                    with Engine(s,j['backend']) as e: data,receipt=speak(e,u,j['voice'])
+                    dest=s.path(j)/'preview.wav'
+                    with wave.open(str(dest),'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(RATE); w.writeframes(data)
+                    emit({'schema_version':1,'preview':str(dest),'ready':False,'sources':[b['locator'] for b in j['document']['blocks'] if b['id'] in u['sources']],'receipt':receipt},True)
+                    if a.play: subprocess.run(['mpv','--no-video',str(dest)],check=True)
+            if a.compare:
+                if jm:
+                    emit(comparison,True)
+                else:
+                    for take in comparison['takes']:
+                        print(f'{take["name"]} · {take["seconds"]:.2f} s · {take["audio"]}')
+                    if comparison['reused_takes']:
+                        print(f'Reused {comparison["reused_takes"]} verified comparison take(s).')
+                    print(comparison['manifest'])
+                if a.play:
+                    sys.stdout.flush()
+                    subprocess.run(['mpv','--no-video','--really-quiet',*[take['audio'] for take in comparison['takes']]],check=True)
         elif a.command=='play':
             j=s.get(a.job); result=summary(s,j)
             if result['status']!='ready': raise Error('not_ready','Only a verified ready output can be played.','Resume or repair the job first.')
@@ -693,7 +710,7 @@ def dispatch(argv=None):
     except Error as e:
         return emit_error(e,jm or a.command=='agent')
     except KeyboardInterrupt:
-        status, action = ('interrupted','Run the same transcribe command again.') if a.command=='transcribe' else (
+        status, action = ('interrupted',f'Run the same {a.command} command again.') if a.command in ('transcribe','preview') else (
             'paused','Run hamr status, then resume JOB.')
         try:
             emit({'schema_version':1,'status':status,'action':action},True); sys.stdout.flush()

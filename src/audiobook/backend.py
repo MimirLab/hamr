@@ -349,16 +349,14 @@ class Engine:
             raise Error('device_unverified','Breeze did not prove the requested execution backend.','Check backend/device availability; unexpected CPU fallback is rejected.')
         return actual[1].rstrip(',')
     def speech(self,text,voice=None,instruction=None,seed=42,*,cfg_scale=1,sampling=None):
+        from .performance import validate_guidance, validated_sampling
+
         validate_request(text,voice,instruction)
-        if type(cfg_scale) not in (int,float) or cfg_scale not in (1,2,2.5,3):
-            raise Error('speech_guidance','Choose Breeze guidance of 1, 2, 2.5, or 3.')
-        if cfg_scale!=1 and (getattr(self,'identity',None) or {}).get('settings',{}).get('parallel',1)!=1:
-            raise Error('speech_guidance','Stronger guidance needs a serial audition.')
+        validate_guidance(cfg_scale, (getattr(self,'identity',None) or {}).get('settings',{}).get('parallel',1))
         logpath=self.store.root/'runtime'/'backend.log' if getattr(self,'store',None) is not None else None
         log_offset=logpath.stat().st_size if logpath and logpath.exists() else 0
         fields={'text':text,'split_chars':'0','max_new_tokens':'1500','seed':str(seed),'cfg_scale':format(cfg_scale,'g')}
         if sampling:
-            from .performance import validated_sampling
             fields.update({name:str(value) for name,value in validated_sampling(sampling).items()})
         files=None; fh=None
         if voice:
