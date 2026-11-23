@@ -15,6 +15,8 @@ from .core import Error, RATE, atomic, digest, fault, filehash, key, loadjson, w
 VERSION = 1
 INSTRUCTION = ('Give only the middle quotation a quiet, breathy whisper. '
                'Use the usual narrator voice before and after the quotation.')
+CONTINUING_INSTRUCTION = ('Give both quotations a quiet, breathy whisper. '
+                          'Use the usual narrator voice in the narration and the reporting words between them.')
 FRAME = performance.FRAME_GUIDANCE_CAPABILITY['frame_samples']
 ANCHOR = {'start_frame': 0, 'end_frame': 1, 'scale': 0, 'base_scale': 0}
 WORKER = Path(__file__).with_name('timing_worker.py')
@@ -22,7 +24,7 @@ MODEL_FILES = ('model.bin', 'config.json', 'tokenizer.json', 'vocabulary.txt')
 
 
 def owned_whisper(text, context_version):
-    """Return the one complete quotation owned by an explicit whisper clause."""
+    """Return the complete quotation spans owned by one explicit whisper clause."""
     quoted = performance.quotation_text(text, context_version)
     sentences = list(sentence_spans(quoted))
     actor = performance.attribution_actor(context_version)
@@ -38,12 +40,13 @@ def owned_whisper(text, context_version):
             if turn and not turn.groupdict().get('continuation'):
                 offsets = tuple(start + offset for offset in turn.span('quote'))
                 if offsets == quote.span():
-                    # One native interval cannot cover a continuing second
-                    # quotation while leaving the attribution in between plain.
                     continuation = performance.attributed_turn_continuation(
                         quoted[quote.start():], 'whispered', None, actor=actor, context_version=context_version)
-                    if not continuation:
-                        found.append(offsets)
+                    if continuation and context_version >= 21:
+                        following = tuple(quote.start()+offset for offset in continuation[1])
+                        found.append((offsets,following))
+                    elif not continuation:
+                        found.append((offsets,))
                     break
     return found[0] if len(found) == 1 else None
 
@@ -60,9 +63,15 @@ def scope(source, spoken, context_version):
     quoted = owned_whisper(spoken, context_version)
     if not quoted:
         return None
-    start, stop = quoted
-    regions = tuple(words(piece) for piece in (spoken[:start], spoken[start+1:stop-1], spoken[stop:]))
-    if not all(regions) or len(regions[2]) < 2:
+    if not words(spoken[:quoted[0][0]]) or any(not words(spoken[a+1:b-1]) for a,b in quoted):
+        return None
+    if len(quoted)>1:
+        first, second = quoted
+        if len(words(spoken[first[1]:second[0]]))<2:
+            return None
+        return {'quotations':[list(span) for span in quoted], 'version':2}
+    (start, stop), = quoted
+    if len(words(spoken[stop:]))<2:
         return None
     return {'quotation': [start,stop], 'version': VERSION}
 
@@ -98,7 +107,7 @@ class Edges:
         return self.valid_start(schedule['start_frame']) and self.end <= hold and release <= self.after
 
 
-def measurements(text, quotation, primary, secondary):
+def measurements(text, quotation, primary, secondary, *, samples=None):
     """Use one complete timed transcript and confirm the local edges independently."""
     left, right = quotation
     prefix, target, suffix = (words(part) for part in (text[:left],text[left+1:right-1],text[right:]))
@@ -111,18 +120,23 @@ def measurements(text, quotation, primary, secondary):
     if labels[:len(expected)] == expected:
         start = min(primary[begin]['start'],secondary[begin]['start'])
         before = max(primary[begin-1]['end'],secondary[begin-1]['end'])
-        other_end, other_after = secondary[end-1]['end'],secondary[end]['start']
+        other_index = end
     else:
         tail = target[-3:]
         edge = tail+suffix[:2]
         candidates = [i+len(tail) for i in range(len(labels)) if labels[i:i+len(edge)] == edge]
         if len(candidates) != 1:
             return None
-        (i,) = candidates
+        (other_index,) = candidates
         before, start = primary[begin-1]['end'],primary[begin]['start']
-        other_end, other_after = secondary[i-1]['end'],secondary[i]['start']
 
-    stop, after = max(primary[end-1]['end'],other_end),min(primary[end]['start'],other_after)
+    stop = max(primary[end-1]['end'],secondary[other_index-1]['end'])
+    if suffix:
+        after = min(primary[end]['start'],secondary[other_index]['start'])
+    elif samples is not None:
+        after = samples/RATE
+    else:
+        return None
     if not (before <= start < stop <= after and all(isfinite(v) for v in (before,start,stop,after))):
         return None
     return Edges(*(round(value*RATE) for value in (before,start,stop,after)))
@@ -159,8 +173,9 @@ def bind(store, job):
 
 
 def active(job, unit):
-    return (unit.get('quote_timing') and job.get('quote_timing_models')
-            and not unit.get('performance') and performance.supports_frame_guidance(job.get('backend') or {})
+    target = unit.get('quote_timing')
+    return (target and job.get('quote_timing_models') and not unit.get('performance')
+            and performance.supports_frame_guidance(job.get('backend') or {},multiple='quotations' in target)
             and (job.get('voice') or {}).get('reference_sha256'))
 
 
@@ -225,10 +240,30 @@ def verified_models(recipe):
         return False
 
 
+def refine(measured, schedule):
+    if len(measured)==1:
+        return measured[0].proposal(schedule)
+    previous = schedule['windows'] if schedule is not None else [None]*len(measured)
+    windows = []
+    for edges, prior in zip(measured,previous,strict=True):
+        chosen = prior if prior and edges.contains(prior) else edges.proposal(prior)
+        if chosen is None:
+            return None
+        windows.append({name:value for name,value in chosen.items() if name!='base_scale'})
+    for left,right in zip(windows,windows[1:]):
+        if left['end_frame'] > right['start_frame']:
+            return None
+        left['release_frames'] = min(left['release_frames'],right['start_frame']-left['end_frame'])
+    return performance.validated_frame_guidance({'windows':windows})
+
+
 def render(store, job, unit, clip, synthesize):
     """Reuse completed trials and adopt a direction only on measured speech."""
     recipe = job['quote_timing_models']
     target = unit['quote_timing']
+    multiple = 'quotations' in target
+    quotations = target['quotations'] if multiple else [target['quotation']]
+    instruction = CONTINUING_INSTRUCTION if multiple else INSTRUCTION
     root = store.path(job)/'quote-timing'
     owned_checkpoint(root)
     checkpoint = root/clip
@@ -238,10 +273,10 @@ def render(store, job, unit, clip, synthesize):
     reason = 'timing_models_changed'
     schedule = ANCHOR
     if verified_models(recipe):
-        for index in range(3):
+        for index in range(4 if multiple else 3):
             trial = checkpoint/str(index)
             owned_checkpoint(trial)
-            options = {**ordinary, 'instruction':INSTRUCTION,'frame_guidance':schedule}
+            options = {**ordinary, 'instruction':instruction,'frame_guidance':schedule}
             result = read_take(trial,options)
             reused = result is not None
             if result is None:
@@ -260,17 +295,23 @@ def render(store, job, unit, clip, synthesize):
             history.append({'pcm_sha256':receipt['sha256'],'schedule':schedule,'checkpoint_reused':reused})
             try:
                 observations = observe(recipe,trial,receipt)
-                measured = measurements(text,target['quotation'],*observations) if observations else None
+                measured = [measurements(text,span,*observations,samples=receipt['samples'])
+                            for span in quotations] if observations else []
             except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
-                measured = None
-            if measured is None:
+                measured = []
+            if not measured or not all(measured):
                 reason = 'words_or_timing_uncertain'
                 break
-            history[-1]['edges_samples'] = asdict(measured)
-            if index and measured.contains(schedule):
-                return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history}}
-            proposal = measured.proposal(schedule if index else None)
-            if proposal is None or proposal == schedule:
+            if multiple:
+                history[-1]['quote_edges_samples'] = [asdict(edges) for edges in measured]
+            else:
+                history[-1]['edges_samples'] = asdict(measured[0])
+            if index:
+                windows = schedule['windows'] if multiple else [schedule]
+                if all(edges.contains(window) for edges,window in zip(measured,windows,strict=True)):
+                    return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history}}
+            proposal = refine(measured,schedule if index else None)
+            if proposal is None or any(trial['schedule']==proposal for trial in history):
                 reason = 'no_clear_frame_window'
                 break
             schedule = proposal

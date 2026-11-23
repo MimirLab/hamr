@@ -169,7 +169,7 @@ def verified_runtime(root,archive,archive_sha,variant,progress):
 
 
 def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_ocr_activate=None):
-    from .performance import FRAME_GUIDANCE_CAPABILITY
+    from .performance import FRAME_GUIDANCE_CAPABILITY, FRAME_WINDOWS_CAPABILITY
 
     c=loadjson(CATALOG); profiles={p['id']:p for p in c['profiles']}; p=profiles.get(profile)
     if not p or p['runtime']!='hoppou': raise Error('unsupported_profile',f'Backend profile {profile!r} is unknown or catalog-only in this build.','Run hamr profiles for the built-in CPU/Vulkan model choices; selecting one downloads its pinned runtime and weights.')
@@ -203,17 +203,19 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_o
         windows=variant=='windows_x86_64'
         terms=destinations[-1][0]
         identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':r['revision'],'runtime_archive_sha256':r['sha256'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(destinations[1][0]),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{x.relative_to(runtime).as_posix():filehash(x) for x in runtime.rglob('*.dll' if windows else '*.so*') if x.is_file()}}
-        if advertised:=r.get('frame_guidance'):
-            if advertised!=FRAME_GUIDANCE_CAPABILITY:
-                raise Error('frame_guidance_protocol','This Hamr version cannot use the runtime timing protocol.')
-            identity['frame_guidance']=advertised
+        protocols = {'frame_guidance':FRAME_GUIDANCE_CAPABILITY,'frame_guidance_windows':FRAME_WINDOWS_CAPABILITY}
+        advertised = {name:r[name] for name in protocols if name in r}
+        if (any(advertised[name]!=protocols[name] for name in advertised)
+                or ('frame_guidance_windows' in advertised and 'frame_guidance' not in advertised)):
+            raise Error('frame_guidance_protocol','This Hamr version cannot use the runtime timing protocol.')
+        identity.update(advertised)
         if windows: identity['runtime_platform']=variant
         # A real startup proves activation before replacing known-working settings.
         try:
             if progress: progress.stage(f'Starting {profile} to check that it loads')
             with Engine(store,identity) as e:
                 health=e.health
-                if advertised and health.get('frame_guidance')!=advertised:
+                if any(health.get(name)!=value for name,value in advertised.items()):
                     raise Error('frame_guidance_unavailable','The pinned runtime did not prove the selected timing protocol.',
                                 'Keep using the currently installed backend or retry setup with a matching Hamr build.')
                 if advertised:
@@ -375,24 +377,33 @@ class Engine:
         validate_request(text,voice,instruction)
         identity = getattr(self, 'identity', {}) or {}
         applied = {}
+        guidance_fields = {}
         if frame_guidance is None:
             validate_guidance(cfg_scale, identity.get('settings', {}).get('parallel', 1))
         else:
             frame_guidance = validated_frame_guidance(frame_guidance)
-            if (not voice or not supports_frame_guidance(identity)
-                    or getattr(self, 'health', {}).get('frame_guidance') != FRAME_GUIDANCE_CAPABILITY):
+            multiple = 'windows' in frame_guidance
+            if (not voice or not supports_frame_guidance(identity,multiple=multiple)
+                    or not supports_frame_guidance(getattr(self,'health',{}),multiple=multiple)):
                 raise Error('frame_guidance_unavailable', 'The running backend did not verify frame-local guidance.')
             cfg_scale = frame_guidance['base_scale']
-            window = f"{frame_guidance['start_frame']}:{frame_guidance['end_frame']}:{frame_guidance['scale']:.9g}"
-            applied = {'X-Breeze-Guidance-Window':window, 'X-Breeze-Guidance-Base':format(cfg_scale,'.9g'),
-                       'X-Breeze-Guidance-Release':str(frame_guidance['release_frames']),
+            guidance_fields['cfg_scale'] = format(cfg_scale,'.9g')
+            applied = {'X-Breeze-Guidance-Base':guidance_fields['cfg_scale'],
                        'X-Breeze-Guidance-Chunks':str(FRAME_GUIDANCE_CAPABILITY['chunk_frames'])}
+            if multiple:
+                windows = ','.join(f"{w['start_frame']}:{w['end_frame']}:{w['scale']:.9g}:{w['release_frames']}"
+                                   for w in frame_guidance['windows'])
+                guidance_fields['guidance_windows'] = windows
+                applied['X-Breeze-Guidance-Windows'] = windows
+            else:
+                window = f"{frame_guidance['start_frame']}:{frame_guidance['end_frame']}:{frame_guidance['scale']:.9g}"
+                release = str(frame_guidance['release_frames'])
+                guidance_fields.update(guidance_window=window,guidance_release=release)
+                applied.update({'X-Breeze-Guidance-Window':window,'X-Breeze-Guidance-Release':release})
         logpath=self.store.root/'runtime'/'backend.log' if getattr(self,'store',None) is not None else None
         log_offset=logpath.stat().st_size if logpath and logpath.exists() else 0
         fields={'text':text,'split_chars':'0','max_new_tokens':'1500','seed':str(seed),'cfg_scale':format(cfg_scale,'g')}
-        if applied:
-            fields.update(cfg_scale=applied['X-Breeze-Guidance-Base'], guidance_window=window,
-                          guidance_release=applied['X-Breeze-Guidance-Release'])
+        fields.update(guidance_fields)
         if sampling:
             fields.update({name:str(value) for name,value in validated_sampling(sampling).items()})
         files=None; fh=None
@@ -429,7 +440,8 @@ class Engine:
                 data,receipt=validate_pcm(bytes(data),text); receipt['actual_device']=actual
                 if frame_guidance is not None:
                     frames, remainder = divmod(receipt['samples'], FRAME_GUIDANCE_CAPABILITY['frame_samples'])
-                    required_frames = frame_guidance['end_frame'] + frame_guidance['release_frames']
+                    last_window = frame_guidance.get('windows',[frame_guidance])[-1]
+                    required_frames = last_window['end_frame'] + last_window['release_frames']
                     if remainder or frames < required_frames:
                         raise Error('frame_guidance_unreached',
                                     f'Breeze returned {frames} complete frames. The requested guidance needs {required_frames} complete frames.',

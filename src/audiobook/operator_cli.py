@@ -67,6 +67,7 @@ def capabilities(parser):
                                      'attribution_cues':'performance.attribution_cues',
                                      'passage_instructions':'performance.passage_instructions',
                                      'frame_guidance':{'field':'frame_guidance','protocol':1,
+                                                       'multiple_windows_capability':'frame_guidance_windows',
                                                        'scope':'Automatic quoted whispers, passage instructions and previews with a compatible backend',
                                                        'automatic_takes':'report.json quote_timing'},
                                      'policy_flag':'--document-policy'},

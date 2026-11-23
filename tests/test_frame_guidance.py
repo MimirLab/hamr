@@ -8,6 +8,7 @@ from audiobook.importers import inspect
 
 
 SCHEDULE = {'start_frame':1, 'end_frame':3, 'scale':1.5, 'release_frames':1}
+LATER = {'start_frame':5, 'end_frame':7, 'scale':1.5, 'release_frames':1}
 PROFILE = {'runtime_revision':'frame-prototype', 'settings':{'device':'cpu'},
            'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY}
 
@@ -23,6 +24,9 @@ def voice(tmp_path):
 @pytest.mark.parametrize('value', [
     {**SCHEDULE, 'start_frame':True}, {**SCHEDULE, 'end_frame':0},
     {**SCHEDULE, 'scale':float('nan')}, {**SCHEDULE, 'release_frames':1500},
+    {'windows':[]}, {'windows':[LATER,SCHEDULE]},
+    {'windows':[SCHEDULE,{**LATER,'start_frame':3}]},
+    {'windows':[{**SCHEDULE,'base_scale':0}]},
 ])
 def test_reject_invalid_schedule(value):
     with pytest.raises(Error) as error:
@@ -92,3 +96,34 @@ def test_http_requires_confirmation_and_complete_schedule(voice,confirmed,frames
             with pytest.raises(Error) as error:
                 engine.speech('Wait by the door.',voice,frame_guidance=SCHEDULE)
             assert error.value.code==expected_error
+
+
+@pytest.mark.parametrize(('frames','windows','expected_error'),[
+    (8,'1:3:1.5:1,5:7:1.5:1',None),
+    (7,'1:3:1.5:1,5:7:1.5:1','frame_guidance_unreached'),
+    (8,'1:3:1.5:1','frame_guidance_unconfirmed'),
+])
+def test_transport_checks_the_last_window_and_its_release(voice,frames,windows,expected_error):
+    profile = {**PROFILE,'frame_guidance_windows':performance.FRAME_WINDOWS_CAPABILITY}
+    samples = (8192*np.sin(np.arange(frames*1920)*0.1)).astype('<i2').tobytes()
+    headers = {'X-Sample-Rate':'24000','X-Sample-Format':'s16le','X-Breeze-Guidance-Base':'0',
+               'X-Breeze-Guidance-Chunks':'10','X-Breeze-Guidance-Windows':windows}
+    engine = backend.Engine.__new__(backend.Engine)
+    engine.identity = profile
+    engine.health = profile
+    engine.read_log = lambda: 'backend: CPU\n'
+
+    def server(request):
+        assert b'1:3:1.5:1,5:7:1.5:1' in request.read()
+        return httpx.Response(200,headers=headers,content=samples)
+
+    with httpx.Client(base_url='http://127.0.0.1',transport=httpx.MockTransport(server)) as client:
+        engine.client = client
+        schedule = {'windows':[SCHEDULE,LATER]}
+        if expected_error:
+            with pytest.raises(Error) as error:
+                engine.speech('Wait by the door.',voice,frame_guidance=schedule)
+            assert error.value.code == expected_error
+        else:
+            data, receipt = engine.speech('Wait by the door.',voice,frame_guidance=schedule)
+            assert data == samples and receipt['frame_guidance']['windows'] == [SCHEDULE,LATER]

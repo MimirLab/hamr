@@ -12,7 +12,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 20
+CONTEXT_VERSION = 21
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -41,13 +41,42 @@ POSSESSIVES = {'he':'his','she':'her','they':'their','i':'my','we':'our'}
 PRIVATE_KINDS = {'literal', 'hidden', 'generated_label', 'object_label', 'note_reference'}
 SAMPLING_LIMITS = {'temperature':(.1,2), 'top_k':(1,256), 'top_p':(.05,1), 'repetition_penalty':(.8,1.4)}
 FRAME_GUIDANCE_CAPABILITY = {'version':1, 'encoding':'multipart', 'frame_samples':1920, 'chunk_frames':10}
+FRAME_WINDOWS_CAPABILITY = {'version':1, 'max_windows':8}
 
 
-def supports_frame_guidance(backend):
-    return backend.get('frame_guidance') == FRAME_GUIDANCE_CAPABILITY
+def supports_frame_guidance(backend, *, multiple=False):
+    return (backend.get('frame_guidance') == FRAME_GUIDANCE_CAPABILITY
+            and (not multiple or backend.get('frame_guidance_windows') == FRAME_WINDOWS_CAPABILITY))
+
+
+def guidance_scale(number):
+    if type(number) not in (float, int) or not 0 <= number <= 3.4028234663852886e38:
+        raise Error('frame_guidance', 'Use finite nonnegative guidance scales.')
+    return struct.unpack('f', struct.pack('f', number))[0]
+
+
+def validated_windows(value):
+    windows = value['windows']
+    if (value.keys() - {'windows','base_scale'} or not isinstance(windows,list)
+            or not 1 <= len(windows) <= FRAME_WINDOWS_CAPABILITY['max_windows']):
+        raise Error('frame_guidance', 'Supply one to eight ordered guidance windows and an optional base_scale.')
+    result = []
+    previous_end = 0
+    for window in windows:
+        if not isinstance(window,dict) or window.keys()-{'start_frame','end_frame','scale','release_frames'}:
+            raise Error('frame_guidance', 'Use start_frame, end_frame, scale and optional release_frames for each window.')
+        checked = validated_frame_guidance(window)
+        del checked['base_scale']
+        if checked['start_frame'] < previous_end:
+            raise Error('frame_guidance', 'Guidance intervals and their releases must be ordered and cannot overlap.')
+        result.append(checked)
+        previous_end = checked['end_frame'] + checked['release_frames']
+    return {'windows':result, 'base_scale':guidance_scale(value.get('base_scale',0))}
 
 
 def validated_frame_guidance(value):
+    if isinstance(value,dict) and 'windows' in value:
+        return validated_windows(value)
     required = {'start_frame', 'end_frame', 'scale'}
     if not isinstance(value, dict) or required - value.keys() or value.keys() - required - {'base_scale', 'release_frames'}:
         raise Error('frame_guidance', 'Supply start_frame, end_frame and scale, with optional base_scale and release_frames.')
@@ -56,13 +85,8 @@ def validated_frame_guidance(value):
     if (not all(type(number) is int for number in (start, end, release))
             or not 0 <= start < end <= 1500 or not 0 <= release <= 1500 - end):
         raise Error('frame_guidance', 'The held interval and release must fit inside the 1,500-frame speech request.')
-    if any(type(number) not in (float, int) or not 0 <= number <= 3.4028234663852886e38
-           for number in (scale, base)):
-        raise Error('frame_guidance', 'Use finite nonnegative guidance scales.')
-    def as_float32(number):
-        return struct.unpack('f', struct.pack('f', number))[0]
     return {'start_frame':start, 'end_frame':end, 'release_frames':release,
-            'scale':as_float32(scale), 'base_scale':as_float32(base)}
+            'scale':guidance_scale(scale), 'base_scale':guidance_scale(base)}
 
 
 def validate_guidance(value, parallel=1):
@@ -1370,8 +1394,9 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
     active_ids=set()
     for unit,candidate in candidates:
         cid = candidate['id']
-        scheduled = 'frame_guidance' in candidate
-        if scheduled and not (reference and supports_frame_guidance(backend)):
+        schedule = candidate.get('frame_guidance')
+        scheduled = schedule is not None
+        if scheduled and not (reference and supports_frame_guidance(backend,multiple='windows' in schedule)):
             raise Error('frame_guidance_unavailable', 'This passage needs a voice reference and a backend with frame-local guidance.')
         if cid in fallback_ids:
             unit['performance_state'] = 'neutral_fallback'

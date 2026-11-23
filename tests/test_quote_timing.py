@@ -1,6 +1,6 @@
 import pytest
 
-from audiobook import planner, quote_timing
+from audiobook import performance, planner, quote_timing
 from audiobook.core import Store, digest
 from audiobook.importers import inspect
 
@@ -14,7 +14,8 @@ TEXT = 'The rain stopped. The room was empty. “Wait by the door,” she whispe
     ('The rain stopped. “Stand by,” he said. “Wait by the door,” she whispered. Now it was dark.',
      '“Wait by the door,”'),
     ('“Wait by the door,” he whispered. “Stay here,” she whispered. The lamps went out.', None),
-    ('He laughed. “Lady Narborough,” he whispered. “She perfectly adores him.”', None),
+    ('He laughed. “Lady Narborough,” he whispered. “She perfectly adores him.”',
+     ('“Lady Narborough,”','“She perfectly adores him.”')),
 ])
 def test_unique_owned_whisper_in_the_ordinary_plan(tmp_path,source,expected):
     document = tmp_path/'story.md'
@@ -26,7 +27,16 @@ def test_unique_owned_whisper_in_the_ordinary_plan(tmp_path,source,expected):
         assert timing is None
     else:
         assert timing is not None
-        assert unit['text'][slice(*timing['quotation'])] == expected
+        if isinstance(expected,tuple):
+            assert tuple(unit['text'][slice(*span)] for span in timing['quotations']) == expected
+            backend = {'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY}
+            job = {'backend':backend,'quote_timing_models':{'worker':'fixture'},
+                   'voice':{'reference_sha256':'fixture'}}
+            assert not quote_timing.active(job,unit)
+            backend['frame_guidance_windows'] = performance.FRAME_WINDOWS_CAPABILITY
+            assert quote_timing.active(job,unit)
+        else:
+            assert unit['text'][slice(*timing['quotation'])] == expected
         assert 'performance_candidate' not in unit
         plain, = planner.plan(inspect(document),{'performance':'off'})['utterances']
         assert 'quote_timing' not in plain
@@ -41,6 +51,20 @@ def test_refinement_preserves_the_onset_and_waits_for_the_actual_exit():
     refined = directed.proposal(initial)
     assert (refined['start_frame'],refined['end_frame'],refined['release_frames']) == (10,15,1)
     assert directed.contains(refined)
+
+
+def test_continuation_verifies_both_windows_and_keeps_a_still_valid_first_window():
+    frame = quote_timing.FRAME
+    first = quote_timing.Edges(frame,2*frame,5*frame,7*frame)
+    second = quote_timing.Edges(10*frame,12*frame,18*frame,21*frame)
+    initial = quote_timing.refine([first,second],None)
+    shortened = quote_timing.Edges(11*frame,13*frame,16*frame,17*frame)
+    new = quote_timing.refine([first,shortened],initial)
+    assert new['windows'][0] == initial['windows'][0]
+    assert new['windows'][1]['end_frame'] == 16
+    assert new['windows'][1]['release_frames'] == 1
+    assert shortened.contains(new['windows'][1])
+    assert not shortened.contains(initial['windows'][1])
 
 
 @pytest.mark.parametrize('uncertain',[False,True])
@@ -72,7 +96,7 @@ def test_restart_reuses_the_timing_anchor_and_retains_ordinary_fallback(tmp_path
     monkeypatch.setattr(quote_timing,'observe',lambda *args: ([{}],[{}]))
     frame = quote_timing.FRAME
     observed = None if uncertain else quote_timing.Edges(frame,2*frame,5*frame,7*frame)
-    monkeypatch.setattr(quote_timing,'measurements',lambda *args:observed)
+    monkeypatch.setattr(quote_timing,'measurements',lambda *args,**kwargs:observed)
     _,receipt = quote_timing.render(store,job,unit,checkpoint,render)
     assert len(requests) == 2
     if uncertain:
