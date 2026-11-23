@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "compatible_registry_sha256": [
+    "bd17f798eaa725aba03d3e15c9259e2d541bc026c3d8ea02e0c8755d55dc147f",
     "1d1517d01add3db68907af30b4476e6d742fe4571eb18602e46476c3491f77d1",
     "c46c5f9b93db2aac04799dc9343e6da9570f7ada67aa8934dc20b4cb42d06bab",
     "7e4cecbe03a10c7f771f8f59b8a82a26e4f8f718855cd1fca1cc8b166e21e639",
@@ -19,6 +20,13 @@
       "role_after_instruction": "Read the quoted words in a light, breathy whisper. Give the full attribution in your normal speaking voice, with clear word endings.",
       "continued_turn_instruction": "Read both quotations in the same light, breathy whisper, with clear consonants. Use normal spoken narration for the full attribution between them.",
       "quote_marker": "(whispering)"
+    },
+    "caught_breath": {
+      "cues": [
+        "gasped"
+      ],
+      "since": 13,
+      "instruction": "Give the quoted words the brief caught breath of a spoken gasp. Keep the words intelligible and the attribution in the usual narrator voice."
     },
     "murmured": {
       "cues": ["murmured", "said under his breath", "said under her breath"],

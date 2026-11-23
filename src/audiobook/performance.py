@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 12
+CONTEXT_VERSION = 13
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -137,7 +137,7 @@ def attribution_actor(version):
 
 def attribution_rules(registry, version, custom):
     recipes = registry['directions']
-    specific = {cue:kind for kind,item in recipes.items() for cue in item['cues']}
+    specific = {cue:kind for kind,item in recipes.items() if version>=item.get('since',1) for cue in item['cues']}
     reporting = registry['context']['reporting_modifiers']
     modifiers = reporting['modifiers'] if version>=2 else {}
     if version>=4:

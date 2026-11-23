@@ -12,6 +12,8 @@ Blind listening across all 45 cast voices identified 22 preferred cleaned refere
 
 ### Expressive narration
 
+- An explicit “gasped” attribution can give the quoted words a brief caught breath.
+
 - A source-bound document policy can apply an auditioned Breeze instruction to one exact passage.
 
 - An attribution inside a quoted sentence can direct both spoken fragments, even with narrator sentences around the turn. The whole passage stays in one request.

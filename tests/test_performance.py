@@ -1310,3 +1310,28 @@ def test_passage_instruction_requires_exact_text_for_one_passage(tmp_path):
     result = planner.plan(doc, policy)
     assert result['utterances'][0]['performance_candidate']['recipe']=='passage_instruction'
     assert 'performance_candidate' not in result['utterances'][1]
+
+
+@pytest.mark.parametrize('text', [
+    '“What do you want?” he gasped.',
+    '“Your mother has not relented?” gasped the keeper.',
+    'The lantern dimmed. “Can you hear me?” Ada gasped.',
+])
+def test_gasped_applies_to_an_owned_quotation_without_adding_words(tmp_path, text):
+    plan = plan_source(tmp_path, text, 'auto')
+    unit, = plan['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['recipe'] == 'caught_breath'
+    assert candidate['speech'] == candidate['synthesis'] == unit['text'] == text
+    assert candidate['evidence'][0]['kind'] == 'direct_attribution'
+    legacy = planner.plan(inspect(tmp_path/'book.md'), delivery_context=12)
+    assert legacy['performance']['candidates'] == 0
+
+
+@pytest.mark.parametrize('text', [
+    'She gasped when the door opened.',
+    '“What do you want?” he said. Someone gasped in the hall.',
+    '“He gasped a little,” Ada said.',
+])
+def test_gasped_in_narration_or_reported_events_remains_ordinary(tmp_path, text):
+    assert plan_source(tmp_path,text,'auto')['performance']['candidates'] == 0
