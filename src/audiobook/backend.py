@@ -169,7 +169,8 @@ def verified_runtime(root,archive,archive_sha,variant,progress):
 
 
 def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_ocr_activate=None):
-    from .performance import FRAME_GUIDANCE_CAPABILITY, FRAME_WINDOWS_CAPABILITY, NARRATION_CONDITIONING_VERSION
+    from .performance import (FRAME_GUIDANCE_CAPABILITY, FRAME_WINDOWS_CAPABILITY,
+                              NARRATION_CONDITIONING_VERSION, QUOTE_GUIDANCE_VERSION)
 
     c=loadjson(CATALOG); profiles={p['id']:p for p in c['profiles']}; p=profiles.get(profile)
     if not p or p['runtime']!='hoppou': raise Error('unsupported_profile',f'Backend profile {profile!r} is unknown or catalog-only in this build.','Run hamr profiles for the built-in CPU/Vulkan model choices; selecting one downloads its pinned runtime and weights.')
@@ -204,7 +205,8 @@ def setup(store,profile,cache=None,*,progress=None,before_activate=None,before_o
         terms=destinations[-1][0]
         identity={'runtime_root':str(runtime),'profile':profile,'runtime_revision':r['revision'],'runtime_archive_sha256':r['sha256'],'binary':str(binary),'binary_sha256':filehash(binary),'model':str(destinations[1][0]),'model_sha256':package['files'][0]['sha256'],'settings':p['settings'],'sample_rate':RATE,'qualification':'experimental','adapter_capabilities':{'languages':['en'],'voice_modes':['design','clone'],'direction':'not qualified'},'library_sha256':{x.relative_to(runtime).as_posix():filehash(x) for x in runtime.rglob('*.dll' if windows else '*.so*') if x.is_file()}}
         protocols = {'frame_guidance':FRAME_GUIDANCE_CAPABILITY,'frame_guidance_windows':FRAME_WINDOWS_CAPABILITY,
-                     'narration_conditioning':NARRATION_CONDITIONING_VERSION}
+                     'narration_conditioning':NARRATION_CONDITIONING_VERSION,
+                     'quote_guidance':QUOTE_GUIDANCE_VERSION}
         advertised = {name:r[name] for name in protocols if name in r}
         if (any(type(value) is not type(protocols[name]) or value!=protocols[name]
                 for name,value in advertised.items())
@@ -261,6 +263,28 @@ def validate_request(text,voice=None,instruction=None):
     fields={'reference transcript':voice.get('transcript','') if voice else '', 'instruction':instruction or ''}
     for field,value in fields.items():
         if len(value.encode('utf-8'))>1024:raise Error('speech_input_limit',f'{field.capitalize()} exceeds the conservative1024-byte one-pass input guard.','Use a scoped shorter spoken reading or source-supported boundaries; no input is truncated.')
+
+
+def guided_pcm(data, scopes):
+    from .performance import FRAME_GUIDANCE_CAPABILITY
+
+    frame_bytes = 2*FRAME_GUIDANCE_CAPABILITY['frame_samples']
+    frames = int.from_bytes(data[-6:-4],'little')
+    if data[-4:] != b'HQG1' or not 0<frames<=1500 or len(data)!=frames*(frame_bytes+1)+6:
+        raise Error('quote_guidance_unconfirmed','Breeze did not finish the quote guidance receipt.')
+    pcm_end = frames*frame_bytes
+    windows = []
+    previous = 0
+    for index, scope in enumerate(data[pcm_end:-6]):
+        if scope>len(scopes):
+            raise Error('quote_guidance_unconfirmed','Breeze returned an unknown quote guidance scope.')
+        if scope!=previous:
+            if previous:
+                windows[-1]['end_frame'] = index
+            if scope:
+                windows.append({'scope':scope,'start_frame':index,'end_frame':frames,'release_frames':0})
+            previous = scope
+    return bytes(data[:pcm_end]), {'scopes':scopes,'generated_frames':frames,'windows':windows}
 
 
 class ResidentEngineSession:
@@ -374,10 +398,10 @@ class Engine:
             raise Error('device_unverified','Breeze did not prove the requested execution backend.','Check backend/device availability; unexpected CPU fallback is rejected.')
         return actual[1].rstrip(',')
     def speech(self,text,voice=None,instruction=None,seed=42,*,cfg_scale=1,sampling=None,
-               frame_guidance=None,narration_instruction=None):
-        from .performance import (FRAME_GUIDANCE_CAPABILITY, NARRATION_CONDITIONING_VERSION,
+               frame_guidance=None,narration_instruction=None,quote_guidance=None):
+        from .performance import (FRAME_GUIDANCE_CAPABILITY, NARRATION_CONDITIONING_VERSION, QUOTE_GUIDANCE_VERSION,
                                   supports_frame_guidance, supports_narration_conditioning,
-                                  validate_guidance, validate_narration_instruction,
+                                  supports_quote_guidance, validate_guidance, validate_narration_instruction,
                                   validated_frame_guidance, validated_sampling)
 
         validate_request(text,voice,instruction)
@@ -385,7 +409,25 @@ class Engine:
         health = getattr(self,'health',{})
         applied = {}
         guidance_fields = {}
-        if frame_guidance is None:
+        if quote_guidance is not None:
+            if frame_guidance is not None or not voice:
+                raise Error('quote_guidance_unavailable','Decoder guidance needs a clone and an unscheduled passage.')
+            if not supports_quote_guidance(identity) or not supports_quote_guidance(health):
+                raise Error('quote_guidance_unavailable','The running backend did not verify decoder guidance.')
+            previous = 0
+            encoded = text.encode('utf-8')
+            if not isinstance(quote_guidance,list) or not 1<=len(quote_guidance)<=8:
+                raise Error('quote_guidance','Supply an ordered list of quote byte ranges.')
+            for span in quote_guidance:
+                if (not isinstance(span,list) or len(span)!=2 or not all(type(i) is int for i in span)
+                        or not previous<=span[0]<span[1]<=len(encoded)
+                        or any(i<len(encoded) and encoded[i]&0xc0==0x80 for i in span)):
+                    raise Error('quote_guidance','Supply ordered quote ranges on UTF-8 boundaries.')
+                previous = span[1]
+            cfg_scale = 0
+            guidance_fields['quote_guidance'] = ','.join(f'{a}:{b}' for a,b in quote_guidance)
+            applied['X-Breeze-Quote-Guidance'] = str(QUOTE_GUIDANCE_VERSION)
+        elif frame_guidance is None:
             validate_guidance(cfg_scale, identity.get('settings', {}).get('parallel', 1))
         else:
             frame_guidance = validated_frame_guidance(frame_guidance)
@@ -409,7 +451,7 @@ class Engine:
                 guidance_fields.update(guidance_window=window,guidance_release=release)
                 applied.update({'X-Breeze-Guidance-Window':window,'X-Breeze-Guidance-Release':release})
         if narration_instruction is not None:
-            validate_narration_instruction(narration_instruction,frame_guidance)
+            validate_narration_instruction(narration_instruction,{'base_scale':0} if quote_guidance else frame_guidance)
             if not supports_narration_conditioning(identity) or not supports_narration_conditioning(health):
                 raise Error('narration_conditioning_unavailable',
                             'The running backend did not verify separate narration conditioning.')
@@ -434,11 +476,13 @@ class Engine:
                     if r.status_code!=200: raise Error('speech_http',f'Breeze speech failed with HTTP {r.status_code}.','Resume; the job retains verified clips.')
                     if r.headers.get('x-sample-rate')!=str(RATE) or r.headers.get('x-sample-format')!='s16le': raise Error('pcm_format','Unexpected streamed PCM format.')
                     if any(r.headers.get(header) != value for header, value in applied.items()):
-                        raise Error('frame_guidance_unconfirmed', 'The backend did not confirm the requested frame schedule.')
+                        code = 'quote_guidance_unconfirmed' if quote_guidance else 'frame_guidance_unconfirmed'
+                        raise Error(code, 'The backend did not confirm the requested guidance.')
                     data=bytearray()
                     for chunk in r.iter_bytes():
                         data.extend(chunk)
-                        if len(data)>RATE*2*125: raise Error('audio_limit','Breeze exceeded the bounded take duration.')
+                        if len(data)>RATE*2*125+(1506 if quote_guidance else 0):
+                            raise Error('audio_limit','Breeze exceeded the bounded take duration.')
                 import re
                 logtext=self.read_log()
                 # Pinned Hoppou catches generation exceptions and still sends a
@@ -452,7 +496,11 @@ class Engine:
                         self._stop_backend()
                         raise Error('generation_failed','Breeze reported a generation failure despite a normally completed HTTP stream.','Inspect the owned backend log; committed prior takes are retained. Resume explicitly after resolving the failure.')
                 actual=self.verify_device(logtext)
+                trace = None
+                if quote_guidance:
+                    data, trace = guided_pcm(data,quote_guidance)
                 data,receipt=validate_pcm(bytes(data),text); receipt['actual_device']=actual
+                if trace is not None: receipt['quote_guidance'] = trace
                 if frame_guidance is not None:
                     frames, remainder = divmod(receipt['samples'], FRAME_GUIDANCE_CAPABILITY['frame_samples'])
                     last_window = frame_guidance.get('windows',[frame_guidance])[-1]

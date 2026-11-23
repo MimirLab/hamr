@@ -69,6 +69,7 @@ def capabilities(parser):
                                      'frame_guidance':{'field':'frame_guidance','protocol':1,
                                                        'multiple_windows_capability':'frame_guidance_windows',
                                                        'narration_instruction_capability':'narration_conditioning',
+                                                       'decoder_guidance_capability':'quote_guidance',
                                                        'scope':'Automatic quoted whispers, passage instructions and previews with a compatible backend',
                                                        'automatic_takes':'report.json quote_timing'},
                                      'policy_flag':'--document-policy'},

@@ -43,6 +43,7 @@ SAMPLING_LIMITS = {'temperature':(.1,2), 'top_k':(1,256), 'top_p':(.05,1), 'repe
 FRAME_GUIDANCE_CAPABILITY = {'version':1, 'encoding':'multipart', 'frame_samples':1920, 'chunk_frames':10}
 FRAME_WINDOWS_CAPABILITY = {'version':1, 'max_windows':8, 'speech_end':True}
 NARRATION_CONDITIONING_VERSION = 1
+QUOTE_GUIDANCE_VERSION = 1
 
 
 def supports_frame_guidance(backend, *, multiple=False):
@@ -53,6 +54,11 @@ def supports_frame_guidance(backend, *, multiple=False):
 def supports_narration_conditioning(backend):
     value = backend.get('narration_conditioning')
     return type(value) is int and value == NARRATION_CONDITIONING_VERSION
+
+
+def supports_quote_guidance(backend):
+    value = backend.get('quote_guidance')
+    return type(value) is int and value == QUOTE_GUIDANCE_VERSION and supports_frame_guidance(backend)
 
 
 def validate_narration_instruction(instruction, schedule):

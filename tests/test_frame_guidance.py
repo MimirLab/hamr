@@ -133,6 +133,22 @@ def test_narration_conditioning_requires_live_confirmation(voice,health,header,e
             assert data==audio and receipt['request']['fields']['narration_instruction']==options['narration_instruction']
 
 
+@pytest.mark.parametrize('scopes,proves',[(bytes([0,1,1,0,2]),True),(bytes([0,1,1,0,3]),False),(b'',False)])
+def test_decoder_receipt_is_bound_to_emitted_audio(scopes,proves):
+    frame_size = 2*performance.FRAME_GUIDANCE_CAPABILITY['frame_samples']
+    audio = bytes(5*frame_size)
+    frame_table = scopes+(5).to_bytes(2,'little')+b'HQG1'
+    ranges = [[14,18],[22,27]]
+    if not proves:
+        with pytest.raises(Error) as error:
+            backend.guided_pcm(audio+frame_table,ranges)
+        assert error.value.code=='quote_guidance_unconfirmed'
+    else:
+        pcm, receipt = backend.guided_pcm(audio+frame_table,ranges)
+        assert pcm==audio and receipt['generated_frames']==5 and receipt['scopes']==ranges
+        assert [(w['scope'],w['start_frame'],w['end_frame']) for w in receipt['windows']]==[(1,1,3),(2,4,5)]
+
+
 @pytest.mark.parametrize(('confirmed','frames','extra_samples','expected_error'),[
     (True,4,0,None),
     (False,4,0,'frame_guidance_unconfirmed'),

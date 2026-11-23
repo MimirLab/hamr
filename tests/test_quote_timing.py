@@ -53,6 +53,47 @@ def test_refinement_preserves_the_onset_and_waits_for_the_actual_exit():
     assert directed.contains(refined)
 
 
+@pytest.mark.parametrize('window,accepted',[(3,True),(4,False)])
+def test_decoder_only_adopts_its_measured_scope(tmp_path, monkeypatch, window, accepted):
+    frame = quote_timing.FRAME
+    left = TEXT.index('“')
+    right = TEXT.index('”')+1
+    target = {'quotation':[left,right]}
+    unit = {'text':TEXT,'quote_timing':target}
+    store = Store(tmp_path/'state')
+    job = {'id':'abc123','quote_timing_models':{},
+           'backend':{'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY,'quote_guidance':1}}
+    store.path(job).mkdir(exist_ok=True)
+    pcm = (800).to_bytes(2,'little')*(2*frame)+bytes(2*4*frame)
+    called = []
+
+    def speech(text, options):
+        called.append(options)
+        receipt = {'sha256':digest(pcm),'samples':len(pcm)//2}
+        if spans:=options.get('quote_guidance'):
+            assert spans == [[left+3,right+1]]
+            receipt['quote_guidance'] = {'scopes':spans,'generated_frames':6,'windows':[
+                {'scope':1,'start_frame':1,'end_frame':window,'release_frames':0}]}
+        return pcm,receipt
+
+    def measure(recipe, take, *args):
+        return ([quote_timing.Edges(frame,2*frame,3*frame,3*frame)],[]) if take.name=='decoder' else ([],[])
+
+    monkeypatch.setattr(quote_timing,'measure_take',measure)
+    monkeypatch.setattr(quote_timing,'verified_models',lambda _:True)
+    _, result = quote_timing.render(store,job,unit,'a'*64,speech)
+    timing = result['quote_timing']
+    assert timing['selected']==('directed' if accepted else 'ordinary')
+    assert len(called)==(1 if accepted else 3)
+    if accepted:
+        assert timing['controller']=='decoder'
+        called.clear()
+        _, replay = quote_timing.render(store,job,unit,'a'*64,speech)
+        assert replay['quote_timing']['decoder_attempt']['checkpoint_reused'] and not called
+    else:
+        assert timing['decoder_attempt']['reason']=='guidance_outside_quote'
+
+
 def test_ordinary_timing_uses_compiled_offsets_after_word_expansion(tmp_path):
     text = ('Dr. Hale waited by the door. He looked at the lamp. '
             '“Keep Dr. Hale quiet,” he whispered. “We have to leave before dawn.”')

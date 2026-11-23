@@ -17,6 +17,7 @@ INSTRUCTION = ('Give only the middle quotation a quiet, breathy whisper. '
                'Use the usual narrator voice before and after the quotation.')
 CONTINUING_INSTRUCTION = ('Give both quotations a quiet, breathy whisper. '
                           'Use the usual narrator voice in the narration and the reporting words between them.')
+NARRATION_INSTRUCTION = 'Read in the original speaker’s natural, fully voiced audiobook narration.'
 FRAME = performance.FRAME_GUIDANCE_CAPABILITY['frame_samples']
 ANCHOR = {'start_frame': 0, 'end_frame': 1, 'scale': 0, 'base_scale': 0}
 WORKER = Path(__file__).with_name('timing_worker.py')
@@ -522,6 +523,58 @@ def one_frame_taper(measured, schedule):
     return {**schedule,'windows':[ *windows[:index], window, *windows[index+1:]]}
 
 
+def decoder_take(trial, job, text, ordinary, target, quotations, instruction, synthesize):
+    """Try one causal take and verify its actual speech and emitted frame intervals."""
+    import numpy as np
+
+    scopes = [[len(text[:left+1].encode('utf-8')),len(text[:right-1].encode('utf-8'))]
+              for left,right in quotations]
+    options = {**ordinary,'instruction':instruction,'quote_guidance':scopes}
+    if performance.supports_narration_conditioning(job['backend']):
+        options['narration_instruction'] = NARRATION_INSTRUCTION
+    owned_checkpoint(trial)
+    result = read_take(trial,options)
+    reused = result is not None
+    if not reused:
+        try:
+            result = synthesize(text,options)
+        except Error as exc:
+            if exc.code not in ('quote_guidance_unavailable','quote_guidance_unconfirmed'):
+                raise
+            return None,{'reason':exc.code}
+        data,receipt = result
+        atomic(trial/'audio.pcm',data)
+        writejson(trial/'receipt.json',{'request':options,'audio':receipt})
+        fault('after_quote_decoder')
+    data,receipt = result
+    report = {'pcm_sha256':receipt['sha256'],'checkpoint_reused':reused}
+    trace = receipt.get('quote_guidance') or {}
+    windows = trace.get('windows',[])
+    report['windows'] = windows
+    if trace.get('scopes')!=scopes or [w['scope'] for w in windows]!=list(range(1,len(scopes)+1)):
+        return None,{**report,'reason':'guidance_scope_mismatch'}
+    try:
+        measured, corroborated = measure_take(job['quote_timing_models'],trial,receipt,text,quotations,
+                                             target.get('source_spellings'))
+    except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
+        measured, corroborated = [], []
+    if len(measured)!=len(windows) or not all(measured):
+        return None,{**report,'reason':'words_or_timing_uncertain'}
+    report['quote_edges_samples'] = [asdict(edges) for edges in measured]
+    if corroborated:
+        report['fluid_corroborated_quotes'] = corroborated
+    if not all(edges.contains(window) for edges,window in zip(measured,windows,strict=True)):
+        return None,{**report,'reason':'guidance_outside_quote'}
+    # A scoped whisper may be voiced, but a quote louder than the reading
+    # around it is a poor automatic substitution. Keep the timed fallback.
+    pcm = np.frombuffer(data,dtype='<i2').astype('float64')
+    opening = pcm[:measured[0].before]
+    opening_power = np.mean(opening**2) if opening.size else 0
+    if opening_power<=0 or any(opening_power < np.mean(pcm[edge.start:edge.end]**2) for edge in measured):
+        return None,{**report,'reason':'whisper_louder_than_opening'}
+    return result,report
+
+
 def render(store, job, unit, clip, synthesize):
     """Reuse completed trials and adopt a direction only on measured speech."""
     recipe = job['quote_timing_models']
@@ -542,7 +595,16 @@ def render(store, job, unit, clip, synthesize):
     attempts = 4 if multiple else 3
     allow_short_taper = multiple and recipe.get('timing_algorithm',3)>=4
     allow_exit_overlap = recipe.get('timing_algorithm',3)>=5
+    decoder = {}
     if verified_models(recipe):
+        if performance.supports_quote_guidance(job.get('backend') or {}):
+            decoded, attempt = decoder_take(checkpoint/'decoder',job,text,ordinary,target,quotations,
+                                            instruction,synthesize)
+            decoder['decoder_attempt'] = attempt
+            if decoded is not None:
+                data,receipt = decoded
+                return data,{**receipt,'quote_timing':{**target,'selected':'directed','controller':'decoder',
+                                                       'trials':[],**decoder}}
         for index in range(attempts+allow_short_taper):
             trial = checkpoint/str(index)
             owned_checkpoint(trial)
@@ -594,11 +656,11 @@ def render(store, job, unit, clip, synthesize):
                 windows = schedule['windows'] if multiple else [schedule]
                 pairs = list(zip(measured,windows,strict=True))
                 if all(edges.contains(window) for edges,window in pairs):
-                    return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history}}
+                    return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,**decoder}}
                 if (multiple and index >= attempts-1
                         and all(edges.contains(window,allow_tapered_tail=True) for edges,window in pairs)):
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,
-                                                           'exit_taper_covers_last_word':True}}
+                                                           'exit_taper_covers_last_word':True,**decoder}}
             if index==attempts:
                 break
             if index==0 and overlaps and recipe.get('timing_algorithm',3)>=6:
@@ -618,4 +680,4 @@ def render(store, job, unit, clip, synthesize):
             schedule = proposal
             reason = 'corrected_take_outside_quote'
     data,receipt = synthesize(text,ordinary)
-    return data,{**receipt,'quote_timing':{**target,'selected':'ordinary','reason':reason,'trials':history}}
+    return data,{**receipt,'quote_timing':{**target,'selected':'ordinary','reason':reason,'trials':history,**decoder}}
