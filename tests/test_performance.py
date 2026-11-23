@@ -833,6 +833,37 @@ def test_whisper_affect_and_authored_sound_can_share_a_request(tmp_path):
     assert 'hesitant warmth' in candidate['instruction']
 
 
+@pytest.mark.parametrize(('text','recipe','cue'),[
+    ('Mara whispered: “The child is asleep.”','whisper','whispered'),
+    ('The children were asleep. Mara whispered: “Wait by the door.”','whisper','whispered'),
+    ('The guard yelled: “Stand clear!”','forceful','yelled'),
+    ('Mara whispered eagerly: “Is this the place?”','whisper','whispered eagerly'),
+])
+def test_colon_introduces_one_owned_quotation(tmp_path,text,recipe,cue):
+    path = tmp_path/'book.md'
+    path.write_text(text)
+    doc = inspect(path)
+    prior, = planner.plan(doc,delivery_context=15)['utterances']
+    assert 'performance_candidate' not in prior
+    unit, = planner.plan(doc)['utterances']
+    candidate = unit['performance_candidate']
+    assert candidate['recipe']==recipe
+    assert candidate['speech']==text
+    assert text[slice(*candidate['source']['span'])]==cue
+    if text.startswith('The children'):
+        assert 'narration around the quotation' in candidate['instruction']
+
+
+@pytest.mark.parametrize('text',[
+    'Mara did not whisper: “The child is asleep.”',
+    'Mara would have whispered: “The child is asleep.”',
+    'A whispered warning: “The child is asleep.”',
+    'Mara read the word “whispered”: “The child is asleep.”',
+])
+def test_colon_does_not_supply_attributed_delivery_on_its_own(tmp_path,text):
+    assert all('performance_candidate' not in unit for unit in plan_source(tmp_path,text,'auto')['utterances'])
+
+
 def test_inline_cough_uses_the_same_continuous_request_at_the_new_context_version(tmp_path,monkeypatch,capsys):
     monkeypatch.setattr(performance.sys,'platform','linux')
     store=Store(tmp_path/'state')

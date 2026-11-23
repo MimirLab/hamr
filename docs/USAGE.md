@@ -126,7 +126,7 @@ A written sigh or cough can also fall between two complete sentences in one attr
 
 If the same quotation is whispered, Hamr can keep the whisper and the authored sound in that request. It can also carry one unambiguous author-marked stress. The plan records the attribution, the marked sound, and the emphasized word separately. The sound marker tells Breeze where to act and is omitted from the expected spoken words.
 
-An attribution can specify both delivery and emotion. “She whispered eagerly” asks for a whisper with a little anticipation, and “she whispered shyly” asks for a hesitant warmth. If the attribution interrupts one continuous turn, both quoted parts share the delivery and the attribution uses the usual narrator voice.
+An attribution can specify both delivery and emotion. “She whispered eagerly” asks for a whisper with a little anticipation, and “she whispered shyly” asks for a hesitant warmth. A direct lead-in such as `Mara whispered: “Wait by the door.”` scopes the direction to the quotation. If the attribution interrupts one continuous turn, both quoted parts share the delivery and the attribution uses the usual narrator voice.
 
 Authored sounds are available in the ordinary workflow. Listening evidence includes leading sighs for Nigel Thornberry and Cave Johnson on Linux CPU Q8, trailing sighs on Linux Vulkan Q8, and Nigel's opening chuckle on Vulkan Q8 and F16. The plan records the direction that ran. Delivery varies with the voice, engine and passage.
 

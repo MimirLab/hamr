@@ -11,7 +11,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 15
+CONTEXT_VERSION = 16
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -187,7 +187,7 @@ def continuing_quotation(match):
             and re.match(r'[a-z]',second[1:].lstrip()))
 
 
-def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION):
+def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION, allow_colon=False):
     # A recognized manner following the speaker belongs to the reporting verb.
     if postposed is not None and (match:=postposed.fullmatch(source)):
         if not match.groupdict().get('continuation') or continuing_quotation(match):
@@ -196,8 +196,9 @@ def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTI
                          r'\s+(?P<verb>'+cue_pattern+r')\s*[.!?]', source)
     inverted = re.fullmatch(r'(?P<quote>'+QUOTATION+r')\s*,?\s*(?P<inverted>'
                             r'(?P<verb>'+cue_pattern+r')\s+(?P<actor>'+actor+r'))\s*[.!?]', source)
+    separator = r'(?:,|\s*:)' if allow_colon else ','
     before = re.fullmatch(r'(?P<actor>'+actor+r')\s+(?P<verb>'+cue_pattern+
-                          r'),\s*(?P<quote>'+QUOTATION+r')\s*[.!?]?', source)
+                          r')'+separator+r'\s*(?P<quote>'+QUOTATION+r')\s*[.!?]?', source)
     if simple:=after or inverted or before:return simple
     opening=r'(?P<quote>'+QUOTATION+r')\s+'
     ending=r',\s*(?P<continuation>'+QUOTATION+r')\s*[.!?]?'
@@ -210,7 +211,8 @@ def dialogue_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTI
     return None
 
 
-def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION, allow_interrupted=False):
+def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTION,
+                         allow_interrupted=False, allow_colon=False):
     """Find one attributed turn with at most one narrator sentence on each side."""
     if len(source)>480:
         return None
@@ -227,7 +229,7 @@ def embedded_attribution(source, cue_pattern, postposed=None, *, actor=ATTRIBUTI
         if part['end']<quotes[-1].end():
             continue
         stop=len(source[:part['end']].rstrip())
-        if candidate:=dialogue_attribution(source[start:stop],cue_pattern,postposed,actor=actor):
+        if candidate:=dialogue_attribution(source[start:stop],cue_pattern,postposed,actor=actor,allow_colon=allow_colon):
             if interrupted and (not candidate.groupdict().get('continuation')
                                 or quotes[0][0][0]!=quotes[-1][0][0]):
                 return None
@@ -562,8 +564,8 @@ def pdf_inline_event_continues(left, right, context_version, config=None):
     if version >= 14:
         custom = attribution_preferences(config or {}, registry['directions'])
         verbs,cues,postposed = attribution_rules(registry,version,custom)
-        match = dialogue_attribution(source,cues,postposed,actor=actor)
-        if not match and (embedded:=embedded_attribution(source,cues,postposed,actor=actor)):
+        match = dialogue_attribution(source,cues,postposed,actor=actor,allow_colon=version>=16)
+        if not match and (embedded:=embedded_attribution(source,cues,postposed,actor=actor,allow_colon=version>=16)):
             match,offset,_ = embedded
         else:
             offset = 0
@@ -882,6 +884,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     verbs,cue_pattern,postposed = attribution_rules(registry,version,custom)
     affects = attributed_modifiers(registry,version)
     actor = attribution_actor(version)
+    allow_colon = version>=16
     voice_rules = voice_description_rules(registry['context']['attached_voice']) if version>=5 else None
     inline_rules = inline_event_rules(registry,version)
     modern_context = version >= 2
@@ -926,7 +929,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             elif STANDALONE.fullmatch(next_source) and (
                     event_attribution:=dialogue_attribution(source,cue_pattern,postposed,actor=actor)):
                 event = next_source, 'after', blocks[1], 0, ''
-        elif (match:=dialogue_attribution(source,cue_pattern,postposed,actor=actor)) and (
+        elif (match:=dialogue_attribution(source,cue_pattern,postposed,actor=actor,allow_colon=allow_colon)) and (
                 kind:=verbs.get(attribution_phrase(match))):
             direction = kind, match
         elif version >= 10 and (len(blocks) == 1 or unit.get('delivery_boundary') == 'tagged_pdf_quotation') and (
@@ -937,7 +940,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         elif inline_rules and (inline_event:=inline_vocal_event(source,neutral,sources[0],inline_rules,actor)):
             pass
         elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed,actor=actor,
-                                                            allow_interrupted=version>=12)) and (
+                                                            allow_interrupted=version>=12,allow_colon=allow_colon)) and (
                 kind:=verbs.get(attribution_phrase(owned[0]))):
             direction = kind, owned[0]
             surrounding = owned[1:]
