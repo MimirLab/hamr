@@ -117,6 +117,8 @@ With a compatible frame-guidance backend, Hamr can also direct an explicitly whi
 The quotation can also open the passage. Hamr verifies the beginning against the first spoken words and measures the whisper against the following narration. When it cannot verify the words, timing, or a quieter delivery, it uses the ordinary whole-passage reading.
 Hamr can use that ordinary recording to estimate the quote's timing, then reuse it if the directed readings fail verification.
 
+After a timed whisper, Hamr checks the return to the narrator on phrases such as “she whispered.” When that phrase comes out weak, Hamr compares it with the same words in an ordinary take of the passage. If both speech checkers confirm a substantial local drop, Hamr tries another reading. Naturally quiet narration can pass the comparison. The take's `quote_timing` report records the comparison when Hamr makes it.
+
 The timing check can recognize spellings the book compiler already expanded, such as “Dr.” and “Doctor” at the same place in the passage. When the two timing checks disagree, an installed Fluid checker can corroborate the complete wording and the location of the disputed quote. The Whisper profile uses the existing pair of lower-memory checks.
 
 “Wait for the lantern,” she whispered. “The latch is still closed.” When the same turn continues in a second complete quotation within the paragraph, Hamr can keep both lines in one Breeze request. The narrator still reads the attribution between them. The plan marks both quotation spans under `continued_quotation`.

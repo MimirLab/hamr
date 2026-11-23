@@ -239,6 +239,70 @@ def test_decoder_only_adopts_its_measured_scope(tmp_path, monkeypatch, window, a
         assert timing['decoder_attempt']['reason']=='guidance_outside_quote'
 
 
+@pytest.mark.parametrize('weak_return',[False,True])
+def test_directed_candidates_compare_reporting_words_before_publication(tmp_path,monkeypatch,weak_return):
+    frame = quote_timing.FRAME
+    target = quote_timing.scope(TEXT,TEXT,performance.CONTEXT_VERSION)
+    unit = {'text':TEXT,'quote_timing':target}
+    store = Store(tmp_path/'state')
+    job = {'id':'abc123','plan':{},'quote_timing_models':{'narrator_return':1},
+           'backend':{'frame_guidance':performance.FRAME_GUIDANCE_CAPABILITY,'quote_guidance':1}}
+    store.path(job).mkdir(exist_ok=True)
+    ordinary,decoder,timed = (level.to_bytes(2,'little')*(8*frame) for level in (500,250,400))
+    requests = []
+
+    def speech(text,options):
+        requests.append(options)
+        data = ordinary if options.get('frame_guidance',quote_timing.ANCHOR)==quote_timing.ANCHOR else timed
+        if spans:=options.get('quote_guidance'):
+            data = decoder
+        receipt = {'samples':len(data)//2,'sha256':digest(data)}
+        if spans:
+            receipt['quote_guidance'] = {'scopes':spans,'windows':[
+                {'scope':1,'start_frame':2,'end_frame':4,'release_frames':0}]}
+        return data,receipt
+
+    def relative(text,spans,rows,data):
+        assert [text[a:b] for a,b in spans]==['she whispered','The lamps went out']
+        baseline = [.62,.66] if weak_return else [.20,.18]
+        return {ordinary:baseline, decoder:[.11,.12], timed:[.4,.42]}[data]
+
+    monkeypatch.setattr(quote_timing,'verified_models',lambda recipe:True)
+    monkeypatch.setattr(quote_timing,'measure_take',lambda *args:([quote_timing.Edges(frame,2*frame,4*frame,6*frame)],[]))
+    monkeypatch.setattr(quote_timing,'maximum_quote_power',lambda *args:.2)
+    monkeypatch.setattr(quote_timing,'timed_transcripts',lambda *args:[[],[]])
+    monkeypatch.setattr(quote_timing,'narrator_return_power',relative)
+    selected,receipt = quote_timing.render(store,job,unit,'a'*64,speech)
+    comparison = receipt['quote_timing']['decoder_attempt']['narrator_return']
+    assert comparison['ordinary_pcm_sha256']==digest(ordinary)
+    assert comparison['retained'] is not weak_return
+    assert selected==(timed if weak_return else decoder)
+    assert receipt['quote_timing']['selected']=='directed'
+    assert requests[1]=={'seed':42}
+    requests.clear()
+    again,_ = quote_timing.render(store,job,unit,'a'*64,speech)
+    assert again==selected and not requests
+
+
+def test_reporting_measurement_uses_the_owned_clause_and_agreed_local_boundaries():
+    text = '“Come away, Jim; come away,” she whispered. He followed her outside.'
+    target = quote_timing.scope(text,text,performance.CONTEXT_VERSION)
+    regions = quote_timing.narrator_return_regions(text,[target['quotation']],performance.CONTEXT_VERSION)
+    assert [text[a:b] for a,b in regions]==['she whispered','He followed her outside']
+    words = quote_timing.words(text)
+    primary = [{'word':word,'start':i/5,'end':(i+1)/5} for i,word in enumerate(words)]
+    # The secondary observer can differ elsewhere in the quote and still
+    # corroborate the phrase. A nonoverlapping estimate cannot do that.
+    secondary = [dict(row) for row in primary]
+    secondary[3]['word'] = "i'm"
+    levels = [100]*7+[200]*4
+    data = b''.join(level.to_bytes(2,'little')*(quote_timing.RATE//5) for level in levels)
+    assert quote_timing.narrator_return_power(text,regions,[primary,secondary],data)==[.25,.25]
+    secondary[5].update(start=.1,end=.2)
+    secondary[6].update(start=.2,end=.3)
+    assert quote_timing.narrator_return_power(text,regions,[primary,secondary],data) is None
+
+
 def test_ordinary_timing_uses_compiled_offsets_after_word_expansion(tmp_path):
     text = ('Dr. Hale waited by the door. He looked at the lamp. '
             '“Keep Dr. Hale quiet,” he whispered. “We have to leave before dawn.”')

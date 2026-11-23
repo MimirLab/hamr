@@ -26,11 +26,20 @@ ANCHOR = {'start_frame': 0, 'end_frame': 1, 'scale': 0, 'base_scale': 0}
 WORKER = Path(__file__).with_name('timing_worker.py')
 MODEL_FILES = ('model.bin', 'config.json', 'tokenizer.json', 'vocabulary.txt')
 WORD = re.compile(r"[a-z]+(?:'[a-z]+)?|\d+")
+SOURCE_WORD = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)?|\d+")
 QUIET_QUOTE_POWER = 0.5
+NARRATOR_RETURN_VERSION = 1
+REPORTING_POWER_FLOOR = 0.25
 
 
 def owned_whisper(text, context_version):
     """Return the complete quotation spans owned by one explicit whisper clause."""
+    turn = owned_whisper_turn(text,context_version)
+    return turn[0] if turn else None
+
+
+def owned_whisper_turn(text, context_version):
+    """Return the unique owned quotations and their reporting clause."""
     quoted = performance.quotation_text(text, context_version)
     sentences = list(sentence_spans(quoted))
     actor = performance.attribution_actor(context_version)
@@ -46,13 +55,15 @@ def owned_whisper(text, context_version):
             if turn and not turn.groupdict().get('continuation'):
                 offsets = tuple(start + offset for offset in turn.span('quote'))
                 if offsets == quote.span():
+                    reporting = (start+min(turn.start('actor'),turn.start('verb')),
+                                 start+max(turn.end('actor'),turn.end('verb')))
                     continuation = performance.attributed_turn_continuation(
                         quoted[quote.start():], 'whispered', None, actor=actor, context_version=context_version)
                     if continuation and context_version >= 21:
                         following = tuple(quote.start()+offset for offset in continuation[1])
-                        found.append((offsets,following))
+                        found.append(((offsets,following),reporting))
                     elif not continuation:
-                        found.append((offsets,))
+                        found.append(((offsets,),reporting))
                     break
     return found[0] if len(found) == 1 else None
 
@@ -166,6 +177,85 @@ def quotation_indexes(text, owned, context_version):
     quoted = performance.quotation_text(text, context_version)
     ranges = [match.span() for match in re.finditer(performance.QUOTATION, quoted)]
     return len(ranges), tuple(index for index, span in enumerate(ranges) if span in owned)
+
+
+def narrator_return_regions(text, quotations, context_version):
+    """Find the owned reporting words and a nearby excerpt of narration."""
+    turn = owned_whisper_turn(text,context_version)
+    if not turn or turn[0]!=tuple(tuple(span) for span in quotations):
+        return None
+    first_quote = quotations[0]
+    _,reporting = turn
+    if reporting[0]<first_quote[1]:
+        return None
+    quoted = performance.quotation_text(text,context_version)
+    other_quotes = [match.span() for match in re.finditer(performance.QUOTATION,quoted)]
+    left = max((end for _,end in other_quotes if end<=first_quote[0]),default=0)
+    right = min((begin for begin,_ in other_quotes if begin>=reporting[1]),default=len(text))
+    for begin,end,from_end in ((reporting[1],right,False),(left,first_quote[0],True)):
+        tokens = list(SOURCE_WORD.finditer(text,begin,end))
+        if len(tokens)>=4:
+            excerpt = tokens[-6:] if from_end else tokens[:6]
+            return reporting,(excerpt[0].start(),excerpt[-1].end())
+    return None
+
+
+def local_phrase_bounds(text, span, transcript, samples):
+    """Time a source phrase when a free transcript recognizes its local words."""
+    left,right = span
+    parts = text[:left],text[left:right],text[right:]
+    labels = [row['word'] for row in transcript]
+    if exact := primary_word_groups(parts,labels):
+        index, length = len(exact[0]),len(exact[1])
+    else:
+        before,phrase,after = map(words,parts)
+        expected = before+phrase+after
+        length = len(phrase)
+        anchors = ((before[-2:],after[:2]),(before[-2:],[]),([],after[:2]))
+        matches = set()
+        for lead,tail in anchors:
+            if not lead and not tail:
+                continue
+            pattern = lead+phrase+tail
+            if sum(expected[i:i+len(pattern)]==pattern for i in range(len(expected)))!=1:
+                continue
+            hits = [i+len(lead) for i in range(len(labels)) if labels[i:i+len(pattern)]==pattern]
+            if len(hits)==1:
+                matches.add(hits[0])
+        if len(matches)!=1:
+            return None
+        index, = matches
+    if not length:
+        return None
+    start,end = transcript[index]['start'],transcript[index+length-1]['end']
+    if 0<=start<end<=samples/RATE:
+        return round(start*RATE),round(end*RATE)
+    return None
+
+
+def narrator_return_power(text, regions, transcripts, data):
+    """Measure the reporting phrase relative to nearby narrator speech."""
+    import numpy as np
+
+    if len(transcripts)!=2:
+        return None
+    samples = len(data)//2
+    bounds = [[local_phrase_bounds(text,span,rows,samples) for span in regions] for rows in transcripts]
+    for first,second in zip(*bounds,strict=True):
+        if first is None or second is None:
+            return None
+        common = min(first[1],second[1])-max(first[0],second[0])
+        if common<max(FRAME,min(first[1]-first[0],second[1]-second[0])/2):
+            return None
+    audio = np.frombuffer(data,dtype='<i2')
+    ratios = []
+    for reporting,reference in bounds:
+        report_power,reference_power = (float(np.mean(audio[start:end].astype('float64')**2))
+                                        for start,end in (reporting,reference))
+        if min(report_power,reference_power)<=0:
+            return None
+        ratios.append(report_power/reference_power)
+    return ratios
 
 
 @dataclass(frozen=True)
@@ -366,6 +456,8 @@ def bind(store, job):
                 revision = 11 if has_opening else 9 if supports_inline_whisper(job['backend']) else 7
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
                                               'models':models, 'timing_algorithm':revision}
+                if guidance:
+                    job['quote_timing_models']['narrator_return'] = NARRATOR_RETURN_VERSION
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
                     try:
                         _, identity = asr_fluid.observer_identity()
@@ -574,6 +666,48 @@ def verified_edges(job, trial, receipt, text, quotations, target):
         return [],[]
 
 
+def check_narrator_return(checkpoint, job, text, ordinary, target, quotations, synthesize, anchors):
+    """Compare a weak reporting phrase with an ordinary take at the same seed."""
+    recipe = job['quote_timing_models']
+    if recipe.get('narrator_return')!=NARRATOR_RETURN_VERSION:
+        return None
+    version = job['plan'].get('performance',{}).get('context_version',performance.CONTEXT_VERSION)
+    if not (regions:=narrator_return_regions(text,quotations,version)):
+        return None
+
+    def measure(trial, take):
+        audio,receipt = take
+        try:
+            rows = timed_transcripts(recipe,trial,receipt,text,target.get('source_spellings'))
+            return narrator_return_power(text,regions,rows,audio)
+        except (OSError, ValueError, TypeError, KeyError, OverflowError, subprocess.SubprocessError):
+            return None
+
+    def accept(trial, take, options, report):
+        directed = measure(trial,take)
+        if not directed or max(directed)>REPORTING_POWER_FLOOR:
+            return True
+        seed = options['seed']
+        if seed not in anchors:
+            slot = checkpoint/f'narrator-anchor-{seed}'
+            anchor,_ = checkpoint_take(slot,text,{**ordinary,'seed':seed},synthesize,'after_narrator_anchor')
+            anchors[seed] = slot,anchor
+        slot,anchor = anchors[seed]
+        baseline = measure(slot,anchor)
+        if not baseline:
+            return True
+        relative = [candidate/reference for candidate,reference in zip(directed,baseline,strict=True)]
+        retained = max(relative)>REPORTING_POWER_FLOOR
+        report['narrator_return'] = {'reporting_span':list(regions[0]),'reference_span':list(regions[1]),
+                                    'ordinary_pcm_sha256':anchor[1]['sha256'],
+                                    'reporting_power_ratio':relative,'retained':retained}
+        if not retained:
+            report['reason'] = 'narrator_return_too_quiet'
+        return retained
+
+    return accept
+
+
 def maximum_quote_power(data, measured):
     """Measure the strongest quoted interval relative to ordinary narration."""
     import numpy as np
@@ -592,7 +726,7 @@ def maximum_quote_power(data, measured):
     return None
 
 
-def decoder_take(trial, job, text, ordinary, target, quotations, instruction, synthesize):
+def decoder_take(trial, job, text, ordinary, target, quotations, instruction, synthesize, check_return=None):
     """Try one causal take and verify its actual speech and emitted frame intervals."""
     scopes = [[len(text[:left+1].encode('utf-8')),len(text[:right-1].encode('utf-8'))]
               for left,right in quotations]
@@ -628,6 +762,8 @@ def decoder_take(trial, job, text, ordinary, target, quotations, instruction, sy
     if contrast is None or contrast>limit:
         reason = 'insufficient_contrast' if opening else 'whisper_louder_than_opening'
         return None,{**report,'reason':reason}
+    if check_return and not check_return(trial,result,options,report):
+        return None,report
     return result,report
 
 
@@ -672,7 +808,7 @@ def inline_schedule(fragments, measured, *, terminal, prefer_fragment_starts=Tru
     return performance.validated_frame_guidance({'windows':windows,'base_scale':0})
 
 
-def inline_take(checkpoint, job, text, ordinary, target, quotations, instruction, synthesize):
+def inline_take(checkpoint, job, text, ordinary, target, quotations, instruction, synthesize, check_return=None):
     """Try semantic cues and one independently verified adjustment of their timing."""
     marked,scopes = inline_request(text,quotations)
     common = {**ordinary,'instruction':instruction,'narration_instruction':NARRATION_INSTRUCTION}
@@ -712,7 +848,9 @@ def inline_take(checkpoint, job, text, ordinary, target, quotations, instruction
         if (len(windows)==len(quotations) and (index or
                 [window['scope'] for window in windows]==list(range(1,len(quotations)+1)))
                 and all(edge.contains(window) for edge,window in zip(measured,windows,strict=True))):
-            return result,trials
+            if not check_return or check_return(trial,result,options,report):
+                return result,trials
+            break
         report['reason'] = 'guidance_outside_quote'
         if index==0:
             terminal = not words(text[quotations[-1][1]:])
@@ -724,17 +862,17 @@ def inline_take(checkpoint, job, text, ordinary, target, quotations, instruction
     return None,trials
 
 
-def causal_take(checkpoint, job, text, ordinary, target, quotations, instruction, synthesize):
+def causal_take(checkpoint, job, text, ordinary, target, quotations, instruction, synthesize, check_return=None):
     if not performance.supports_quote_guidance(job.get('backend') or {}):
         return None,None,{}
     decoded, attempt = decoder_take(checkpoint/'decoder',job,text,ordinary,target,quotations,
-                                    instruction,synthesize)
+                                    instruction,synthesize,check_return)
     reports = {'decoder_attempt':attempt}
     power = attempt.get('maximum_quote_power_ratio')
     if (job['quote_timing_models'].get('timing_algorithm',3)>=8 and supports_inline_whisper(job['backend'])
             and attempt.get('reason')!='quote_guidance_unavailable'
             and (decoded is None or power is None or power>QUIET_QUOTE_POWER)):
-        inline, trials = inline_take(checkpoint,job,text,ordinary,target,quotations,instruction,synthesize)
+        inline, trials = inline_take(checkpoint,job,text,ordinary,target,quotations,instruction,synthesize,check_return)
         reports['inline_attempts'] = trials
         if inline is not None:
             return inline,'inline',reports
@@ -759,16 +897,17 @@ def render(store, job, unit, clip, synthesize):
     reason = 'timing_models_changed'
     schedule = ANCHOR
     seed = ordinary['seed']
+    anchors = {}
     ordinary_anchor = opening and not multiple and recipe.get('timing_algorithm',3)>=10
-    saved_ordinary = None
     attempts = 4 if multiple or ordinary_anchor else 3
     allow_short_taper = multiple and recipe.get('timing_algorithm',3)>=4
     allow_exit_overlap = recipe.get('timing_algorithm',3)>=5
     decoder = {}
     if verified_models(recipe):
+        check_return = check_narrator_return(checkpoint,job,text,ordinary,target,quotations,synthesize,anchors)
         if not ordinary_anchor:
             guided,controller,decoder = causal_take(checkpoint,job,text,ordinary,target,quotations,
-                                                     instruction,synthesize)
+                                                     instruction,synthesize,check_return)
             if guided is not None:
                 data,receipt = guided
                 return data,{**receipt,'quote_timing':{**target,'selected':'directed','controller':controller,
@@ -798,8 +937,7 @@ def render(store, job, unit, clip, synthesize):
             history.append({'pcm_sha256':receipt['sha256'],'schedule':schedule,'checkpoint_reused':reused})
             if ordinary_anchor and anchoring:
                 history[-1].update(schedule=None,anchor='ordinary')
-                if seed==ordinary['seed']:
-                    saved_ordinary = result
+                anchors[seed] = trial,result
             overlaps = {}
             try:
                 spellings = target.get('source_spellings')
@@ -847,6 +985,9 @@ def render(store, job, unit, clip, synthesize):
                                     schedule = stronger
                                     continue
                             break
+                    if check_return and not check_return(trial,result,options,history[-1]):
+                        reason = 'narrator_return_too_quiet'
+                        break
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,
                         **({'exit_taper_covers_last_word':True} if tapered else {}),**decoder}}
             if index==attempts:
@@ -873,10 +1014,11 @@ def render(store, job, unit, clip, synthesize):
             reason = 'corrected_take_outside_quote'
         if ordinary_anchor:
             guided,controller,decoder = causal_take(checkpoint,job,text,ordinary,target,quotations,
-                                                     instruction,synthesize)
+                                                     instruction,synthesize,check_return)
             if guided is not None:
                 data,receipt = guided
                 return data,{**receipt,'quote_timing':{**target,'selected':'directed','controller':controller,
                                                        'trials':history,**decoder}}
-    data,receipt = saved_ordinary if saved_ordinary is not None else synthesize(text,ordinary)
+    saved_ordinary = anchors.get(ordinary['seed'])
+    data,receipt = saved_ordinary[1] if saved_ordinary else synthesize(text,ordinary)
     return data,{**receipt,'quote_timing':{**target,'selected':'ordinary','reason':reason,'trials':history,**decoder}}
