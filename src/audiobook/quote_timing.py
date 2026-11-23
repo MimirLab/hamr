@@ -304,7 +304,7 @@ def bind(store, job):
                 models.append({'path':str(directory), 'files':{name:fingerprint(directory/name) for name in MODEL_FILES}})
             if models[0]['files']['model.bin'] != models[1]['files']['model.bin']:
                 job['quote_timing_models'] = {'worker':fingerprint(WORKER), 'python':saved['python'],
-                                              'models':models, 'timing_algorithm':3}
+                                              'models':models, 'timing_algorithm':4}
                 if saved.get('requested_profile')!='whisper' and (fluid:=configured_fluid(saved)):
                     try:
                         _, identity = asr_fluid.observer_identity()
@@ -442,6 +442,26 @@ def refine(measured, schedule, *, ends_in_quote=False):
     return performance.validated_frame_guidance({'windows':windows})
 
 
+def one_frame_taper(measured, schedule):
+    """Try a short release when exactly one quote ends just beyond a hard cut."""
+    windows = schedule['windows']
+    changes = []
+    for index, (edges, window) in enumerate(zip(measured, windows, strict=True)):
+        if edges.contains(window, allow_tapered_tail=True):
+            continue
+        if (window['end_frame']=='speech' or window['release_frames']
+                or window['end_frame'] >= (windows[index+1]['start_frame'] if index+1<len(windows) else 1500)):
+            return None
+        tapered = {**window,'release_frames':1}
+        if not edges.contains(tapered, allow_tapered_tail=True):
+            return None
+        changes.append((index,tapered))
+    if len(changes)!=1:
+        return None
+    index, window = changes[0]
+    return {**schedule,'windows':[ *windows[:index], window, *windows[index+1:]]}
+
+
 def render(store, job, unit, clip, synthesize):
     """Reuse completed trials and adopt a direction only on measured speech."""
     recipe = job['quote_timing_models']
@@ -459,8 +479,9 @@ def render(store, job, unit, clip, synthesize):
     reason = 'timing_models_changed'
     schedule = ANCHOR
     attempts = 4 if multiple else 3
+    allow_short_taper = multiple and recipe.get('timing_algorithm',3)>=4
     if verified_models(recipe):
-        for index in range(attempts):
+        for index in range(attempts+allow_short_taper):
             trial = checkpoint/str(index)
             owned_checkpoint(trial)
             options = {**ordinary, 'instruction':instruction,'frame_guidance':schedule}
@@ -499,12 +520,19 @@ def render(store, job, unit, clip, synthesize):
                 pairs = list(zip(measured,windows,strict=True))
                 if all(edges.contains(window) for edges,window in pairs):
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history}}
-                if (multiple and index == attempts-1
+                if (multiple and index >= attempts-1
                         and all(edges.contains(window,allow_tapered_tail=True) for edges,window in pairs)):
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,
                                                            'exit_taper_covers_last_word':True}}
+            if index==attempts:
+                break
+            tried = [trial['schedule'] for trial in history]
             proposal = refine(measured,schedule if index else None,ends_in_quote=ends_in_quote)
-            if proposal is None or any(trial['schedule']==proposal for trial in history):
+            if allow_short_taper and index==attempts-1:
+                if proposal is not None and proposal not in tried:
+                    break
+                proposal = one_frame_taper(measured,schedule)
+            if proposal is None or proposal in tried:
                 reason = 'no_clear_frame_window'
                 break
             schedule = proposal

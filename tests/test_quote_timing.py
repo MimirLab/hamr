@@ -132,6 +132,47 @@ def test_short_taper_can_cover_the_quoted_tail_without_reaching_narration():
     assert not too_early.contains(taper, allow_tapered_tail=True)
 
 
+@pytest.mark.parametrize(('algorithm','safe_release','selected','directed_attempts'),[
+    (3, True, 'ordinary', 4), (4, True, 'directed', 5), (4, False, 'ordinary', 5),
+])
+def test_repeated_schedule_gets_one_bounded_taper_retry(
+        tmp_path,monkeypatch,algorithm,safe_release,selected,directed_attempts):
+    text = 'The hall was empty. “Keep the lamp low,” he whispered. “We have to leave before dawn.”'
+    store = Store(tmp_path/'home')
+    job = {'id':'af23456789012345','quote_timing_models':{'timing_algorithm':algorithm}}
+    store.path(job).mkdir()
+    unit = {'text':text,'quote_timing':quote_timing.scope(text,text,23)}
+    requests = []
+    observed = iter([
+        [(70560,80640,104640,105600),(113280,117120,144960,153600)],
+        [(70560,84000,108000,113280),(125280,132480,165120,172800)],
+        [(70560,84480,107040,107040),(120960,130560,164640,165120)],
+        [(70560,84960,108000,116160),(127680,137280,168000,178560)],
+        [(70560,82560,107520,113280 if safe_release else 108000),(122880,130560,158880,170880)],
+    ])
+
+    def render(_,options):
+        requests.append(options)
+        pcm = bytes([len(requests),0])*19200
+        return pcm, {'sha256':digest(pcm),'samples':19200}
+
+    monkeypatch.setattr(quote_timing,'verified_models',lambda _:True)
+    monkeypatch.setattr(quote_timing,'measure_take',
+                        lambda *args:([quote_timing.Edges(*edge) for edge in next(observed)],[]))
+    _, receipt = quote_timing.render(store,job,unit,'a'*64,render)
+    outcome = receipt['quote_timing']
+    assert outcome['selected']==selected
+    assert len(outcome['trials'])==directed_attempts
+    if algorithm==4:
+        hard_cut = requests[3]['frame_guidance']
+        taper = requests[4]['frame_guidance']
+        assert hard_cut['windows'][0]['end_frame']==56
+        assert hard_cut['windows'][0]['release_frames']==0
+        assert taper['windows']==[{**hard_cut['windows'][0],'release_frames':1},hard_cut['windows'][1]]
+    if selected=='ordinary':
+        assert requests[-1] == {'seed':42}
+
+
 def test_terminal_quote_edges_survive_printed_syllable_break_and_repeated_words():
     text = '“I now have it over,” he whispered. “He was deter-mined. Anne, now have it over.”'
     start, end = text.rindex('“'), len(text)
