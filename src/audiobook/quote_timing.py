@@ -27,6 +27,15 @@ WORKER = Path(__file__).with_name('timing_worker.py')
 MODEL_FILES = ('model.bin', 'config.json', 'tokenizer.json', 'vocabulary.txt')
 WORD = re.compile(r"[a-z]+(?:'[a-z]+)?|\d+")
 SOURCE_WORD = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)?|\d+")
+OBSERVER_WORD_BREAKS = {'alright': ('all','right'), 'maybe': ('may','be')}
+OBSERVER_PHRASES = '|'.join(r'[ \t]+'.join(parts) for parts in OBSERVER_WORD_BREAKS.values())
+OBSERVER_ALTERNATIVES = {
+    form: f'(?:{re.escape(joined)}|{re.escape(" ".join(parts))})'
+    for joined,parts in OBSERVER_WORD_BREAKS.items() for form in (joined,' '.join(parts))
+}
+OBSERVER_TERMS = re.compile(
+    rf"(?<![a-z\d'‐‑-])(?:{OBSERVER_PHRASES})(?![a-z\d'‐‑-])|"
+    r"[a-z]+(?:'[a-z]+)?(?:[-‐‑][a-z]+(?:'[a-z]+)?)*|\d+")
 QUIET_QUOTE_POWER = 0.5
 NARRATOR_RETURN_VERSION = 1
 REPORTING_POWER_FLOOR = 0.25
@@ -122,15 +131,15 @@ def primary_word_groups(parts, labels):
     if labels == [word for group in groups for word in group]:
         return groups
 
-    # A compound may be printed with a syllable break and transcribed as one
-    # word. Allow the observer to split or join only those source hyphens.
+    # Accept a source hyphen or a known spelling boundary inside each region.
+    # Keep the observer's original word positions for the timing calculations.
     patterns = []
     for part in parts:
-        terms = re.findall(r"[a-z]+(?:'[a-z]+)?(?:[-‐‑][a-z]+(?:'[a-z]+)?)*|\d+",
-                           part.lower().replace('’', "'"))
-        compounds = [' ?'.join(re.escape(word) for word in words(term)) for term in terms]
+        terms = OBSERVER_TERMS.findall(part.lower().replace('’', "'"))
+        compounds = [OBSERVER_ALTERNATIVES.get(' '.join(term.split()))
+                     or ' ?'.join(re.escape(word) for word in words(term)) for term in terms]
         patterns.append(' '.join(compounds))
-    if not any(' ?' in pattern for pattern in patterns):
+    if not any(' ?' in pattern or '(?:' in pattern for pattern in patterns):
         return None
     joined = ' '.join(f'({pattern})' for pattern in patterns if pattern)
     match = re.fullmatch(joined,' '.join(labels))

@@ -615,6 +615,45 @@ def test_terminal_quote_edges_survive_printed_syllable_break_and_repeated_words(
                                     secondary, samples=72000) is None
 
 
+@pytest.mark.parametrize('text', [
+    '“All right,” she whispered. He may be nearby.',
+    '“Alright,” she whispered. He may be nearby.',
+])
+def test_word_break_variants_keep_actual_observer_timing(text):
+    span = (0,text.index('”')+1)
+    primary = [
+        {'word':'alright','start':.08,'end':.44},
+        {'word':'she','start':.56,'end':.63},
+        {'word':'whispered','start':.64,'end':.82},
+        {'word':'he','start':.9,'end':.99},
+        {'word':'maybe','start':1.0,'end':1.28},
+        {'word':'nearby','start':1.32,'end':1.65},
+    ]
+    secondary = [
+        {'word':'all','start':.06,'end':.2},
+        {'word':'right','start':.2,'end':.46},
+        *primary[1:4],
+        {'word':'may','start':1.0,'end':1.12},
+        {'word':'be','start':1.13,'end':1.28},
+        primary[-1],
+    ]
+    expected = quote_timing.Edges(0,1440,11040,13440)
+    assert quote_timing.measurements(text,span,primary,secondary,samples=48000)==expected
+    assert quote_timing.measurements(text,span,secondary,primary,samples=48000)==expected
+    assert quote_timing.measurements(text,span,primary[:-1],secondary,samples=48000) is None
+
+
+@pytest.mark.parametrize(('parts','tokens'),[
+    (('All, right now',), ['alright','now']),
+    (('Call May, be quick',), ['call','maybe','quick']),
+    (('May', 'be near the gate'), ['maybe','near','the','gate']),
+    (('It is a small right margin',), ['it','is','a','smalright','margin']),
+    (('Thank Heaven. He may be got abroad yet.',), ['thank','heaven','he','maybe','abroad','yet']),
+])
+def test_word_break_variants_do_not_bridge_punctuation_or_hide_word_errors(parts,tokens):
+    assert quote_timing.primary_word_groups(parts,tokens) is None
+
+
 @pytest.mark.parametrize('uncertain',[False,True])
 def test_restart_reuses_the_timing_anchor_and_retains_ordinary_fallback(tmp_path,monkeypatch,uncertain):
     store = Store(tmp_path/'home')
