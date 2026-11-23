@@ -38,7 +38,12 @@ def owned_whisper(text, context_version):
             if turn and not turn.groupdict().get('continuation'):
                 offsets = tuple(start + offset for offset in turn.span('quote'))
                 if offsets == quote.span():
-                    found.append(offsets)
+                    # One native interval cannot cover a continuing second
+                    # quotation while leaving the attribution in between plain.
+                    continuation = performance.attributed_turn_continuation(
+                        quoted[quote.start():], 'whispered', None, actor=actor, context_version=context_version)
+                    if not continuation:
+                        found.append(offsets)
                     break
     return found[0] if len(found) == 1 else None
 

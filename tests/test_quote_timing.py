@@ -14,6 +14,7 @@ TEXT = 'The rain stopped. The room was empty. “Wait by the door,” she whispe
     ('The rain stopped. “Stand by,” he said. “Wait by the door,” she whispered. Now it was dark.',
      '“Wait by the door,”'),
     ('“Wait by the door,” he whispered. “Stay here,” she whispered. The lamps went out.', None),
+    ('He laughed. “Lady Narborough,” he whispered. “She perfectly adores him.”', None),
 ])
 def test_unique_owned_whisper_in_the_ordinary_plan(tmp_path,source,expected):
     document = tmp_path/'story.md'
