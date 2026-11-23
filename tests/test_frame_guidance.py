@@ -61,9 +61,15 @@ def test_scheduled_passage_pins_its_clip_and_preview_options(tmp_path, voice):
     assert jobs.clip_key(neighbor,baseline)==jobs.clip_key(untouched,baseline)
 
 
-@pytest.mark.parametrize('confirmed',[True,False])
-def test_http_requires_agreement_before_accepting_scheduled_audio(voice,confirmed):
-    samples = (8192*np.sin(np.arange(7680)*0.10)).astype('<i2').tobytes()
+@pytest.mark.parametrize(('confirmed','frames','extra_samples','expected_error'),[
+    (True,4,0,None),
+    (False,4,0,'frame_guidance_unconfirmed'),
+    (True,3,0,'frame_guidance_unreached'),
+    (True,4,1,'frame_guidance_unreached'),
+])
+def test_http_requires_confirmation_and_complete_schedule(voice,confirmed,frames,extra_samples,expected_error):
+    count = frames*performance.FRAME_GUIDANCE_CAPABILITY['frame_samples'] + extra_samples
+    samples = (8192*np.sin(np.arange(count)*0.10)).astype('<i2').tobytes()
     headers = {'X-Sample-Rate':'24000', 'X-Sample-Format':'s16le',
                'X-Breeze-Guidance-Window':'1:3:1.5', 'X-Breeze-Guidance-Base':'0',
                'X-Breeze-Guidance-Release':'1' if confirmed else '2', 'X-Breeze-Guidance-Chunks':'10'}
@@ -78,11 +84,11 @@ def test_http_requires_agreement_before_accepting_scheduled_audio(voice,confirme
 
     with httpx.Client(base_url='http://127.0.0.1',transport=httpx.MockTransport(server)) as client:
         engine.client = client
-        if confirmed:
+        if expected_error is None:
             data, receipt = engine.speech('Wait by the door.',voice,frame_guidance=SCHEDULE)
             assert data==samples
             assert receipt['frame_guidance']['generated_frames']==4
         else:
             with pytest.raises(Error) as error:
                 engine.speech('Wait by the door.',voice,frame_guidance=SCHEDULE)
-            assert error.value.code=='frame_guidance_unconfirmed'
+            assert error.value.code==expected_error

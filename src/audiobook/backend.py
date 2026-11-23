@@ -417,8 +417,11 @@ class Engine:
                 data,receipt=validate_pcm(bytes(data),text); receipt['actual_device']=actual
                 if frame_guidance is not None:
                     frames, remainder = divmod(receipt['samples'], FRAME_GUIDANCE_CAPABILITY['frame_samples'])
-                    if remainder or frames <= frame_guidance['start_frame']:
-                        raise Error('frame_guidance_unreached', 'The returned speech did not reach the held guidance interval.')
+                    required_frames = frame_guidance['end_frame'] + frame_guidance['release_frames']
+                    if remainder or frames < required_frames:
+                        raise Error('frame_guidance_unreached',
+                                    f'Breeze returned {frames} complete frames. The requested guidance needs {required_frames} complete frames.',
+                                    'Compare with the undirected take or use an earlier end frame.')
                     receipt['frame_guidance'] = {**frame_guidance, 'generated_frames':frames,
                                                  'chunk_frames':FRAME_GUIDANCE_CAPABILITY['chunk_frames']}
                 request={'transport':'hoppou-http','endpoint':'/v1/audio/speech','fields':dict(fields),
