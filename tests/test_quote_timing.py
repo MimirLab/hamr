@@ -10,6 +10,8 @@ TEXT = 'The rain stopped. The room was empty. “Wait by the door,” she whispe
 
 @pytest.mark.parametrize(('source','expected'),[
     (TEXT, '“Wait by the door,”'),
+    ('“Wait by the door,” she whispered. The street was empty. She lowered the lamp.',
+     '“Wait by the door,”'),
     ('The rain stopped. The room was empty. “Wait.” The trees whispered. The lamps went out.', None),
     ('The rain stopped. “Stand by,” he said. “Wait by the door,” she whispered. Now it was dark.',
      '“Wait by the door,”'),
@@ -51,6 +53,75 @@ def test_refinement_preserves_the_onset_and_waits_for_the_actual_exit():
     refined = directed.proposal(initial)
     assert (refined['start_frame'],refined['end_frame'],refined['release_frames']) == (10,15,1)
     assert directed.contains(refined)
+
+
+def test_opening_whisper_uses_the_audio_boundary_and_preserves_old_plans():
+    text = '“Stay here,” she whispered. The lamp went out. I heard the rain.'
+    assert quote_timing.scope(text,text,24) is None
+    target = quote_timing.scope(text,text,25)
+    assert target['quotation'] == [0,text.index('”')+1]
+    assert target['version'] == quote_timing.OPENING_VERSION
+    expected = quote_timing.words(text)
+    primary = []
+    secondary = []
+    independent = []
+    intervals = [(0.14,0.44),(0.45,0.82),(0.94,1.05)]
+    intervals.extend((1.1+i*.2,1.2+i*.2) for i in range(len(expected)-3))
+    for word,(start,stop) in zip(expected,intervals,strict=True):
+        primary.append({'word':word,'start':start,'end':stop})
+        secondary.append({'word':word,'start':start-.04,'end':stop+.04})
+        independent.append({'word':word,'first':start-.06,'last':stop+.06})
+    span = target['quotation']
+    samples = int((intervals[-1][1]+.5)*quote_timing.RATE)
+    assert quote_timing.measurements(text,span,primary,secondary,samples=samples) == (
+        quote_timing.Edges(0,2400,20640,21600))
+    assert quote_timing.corroborated_edges(text,span,primary,independent,samples) == (
+        quote_timing.Edges(0,1920,21120,21120))
+    added = [{'word':'well','start':0,'end':.08},*secondary]
+    assert quote_timing.measurements(text,span,primary,added,samples=samples) is None
+
+
+def test_opening_quote_compares_with_the_following_narrator():
+    sample = quote_timing.FRAME
+    quiet = (100).to_bytes(2,'little')*sample
+    narrator = (200).to_bytes(2,'little')*sample
+    louder = (500).to_bytes(2,'little')*sample
+    first = quote_timing.Edges(0,0,sample,sample)
+    second = quote_timing.Edges(2*sample,2*sample,3*sample,3*sample)
+    assert quote_timing.maximum_quote_power(quiet+narrator,[first]) == .25
+    assert quote_timing.maximum_quote_power(quiet+narrator+quiet+louder,[first,second]) == .25
+
+
+@pytest.mark.parametrize(('level','selected'),[(180,'ordinary'),(100,'directed')])
+def test_opening_fallback_verifies_contrast_on_the_actual_take(tmp_path,monkeypatch,level,selected):
+    frame = quote_timing.FRAME
+    text = '“Wait by the lamp,” she whispered. The rain stopped. No one came.'
+    unit = {'text':text,'quote_timing':quote_timing.scope(text,text,25)}
+    store = Store(tmp_path/'state')
+    job = {'id':'abc123','backend':{},'quote_timing_models':{}}
+    store.path(job).mkdir(exist_ok=True)
+    measured = quote_timing.Edges(0,0,3*frame,4*frame)
+    speech = (level.to_bytes(2,'little')*(3*frame) + bytes(2*frame)
+              + (200).to_bytes(2,'little')*(2*frame))
+    ordinary = (250).to_bytes(2,'little')*(6*frame)
+    calls = []
+
+    def synthesize(text,options):
+        calls.append(options)
+        audio = speech if 'frame_guidance' in options else ordinary
+        return audio,{'sha256':digest(audio),'samples':len(audio)//2}
+
+    monkeypatch.setattr(quote_timing,'verified_models',lambda _:True)
+    monkeypatch.setattr(quote_timing,'measure_take',lambda *args:([measured],[]))
+    data,receipt = quote_timing.render(store,job,unit,'a'*64,synthesize)
+    report = receipt['quote_timing']
+    assert calls[0]['instruction'] == quote_timing.OPENING_INSTRUCTION
+    assert report['selected'] == selected
+    assert report['trials'][-1]['maximum_quote_power_ratio'] == (level/200)**2
+    if selected == 'ordinary':
+        assert report['reason'] == 'insufficient_contrast' and data == ordinary
+    else:
+        assert data == speech
 
 
 @pytest.mark.parametrize('window,accepted',[(3,True),(4,False)])

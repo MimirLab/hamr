@@ -13,8 +13,11 @@ from .core import Error, RATE, atomic, digest, fault, filehash, key, loadjson, w
 
 
 VERSION = 1
+OPENING_VERSION = 3
 INSTRUCTION = ('Give only the middle quotation a quiet, breathy whisper. '
                'Use the usual narrator voice before and after the quotation.')
+OPENING_INSTRUCTION = ('Start with a quiet, breathy whisper for the opening quotation. '
+                       'Return to the usual fully voiced narrator after the quoted words.')
 CONTINUING_INSTRUCTION = ('Give both quotations a quiet, breathy whisper. '
                           'Use the usual narrator voice in the narration and the reporting words between them.')
 NARRATION_INSTRUCTION = 'Read in the original speaker’s natural, fully voiced audiobook narration.'
@@ -142,17 +145,21 @@ def scope(source, spoken, context_version):
         # using the offsets of the version actually sent to Breeze.
         if quotation_indexes(source, source_owned, context_version) != quotation_indexes(spoken, quoted, context_version):
             return None
-    if not words(spoken[:quoted[0][0]]) or any(not words(spoken[a+1:b-1]) for a,b in quoted):
+    opening = not words(spoken[:quoted[0][0]])
+    if opening and context_version < 25:
+        return None
+    if any(not words(spoken[a+1:b-1]) for a,b in quoted):
         return None
     if len(quoted)>1:
         first, second = quoted
         if len(words(spoken[first[1]:second[0]]))<2:
             return None
-        return {'quotations':[list(span) for span in quoted], 'version':2}
+        return {'quotations':[list(span) for span in quoted],
+                'version':OPENING_VERSION if opening else 2}
     (start, stop), = quoted
     if len(words(spoken[stop:]))<2:
         return None
-    return {'quotation': [start,stop], 'version': VERSION}
+    return {'quotation': [start,stop], 'version': OPENING_VERSION if opening else VERSION}
 
 
 def quotation_indexes(text, owned, context_version):
@@ -224,10 +231,11 @@ def exit_overlap(text, quotation, primary, secondary, samples):
         if groups is None:
             return None
         prefix, quoted, suffix = groups
-        if not (prefix and quoted and suffix):
+        if not (quoted and suffix):
             return None
         begin, end = len(prefix), len(prefix)+len(quoted)
-        times = (rows[begin-1]['end'],rows[begin]['start'],rows[end-1]['end'],rows[end]['start'])
+        before = rows[begin-1]['end'] if prefix else 0
+        times = (before,rows[begin]['start'],rows[end-1]['end'],rows[end]['start'])
         if not (all(isfinite(point) for point in times) and 0<=times[0]<=times[1]<times[2]<=times[3]<=samples/RATE):
             return None
         intervals.append(tuple(round(point*RATE) for point in times))
@@ -244,7 +252,7 @@ def measurements(text, quotation, primary, secondary, *, samples=None):
     left, right = quotation
     parts = text[:left],text[left+1:right-1],text[right:]
     groups = primary_word_groups(parts,[row['word'] for row in primary])
-    if groups is None:
+    if groups is None or not groups[1]:
         return None
     prefix, target, suffix = groups
     expected = prefix + target + suffix
@@ -270,7 +278,9 @@ def measurements(text, quotation, primary, secondary, *, samples=None):
             return None
         other_begin, other_end = begins[0], ends[0]
 
-    before = max(primary[begin-1]['end'],secondary[other_begin-1]['end'])
+    if not prefix and other_begin:
+        return None
+    before = max(primary[begin-1]['end'],secondary[other_begin-1]['end']) if prefix else 0
     start = min(primary[begin]['start'],secondary[other_begin]['start'])
     stop = max(primary[end-1]['end'],secondary[other_end-1]['end'])
     if suffix:
@@ -301,12 +311,13 @@ def corroborated_edges(text, quotation, primary, independent, samples):
     parts = text[:left],text[left+1:right-1],text[right:]
     chunks = primary_word_groups(parts,[row['word'] for row in primary])
     other = primary_word_groups(parts,[row['word'] for row in independent])
-    if chunks is None or other is None:
+    if chunks is None or other is None or not chunks[1] or not other[1]:
         return None
     begin, end = len(chunks[0]),len(chunks[0])+len(chunks[1])
     head, tail = len(other[0]),len(other[0])+len(other[1])
-    pairs = [(primary[begin-1],independent[head-1]), (primary[begin],independent[head]),
-             (primary[end-1],independent[tail-1])]
+    pairs = [(primary[begin],independent[head]),(primary[end-1],independent[tail-1])]
+    if begin:
+        pairs.insert(0,(primary[begin-1],independent[head-1]))
     if chunks[2]:
         pairs.append((primary[end],independent[tail]))
     # Fluid emits token positions on an 80 ms grid. Use them to corroborate
@@ -315,7 +326,7 @@ def corroborated_edges(text, quotation, primary, independent, samples):
     if any(not timed['start']-slop<=heard['first']<=heard['last']<=timed['end']+slop
            for timed,heard in pairs):
         return None
-    before = max(primary[begin-1]['end'],independent[head-1]['last'])
+    before = max(primary[begin-1]['end'],independent[head-1]['last']) if begin else 0
     start = min(primary[begin]['start'],independent[head]['first'])
     stop = max(primary[end-1]['end'],independent[tail-1]['last'])
     after = min(primary[end]['start'],independent[tail]['first']) if chunks[2] else samples/RATE
@@ -561,13 +572,20 @@ def verified_edges(job, trial, receipt, text, quotations, target):
 
 
 def maximum_quote_power(data, measured):
-    """Measure the strongest quoted interval relative to opening narration."""
+    """Measure the strongest quoted interval relative to ordinary narration."""
     import numpy as np
     pcm = np.frombuffer(data,dtype='<i2').astype('float64')
-    opening = pcm[:measured[0].before]
-    opening_power = np.mean(opening**2) if opening.size else 0
-    if opening_power>0 and all(0<=edge.start<edge.end<=len(pcm) for edge in measured):
-        return max(float(np.mean(pcm[edge.start:edge.end]**2)/opening_power) for edge in measured)
+    first = measured[0]
+    if first.before:
+        narration = pcm[:first.before]
+    else:
+        # A quote can open the passage. The next verified narration begins
+        # after the quote and ends before the next quote, if there is one.
+        end = measured[1].before if len(measured)>1 else len(pcm)
+        narration = pcm[first.after:end]
+    narration_power = np.mean(narration**2) if narration.size else 0
+    if narration_power>0 and all(0<=edge.start<edge.end<=len(pcm) for edge in measured):
+        return max(float(np.mean(pcm[edge.start:edge.end]**2)/narration_power) for edge in measured)
     return None
 
 
@@ -602,8 +620,11 @@ def decoder_take(trial, job, text, ordinary, target, quotations, instruction, sy
         return None,{**report,'reason':'guidance_outside_quote'}
     # A scoped whisper may be voiced, but a quote louder than the reading
     # around it is a poor automatic substitution. Keep the timed fallback.
-    if contrast is None or contrast>1:
-        return None,{**report,'reason':'whisper_louder_than_opening'}
+    opening = target.get('version') == OPENING_VERSION
+    limit = QUIET_QUOTE_POWER if opening else 1
+    if contrast is None or contrast>limit:
+        reason = 'insufficient_contrast' if opening else 'whisper_louder_than_opening'
+        return None,{**report,'reason':reason}
     return result,report
 
 
@@ -706,7 +727,8 @@ def render(store, job, unit, clip, synthesize):
     target = unit['quote_timing']
     multiple = 'quotations' in target
     quotations = target['quotations'] if multiple else [target['quotation']]
-    instruction = CONTINUING_INSTRUCTION if multiple else INSTRUCTION
+    opening = target.get('version') == OPENING_VERSION
+    instruction = CONTINUING_INSTRUCTION if multiple else OPENING_INSTRUCTION if opening else INSTRUCTION
     root = store.path(job)/'quote-timing'
     owned_checkpoint(root)
     checkpoint = root/clip
@@ -790,12 +812,18 @@ def render(store, job, unit, clip, synthesize):
             if not anchoring and not overlaps:
                 windows = schedule['windows'] if multiple else [schedule]
                 pairs = list(zip(measured,windows,strict=True))
-                if all(edges.contains(window) for edges,window in pairs):
-                    return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,**decoder}}
-                if (multiple and index >= attempts-1
-                        and all(edges.contains(window,allow_tapered_tail=True) for edges,window in pairs)):
+                contained = all(edges.contains(window) for edges,window in pairs)
+                tapered = (not contained and multiple and index >= attempts-1
+                           and all(edges.contains(window,allow_tapered_tail=True) for edges,window in pairs))
+                if contained or tapered:
+                    if opening:
+                        contrast = maximum_quote_power(data,measured)
+                        history[-1]['maximum_quote_power_ratio'] = contrast
+                        if contrast is None or contrast>QUIET_QUOTE_POWER:
+                            reason = 'insufficient_contrast'
+                            break
                     return data,{**receipt,'quote_timing':{**target,'selected':'directed','trials':history,
-                                                           'exit_taper_covers_last_word':True,**decoder}}
+                        **({'exit_taper_covers_last_word':True} if tapered else {}),**decoder}}
             if index==attempts:
                 break
             if index==0 and overlaps and recipe.get('timing_algorithm',3)>=6:
