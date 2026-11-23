@@ -1,6 +1,7 @@
 """Standalone bounded synthesis, CPU observation, review and publication loop."""
 from pathlib import Path
 from contextlib import contextmanager,ExitStack
+from difflib import SequenceMatcher
 import math,time
 from .core import Error,key,writejson,loadjson,filehash,fault
 from . import jobs,performance,qa,qa_cache
@@ -32,7 +33,6 @@ def critical(expected,observed,protected=None,reference=None):
 
 def corroborated(expected,first,second,protected=None,reference=None):
     """Both observers must dispute the same expected quantity/marker site."""
-    from difflib import SequenceMatcher
     first,second=(notation_observation(expected,observed) for observed in (first,second))
     shared=critical(expected,first,protected,reference)&critical(expected,second,protected,reference)
     if not shared:return shared
@@ -59,6 +59,19 @@ def corroborated(expected,first,second,protected=None,reference=None):
         sites['internal_gap']={tuple(gap['expected_token_range']) for gap in qa.content_gaps(expected,first)} & {
             tuple(gap['expected_token_range']) for gap in qa.content_gaps(expected,second)}
     return {kind for kind in shared if sites.get(kind)}
+
+
+def substitution_sites(expected, observed):
+    """Find replacement words whose source positions have matching neighbors."""
+    reference = comparison_tokens(expected)
+    heard = comparison_tokens(notation_observation(expected,observed))
+    if len(reference)!=len(heard):
+        return set()
+    edits = SequenceMatcher(None,reference,heard,autojunk=False).get_opcodes()
+    if any(action not in ('equal','replace') or i!=k or j!=l for action,i,j,k,l in edits):
+        return set()
+    return {i for action,i,j,_,_ in edits if action=='replace' and j==i+1
+            and ((i and reference[i-1]==heard[i-1]) or (j<len(reference) and reference[j]==heard[j]))}
 
 
 def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,prepare_clear=False,max_new_takes=None,resident=False,batch_rest_seconds=0,overlap_batch_rest=False,report_progress=False):
@@ -151,7 +164,14 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                 if u.get('performance') or clip in listening or (clip,row['pcm_sha256']) in accepted:continue
                 first=row['comparison_text']
                 mismatch=critical(u['text'],first,u.get('protected_counts'),(j.get('voice') or {}).get('transcript'))
-                if mismatch and sum(t['identity']==identity for t in state['retakes'])<2:candidates.append(row)
+                sites = set()
+                if row.get('flags')==[qa.WORD_ERROR_REVIEW]:
+                    receipt = jobs.valid_clip(store,clip)
+                    timed = (receipt or {}).get('quote_timing',{})
+                    if timed.get('selected')!='directed':
+                        sites = substitution_sites(u['text'],first)
+                if (mismatch or sites) and sum(t['identity']==identity for t in state['retakes'])<2:
+                    candidates.append((row,sites))
             confirmed=[]
             if second_model and candidates and len(state['retakes'])<max_retakes:
                 if confirming_observer is None:
@@ -167,7 +187,7 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                 if not confirming_observer:return confirmed
                 progress('second_observer',candidates=len(candidates))
                 try:
-                    others,observed_identity=observe([byid[r['utterance']] for r in candidates],second_model)
+                    others,observed_identity=observe([byid[row['utterance']] for row,_ in candidates],second_model)
                 except (FileNotFoundError,Error) as exc:
                     if isinstance(exc,Error) and exc.code not in ('asr_environment','asr_failed','asr_contract'):raise
                     confirming_observer=False
@@ -177,10 +197,12 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                     confirming_observer=False
                     state['second_observer_status']='changed_model'
                     return confirmed
-                for row,other in zip(candidates,others):
+                for (row,sites),other in zip(candidates,others):
                     u=byid[row['utterance']]
                     first,second=row['comparison_text'],spoken_observation(other,u)
                     shared=corroborated(u['text'],first,second,u.get('protected_counts'),(j.get('voice') or {}).get('transcript'))
+                    if sites & substitution_sites(u['text'],second):
+                        shared.add('word_substitution')
                     if shared:confirmed.append((u,shared))
             return confirmed
         def queue_retakes(confirmed):

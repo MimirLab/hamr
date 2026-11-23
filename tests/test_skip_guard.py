@@ -143,6 +143,16 @@ def test_automatic_retake_requires_a_shared_source_site(expected,first,second,ca
     assert not pipeline.corroborated(expected,first,second)
 
 
+def test_word_substitution_needs_the_same_anchored_source_word():
+    expected = 'Anne smiled wanly.'
+    assert pipeline.substitution_sites(expected,'Anne smiled wandly.') == {2}
+    assert pipeline.substitution_sites(expected,'And smiled wildly.') == {0,2}
+    assert pipeline.substitution_sites(expected,'Anne smiled wanly.') == set()
+    assert pipeline.substitution_sites(expected,'Anne smiled.') == set()
+    assert pipeline.substitution_sites('Go left then right','Go right then left') == set()
+    assert pipeline.substitution_sites(expected,'Jane cried loudly.') == set()
+
+
 def test_copied_model_cannot_confirm_its_own_disagreement(tmp_path,monkeypatch):
     source=tmp_path/'book.md'
     source.write_text('Fill this vessel with exactly five liters of clean water before final inspection.')

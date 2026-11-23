@@ -143,6 +143,9 @@ def missing_parenthetical_counts(expected,observed,protected=None):
         else:used.update(match)
     return missing
 
+WORD_ERROR_REVIEW = 'WER above 20%; inspect this passage for drops/insertions.'
+
+
 def check(store,jid,python,model,all_clips=False,require_review=False):
     with store.lock():
         j=store.get(jid); utterances=j['plan']['utterances']
@@ -180,7 +183,7 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             if reference_leakage(u['text'],comparison_text,(j.get('voice') or {}).get('transcript')):flags.append('ASR contains a reference-only phrase; inspect possible conditioning-audio leakage.')
             if [t for t in ref if t in ('checked','unchecked')]!=[t for t in hyp if t in ('checked','unchecked')]:flags.append('Checklist status disagreement requires listening.')
             if mathematical_markers(u['text'])!=mathematical_markers(comparison_text):flags.append('Fraction, mathematical operator or physical-unit disagreement requires inspection.')
-            if not sound and edits/max(1,len(ref))>.2: flags.append('WER above 20%; inspect this passage for drops/insertions.')
+            if not sound and edits/max(1,len(ref))>.2: flags.append(WORD_ERROR_REVIEW)
             if missing_final_clause(u['text'],comparison_text):flags.append('ASR stops near an earlier clause boundary; inspect a possibly missing final clause.')
             if missing_final_words(u['text'],comparison_text):flags.append('ASR recovers a source prefix but misses its ending; inspect possible mid-sentence truncation.')
             missing_counts=missing_parenthetical_counts(u['text'],comparison_text,u.get('protected_counts'))

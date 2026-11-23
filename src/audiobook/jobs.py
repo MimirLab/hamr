@@ -646,8 +646,16 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
                 history=j.setdefault('automatic_retakes',[])
                 if len(history)>=automatic['limit'] or sum(r['identity']==identity for r in history)>=2:
                     raise Error('automatic_retake_budget','The saved automatic retake budget has been used.')
+                original = {}
+                if 'word_substitution' in automatic['reasons']:
+                    previous_key = clip_key(target,j)
+                    receipt = valid_clip(store,previous_key)
+                    if not receipt:
+                        raise Error('qa_clip_changed','The take marked for a word retake is no longer available.')
+                    original = {'previous_clip':previous_key,'previous_pcm_sha256':receipt['sha256']}
                 history.append({'identity':identity,'utterance':retake,'reasons':automatic['reasons'],'at':time.time(),
                                 'text':target['text'],'sources':target['sources'],'revision':j['revision']+1,
+                                **original,
                                 **({'performance':target['performance']} if target.get('performance') else {})})
             j['repairs'].append({'kind':'retake','utterance':retake,'seed':takes[identity]})
         j['retakes']=takes
@@ -721,6 +729,7 @@ def cleanup(store,purge_job=None,apply=False):
                 # its owning job explicitly releases these historical pins.
                 pins.update(finding['clip_key'] for finding in j.get('listening_findings',[]))
                 pins.update(entry['clip_key'] for entry in j.get('performance_fallbacks',[]))
+                pins.update(entry['previous_clip'] for entry in j.get('automatic_retakes',[]) if 'previous_clip' in entry)
         candidates=[]; skipped=[]
         for p in (store.root/'clips').iterdir():
             if p.is_symlink() or p.is_junction(): skipped.append(str(p)); continue

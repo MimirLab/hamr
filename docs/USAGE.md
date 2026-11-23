@@ -240,6 +240,8 @@ Compare two unprompted readings of the same committed take with `hamr transcribe
 
 The verifier uses system RAM and runs in a separate process. When memory is tight during synthesis, Hamr defers the heavier check until the synthesis process releases its resources. Each recognizer exits before the next starts. Fluid keeps the raw words, including fillers and repeats, and reports its segment timing as unavailable. Hamr keeps directed takes for review when a recognizer flags them. [Fluid Speech Pro ONNX model and license](https://huggingface.co/FluidVoice-Labs/fluid-speech-pro-onnx)
 
+When a wording check holds ordinary narration and both checkers identify a replacement at the same source word, Hamr can retake that passage automatically. The replacement goes through the normal publication checks, and the disputed original stays available for comparison.
+
 Fluid INT8 and Whisper are the installed verifier choices. The local comparison also ran Nemotron Streaming Q8 and Fluid FP32. Nemotron lost a softly spoken quote that Fluid recovered, and Fluid FP32 matched INT8's results on the controls with higher memory use. Those comparison models have no Hamr setup preset. For a finished book, `hamr status JOB --json` reports the active observer and `metrics.semantic_qa` for the saved job.
 
 ### Tune readings that depend on context
