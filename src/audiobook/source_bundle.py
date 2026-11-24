@@ -36,7 +36,7 @@ NATIVE = {
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps')) | DESCRIPTOR_FOLDERS
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx')) | DESCRIPTOR_FOLDERS
 DEPENDENCY_SOURCES = frozenset(('rst','xml-book'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
@@ -158,12 +158,15 @@ def relative_file(root, name):
 
 def publication_folder(path):
     from .fictionbook_package import folder_marker as fb3_folder
+    from .presentation_intake import folder_marker as pptx_folder
     from .xps_intake import folder_marker as xps_folder
 
     if xps_folder(path):
         return 'xps'
     if fb3_folder(path):
         return 'fb3'
+    if pptx_folder(path):
+        return 'pptx'
     if path.suffix.casefold()=='.textbundle':
         return 'textbundle'
     if path.suffix.casefold()=='.scriv':
@@ -292,6 +295,8 @@ def zip_source(path, entry, override):
                 package_route = 'fb3'
             if path.suffix.casefold() in ('.xps','.oxps') and override is None:
                 package_route = 'xps'
+            if path.suffix.casefold()=='.pptx' and override is None:
+                package_route = 'pptx'
             records = zip_members(archive)
             names = {info.filename for _,info in records}
             if 'manifest.json' in names and any(name.startswith('blobs/') for name in names):
@@ -302,7 +307,6 @@ def zip_source(path, entry, override):
                 ('META-INF/container.xml' in names or media==b'application/epub+zip','epub'),
                 ('word/document.xml' in names,'docx'),
                 ('xl/workbook.xml' in names,'xlsx'),
-                ('ppt/presentation.xml' in names,'pptx'),
                 (media in (b'application/vnd.oasis.opendocument.text',b'application/vnd.oasis.opendocument.text-web'),'odt'),
             ):
                 if predicate:
@@ -310,7 +314,7 @@ def zip_source(path, entry, override):
                         from .fixed_pages import image_only_fixed
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
-                    if override!='scan' and package_route not in ('fb3','xps'):
+                    if override!='scan' and package_route not in ('fb3','xps','pptx'):
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
@@ -509,7 +513,7 @@ def _describe(path,entry,format,offline):
     if (suffix in ('.7z','.rar','.cb7','.cbr') or prefix.startswith((b'7z\xbc\xaf\x27\x1c',b'Rar!'))):
         selected = wrapped_source(path,'libarchive',entry,format)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
-    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps') or prefix.startswith(b'PK\x03\x04'):
+    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx') or prefix.startswith(b'PK\x03\x04'):
         selected = zip_source(path,entry,format or ('scan' if suffix=='.cbz' else None))
         if format and format!=selected.route and selected.kind!='file':
             raise Error('source_format', 'The selected container does not match the requested format.')
@@ -696,7 +700,7 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_sphinx(local,target)
-        elif source.route in ('fb3','xps'):
+        elif source.route in ('fb3','xps','pptx'):
             from .publication_package import capture_folder, folder_files
 
             target = target_dir/'source.zip'

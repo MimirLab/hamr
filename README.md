@@ -105,6 +105,8 @@ XPS and OpenXPS packages can open directly or inside ZIPs. Hamr follows declared
 
 Open Jupyter notebooks to hear their Markdown, equations, and readable saved results in cell order. Code and graphics are available in the companion, including the exact embedded image files. [Notebook intake](docs/INTAKE.md#jupyter-notebooks)
 
+Turn a PowerPoint deck into chapters with its slide text and presenter notes. Hamr reads merged tables, supported chart data, and text from image-only slides using its built-in OCR. The companion keeps source locations for the slides, notes, and embedded images. [PowerPoint intake](docs/INTAKE.md#powerpoint-presentations)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev39
+
+- Turn a PowerPoint deck into chapters with its saved slide order, grouped text, presenter notes, merged tables, and supported chart data. Image-only slides can use Hamr's built-in OCR. Recover exact slide, note, chart, and image parts from the companion. [PowerPoint intake](docs/INTAKE.md#powerpoint-presentations)
+
 # hamr 0.4.9.dev38
 
 - Open Jupyter v3 and v4 notebooks directly or in a ZIP. Hamr reads saved cells in order, speaks a single reading of each usable result, and keeps code and graphics in the companion. Source recovery can return exact embedded images. [Notebook intake](docs/INTAKE.md#jupyter-notebooks)

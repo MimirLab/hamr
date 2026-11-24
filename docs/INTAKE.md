@@ -31,7 +31,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | FictionBook | Open `.fb2` files and ZIPs, or open a FictionBook 3 file, ZIP, or extracted publication. Hamr follows linked notes and preserves verse lines and original assets. |
 | AbiWord | Open `.abw`, `.awt`, gzip-compressed `.zabw` or `.abw.gz`, and bzip2-compressed `.bzabw` or `.abw.bz2`. The reader follows authored chapter styles and keeps linked notes, simple tables, text boxes, and illustration locations. |
 | Jupyter notebooks | Open an `.ipynb` file or a ZIP containing one. The built-in reader follows saved cells and outputs in order. [Notebook intake](#jupyter-notebooks) |
-| Publishing XML and other structured sources | Resident readers accept selected DTBook, DocBook, JATS, TEI and BITS documents, saved mail and MHTML, CSV, XLSX worksheet contents, PPTX slide text, OPML, SVG text and subtitles. Content and reading order depend on the source structures present. |
+| PowerPoint | Open a `.pptx` file, its extracted package, or a ZIP containing it. The built-in reader follows the saved slide order. [PowerPoint intake](#powerpoint-presentations) |
+| Publishing XML and other structured sources | Resident readers accept selected DTBook, DocBook, JATS, TEI and BITS documents, saved mail and MHTML, CSV, XLSX worksheet contents, OPML, SVG text and subtitles. Content and reading order depend on the source structures present. |
 | Archive containers | ZIP and TAR are built in. 7z and RAR use a compatible local libarchive. Encrypted or unresolved members appear as an intake error. |
 | Unencrypted classic Kindle and DjVu | The Linux x86-64 and Windows x64 packages include a compact Kindle reader. Supported uncompressed Kindle Print Replica editions (AZW4) go through the PDF reader. The Linux DjVu reader uses available page text and runs raster OCR for pages without it. |
 | Compiled HTML Help (`.chm`) | The resident Linux x86-64 reader follows the authored HTML table of contents. A linked topic outside the contents stays accessible in the companion. The plan reports unlisted topics and unreadable entries. |
@@ -59,6 +60,18 @@ When a searchable PDF establishes an equation, raised script or scientific table
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
 
 For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the actual source encoding. The resident CHM decoder runs locally with Bubblewrap. Its tested path uses a readable HTML contents file inside the CHM. Binary-only contents and popup controls without a local HTML target still need qualification.
+
+## PowerPoint presentations
+
+```bash
+hamr open Lecture.pptx --voice cast:carl-sagan --output ~/Audiobooks
+```
+
+Hamr uses the saved slide and shape order, including text in nested groups. Slide titles become chapter headings. Presenter notes follow the slide text, and an identical passage on the same slide is voiced once. Set the existing notes policy to `companion` to keep presenter notes out of narration. Hidden slides and their notes stay in the original package.
+
+Merged tables use their authored cell spans and header settings. Supported categorical charts read saved series labels and numeric values. Hamr reads authored image descriptions and sends a slide made from one eligible raster image through shared OCR. Unresolved charts and graphics appear in source review at their slide and package location.
+
+Use a location ID from `source.html` with `hamr source BOOK_FOLDER LOCATION_ID --output FILE` to recover the exact slide, notes, chart, or embedded image part.
 
 ## Jupyter notebooks
 

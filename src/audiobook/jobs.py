@@ -649,6 +649,8 @@ def publish(store,j,*,record_run_metrics=None):
     if filehash(stage/original)!=j['document']['source_sha256']: raise Error('source_copy','Publication source copy differs from the immutable input.')
     source_links=[{'source_block':b['id'],**link} for b in j['document']['blocks'] for link in b.get('links',[]) if link.get('destinations')]
     source_kind = (j.get('source_selection') or {}).get('kind','file')
+    if source_kind=='file':
+        source_kind = j['document'].get('metadata',{}).get('source_archive_kind','file')
     block_locations = {b['id']:b['locator'].get('location_id') or b['id'] for b in j['document']['blocks']}
     source_locations = {block_locations[b['id']]:{**b['locator'],'location_id':block_locations[b['id']]}
                         for b in j['document']['blocks']}
@@ -683,6 +685,8 @@ def publish(store,j,*,record_run_metrics=None):
         page = locator.get('page')
         member = locator.get('inner_member',{}).get('member') or locator.get('member') or locator.get('path')
         labels = [f'Page {page}'] if type(page) is int and page>0 else []
+        if type(slide:=locator.get('slide')) is int and slide>0:
+            labels.append(f'Slide {slide}')
         if member:
             labels.append(member)
         if locator.get('json_path') and locator.get('element'):

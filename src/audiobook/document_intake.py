@@ -868,9 +868,10 @@ def read_document(path,source,sha,cache,title):
         from .abiword_intake import read_abiword, read_xml
 
         read_abiword(read_xml(path),builder,source.member_name or path.name)
-    elif route in ('xlsx','pptx'):
-        from .structured_intake import read_pptx, read_xlsx
-        (read_xlsx if route=='xlsx' else read_pptx)(path,builder)
+    elif route=='xlsx':
+        from .structured_intake import read_xlsx
+
+        read_xlsx(path,builder)
     elif route=='mobi':
         from .intake_helpers import resident_mobi
         return resident_mobi(path,source,sha,cache)

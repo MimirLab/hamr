@@ -62,6 +62,10 @@ def parse(path,source,sha,cache,title):
         from .xps_intake import read_xps
 
         return read_xps(path,source,sha,title,cache)
+    if source.route=='pptx' and source.kind in ('file','zip','tar','libarchive'):
+        from .presentation_intake import read_pptx
+
+        return read_pptx(path,source,sha,title,cache)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):

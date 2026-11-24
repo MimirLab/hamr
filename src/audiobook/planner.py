@@ -339,6 +339,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         elif b.role=='placeholder': action='companion'; reason='Source edition supplies only an illustration placeholder; preserve it without inventing visual content.'; text=''
         elif b.role=='reference' and effective['references']=='companion': action='companion'; reason='Explicitly labeled publisher/license lookup material retained by the approved reference policy.'; text=''
         elif b.role=='note': action='companion'; reason='Note preserved beside its linked claim in speech and in the companion.'; text=''
+        elif b.locator.get('supplemental_note') and note_policy=='companion':
+            action='companion'; reason='Supplemental note retained in the companion by the selected notes policy.';text=''
         elif b.role=='code' and effective['code']=='companion':
             action='companion'; reason='Exact literal retained in timed companion.'; text='A literal block is available in the companion.'; connector=True
         elif b.role=='code':
