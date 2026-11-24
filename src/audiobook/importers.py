@@ -15,7 +15,7 @@ MAX_INPUT=200*1024*1024
 def block(text,loc,role='body',chapter='Opening',evidence=None,issue=None,links=None):
     return Block('b'+digest(str(loc).encode())[:16],text,loc,role,chapter,evidence or [],issue,links or [])
 
-def markdown(data:bytes, *, collect_resources=False, first_note_definition=False)->Document:
+def markdown(data:bytes, *, collect_resources=False, first_note_definition=False, configure=None)->Document:
     from itertools import accumulate
     from markdown_it.token import Token
     from . import markdown_notes
@@ -29,6 +29,8 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
     lines=[match[0] for match in physical_lines(text)]
     offsets=list(accumulate(map(len, lines),initial=0))
     md=MarkdownIt('commonmark',{'html':False}).enable('table').use(footnote_plugin,move_to_end=False,always_match_refs=True)
+    if configure:
+        configure(md)
     env={}
     tokens, definitions=markdown_notes.split_definitions(md.parse(text,env))
     inline_notes={i:n for i,n in env.get('footnotes',{}).get('list',{}).items() if 'tokens' in n}
@@ -80,6 +82,25 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
         elif t.type in ('bullet_list_close','ordered_list_close'):list_depth-=1
         elif t.type=='blockquote_open':quote_depth+=1
         elif t.type=='blockquote_close':quote_depth-=1
+        if t.type=='source_container' and (role:=t.meta.get('role')):
+            loc=location(*t.map)
+            if chapter_id is not None:loc['chapter_id']=chapter_id
+            item=block(t.content,loc,role,chapter,issue=t.meta.get('issue'))
+            if collect_resources and 'reference' in t.meta:
+                item.locator['resource_references']=[t.meta['reference']]
+            out.append(item)
+        if t.type=='html_block':
+            from .document_intake import DocumentBuilder, html_read
+
+            start,end=t.map
+            fragment=DocumentBuilder('markdown',title,digest(data))
+            html_read(t.content.encode('utf-8'),fragment,where=f'Markdown HTML at line {start+1}',
+                      metadata=False,collect_resources=collect_resources)
+            for item in fragment.doc.blocks:
+                item.chapter=chapter
+                item.locator.update({k:v for k,v in location(start,end).items() if k!='exact'})
+                if chapter_id is not None:item.locator['chapter_id']=chapter_id
+                out.append(item)
         if t.type=='hr':
             loc={'format':'markdown','lines':[t.map[0]+1,t.map[1]],'exact':''.join(lines[t.map[0]:t.map[1]])}
             if chapter_id is not None:loc['chapter_id']=chapter_id
@@ -90,6 +111,7 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
             if any(c.type=='hardbreak' for c in (v.children or [])):loc['authored_line_breaks']=True
             links=graph.links_for(spans)
             issue='Image has no authored description; verify whether it carries essential content.' if any(c.type=='image' and not c.content.strip() for c in (v.children or [])) else None
+            issue = issue or v.meta.get('source_issue')
             role='heading' if t.type=='heading_open' else 'body'
             task=re.match(r'^\[([xX ])\]\s+',source) if list_depth and role=='body' else None
             if task:loc['checklist']={'checked':task[1].lower()=='x','marker':task[0],'origin':'Explicit Markdown task marker in a list item'}

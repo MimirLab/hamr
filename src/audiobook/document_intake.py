@@ -209,6 +209,17 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             return
         if node.name=='table':
             lines = [line for line in node.find_all('tr') if line.find_parent('table') is node]
+            if node.get('data-view')=='cards':
+                for row,line in enumerate(lines):
+                    for column,cell in enumerate(line.find_all('td',recursive=False)):
+                        where=f'{path}/card/{row+1}/{column+1}'
+                        glyphs=cell.find_all('i',class_=re.compile(r'^fa-'))
+                        if cell.has_attr('data-hidden') or (glyphs and html_text(cell).strip()==
+                                ''.join(html_text(glyph) for glyph in glyphs).strip()):
+                            text_node(cell,'hidden',where)
+                        else:
+                            visit(cell,where)
+                return
             headers = [0] if lines and lines[0].find('th',recursive=False) else []
             issue = ('Complex table spans or nesting need a verified reading.' if
                      node.find('table') or node.find(attrs={'rowspan':True}) or node.find(attrs={'colspan':True}) else None)

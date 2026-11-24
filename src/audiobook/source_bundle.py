@@ -30,7 +30,7 @@ NATIVE = {
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
 }
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook'))
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -144,9 +144,14 @@ def relative_file(root, name):
 def publication_folder(path):
     if path.suffix.casefold()=='.textbundle':
         return 'textbundle'
+    from .gitbook_intake import CONFIG as GITBOOK_CONFIG, SITE as GITBOOK_SITE, folder_marker
     from .mdbook_intake import folder_book
 
-    return 'mdbook' if folder_book(path) is not None else None
+    if any((path/name).is_file() for name in (GITBOOK_CONFIG,GITBOOK_SITE)):
+        return 'gitbook'
+    if folder_book(path) is not None:
+        return 'mdbook'
+    return 'gitbook' if folder_marker(path) else None
 
 
 def directory_members(root):
@@ -233,19 +238,20 @@ def zip_source(path, entry, override):
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
-                                        mdbook_only=override=='mdbook')
+                                        package_route=override if override in ('mdbook','gitbook') else None)
     except BadZipFile as exc:
         raise Error('unreadable_archive', 'The ZIP archive could not be read.') from exc
 
 
-def wrapped_source(path,kind,entry):
+def wrapped_source(path,kind,entry,override=None):
     from .archive_intake import containers
 
     with containers(path,kind) as archive:
-        return archive_publications(archive,kind,entry,scan_only=path.suffix.lower() in ('.cb7','.cbr','.cbt'))
+        return archive_publications(archive,kind,entry,scan_only=path.suffix.lower() in ('.cb7','.cbr','.cbt'),
+                                    package_route=override if override in PACKAGE_FOLDERS else None)
 
 
-def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,mdbook_only=False):
+def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,package_route=None):
     from .publication_package import archive_packages
     from .scan_intake import bounded
 
@@ -257,7 +263,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,mdb
         raise Error('source_textbundle','The TextPack has no info.json descriptor next to its text payload.')
     manifests, images, documents = [], [], []
     for item in members:
-        if textpack or mdbook_only or item.index in claimed:
+        if textpack or package_route or item.index in claimed:
             continue
         name = PurePosixPath(item.name)
         basename, suffix = name.name.casefold(),name.suffix.lower()
@@ -298,7 +304,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,mdb
             continue
         candidates[str(item.index)] = (item.name,Source(route,kind+'-member',item.index))
     for route,descriptor,name in packages if not scan_only else ():
-        if not mdbook_only or route=='mdbook':
+        if not package_route or route==package_route:
             label = name if name!='.' else 'TextBundle'
             candidates['bundle:'+str(descriptor.index)] = (label,Source(route,kind,descriptor.index))
     selected = choose([(ident,name) for ident,(name,_) in candidates.items()],entry)
@@ -326,7 +332,14 @@ def _describe(path,entry,format,offline):
         if route:=publication_folder(path):
             if format not in (None,route):
                 raise Error('source_format',f'This directory uses the {route} publication format.')
-            return Source(route,'directory',offline=offline)
+            ordinal = None
+            if route=='gitbook':
+                from .gitbook_intake import folder_choices
+
+                labels = folder_choices(path)
+                selected = choose(labels,entry)
+                ordinal = next(number for number,(ident,_) in enumerate(labels,1) if ident==selected)
+            return Source(route,'directory',entry=ordinal,offline=offline)
         manifest = path/'pages.hamr.json'
         if manifest.exists():
             relative_file(path,manifest.name)
@@ -334,12 +347,25 @@ def _describe(path,entry,format,offline):
             return Source('scan','directory',route_override=format,offline=offline)
         pages,books = directory_members(path)
         inputs = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])
-        inputs.extend((name,name) for name,_ in books)
+        selectors = {}
+        for name,route in books:
+            if route=='gitbook':
+                from .gitbook_intake import folder_choices
+
+                spaces = folder_choices(relative_path(path,name))
+                if len(spaces)!=1:
+                    for ident,title in spaces:
+                        selection = name+'/'+ident
+                        inputs.append((selection,f'{name} · {title}'))
+                        selectors[selection] = (name,ident)
+                    continue
+            inputs.append((name,name))
         selection = choose(inputs,entry)
         if selection!='pages':
-            selected = relative_path(path,selection)
-            result = describe(selected,format=format,offline=offline)
-            return replace(result,member_name=selection) if result.kind=='directory' else result
+            name,child = selectors.get(selection,(selection,None))
+            selected = relative_path(path,name)
+            result = describe(selected,entry=child,format=format,offline=offline)
+            return replace(result,member_name=name) if result.kind=='directory' else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
@@ -352,10 +378,10 @@ def _describe(path,entry,format,offline):
         return Source('scan','manifest',route_override=format,offline=offline)
     if (suffix in ('.tar','.cbt','.tgz','.tbz2','.txz') or path.name.lower().endswith(('.tar.gz','.tar.bz2','.tar.xz'))
             or prefix[257:262]==b'ustar'):
-        selected = wrapped_source(path,'tar',entry)
+        selected = wrapped_source(path,'tar',entry,format)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
     if (suffix in ('.7z','.rar','.cb7','.cbr') or prefix.startswith((b'7z\xbc\xaf\x27\x1c',b'Rar!'))):
-        selected = wrapped_source(path,'libarchive',entry)
+        selected = wrapped_source(path,'libarchive',entry,format)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
     if suffix in ('.cbz','.zip','.textpack') or prefix.startswith(b'PK\x03\x04'):
         selected = zip_source(path,entry,format or ('scan' if suffix=='.cbz' else None))
@@ -513,11 +539,16 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.textpack'
             capture_textbundle(local,target)
-        else:
+        elif source.route=='mdbook':
             from .mdbook_intake import capture_mdbook
 
             target = target_dir/'source.zip'
             capture_mdbook(local,target,container=path)
+        else:
+            from .gitbook_intake import capture_gitbook
+
+            target = target_dir/'source.zip'
+            capture_gitbook(local,target,entry=source.entry)
         selected = zip_source(target,None,source.route)
         source = replace(selected,offline=source.offline,encoding=source.encoding)
     elif source.kind in ('directory','manifest'):

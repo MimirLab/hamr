@@ -85,6 +85,10 @@ def parse(path,source,sha,cache,title):
         from .mdbook_intake import read_mdbook
 
         return read_mdbook(path,source,sha,title)
+    if source.route=='gitbook':
+        from .gitbook_intake import read_gitbook
+
+        return read_gitbook(path,source,sha,title)
     if source.route=='scan':
         from .scan_intake import scan
 

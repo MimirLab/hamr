@@ -6,20 +6,18 @@ from pathlib import PurePosixPath
 import posixpath
 import re
 import tomllib
-from urllib.parse import unquote, urlsplit
 
 from markdown_it import MarkdownIt
 
 from .archive_intake import Member, containers
-from .core import Document, Error, key
-from .importers import block, markdown
+from .core import Error
+from .markdown_publication import CHAPTER_LIMIT, MarkdownPublication, chapter_issue, joined, local_path, utf8
 from .publication_package import capture_folder, folder_files, member_bytes, member_location
 from .source_bundle import MAX_MANIFEST, relative_file, relative_path, safe_name, stamp
 from .text_source import physical_lines
 
 SUMMARY = 'SUMMARY.md'
 CONFIG = 'book.toml'
-CHAPTER_LIMIT = 32*1024*1024
 DIRECTIVE = re.compile(r'(\\)?\{\{\s*#(include|rustdoc_include|playground|playpen|title)\s+([^{}]+?)\s*\}\}')
 ANCHOR = re.compile(r'ANCHOR(_END)?:\s*([\w-]+)')
 
@@ -31,10 +29,6 @@ class Book:
     summary: Member
     config: Member | None
     metadata: dict
-
-
-def joined(base,name):
-    return posixpath.join(base,name) if base else name
 
 
 def configuration(raw):
@@ -100,20 +94,6 @@ def archive_books(archive,members):
     return books,owned
 
 
-def local_path(reference,current,root):
-    try:
-        url = urlsplit(reference)
-        if url.scheme or url.netloc or url.query:
-            return None
-        file = unquote(url.path,errors='strict')
-        path = safe_name(posixpath.normpath(joined(posixpath.dirname(current),file))) if file else current
-        if root and not path.startswith(root+'/'):
-            return None
-        return path
-    except (Error,UnicodeError,ValueError):
-        return None
-
-
 def summary_rows(raw):
     tokens = MarkdownIt('commonmark').parse(raw)
     depth,part,initial = 0,None,True
@@ -145,13 +125,6 @@ def summary_rows(raw):
                     initial = False
                 elif target is not None and child.type in ('text','code_inline','image'):
                     label.append(child.content)
-
-
-def utf8(raw, name):
-    try:
-        return raw.decode('utf-8-sig')
-    except UnicodeError as exc:
-        raise Error('text_encoding',f'mdBook member is not valid UTF-8: {name}.') from exc
 
 
 def include_ranges(text, spec):
@@ -292,7 +265,7 @@ def capture_mdbook(root,target,*,container):
             listed[name] = stamp(path.stat())
             if listed[name][2]>CHAPTER_LIMIT:
                 raise Error('source_structure_size',f'mdBook member exceeds its reading budget: {name}.')
-            return utf8(path.read_bytes(),name)
+            return utf8(path.read_bytes(),name,'mdBook')
         summary = joined(directory,SUMMARY)
         for row in summary_rows(read(summary)):
             if not row['target'] or not (name:=local_path(row['target'],summary,directory)):
@@ -311,31 +284,6 @@ def capture_mdbook(root,target,*,container):
         return current
 
     capture_folder(container,target,files,verify=verify)
-
-
-def add_chapter(document, label, occurrence, member, content, resources):
-    chapter = markdown(content.encode('utf-8'),collect_resources=True,first_note_definition=True)
-    ids = {item.id:'b'+key([member.name,occurrence,item.id])[:16] for item in chapter.blocks}
-    destinations = {'source.html#'+source:'source.html#'+target for source,target in ids.items()}
-    for item in chapter.blocks:
-        item.id = ids[item.id]
-        item.chapter = label
-        for link in item.links:
-            if 'destinations' in link:
-                link['destinations'] = [destinations.get(destination,destination) for destination in link['destinations']]
-            if 'destination' in link:
-                link['destination'] = destinations.get(link['destination'],link['destination'])
-        for ref in item.locator.pop('resource_references',[]):
-            target = local_path(ref['href'],member.name,'')
-            resource = resources.get(target)
-            if resource and target!=member.name:
-                resource['status'] = 'referenced'
-                item.links.append({'kind':'source_resource','href':ref['href'],'label':ref.get('label') or target,
-                                   'destinations':['source.html#resource-'+resource['location_id']]})
-        item.locator.update(member=member.name,archive_entry=member.index,chapter_id=occurrence,
-                            location_id=key([document.source_sha256,member.index,item.id])[:20])
-    document.blocks.extend(chapter.blocks)
-    return chapter.blocks
 
 
 def bind_expansion(blocks, expansion, members, sha):
@@ -362,13 +310,6 @@ def bind_expansion(blocks, expansion, members, sha):
         locator.pop('lines',None)
 
 
-def chapter_issue(document,row,summary,reason):
-    location = member_location(document.source_sha256,summary,'summary')
-    location.update(format='markdown',lines=[row['summary_line']]*2,chapter_id=row['occurrence'],
-                    path=row.get('member'),location_id=key([document.source_sha256,row['occurrence']])[:20])
-    document.blocks.append(block('',location,'unreadable',row['label'],issue=reason))
-
-
 def read_mdbook(path,source,sha,title):
     with containers(path,source.kind) as archive:
         members = [entry for entry in archive.members() if not entry.name.startswith('__MACOSX/')]
@@ -384,31 +325,16 @@ def read_book(archive,entries,book,sha,title):
     named = config.get('title') or PurePosixPath(book.root).name or title
     if not isinstance(named,str):
         raise Error('source_mdbook_config','The mdBook title must be text.')
-    document = Document(named,'markdown',sha,[])
+    publication = MarkdownPublication(archive,entries,book.source,sha,named,'mdBook',
+                                      [item for item in (book.summary,book.config) if item])
+    document = publication.document
     authors = config.get('authors')
     if isinstance(authors,list) and all(isinstance(author,str) for author in authors) and authors:
         document.metadata['author'] = ', '.join(authors)
     language = config.get('language')
     if isinstance(language,str):
         document.metadata['language'] = language
-    text = utf8(member_bytes(archive,book.summary,MAX_MANIFEST),book.summary.name)
-    by_name = {}
-    for member in entries:
-        by_name.setdefault(member.name,[]).append(member)
-    def entry_for(name):
-        items = by_name.get(name,[])
-        if len(items)!=1:
-            detail = 'repeated' if items else 'missing'
-            raise Error('source_mdbook_member',f'The mdBook member is {detail}: {name}.')
-        return items[0]
-    def read(name):
-        return utf8(member_bytes(archive,entry_for(name),CHAPTER_LIMIT),name)
-    resources = {name:member_location(sha,matches[0],'package_member')|{'status':'unlisted'}
-                 for name,matches in by_name.items() if len(matches)==1 and
-                 ((not book.source or name.startswith(book.source+'/')) or matches[0]==book.config)}
-    resources[book.summary.name].update(role='descriptor',status='preserved')
-    if book.config:
-        resources[book.config.name].update(role='descriptor',status='preserved')
+    text = publication.read(book.summary.name,MAX_MANIFEST)
     build = book.metadata.get('build',{})
     preprocess = book.metadata.get('preprocessor',{})
     defaults = build.get('use-default-preprocessors',True) if isinstance(build,dict) else True
@@ -431,20 +357,15 @@ def read_book(archive,entries,book,sha,title):
         try:
             if not name or name==book.summary.name:
                 raise Error('source_mdbook_member','The chapter reference must select a local source file beside the summary.')
-            member = entry_for(name)
+            member = publication.entry(name)
             row['archive_entry'] = member.index
-            expansion = chapter_text(read,'',name,includes=defaults)
+            expansion = chapter_text(publication.read,'',name,includes=defaults)
             for dependency in sorted(expansion.dependencies):
-                resource = resources.setdefault(dependency,member_location(sha,entry_for(dependency),'include'))
+                resource = publication.resources.setdefault(dependency,member_location(sha,publication.entry(dependency),'include'))
                 resource.update(status='referenced')
-            blocks = add_chapter(document,row['label'],row['occurrence'],member,''.join(expansion.parts),resources)
-            bind_expansion(blocks,expansion,by_name,sha)
-            row['blocks'] = [item.id for item in blocks]
-            row['status'] = 'needs_review' if any(item.issue for item in blocks) else 'represented' if blocks else 'empty'
-            resource = resources.setdefault(name,member_location(sha,member,'text'))
-            resource.update(role='text',status='represented')
+            blocks = publication.add(row,member,''.join(expansion.parts),first_note_definition=True)
+            bind_expansion(blocks,expansion,publication.members,sha)
         except Error as error:
             row.update(status='failed',reason=str(error))
             chapter_issue(document,row,book.summary,str(error))
-    document.metadata['source_resources'] = list(resources.values())
-    return document
+    return publication.finish()

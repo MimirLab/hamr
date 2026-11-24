@@ -66,6 +66,7 @@ def member_location(sha,member,role):
 
 def archive_packages(archive,members,*,textpack=False):
     """Use the same publication boundaries for discovery and page sequences."""
+    from .gitbook_intake import archive_spaces
     from .mdbook_intake import archive_books
     from .textbundle import archive_scopes
 
@@ -73,6 +74,13 @@ def archive_packages(archive,members,*,textpack=False):
     packages = [('textbundle',item,PurePosixPath(item.name).parent.as_posix()) for item in bundles]
     if textpack:
         return packages,claimed
-    books,owned = archive_books(archive,[item for item in members if item.index not in claimed])
+    remaining = [item for item in members if item.index not in claimed]
+    spaces,owned = archive_spaces(archive,remaining)
+    packages.extend(('gitbook',item,book.title or book.root or 'GitBook') for book,item in spaces)
+    claimed |= owned
+    remaining = [item for item in remaining if item.index not in owned]
+    books,owned = archive_books(archive,remaining)
     packages.extend(('mdbook',book.summary,book.root or book.source) for book in books)
-    return packages,claimed | owned
+    spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in owned],declared=False)
+    packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
+    return packages,claimed | owned | plain
