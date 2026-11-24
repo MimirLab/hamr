@@ -118,9 +118,12 @@ def sequence(path,source):
                 title,pages = archive_order(archive,entries,source.entry)
                 yield title,pages,member,None
                 return
+            from .textbundle import archive_scopes
+
+            _,claimed = archive_scopes(archive,entries)
             image_names = []
             for item in entries:
-                if item.name.startswith('__MACOSX/'):
+                if item.name.startswith('__MACOSX/') or item.index in claimed:
                     continue
                 if PurePosixPath(item.name).suffix.lower() in IMAGE_SUFFIXES:
                     image_names.append(item)

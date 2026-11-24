@@ -176,7 +176,7 @@ def choose_backend(store, json_mode, *, automatic=False, advanced=False, include
 def add_source(p):
     p.add_argument('--entry',help='Publication ID when a directory or archive contains more than one book')
     p.add_argument('--format',dest='source_format',help='Reader to use for an ambiguous file type')
-    p.add_argument('--encoding',help='Known encoding of plain text or compiled HTML Help, such as windows-1252')
+    p.add_argument('--encoding',help='Known encoding of plain text, TextBundle or compiled HTML Help')
     p.add_argument('--offline',action='store_true',help='Use only installed source readers and OCR assets')
     p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile',dest='listening_profile',help='Saved listening defaults created with hamr profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
     p.add_argument('--chapters',help='Source chapter occurrences, e.g.5,2-3,2; original order is retained. Use all to reset.')

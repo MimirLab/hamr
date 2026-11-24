@@ -643,6 +643,8 @@ def publish(store,j,*,record_run_metrics=None):
     block_locations = {b['id']:b['locator'].get('location_id') or b['id'] for b in j['document']['blocks']}
     source_locations = {block_locations[b['id']]:{**b['locator'],'location_id':block_locations[b['id']]}
                         for b in j['document']['blocks']}
+    resources = j['document'].get('metadata',{}).get('source_resources',())
+    source_locations.update((resource['location_id'],resource) for resource in resources)
     aliases = {block_id:location for block_id,location in block_locations.items() if block_id!=location}
     writejson(stage/'companion.json',{'schema_version':1,'original_source':original,'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'sample_rate':RATE,'samples':total,'chapters':chapters,'segments':rows,'decisions':j['plan']['decisions'],'source_inventory':j['document']['inventory'],'source_metadata':j['document'].get('metadata',{}),'source_links':source_links,
         'source_kind':source_kind,'source_locations':source_locations,
@@ -670,7 +672,7 @@ def publish(store,j,*,record_run_metrics=None):
         location_id = block_locations[b['id']]
         locator = source_locations[location_id]
         page = locator.get('page')
-        member = locator.get('member') or locator.get('path')
+        member = locator.get('inner_member',{}).get('member') or locator.get('member') or locator.get('path')
         labels = [f'Page {page}'] if type(page) is int and page>0 else []
         if member:
             labels.append(member)
@@ -694,6 +696,13 @@ def publish(store,j,*,record_run_metrics=None):
         elif j['document']['format']=='pdf' and decision['action']=='speak' and ' '.join(decision['spoken'].split())!=' '.join(b['source'].split()):
             source+='<details><summary>Reading used in the audiobook</summary><pre style="white-space:pre-wrap">'+html.escape(decision['spoken'])+'</pre><p>'+html.escape(decision['reason'])+'</p></details>'
         source+='</section>'
+    if resources:
+        source+='<h2>Original package files</h2><ul>'
+        for resource in resources:
+            ident = html.escape(resource['location_id'],quote=True)
+            member = resource.get('inner_member',{}).get('member') or resource['member']
+            source+=f'<li id="resource-{ident}">{html.escape(member)} · Source location <code>{ident}</code></li>'
+        source+='</ul>'
     atomic(stage/'source.html',source.encode())
     if record_run_metrics:
         record_run_metrics(j)

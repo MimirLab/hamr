@@ -15,6 +15,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | Loose scans, individual images, TIFF and CBZ | The shared raster reader handles supported JPEG, PNG and TIFF page images, expands frames, and preserves crops and ordering. English OCR and its runtime are in the Linux x86-64 and Windows x64 packages. |
 | Supplied OCR and ordered archives | Local hOCR, ALTO, PAGE XML, TSV and selected ABBYY XML sidecars can supply text for a scan. ABBYY XML uses one text page with original unrotated coordinates. A physical METS map or a local IIIF Presentation 3 sequence can name the pages. Binding and dimensions are checked before reuse. |
 | HTML, DOCX, ODT and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. Selected complex objects that require a verified reading appear in source review. |
+| TextBundle folders and TextPack archives | Hamr opens the descriptor's text payload and preserves its companion files. Version 1 uses Markdown. Version 2 can declare Markdown, plain text, HTML, or RTF. |
 | Publishing XML and other structured sources | Resident readers accept selected FB2, FB3, DTBook, DocBook, JATS and TEI documents, saved mail and MHTML, CSV, Jupyter notebook text, XLSX worksheet contents, PPTX slide text, OPML, SVG text and subtitles. Content and reading order depend on the source structures present. |
 | Archive containers | ZIP and TAR are built in. 7z and RAR use a compatible local libarchive. Encrypted or unresolved members appear as an intake error. |
 | Unencrypted classic Kindle and DjVu | The Linux x86-64 and Windows x64 packages include a compact Kindle reader. Supported uncompressed Kindle Print Replica editions (AZW4) go through the PDF reader. The Linux DjVu reader uses available page text and runs raster OCR for pages without it. |
@@ -60,3 +61,5 @@ hamr source PDF_BOOK_DIRECTORY LOCATION_ID --output original.pdf
 ```
 
 You can also use the passage ID from the companion link. If an older saved job has no source location index, rebuild its companion with `hamr repair JOB --repackage` followed by `hamr resume JOB --no-synthesis`.
+
+A TextBundle folder is saved as a portable TextPack. Open `source.html` and follow the illustration or attachment label for its location ID. Recover individual package files with the same `hamr source` command.

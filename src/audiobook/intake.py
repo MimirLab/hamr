@@ -1,5 +1,5 @@
 """The same intake path for plans, saved jobs, repairs and portable sources."""
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -53,9 +53,16 @@ def parse(path,source,sha,cache,title):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
             doc.source_sha256 = sha
+            def bind_location(location):
+                if 'archive_entry' in location and 'member' in location:
+                    location['inner_member'] = {'source_kind':route.kind,'member':location['member'],
+                                                'archive_entry':location['archive_entry']}
+                location.update(member=entry.name,archive_entry=entry.index)
             for item in doc.blocks:
-                item.locator.update(member=entry.name,archive_entry=entry.index,
-                                    location_id=key([sha,entry.index,item.id])[:20])
+                bind_location(item.locator)
+                item.locator['location_id'] = key([sha,entry.index,item.id])[:20]
+            for location in doc.metadata.get('source_resources',()):
+                bind_location(location)
             doc.metadata['archive_entry'] = {'index':entry.index,'name':entry.name}
             return doc
     if source.route=='pdf':
@@ -70,6 +77,10 @@ def parse(path,source,sha,cache,title):
         from .chm_intake import chm
 
         return chm(path,source,sha,cache,title)
+    if source.route=='textbundle':
+        from .textbundle import read_textbundle
+
+        return read_textbundle(path,source,sha,title)
     if source.route=='scan':
         from .scan_intake import scan
 
@@ -140,7 +151,7 @@ def inspect_source(path,cache=None,**options):
         source = describe(path,**options)
         if source.kind not in ('manifest','directory'):
             from .source_bundle import _local_source
-            return inspect_saved(_local_source(path,options),source,title=path.stem)
+            return inspect_saved(_local_source(path,options,source),source,title=path.stem)
         with tempfile.TemporaryDirectory(prefix='hamr-source-') as temp:
             return inspect_source(path,Path(temp),**options)
     cache.mkdir(exist_ok=True,parents=True)
@@ -182,16 +193,28 @@ def extract_location(book,location,output):
         if kind=='file':
             copy_snapshot(original,staged)
         else:
-            with containers(original,kind) as archive:
-                if kind=='bundle':
-                    item = bundle_index(archive)['members'].get(loc['member'])
+            with ExitStack() as stack:
+                inner = loc.get('inner_member')
+                archive_path = original
+                archive_kind = kind
+                selected = loc
+                if inner:
+                    archive_path,entry = stack.enter_context(materialized_member(
+                        original,kind,loc['archive_entry'],Path(directory)))
+                    if entry.name!=loc['member']:
+                        raise Error('source_member_missing','The archive has no matching original package.')
+                    archive_kind = inner['source_kind']
+                    selected = inner
+                archive = stack.enter_context(containers(archive_path,archive_kind))
+                if archive_kind=='bundle':
+                    item = bundle_index(archive)['members'].get(selected['member'])
                     if not item:
                         raise Error('source_member_missing','The portable source has no matching member.')
                     read = archive.open('blobs/'+item['sha256'])
                     expected = item['sha256']
                 else:
-                    item = next((item for item in archive.members() if item.index==loc.get('archive_entry')),None)
-                    if not item or item.name!=loc['member']:
+                    item = next((item for item in archive.members() if item.index==selected.get('archive_entry')),None)
+                    if not item or item.name!=selected['member']:
                         raise Error('source_member_missing','The archive has no matching original member.')
                     read = archive.open_member(item)
                 with read as member, staged.open('xb') as stream:

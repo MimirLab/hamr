@@ -15,7 +15,7 @@ MAX_INPUT=200*1024*1024
 def block(text,loc,role='body',chapter='Opening',evidence=None,issue=None,links=None):
     return Block('b'+digest(str(loc).encode())[:16],text,loc,role,chapter,evidence or [],issue,links or [])
 
-def markdown(data:bytes)->Document:
+def markdown(data:bytes, *, collect_resources=False)->Document:
     from itertools import accumulate
     from markdown_it.token import Token
     from . import markdown_notes
@@ -34,6 +34,19 @@ def markdown(data:bytes)->Document:
     inline_sources={i:n['content'] for i,n in inline_notes.items()}
     out=[]; chapter='Opening'; title=None; notes={}; note_blocks=[]
 
+    def preserve_resources(target,contents):
+        if not collect_resources:
+            return
+        references = []
+        for token in contents:
+            for child in token.children or ():
+                if child.type=='image' and (href:=child.attrGet('src')):
+                    references.append({'kind':'image','href':href,'label':child.content})
+                elif child.type=='link_open' and (href:=child.attrGet('href')):
+                    references.append({'kind':'link','href':href})
+        if references:
+            target['resource_references'] = references
+
     def location(first,last):
         start,end=offsets[first],offsets[last]
         return {'format':'markdown','lines':[first+1,last],'start':start,'end':end,'exact':text[start:end]}
@@ -45,6 +58,7 @@ def markdown(data:bytes)->Document:
         if candidates:loc['definition_occurrence']=len(candidates)+1
         note=block(source,loc,'note',evidence=['Markdown AST note definition'])
         note.locator.update(provenance)
+        preserve_resources(note.locator,children)
         if issue:note.locator['note_issue']=issue
         candidates.append((note,reading));note_blocks.append(note)
 
@@ -87,6 +101,7 @@ def markdown(data:bytes)->Document:
             b.locator['exact']=exact
             if quote_depth:b.locator['block_quote']=True
             if spans:b.locator['inline_semantics']=spans
+            preserve_resources(b.locator,[v])
             out.append(b)
             i+=3; continue
         if t.type in ('fence','code_block'):
@@ -106,7 +121,9 @@ def markdown(data:bytes)->Document:
             loc={'format':'markdown','lines':[start+1,end],'exact':''.join(lines[start:end]),'rows':rows}
             if chapter_id is not None:loc['chapter_id']=chapter_id
             issue='Markdown table note references need a verified reading.' if references else None
-            out.append(block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row'],issue,markdown_notes.links_for(references,notes)))
+            b=block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row'],issue,markdown_notes.links_for(references,notes))
+            preserve_resources(b.locator,tokens[i+1:j])
+            out.append(b)
             i=j
         i+=1
     for note in note_blocks:note.chapter=chapter

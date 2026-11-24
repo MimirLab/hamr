@@ -21,6 +21,7 @@ SIDECAR_SUFFIXES = frozenset(('.xml', '.hocr', '.alto', '.page', '.tsv'))
 SIDECAR_ENDINGS = ('.alto.xml','.page.xml','.abbyy.xml','.hocr','.tsv')
 NATIVE = {
     '.txt':'text', '.text':'text', '.asc':'text', '.nfo':'text', '.md':'markdown', '.markdown':'markdown', '.epub':'epub', '.pdf':'pdf',
+    '.textpack':'textbundle',
     '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt',
     '.abw':'xml-book', '.dbk':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book',
@@ -123,12 +124,17 @@ def safe_name(name):
     return name
 
 
-def relative_file(root, name):
+def relative_path(root, name):
     path = root
     for part in safe_name(name).split('/'):
         path = path / part
         if path.is_symlink() or path.is_junction():
             raise Error('unsafe_source_member', f'Source member {name} follows a link.')
+    return path
+
+
+def relative_file(root, name):
+    path = relative_path(root,name)
     if not path.is_file():
         raise Error('source_member_missing', f'Source member is missing: {name}.')
     return path
@@ -141,6 +147,9 @@ def directory_members(root):
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
                           and name != '__MACOSX' and not (here/name).is_symlink()
                           and not (here/name).is_junction()]
+        packages = [name for name in directories if Path(name).suffix.casefold()=='.textbundle']
+        other.extend(((here/name).relative_to(root).as_posix(),'textbundle') for name in packages)
+        directories[:] = [name for name in directories if name not in packages]
         for name in files:
             if name.startswith('.'):
                 continue
@@ -213,7 +222,8 @@ def zip_source(path, entry, override):
                             return Source('scan','fixed-epub')
                     if override!='scan':
                         return Source(route)
-            return archive_publications(archive,'zip',entry,scan_only=override=='scan')
+            return archive_publications(archive,'zip',entry,scan_only=override=='scan',
+                                        textpack=path.suffix.casefold()=='.textpack' or override=='textbundle')
     except BadZipFile as exc:
         raise Error('unreadable_archive', 'The ZIP archive could not be read.') from exc
 
@@ -225,12 +235,21 @@ def wrapped_source(path,kind,entry):
         return archive_publications(archive,kind,entry,scan_only=path.suffix.lower() in ('.cb7','.cbr','.cbt'))
 
 
-def archive_publications(archive,kind,entry,*,scan_only=False):
+def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False):
     from .scan_intake import bounded
 
     members = [item for item in archive.members() if not item.name.startswith('__MACOSX/')]
+    from .textbundle import archive_scopes
+
+    packages,claimed = archive_scopes(archive,members,explicit=textpack)
+    if textpack and scan_only:
+        raise Error('source_format','The selected publication is a TextPack.')
+    if textpack and not packages:
+        raise Error('source_textbundle','The TextPack has no info.json descriptor next to its text payload.')
     manifests, images, documents = [], [], []
     for item in members:
+        if textpack or item.index in claimed:
+            continue
         name = PurePosixPath(item.name)
         basename, suffix = name.name.casefold(),name.suffix.lower()
         is_manifest = basename in ('pages.hamr.json','mets.xml') or suffix=='.mets'
@@ -269,14 +288,18 @@ def archive_publications(archive,kind,entry,*,scan_only=False):
         if (images or manifests) and PurePosixPath(item.name).stem.casefold() in ('readme','metadata','license'):
             continue
         candidates[str(item.index)] = (item.name,Source(route,kind+'-member',item.index))
+    for descriptor in packages if not scan_only else ():
+        name = PurePosixPath(descriptor.name).parent.as_posix()
+        candidates['bundle:'+str(descriptor.index)] = (name if name!='.' else 'TextBundle',
+                                                      Source('textbundle',kind,descriptor.index))
     selected = choose([(ident,name) for ident,(name,_) in candidates.items()],entry)
     return candidates[selected][1]
 
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm'):
-        raise Error('source_encoding','Use --encoding for plain text or a compiled HTML Help publication.')
+    if encoding and source.route not in ('text','chm','textbundle'):
+        raise Error('source_encoding','Use --encoding for plain text, TextBundle or compiled HTML Help.')
     if source.kind=='file' and source.route in ('scan','djvu') and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
@@ -290,7 +313,11 @@ def _describe(path,entry,format,offline):
         raise Error('source_format', f'Unknown intake format: {format}.', 'Use hamr agent capabilities to list formats.')
     if path.is_dir():
         if path.is_symlink() or path.is_junction():
-            raise Error('unsafe_source_member', 'A scan folder must be a real directory.')
+            raise Error('unsafe_source_member', 'A publication folder must be a real directory.')
+        if path.suffix.casefold()=='.textbundle':
+            if format not in (None,'textbundle'):
+                raise Error('source_format','This directory is a TextBundle package.')
+            return Source('textbundle','directory',offline=offline)
         manifest = path/'pages.hamr.json'
         if manifest.exists():
             relative_file(path,manifest.name)
@@ -300,6 +327,9 @@ def _describe(path,entry,format,offline):
         inputs = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])
         inputs.extend((name,name) for name,_ in books)
         selection = choose(inputs,entry)
+        if any(name==selection and route=='textbundle' for name,route in books):
+            nested = _describe(relative_path(path,selection),None,format,offline)
+            return replace(nested,member_name=selection)
         if selection!='pages':
             return describe(relative_file(path,selection),format=format,offline=offline)
         return Source('scan','directory',route_override=format,offline=offline)
@@ -319,7 +349,7 @@ def _describe(path,entry,format,offline):
     if (suffix in ('.7z','.rar','.cb7','.cbr') or prefix.startswith((b'7z\xbc\xaf\x27\x1c',b'Rar!'))):
         selected = wrapped_source(path,'libarchive',entry)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
-    if suffix in ('.cbz','.zip') or prefix.startswith(b'PK\x03\x04'):
+    if suffix in ('.cbz','.zip','.textpack') or prefix.startswith(b'PK\x03\x04'):
         selected = zip_source(path,entry,format or ('scan' if suffix=='.cbz' else None))
         if format and format!=selected.route and selected.kind!='file':
             raise Error('source_format', 'The selected container does not match the requested format.')
@@ -333,7 +363,9 @@ def _describe(path,entry,format,offline):
     return Source(route,route_override=format,offline=offline)
 
 
-def _local_source(path, options):
+def _local_source(path, options, source=None):
+    if source and source.kind=='directory' and source.route=='textbundle':
+        return relative_path(path,source.member_name) if source.member_name else path
     if path.is_dir() and options.get('entry') not in (None,'pages') and not (path/'pages.hamr.json').exists():
         return relative_file(path,options['entry'])
     if path.is_dir() and not (path/'pages.hamr.json').exists():
@@ -466,8 +498,15 @@ def make_bundle(path,kind,target):
 
 def capture(path,target_dir,**options):
     source = describe(path,**options)
-    local = _local_source(path,options)
-    if source.kind in ('directory','manifest'):
+    local = _local_source(path,options,source)
+    if source.kind=='directory' and source.route=='textbundle':
+        from .textbundle import capture_textbundle
+
+        target = target_dir/'source.textpack'
+        capture_textbundle(local,target)
+        selected = zip_source(target,None,'textbundle')
+        source = replace(selected,offline=source.offline,encoding=source.encoding)
+    elif source.kind in ('directory','manifest'):
         target = target_dir/'source.hamr.zip'
         make_bundle(path,source.kind,target)
         source = Source('scan','bundle',offline=source.offline)
@@ -491,7 +530,7 @@ def preview(path,cache,**options):
         with tempfile.TemporaryDirectory(prefix='source-preview-',dir=cache) as directory:
             yield capture(path,Path(directory),**options)
     else:
-        yield _local_source(path,options),source
+        yield _local_source(path,options,source),source
 
 
 def original_name(snapshot,source):

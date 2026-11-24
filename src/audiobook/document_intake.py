@@ -123,7 +123,8 @@ def cell_semantics(row,column,text,spans):
     return {'row':row,'column':column,'source':text,'spans':spans,'notes':[]}
 
 
-def html_read(data,builder, *, where='html', metadata=True, fragment=None, encoding=None, collect_links=False):
+def html_read(data,builder, *, where='html', metadata=True, fragment=None, encoding=None, collect_links=False,
+              collect_resources=False):
     from .epub_semantics import AUDIT_SPANS, hidden, note_container, uncertainty
     from .importers import html_text
     from .epub_semantics import describe as semantics
@@ -149,6 +150,20 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
     atomic = {'p','h1','h2','h3','h4','h5','h6','table','pre','img','svg','math','figcaption','dt','dd','li',
               'blockquote','address','caption'}
 
+    def preserve_resources(block,node):
+        if not block or not collect_resources:
+            return
+        resources = []
+        for item in [node,*node.find_all(['a','img','image'])]:
+            if item.name not in ('a','img','image'):
+                continue
+            href = item.get('src') or item.get('href') or item.get('xlink:href')
+            if href:
+                resources.append({'kind':'link' if item.name=='a' else 'image','href':href,
+                                  'label':item.get('alt') or item.get_text(' ',strip=True)})
+        if resources:
+            block.locator['resource_references'] = resources
+
     def text_node(node,role,where):
         source,spans = semantics(node)
         spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
@@ -171,6 +186,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                 links.append({**link,'text':target.get_text(' ',strip=True)})
         block = builder.add(source,role,where,loc={'anchor':node.get('id'),'inline_semantics':spans,
                             'exact':str(node)},links=links,issue=uncertainty(spans))
+        preserve_resources(block,node)
         if block and (node.name == 'blockquote' or node.find_parent('blockquote') is not None):
             block.locator['block_quote'] = True
         if block and node.get('id'):
@@ -207,7 +223,8 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                         source = html_text(cell).strip()
                     cells.append(source)
                 rows.append(cells)
-            builder.table(rows,path,headers=headers,issue=issue,semantics=entries)
+            block = builder.table(rows,path,headers=headers,issue=issue,semantics=entries)
+            preserve_resources(block,node)
             if caption:=node.find('caption',recursive=False):
                 text_node(caption,'caption',path+'/caption')
             return
