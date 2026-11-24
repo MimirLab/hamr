@@ -7,7 +7,7 @@ from audiobook.core import Error
 from audiobook.intake import inspect_source
 from audiobook.planner import plan
 from audiobook.source_bundle import probe
-from audiobook.wordperfect_intake import resident
+from audiobook.legacy_office_intake import resident
 
 
 def test_wpc_identifies_supported_wordperfect_document_types():

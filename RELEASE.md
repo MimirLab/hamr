@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev49
+
+- Open tested MacWrite, MacWrite Pro and Nisus Writer documents with the bundled Linux reader. Read their text, linked notes and tables through the ordinary OpenDocument preparation.
+- Preserve both original files for a matched AppleDouble pair, including inside ZIP archives. Verify all three BinHex checksums and keep unidentified or incomplete fork material out of narration.
+
 # hamr 0.4.9.dev48
 
 - Read printed clocks with seconds and an explicit AM or PM, and related identifiers that share a printed prefix, through the shared contextual reader. Preserve their original spelling and exact field values in the plan.

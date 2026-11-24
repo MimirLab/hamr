@@ -128,6 +128,10 @@ def parse(path,source,sha,cache,title):
         from .chm_intake import chm
 
         return chm(path,source,sha,cache,title)
+    if source.route=='classic-mac' and not source.kind.endswith('-member'):
+        from .classic_mac_intake import read_classic_mac
+
+        return read_classic_mac(path,source,sha,cache,title)
     if source.route=='textbundle':
         from .textbundle import read_textbundle
 
@@ -346,7 +350,7 @@ def capabilities():
     from .pdf_ocr import resident_binary
     from .source_bundle import NATIVE, PACKAGE_FOLDERS
     from .intake_helpers import CALIBRE_BYTES,CALIBRE_UNPACKED
-    from .wordperfect_intake import resident as wordperfect_reader
+    from .legacy_office_intake import resident as legacy_office_reader
     from .xps_visual import available as xps_renderer_ready
 
     arch = platform.machine().lower()
@@ -356,8 +360,10 @@ def capabilities():
     external = {
         'office-legacy':{'ready':bool(shutil.which('libreoffice') and shutil.which('bwrap')),
                          'source':'verified local Writer conversion'},
-        'wordperfect':{'ready':wordperfect_reader() is not None and bool(shutil.which('bwrap')),
+        'wordperfect':{'ready':legacy_office_reader() is not None and bool(shutil.which('bwrap')),
                        'source':'resident libwpd and shared OpenDocument text reader'},
+        'classic-mac':{'ready':legacy_office_reader() is not None and bool(shutil.which('bwrap')),
+                       'source':'resident libmwaw and shared OpenDocument text reader'},
         'legacy-ebook':{'managed_available':linux and bool(shutil.which('bwrap')),
                         'download_bytes':CALIBRE_BYTES,'unpacked_bytes':CALIBRE_UNPACKED},
         'djvu':{'ready':linux and (assets/'djvu-linux-x86_64').is_file() and bool(shutil.which('bwrap'))},

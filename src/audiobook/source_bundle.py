@@ -32,6 +32,7 @@ NATIVE = {
     '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
     '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.rb':'rocket', '.snb':'snb', '.mobi':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy',
     '.wpd':'wordperfect', '.wp':'wordperfect', '.wp4':'wordperfect', '.wp5':'wordperfect', '.wp6':'wordperfect',
+    '.hqx':'classic-mac',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst',
 }
@@ -41,7 +42,7 @@ PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','xml-book','pml'))
+DEPENDENCY_SOURCES = frozenset(('rst','xml-book','pml','classic-mac'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -122,6 +123,12 @@ def probe(prefix, name):
         return None
     if prefix.lstrip().startswith(b'{\\rtf'):
         return 'rtf'
+    from .classic_mac_intake import matches_header
+
+    if matches_header(prefix):
+        return 'classic-mac'
+    if suffix=='.hqx':
+        return None
     return NATIVE.get(suffix)
 
 
@@ -215,6 +222,7 @@ def publication_folder(path):
 
 
 def directory_members(root):
+    from .classic_mac_intake import loose_fork, matches_header
     from .document_intake import xml_route
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
@@ -277,8 +285,17 @@ def directory_members(root):
                 with path.open('rb') as stream:
                     if route:=xml_route(stream):
                         other.append((relative,route))
-            elif suffix not in SIDECAR_SUFFIXES and suffix in NATIVE and not path.is_symlink():
-                other.append((relative,NATIVE[suffix]))
+            elif suffix not in SIDECAR_SUFFIXES and not path.is_symlink() and path.is_file():
+                route = NATIVE.get(suffix)
+                if route in (None,'classic-mac','text'):
+                    with path.open('rb') as stream:
+                        classic = matches_header(stream.read(512))
+                    if classic or loose_fork(path):
+                        route = 'classic-mac'
+                    elif route=='classic-mac':
+                        route = None
+                if route:
+                    other.append((relative,route))
     return sorted(pages,key=natural), sorted(other,key=lambda row:natural(row[0]))
 
 
@@ -371,12 +388,18 @@ def wrapped_source(path,kind,entry,override=None):
 
 
 def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,package_route=None):
+    from .classic_mac_intake import archive_books as mac_books
     from .document_intake import xml_route
     from .publication_package import archive_packages
     from .scan_intake import bounded
 
-    members = [item for item in archive.members() if not item.name.startswith('__MACOSX/')]
+    all_members = list(archive.members())
+    members = [item for item in all_members if not item.name.startswith('__MACOSX/')]
     packages,claimed = archive_packages(archive,members,textpack=textpack)
+    if not scan_only and not textpack and package_route in (None,'classic-mac'):
+        forked = mac_books(archive,[item for item in all_members if item.index not in claimed])
+        packages.extend(forked)
+        claimed.update(part.index for _,part,_ in forked)
     if textpack and scan_only:
         raise Error('source_format','The selected publication is a TextPack.')
     if textpack and not packages:
@@ -405,7 +428,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         if suffix=='.xml' and not name.name.startswith('.'):
             with archive.open_member(item) as stream:
                 detected = xml_route(stream)
-        elif (kind=='zip' and not detected or suffix in ('.lrf','.lit',*PALM_SUFFIXES)) and not name.name.startswith('.'):
+        elif (kind=='zip' and not detected or suffix in ('.hqx','.lrf','.lit',*PALM_SUFFIXES)) and not name.name.startswith('.'):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
             detected = probe(prefix,item.name)
@@ -558,6 +581,11 @@ def _describe(path,entry,format,offline):
             raise Error('source_format', 'The selected container does not match the requested format.')
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
     route = format or probe(prefix,path.name)
+    if format is None and route in (None,'classic-mac','text'):
+        from .classic_mac_intake import APPLESINGLE, BINHEX, loose_fork
+
+        if not prefix.startswith((APPLESINGLE,BINHEX)) and loose_fork(path):
+            route = 'classic-mac'
     if suffix=='.xml' and format is None:
         from .document_intake import xml_route
 
@@ -804,6 +832,10 @@ def capture_dependencies(path,target_dir,source):
         from .xml_package import capture_xml
 
         return capture_xml(path,target_dir,source)
+    if source.kind=='file' and source.route=='classic-mac':
+        from .classic_mac_intake import capture_classic_mac
+
+        return capture_classic_mac(path,target_dir,source)
 
 
 def original_name(snapshot,source):

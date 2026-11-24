@@ -119,6 +119,8 @@ Open a Shanda Bambook ebook (`.snb`) directly or in an archive. Hamr follows its
 
 Read classic WordPerfect documents on Linux with Hamr's bundled reader. Flat OpenDocument text files (`.fodt`) use the same preparation as packaged Writer documents. [WordPerfect documents](docs/INTAKE.md#wordperfect-documents)
 
+Open tested MacWrite, MacWrite Pro and Nisus Writer documents on Linux. Hamr can read checked BinHex files and keep matched Macintosh data and resource forks together. [Classic Mac documents](docs/INTAKE.md#classic-mac-writing-documents)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

@@ -1,7 +1,9 @@
 #include <cstdio>
 #include <stdexcept>
+#include <string_view>
 #include <sys/resource.h>
 
+#include <libmwaw/MWAWDocument.hxx>
 #include <libodfgen/OdtGenerator.hxx>
 #include <librevenge-stream/librevenge-stream.h>
 #include <libwpd/libwpd.h>
@@ -60,31 +62,52 @@ public:
 }
 
 int main(int argc, char **argv) {
-    if (argc != 3) {
+    const bool mac = argc == 4 && std::string_view(argv[1]) == "--classic-mac";
+    if (argc != 3 && !mac) {
         return 2;
     }
     try {
         constrain(RLIMIT_AS, 512 * mib);
         constrain(RLIMIT_FSIZE, 32 * mib);
-        librevenge::RVNGFileStream source(argv[1]);
-        const auto confidence = libwpd::WPDocument::isFileFormatSupported(&source);
-        if (confidence == libwpd::WPD_CONFIDENCE_SUPPORTED_ENCRYPTION ||
-            confidence == libwpd::WPD_CONFIDENCE_UNSUPPORTED_ENCRYPTION) {
-            return 3;
-        }
-        if (confidence != libwpd::WPD_CONFIDENCE_EXCELLENT) {
-            return 4;
+        librevenge::RVNGFileStream source(argv[argc - 2]);
+        if (mac) {
+            MWAWDocument::Type type;
+            MWAWDocument::Kind kind;
+            const auto confidence = MWAWDocument::isFileFormatSupported(&source, type, kind);
+            if (confidence == MWAWDocument::MWAW_C_SUPPORTED_ENCRYPTION ||
+                confidence == MWAWDocument::MWAW_C_UNSUPPORTED_ENCRYPTION) {
+                return 3;
+            }
+            if (confidence != MWAWDocument::MWAW_C_EXCELLENT ||
+                kind != MWAWDocument::MWAW_K_TEXT ||
+                (type != MWAWDocument::MWAW_T_MACWRITE &&
+                 type != MWAWDocument::MWAW_T_MACWRITEPRO &&
+                 type != MWAWDocument::MWAW_T_NISUSWRITER)) {
+                return 4;
+            }
+        } else {
+            const auto confidence = libwpd::WPDocument::isFileFormatSupported(&source);
+            if (confidence == libwpd::WPD_CONFIDENCE_SUPPORTED_ENCRYPTION ||
+                confidence == libwpd::WPD_CONFIDENCE_UNSUPPORTED_ENCRYPTION) {
+                return 3;
+            }
+            if (confidence != libwpd::WPD_CONFIDENCE_EXCELLENT) {
+                return 4;
+            }
         }
         if (source.seek(0, librevenge::RVNG_SEEK_SET)) {
             return 5;
         }
-        FlatXml output(argv[2]);
+        FlatXml output(argv[argc - 1]);
         OdtGenerator generator;
         generator.addDocumentHandler(&output, ODF_FLAT_XML);
-        if (libwpd::WPDocument::parse(&source, &generator, nullptr) == libwpd::WPD_OK) {
+        const bool converted = mac
+            ? MWAWDocument::parse(&source, &generator) == MWAWDocument::MWAW_R_OK
+            : libwpd::WPDocument::parse(&source, &generator, nullptr) == libwpd::WPD_OK;
+        if (converted) {
             return 0;
         }
-        std::fputs("The WordPerfect reader could not decode the document body.\n", stderr);
+        std::fputs("The legacy document reader could not decode the document body.\n", stderr);
     } catch (const std::exception &error) {
         std::fprintf(stderr, "%s\n", error.what());
     }

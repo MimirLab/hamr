@@ -782,7 +782,7 @@ def read_document(path,source,sha,cache,title):
         from .intake_helpers import legacy_document
         return legacy_document(path,source,builder,cache)
     elif route=='wordperfect':
-        from .wordperfect_intake import read_wordperfect
+        from .legacy_office_intake import read_wordperfect
 
         return read_wordperfect(path,source,builder,cache)
     else:

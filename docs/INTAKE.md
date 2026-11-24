@@ -43,6 +43,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | Compiled HTML Help (`.chm`) | The resident Linux x86-64 reader follows the authored HTML table of contents. A linked topic outside the contents stays accessible in the companion. The plan reports unlisted topics and unreadable entries. |
 | Selected old office formats | A compatible installed LibreOffice Writer can produce an ODT reading in an isolated Linux worker. Hamr keeps the exact original. |
 | WordPerfect | The resident Linux x86-64 reader uses Bubblewrap and the shared OpenDocument text reader. Open a classic `.wp` or `.wpd` directly, inside a folder, or in an archive. [WordPerfect intake](#wordperfect-documents) |
+| Classic Macintosh writing documents | The resident Linux x86-64 reader opens tested MacWrite 4.5, MacWrite Pro 1.0 and Nisus Writer 4.0 documents. [Classic Mac intake](#classic-mac-writing-documents) |
 | LRF and unencrypted LIT ebooks | A compatible local Calibre can be reused. Hamr can acquire a pinned Linux x86-64 helper on first use. The archive is 230 MiB and the installed helper is about 906 MiB. |
 
 Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powers, subscripts, fractions and roots. Hamr preserves each equation in the original and marks ambiguous layouts for source review. Inline equations, ordinary table cells and linked notes can use the same reading.
@@ -74,6 +75,14 @@ hamr open ~/Documents/Harbor.wpd --voice cast:james-burke --output ~/Audiobooks
 ```
 
 On Linux x86-64 with Bubblewrap, Hamr brings its own WordPerfect reader and uses it offline. The reader understands the tested classic Mac, DOS, and later WordPerfect headers. Recognized WPC headers also work when the file has a `.doc` extension. The reader converts the body to Flat OpenDocument for ordinary text preparation, leaving printed running headers in page styles. Hamr keeps the original WordPerfect file for source recovery. A password-protected file needs a readable local copy. An edition with a different layout can be exported as ODT or EPUB.
+
+## Classic Mac writing documents
+
+```sh
+hamr open ~/Documents/Story.hqx --voice cast:james-burke --output ~/Audiobooks
+```
+
+On Linux x86-64 with Bubblewrap, Hamr reads the tested MacWrite and MacWrite Pro files directly, including recognized files without an extension. It checks BinHex checksums before reading the document and can use a matching AppleDouble sidecar beside the file or inside an archive. Launch the book from its data file or controlling archive. Keep the matching sidecar and data file together. Hamr saves both exact files for recovery and reads paragraphs, tables and linked notes through shared OpenDocument preparation. Undescribed figures appear in source review.
 
 ## Numbered passages
 
