@@ -149,3 +149,45 @@ def test_dev8_pinned_prose_keeps_delivery_context(tmp_path):
     assert result['policy']['context_implementation']==pinned
     assert result['performance']['context_version']==35
     assert result['utterances'][0]['performance_candidate']['recipe']=='whisper'
+
+
+def write_jats(path, body):
+    path.write_text('<article xmlns:mml="http://www.w3.org/1998/Math/MathML" '
+                    'xmlns:xlink="http://www.w3.org/1999/xlink">'
+                    f'<body>{body}</body></article>')
+
+
+def jats_formula(body, *, tag='inline-formula'):
+    return f'<{tag}><alternatives>{body}<graphic xlink:href="outside.png"/></alternatives></{tag}>'
+
+
+def test_publishing_xml_uses_one_authored_rendition_in_prose_tables_and_notes(tmp_path):
+    path = tmp_path/'geometry.jats'
+    power = jats_formula(HTML_POWER.replace('<math>','<math xmlns="http://www.w3.org/1998/Math/MathML">'))
+    ratio = jats_formula(HTML_FRACTION.replace('<math>','<math xmlns="http://www.w3.org/1998/Math/MathML">'),
+                         tag='disp-formula')
+    write_jats(path,f'<p>The area is {power}.</p>{ratio}'
+               f'<table><tr><th>Value</th></tr><tr><td>{power}</td></tr></table>'
+               '<p>See the note<xref rid="f1">1</xref>.</p>'
+               f'<fn id="f1"><p>Read {power} here.</p></fn>')
+    doc = inspect_source(path,offline=True)
+    result = plan(doc)
+    assert not result['issues']
+    spoken = ' '.join(unit['text'] for unit in result['utterances'])
+    assert spoken=='The area is x to the power of 2. the fraction with numerator 3 and denominator 4. Table. Value: x to the power of 2. See the note. Note. Read x to the power of 2 here. End note.'
+    spans = doc.blocks[0].locator['inline_semantics']
+    for span in (s for s in spans if s['kind']=='formula'):
+        assert doc.blocks[0].source[span['source_start']:span['source_end']]=='x2'
+        assert 'geometry.jats:/article/body/p[1]/inline-formula/alternatives/' in span['source_locator']
+    assert 'outside.png' in path.read_text()
+
+
+@pytest.mark.parametrize('representation',[jats_formula(HTML_POWER),
+    jats_formula('<mml:math><mml:mi>a</mml:mi></mml:math><mml:math><mml:mi>b</mml:mi></mml:math>'),
+    jats_formula('<tex-math>33</tex-math>')])
+def test_publishing_xml_requires_one_bound_mathml_rendition(tmp_path,representation):
+    path = tmp_path/'geometry.jats'
+    write_jats(path,f'<p>The value is {representation}.</p><p>Another sentence.</p>')
+    result = plan(inspect_source(path,offline=True))
+    assert [u['text'] for u in result['utterances']]==['Another sentence.']
+    assert 'one bound MathML' in result['issues'][0]['reason']

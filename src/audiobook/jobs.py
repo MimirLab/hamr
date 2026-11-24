@@ -639,11 +639,14 @@ def publish(store,j,*,record_run_metrics=None):
     copy_snapshot(Path(j['snapshot']),stage/original)
     if filehash(stage/original)!=j['document']['source_sha256']: raise Error('source_copy','Publication source copy differs from the immutable input.')
     source_links=[{'source_block':b['id'],**link} for b in j['document']['blocks'] for link in b.get('links',[]) if link.get('destinations')]
-    source_locations = {b['locator']['location_id']:b['locator'] for b in j['document']['blocks']
-                        if b['locator'].get('location_id')}
+    source_kind = (j.get('source_selection') or {}).get('kind','file')
+    block_locations = {b['id']:b['locator'].get('location_id') or b['id'] for b in j['document']['blocks']}
+    source_locations = {block_locations[b['id']]:{**b['locator'],'location_id':block_locations[b['id']]}
+                        for b in j['document']['blocks']}
+    aliases = {block_id:location for block_id,location in block_locations.items() if block_id!=location}
     writejson(stage/'companion.json',{'schema_version':1,'original_source':original,'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'sample_rate':RATE,'samples':total,'chapters':chapters,'segments':rows,'decisions':j['plan']['decisions'],'source_inventory':j['document']['inventory'],'source_metadata':j['document'].get('metadata',{}),'source_links':source_links,
-        **({'source_locations':source_locations,'source_kind':j.get('source_selection',{}).get('kind','file')}
-           if source_locations else {})})
+        'source_kind':source_kind,'source_locations':source_locations,
+        **({'source_block_locations':aliases} if aliases else {})})
     def ts(sec):
         ms=round(sec*1000); return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02}.{ms%1000:03}'
     vtt='WEBVTT\n\n'+'\n\n'.join(f'{r["id"]}\n{ts(r["start"])} --> {ts(r["end"])}\n{html.escape(r["text"],quote=False)}\n{r["destination"]}' for r in rows)+'\n'
@@ -664,15 +667,20 @@ def publish(store,j,*,record_run_metrics=None):
     source='<!doctype html><meta charset="utf-8"><title>Timed source companion</title><h1>'+html.escape(j['document']['title'])+'</h1><p><a href="'+original+'">Open original source</a></p><audio controls src="book.m4b"></audio>'
     if j['document']['format']=='pdf':source+='<p>Scanned text can contain reading errors. Open the original page to check a number, table or diagram.</p>'
     for b in j['document']['blocks']:
-        original_link=original+(f'#page={b["locator"]["page"]}' if b['locator'].get('format')=='pdf' else '')
-        if location_id:=b['locator'].get('location_id'):
-            member = html.escape(b['locator'].get('member',''))
-            page = b['locator'].get('page')
-            description = f'Page {page} · {member}' if page else member
-            source += f'<p><a href="{original}">{description}</a> · Source location <code>{location_id}</code></p>'
-        else:
-            source+=f'<p><a href="{original_link}">Original source location</a></p>'
-        source+=f'<section id="{b["id"]}"><h2>{html.escape(b["chapter"])}</h2><a href="book.m4b#t={pointers[b["id"]]:.3f}">Listen near {ts(pointers[b["id"]])}</a><p>{html.escape(dumps(b["locator"]))}</p><pre style="white-space:pre-wrap">{html.escape(b["locator"].get("exact",b["source"]))}</pre>'
+        location_id = block_locations[b['id']]
+        locator = source_locations[location_id]
+        page = locator.get('page')
+        member = locator.get('member') or locator.get('path')
+        labels = [f'Page {page}'] if type(page) is int and page>0 else []
+        if member:
+            labels.append(member)
+        original_link = original
+        if labels and source_kind=='file' and Path(original).suffix.lower()=='.pdf' and type(page) is int and page>0:
+            original_link += f'#page={page}'
+        description = html.escape(' · '.join(labels) or 'Original source')
+        source+=f'<section id="{b["id"]}"><h2>{html.escape(b["chapter"])}</h2>'
+        source+=f'<p><a href="{html.escape(original_link,quote=True)}">{description}</a> · Source location <code>{html.escape(location_id)}</code></p>'
+        source+=f'<a href="book.m4b#t={pointers[b["id"]]:.3f}">Listen near {ts(pointers[b["id"]])}</a><p>{html.escape(dumps(locator))}</p><pre style="white-space:pre-wrap">{html.escape(locator.get("exact",b["source"]))}</pre>'
         if b.get('issue'):source+='<p>Uncertainty in the scanned text: '+html.escape(b['issue'])+'</p>'
         for link in b.get('links',[]):
             for destination in link.get('destinations',[]):

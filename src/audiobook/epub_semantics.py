@@ -114,7 +114,7 @@ def ruby_base(node):
                    for child in node.children if not isinstance(child,NON_TEXT))
 
 
-def describe(node,resolve_asset=None,cover_assets=()):
+def describe(node,resolve_asset=None,cover_assets=(), *, projected=None):
     pieces=[];spans=[];position=0
     def visit(n):
         nonlocal position
@@ -124,6 +124,14 @@ def describe(node,resolve_asset=None,cover_assets=()):
             return
         if n.name in ('script','style'):return
         start=position;first_piece=len(pieces)
+        if projected and (semantic:=projected.get(id(n))):
+            raw=semantic['source']
+            pieces.append(raw);position+=len(raw)
+            spans.append({**semantic,'source_start':start,'source_end':position})
+            if hidden(n):
+                spans.append({'kind':'hidden','source_start':start,'source_end':position,
+                              'disposition':'companion','evidence':'Explicit hidden declaration'})
+            return
         if n.name=='br':
             pieces.append('\n');position+=1
             spans.append({'source_start':start,'source_end':position,'kind':'line_break','origin':'Authored XHTML br element'})
@@ -222,7 +230,7 @@ def describe(node,resolve_asset=None,cover_assets=()):
     visit(node);raw=''.join(pieces);left=len(raw)-len(raw.lstrip());source=raw.strip()
     for span in spans:
         span['source_start']=max(0,span['source_start']-left)
-        span['source_end']=min(len(source),span['source_end']-left)
+        span['source_end']=max(0,min(len(source),span['source_end']-left))
         span['source']=source[span['source_start']:span['source_end']]
     return source,spans
 

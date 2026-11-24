@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import tempfile
 
-from .core import Block, Document, Error, filehash, key, loadjson, syncdir, writejson
+from .core import Block, Document, Error, filehash, key, loadjson, writejson
 from .source_bundle import CHUNK, Source, describe, preview, stamp
 
 
@@ -146,30 +146,38 @@ def inspect_source(path,cache=None,**options):
 
 def extract_location(book,location,output):
     from .archive_intake import containers
+    from .jobs import rename_new
     from .scan_intake import bundle_index
-    from .source_bundle import copy_snapshot
+    from .source_bundle import copy_snapshot, safe_name
 
     book = Path(book)
     output = Path(output)
     if output.exists() or output.is_symlink():
         raise Error('output_collision', f'The destination already exists: {output}.')
     companion = loadjson(book/'companion.json')
-    source_name = companion['original_source']
-    if Path(source_name).name!=source_name:
+    source_name = safe_name(companion['original_source'])
+    if '/' in source_name:
         raise Error('unsafe_source_member','Invalid original-source filename in the companion.')
     original = book/source_name
-    if original.is_symlink() or filehash(original)!=companion['source_sha256']:
-        raise Error('snapshot_changed','The published original has changed.')
-    loc = companion.get('source_locations',{}).get(location)
+    if original.is_symlink() or not original.is_file():
+        raise Error('snapshot_changed','The original file is missing or has been replaced in this book folder.',
+                    'Keep the original source file and companion.json together.')
+    locations = companion.get('source_locations',{})
+    alias = companion.get('source_block_locations',{}).get(location,location)
+    loc = locations.get(location) or locations.get(alias)
     if not loc:
-        raise Error('source_location', f'The finished book has no source location {location}.')
+        raise Error('source_location', f'The finished book has no source location {location}.',
+                    'Use a source location from source.html. For an older saved book, run hamr repair JOB --repackage and resume it.')
     kind = companion.get('source_kind','file')
-    if kind=='file':
-        copy_snapshot(original,output)
-        return {'output':str(output),'location':loc}
-    try:
-        with tempfile.NamedTemporaryFile(prefix='.hamr-source-',dir=output.parent,delete=False) as stream:
-            staged = Path(stream.name)
+    before = stamp(original.stat())
+    if kind!='file' and filehash(original)!=companion['source_sha256']:
+        raise Error('snapshot_changed','The published original has changed.')
+    with tempfile.TemporaryDirectory(prefix='.hamr-source-',dir=output.parent) as directory:
+        staged = Path(directory)/'original'
+        expected = companion['source_sha256'] if kind=='file' else None
+        if kind=='file':
+            copy_snapshot(original,staged)
+        else:
             with containers(original,kind) as archive:
                 if kind=='bundle':
                     item = bundle_index(archive)['members'].get(loc['member'])
@@ -182,18 +190,13 @@ def extract_location(book,location,output):
                     if not item or item.name!=loc['member']:
                         raise Error('source_member_missing','The archive has no matching original member.')
                     read = archive.open_member(item)
-                    expected = None
-                with read as member:
+                with read as member, staged.open('xb') as stream:
                     shutil.copyfileobj(member,stream,CHUNK)
-                stream.flush()
-                os.fsync(stream.fileno())
-            if expected and filehash(staged)!=expected:
-                raise Error('snapshot_changed','The source member does not match its recorded hash.')
-        os.link(staged,output)
-        syncdir(output.parent)
-    finally:
-        if 'staged' in locals():
-            staged.unlink(missing_ok=True)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+        if stamp(original.stat())!=before or expected and filehash(staged)!=expected:
+            raise Error('snapshot_changed','The source does not match its recorded identity.')
+        rename_new(staged,output)
     return {'output':str(output),'location':loc}
 
 

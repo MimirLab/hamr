@@ -23,6 +23,7 @@ ODF_TEXT = '{urn:oasis:names:tc:opendocument:xmlns:text:1.0}'
 ODF_MANIFEST = '{urn:oasis:names:tc:opendocument:xmlns:manifest:1.0}'
 XLINK_HREF = '{http://www.w3.org/1999/xlink}href'
 MATH_ROOT = '{'+MATHML+'}math'
+FORMULA_ELEMENTS = frozenset(('math','formula','disp-formula','inline-formula','equation','informalequation'))
 CONTENT_TAGS = frozenset(('p','para','simpara','title','subtitle','h','hd','heading',
                           'li','item','line','v','l','caption','blockquote','epigraph','programlisting'))
 
@@ -251,6 +252,47 @@ def plain_xml_text(node):
     return ''.join(node.itertext()).strip()
 
 
+def formula_elements(node, *, element_name, children):
+    if element_name(node) in FORMULA_ELEMENTS:
+        yield node
+        return
+    for child in children(node):
+        yield from formula_elements(child,element_name=element_name,children=children)
+
+
+def xml_formula(node, part):
+    locator = part+':'+node.getroottree().getpath(node)
+    candidates = [node] if node.tag==MATH_ROOT else []
+    label = ''
+    if name(node)!='math':
+        content = [child for child in node if name(child) not in ('','label','object-id')]
+        if len(content)==1:
+            child = content[0]
+            if child.tag==MATH_ROOT:
+                candidates = [child]
+            elif name(child)=='alternatives':
+                candidates = [item for item in child if item.tag==MATH_ROOT]
+        labels = [plain_xml_text(child) for child in node if name(child)=='label']
+        if len(labels)==1:
+            label = labels[0]
+    if len(candidates)!=1:
+        raw = plain_xml_text(node)
+        return {'kind':'formula','source':raw,'source_start':0,'source_end':len(raw),'reading':None,
+                'origin':'Authored XML equation','source_locator':locator,
+                'issue':'The equation needs one bound MathML representation.'}
+    math = candidates[0]
+    raw = mathml_text(math)
+    locator = part+':'+math.getroottree().getpath(math)
+    result = formula_span(raw,lambda:mathml(math),0,'Authored XML equation',locator)
+    if label:
+        result['source'] = label+' '+raw
+        result['source_end'] = len(result['source'])
+        if result['reading']:
+            prefix = 'Equation '+label[1:-1] if re.fullmatch(r'\([0-9][0-9a-z.]*\)',label) else label
+            result['reading'] = prefix.rstrip('.')+'. '+result['reading']
+    return result
+
+
 def semantic_xml(root,builder,part):
     fmt = builder.doc.format
     title_node = next((item for item in root.iter() if name(item) in ('book-title','article-title','doctitle')),None)
@@ -269,40 +311,76 @@ def semantic_xml(root,builder,part):
     notes = {n.get('id'):n for n in root.iter() if name(n) in ('fn','note') and n.get('id')}
 
     def inline(node):
-        from .epub_semantics import uncertainty
+        from .epub_semantics import describe, uncertainty
+
         clone = BeautifulSoup(etree.tostring(node,encoding='unicode',with_tail=False),'html.parser')
         for item in clone.find_all(lambda n: n.name and ':' in n.name):
             item.name = item.name.rsplit(':',1)[-1]
-        from .epub_semantics import describe
-        source,spans = describe(clone)
+        originals = list(formula_elements(node,element_name=name,children=iter))
+        rendered = list(formula_elements(clone,element_name=lambda n:n.name,children=lambda n:n.find_all(True,recursive=False)))
+        if [name(item) for item in originals]!=[item.name for item in rendered]:
+            return plain_xml_text(node),[],'Could not locate the authored equation in the selected passage.'
+        projected = {id(view):xml_formula(original,part) for original,view in zip(originals,rendered)}
+        source,spans = describe(clone,projected=projected)
         return source,spans,uncertainty(spans)
+
+    def has_formula(node):
+        return next(formula_elements(node,element_name=name,children=iter),None) is not None
+
+    def includes_visual(node):
+        if name(node) in FORMULA_ELEMENTS:
+            return False
+        return name(node) in ('graphic','image','inline-graphic') or any(includes_visual(child) for child in node)
 
     def visit(node):
         tag = name(node)
         where = part+':'+node.getroottree().getpath(node)
         if tag in ('description','binary','style','script','teiHeader','article-meta','journal-meta','bookinfo'):
             return
-        if tag in ('graphic','image','inline-graphic','formula','disp-formula','inline-formula','equation'):
+        if tag in FORMULA_ELEMENTS:
+            from .epub_semantics import uncertainty
+
+            span = xml_formula(node,part)
+            if span['reading'] and span['reading'][-1] not in '.!?':
+                span['reading'] += '.'
+            builder.add(span['source'],'equation',where,loc={'inline_semantics':[span]},issue=uncertainty([span]))
+            return
+        if tag in ('graphic','image','inline-graphic'):
             text = attr(node,'alt') or attr(node,'alttext')
             if not text:
                 alternative = next((n for n in node if name(n) in ('alt-text','math')),None)
                 if alternative is not None:
                     text = plain_xml_text(alternative)
-            if text and tag in ('graphic','image','inline-graphic'):
+            if text:
                 builder.add(text,'caption',where)
             else:
-                builder.issue('An embedded visual or formula needs a verified reading.',where)
+                builder.issue('An embedded visual needs a verified reading.',where)
             return
         if tag in ('table','informaltable'):
-            rows = [[plain_xml_text(cell) for cell in tr if name(cell) in ('td','th','entry','cell')]
-                    for tr in node.iter() if name(tr) in ('tr','row')]
+            rows,entries = [],[]
             issue = ('Merged or nested cells need a verified reading.' if any(
                 any(attr(x,k) for k in ('rowspan','colspan','morerows','namest','nameend'))
                 for x in node.iter()) else None)
-            builder.table(rows,where,headers=[] if not any(name(x)=='th' for x in node.iter()) else [0],issue=issue)
+            for tr in (item for item in node.iter() if name(item) in ('tr','row')):
+                row = []
+                for cell in (item for item in tr if name(item) in ('td','th','entry','cell')):
+                    text = plain_xml_text(cell)
+                    if has_formula(cell):
+                        text,spans,problem = inline(cell)
+                        issue = issue or problem
+                        entries.append(cell_semantics(len(rows),len(row),text,spans))
+                    row.append(text)
+                rows.append(row)
+            builder.table(rows,where,headers=[] if not any(name(x)=='th' for x in node.iter()) else [0],
+                          issue=issue,semantics=entries)
             return
         if tag in ('note','fn') and node.get('id'):
-            builder.add(plain_xml_text(node),'note',where,loc={'anchor':node.get('id')})
+            loc = {'anchor':node.get('id')}
+            text = plain_xml_text(node)
+            if has_formula(node):
+                text,spans,_ = inline(node)
+                loc['inline_semantics'] = spans
+            builder.add(text,'note',where,loc=loc)
             return
         if tag in CONTENT_TAGS and not any(name(child) in CONTENT_TAGS for child in node):
             source,spans,issue = inline(node)
@@ -318,12 +396,18 @@ def semantic_xml(root,builder,part):
                         start = source.index(marker)
                         spans.append({'kind':'note_reference','source':marker,'source_start':start,
                                       'source_end':start+len(marker),'href':'#'+ref})
-                        links.append({'kind':'note','href':'#'+ref,'text':plain_xml_text(notes[ref]),'source_start':start})
+                        link = {'kind':'note','href':'#'+ref,'source_start':start}
+                        note = notes[ref]
+                        if has_formula(note):
+                            text,parts,problem = inline(note)
+                            links.append(formula_note(link,text,parts,problem))
+                        else:
+                            links.append({**link,'text':plain_xml_text(note)})
                     else:
                         issue = 'Could not establish the exact position of an authored note.'
             role = ('heading' if tag in ('title','subtitle','hd','h','heading') else
                     'caption' if tag=='caption' else 'code' if tag=='programlisting' else 'body')
-            if any(name(n) in ('graphic','image','inline-formula','equation') for n in node.iterdescendants()):
+            if includes_visual(node):
                 issue = issue or 'A paragraph contains inline visual content requiring review.'
             builder.add(source,role,where,loc={'inline_semantics':spans},links=links,issue=issue)
             return

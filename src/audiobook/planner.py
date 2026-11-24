@@ -2,8 +2,9 @@ from __future__ import annotations
 import re
 from .core import Document,key,Error,digest
 
-RULES='faithful-20'
-PROSE_SOURCE_RULES=('faithful-18','faithful-19',RULES)
+RULES='faithful-21'
+PROJECTED_SOURCE_RULES=('faithful-20',RULES)
+PROSE_SOURCE_RULES=('faithful-18','faithful-19',*PROJECTED_SOURCE_RULES)
 CURRENT_DELIVERY_RULES=('faithful-17',*PROSE_SOURCE_RULES)
 PERFORMANCE_RULES=('faithful-16',*CURRENT_DELIVERY_RULES)
 CONTEXTUAL_RULES=('faithful-14','faithful-15',*PERFORMANCE_RULES)
@@ -182,7 +183,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     section_defaults={k:v for k,v in policy.items() if k not in ('document','context','context_implementation','context_review','context_review_receipt')}
     from .source_passages import (SourcePassages, SourceReadings, chapter_at, chapter_layout,
                                   layout_disputes, prepared_paragraph, split_printed_word)
-    projected_source = rule_revision==RULES
+    projected_source = rule_revision in PROJECTED_SOURCE_RULES
     by_source = rule_revision in SOURCE_STRUCTURE
     document_title,source_chapters=chapter_layout(doc,document_policy,by_source=by_source,unified=unified_source)
     source_positions={b.id:i for i,b in enumerate(doc.blocks)}

@@ -256,8 +256,8 @@ def parser():
         if name=='open':
             q.add_argument('--yes',action='store_true')
             q.add_argument('--play',action='store_true',help='Play the M4B after publication')
-    q=sub('source','Recover an exact original member from a finished book')
-    q.add_argument('book',type=Path); q.add_argument('location'); q.add_argument('--output',type=Path,required=True)
+    q=sub('source','Recover an exact original file or archive member from a finished book')
+    q.add_argument('book',type=Path); q.add_argument('location',help='Source location or passage ID from source.html'); q.add_argument('--output',type=Path,required=True)
     for name in ['render','resume']:
         q=sub(name,'Render, check and publish a saved book'); q.add_argument('job'); q.add_argument('--output',type=Path);q.add_argument('--no-synthesis',action='store_true',help='Assemble only verified, already checked takes; never start the speech backend');q.add_argument('--max-new-takes',type=int,help='Use a manual render batch with this limit; resume normally to check and publish')
     q=sub('run','Run the durable speech/CPU-QA/review/publication pipeline');q.add_argument('job');q.add_argument('--asr-python',type=Path);q.add_argument('--asr-model',type=Path);q.add_argument('--second-model',type=Path);q.add_argument('--batch-takes',type=int,default=1);q.add_argument('--max-retakes',type=int,default=8);q.add_argument('--max-new-takes',type=int);q.add_argument('--prepare-clear',action='store_true',help='Prepare accounted speech while source issues still hold publication');q.add_argument('--resident',action='store_true',help='Retain the owned model across render batches, CPU review and batch rests');q.add_argument('--batch-rest-seconds',type=float,default=0,help='Pause new generation between resident batches while retaining the model')

@@ -114,6 +114,8 @@ def implementation(*, unified=True, rule_revision=None):
         return 'dae46ffba0f49f2a1ba6f415a8f6c878a3829bf188ebdce5936d99fc9529415c'
     if rule_revision=='faithful-19':
         return 'd131d2ad28edf7394449cebfea37a43cd5440fe11db06417488e0d3074a6f036'
+    if rule_revision=='faithful-20':
+        return '996d510e1617f02aa68f5539c9a48d2d603b3d19580fb1f7a0d385dcf2066287'
     return key({name: filehash(Path(__file__).with_name(name))
                 for name in ('context_config.py','contextual.py','context_grammar.py','context_candidate.py','context_forms.py','context_lexical.py','context_numbers.py',
                              'context_structure.py','context_reviewer.py','context_rules.json','abbreviations.py','boundaries.py','epub_semantics.py','epub_styles.py','linguistic.py','pronunciation.py',

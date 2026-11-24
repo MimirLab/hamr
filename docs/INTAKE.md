@@ -23,6 +23,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 
 Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powers, subscripts, fractions and roots. Hamr preserves each equation in the original and marks ambiguous layouts for source review. Inline equations, ordinary table cells and linked notes can use the same reading.
 
+Structured XML such as JATS can supply the same readings through one authored MathML rendition. Hamr keeps the other renditions in the original article.
+
 When a searchable PDF establishes an equation, raised script or scientific table cell from its printed layout, Hamr carries that reading into the same preparation step. The companion retains the exact glyph range and cell location. Source review identifies geometry that leaves the reading unresolved.
 
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
@@ -47,8 +49,11 @@ Frames start at zero. Crops are fractions of the EXIF-oriented image in left, to
 
 Use `hamr plan PATH --offline --json` to check order, coverage and planned speech without downloads. `hamr resume JOB` continues from the captured source after interruption. `hamr repair JOB --reimport` reruns intake against the same original. A source issue names the page or member whose content needs review.
 
-Finished books include the original file or a portable `original.hamr.zip` with source hashes and original image bytes. Source locations in `source.html` and `companion.json` identify the member, page, frame and crop. This command recovers the original member from a moved book folder:
+Finished books include the original file or a portable `original.hamr.zip` with source hashes and original image bytes. Find the location ID in `source.html`. `companion.json` records the page, package path, frame or crop where available. These commands recover the exact original file or enclosing archive member, including after moving the book folder.
 
 ```sh
 hamr source BOOK_DIRECTORY LOCATION_ID --output page.jpg
+hamr source PDF_BOOK_DIRECTORY LOCATION_ID --output original.pdf
 ```
+
+You can also use the passage ID from the companion link. If an older saved job has no source location index, rebuild its companion with `hamr repair JOB --repackage` followed by `hamr resume JOB --no-synthesis`.
