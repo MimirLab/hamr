@@ -123,7 +123,7 @@ def test_modern_native_readers_preserve_notes_headers_and_revisions(tmp_path):
         book.writestr('word/footnotes.xml',f'<w:footnotes xmlns:w="{word_ns}"><w:footnote w:id="2">'
           '<w:p><w:r><w:t>Author footnote.</w:t></w:r></w:p></w:footnote></w:footnotes>')
     doc = inspect_source(fn)
-    assert [item.source for item in doc.blocks]==['Visible prose. Added.','Kind\nOak']
+    assert [item.source for item in doc.blocks]==['Visible prose. Added.','Kind\nOak','Author footnote.']
     assert doc.blocks[1].locator['table_header_cells']==[0]
     result = plan(doc)
     assert 'Author footnote.' in ' '.join(unit['text'] for unit in result['utterances'])

@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev31
+
+- Word DOCX reads grouped, nested and linked editable text boxes, selecting the authored compatibility branch once. Ordinary table cells can read their linked notes. Hamr preserves the Word source locations through ZIP selection, narration and companion export. [Document intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev30
 
 - RTF reads authored chapter outlines, footnotes, endnotes, text boxes, and font-specific encodings. The same reader works in TextBundle and Scrivener. Notes keep their anchors in the companion, and tables with merged or nested cells show the exact passage to verify. [Document intake](docs/INTAKE.md#source-readers)

@@ -14,7 +14,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | PDF, EPUB, Markdown and plain text | The ordinary Hamr readers preserve the original source, planned narration and companion. Searchable PDFs retain native structure. For a known legacy text encoding, pass `--encoding windows-1252` or the actual encoding of the file. |
 | Loose scans, individual images, TIFF and CBZ | The shared raster reader handles supported JPEG, PNG and TIFF page images, expands frames, and preserves crops and ordering. English OCR and its runtime are in the Linux x86-64 and Windows x64 packages. |
 | Supplied OCR and ordered archives | Local hOCR, ALTO, PAGE XML, TSV and selected ABBYY XML sidecars can supply text for a scan. ABBYY XML uses one text page with original unrotated coordinates. A physical METS map or a local IIIF Presentation 3 sequence can name the pages. Binding and dimensions are checked before reuse. |
-| HTML, DOCX, ODT and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. Selected complex objects that require a verified reading appear in source review. |
+| HTML, ODT and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. Selected complex objects that require a verified reading appear in source review. |
+| Word documents (DOCX) | Read editable DrawingML and VML text boxes in the selected Word compatibility branch. Hamr reads each story after its anchor paragraph and follows linked frames in their authored order. Visible revisions, notes, equations and simple tables use the shared preparation step. |
 | TextBundle folders and TextPack archives | Hamr opens the descriptor's text payload and preserves its companion files. Version 1 uses Markdown. Version 2 can declare Markdown, plain text, HTML, or RTF. |
 | mdBook folders and archives | Hamr follows the chapter links in the source directory's `SUMMARY.md` and reads included local material through the Markdown reader. A draft link stays in the companion. |
 | GitBook folders and archives | Hamr follows the configured home page and summary, including section and nested page order. Each local space in a site can be opened as its own book. |
@@ -37,6 +38,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | LRF and unencrypted LIT ebooks | A compatible local Calibre can be reused. Hamr can acquire a pinned Linux x86-64 helper on first use. The archive is 230 MiB and the installed helper is about 906 MiB. |
 
 Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powers, subscripts, fractions and roots. Hamr preserves each equation in the original and marks ambiguous layouts for source review. Inline equations, ordinary table cells and linked notes can use the same reading.
+
+In Word, each editable text box keeps its exact XML location. Unresolved links between boxes, merged or nested Word tables, and drawings without a readable text story or description may need source review.
 
 Structured XML such as JATS can supply the same readings through one authored MathML rendition. Hamr keeps the other renditions in the original article.
 

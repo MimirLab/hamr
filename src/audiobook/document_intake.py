@@ -568,155 +568,6 @@ def semantic_xml(root,builder,part):
         visit(child)
 
 
-def docx(path,builder):
-    from .epub_semantics import uncertainty
-    from .source_math import office_math, office_tag, office_text
-
-    with structured_zip(path) as (read,members):
-        document = xml(read('word/document.xml'))
-        meta = read('docProps/core.xml',required=False)
-        if meta:
-            title = next((plain_xml_text(item) for item in xml(meta) if name(item)=='title'),None)
-            if title:
-                builder.doc.title = title
-        pending_notes = {}
-        for part in ('footnotes','endnotes'):
-            data = read('word/'+part+'.xml',required=False)
-            if data:
-                for note in xml(data):
-                    ident = attr(note,'id')
-                    if ident and ident not in ('-1','0'):
-                        pending_notes[part[:-1]+':'+ident] = note
-
-        def paragraph(node, *, note_part=None):
-            pieces,spans,links,excluded,problems = [],[],[],[],[]
-            offset = 0
-
-            def add(text):
-                nonlocal offset
-                pieces.append(text)
-                offset += len(text)
-
-            def walk(item):
-                tag = name(item)
-                if tag in ('del','moveFrom'):
-                    excluded.append({'kind':tag,'text':plain_xml_text(item)})
-                    return
-                if tag=='r':
-                    properties = next((n for n in item if name(n)=='rPr'),())
-                    if any(name(n) in ('vanish','webHidden') and attr(n,'val') not in ('0','false','off') for n in properties):
-                        excluded.append({'kind':'hidden','text':plain_xml_text(item)})
-                        return
-                    start = offset
-                    for child in item:
-                        if name(child)!='rPr':
-                            walk(child)
-                    if any(name(n) in ('i','b') and attr(n,'val') not in ('0','off','false') for n in properties):
-                        spans.append({'kind':'emphasis','source_start':start,'source_end':offset})
-                    if align:=next((attr(n,'val') for n in properties if name(n)=='vertAlign'),None):
-                        if align in ('superscript','subscript') and start<offset:
-                            spans.append({'kind':align,'source_start':start,'source_end':offset})
-                    return
-                if office_tag(item) in ('oMath','oMathPara'):
-                    raw = office_text(item)
-                    member = 'word/'+(note_part or 'document')+'.xml'
-                    spans.append(formula_span(raw,lambda:office_math(item),offset,'Office Math',
-                                              member+':'+item.getroottree().getpath(item)))
-                    add(raw)
-                    return
-                if tag in ('drawing','pict','object','txbxContent','oMath','oMathPara','altChunk'):
-                    label = next((attr(n,'descr') for n in item.iter() if attr(n,'descr')),None)
-                    if label:
-                        spans.append({'kind':'object_label','source_start':offset,'source_end':offset,
-                                      'reading':label})
-                    else:
-                        problems.append(f'Word {tag} needs a verified reading.')
-                    return
-                if tag in ('footnoteReference','endnoteReference') and not note_part:
-                    kind = tag.removesuffix('Reference')
-                    ident = kind+':'+str(attr(item,'id'))
-                    href = '#'+ident
-                    spans.append({'kind':'note_reference','source_start':offset,'source_end':offset,'href':href})
-                    note = pending_notes.get(ident)
-                    paragraphs = [paragraph(p,note_part=kind+'s') for p in note if name(p)=='p'] if note is not None else []
-                    text,parts = join_formulas((p[0],p[1]) for p in paragraphs)
-                    problem = next((p[4] for p in paragraphs if p[4]),None) if parts else None
-                    links.append(formula_note({'kind':'note','href':href,'source_start':offset},text,parts,
-                                               problem or ('A Word note reference has no readable definition.' if not text else None)))
-                    return
-                if tag=='t':
-                    add(item.text or '')
-                    return
-                if tag in ('tab','br','cr'):
-                    start = offset
-                    add('\t' if tag=='tab' else '\n')
-                    if tag!='tab':
-                        spans.append({'kind':'line_break','source_start':start,'source_end':offset})
-                    return
-                if tag in ('pPr','instrText','delText','fldChar','bookmarkStart','bookmarkEnd'):
-                    return
-                for child in item:
-                    walk(child)
-            walk(node)
-            untrimmed = ''.join(pieces)
-            left = len(untrimmed)-len(untrimmed.lstrip())
-            text = untrimmed.strip()
-            for span in spans:
-                span['source_start'] = min(len(text),max(0,span['source_start']-left))
-                span['source_end'] = min(len(text),max(0,span['source_end']-left))
-                span['source'] = text[span['source_start']:span['source_end']]
-            for link in links:
-                link['source_start'] = min(len(text),max(0,link['source_start']-left))
-            issue = ' '.join(dict.fromkeys(problems)) or uncertainty(spans)
-            return text,spans,links,excluded,issue
-
-        def visit(node):
-            tag = name(node)
-            loc = 'word/document.xml:'+node.getroottree().getpath(node)
-            if tag=='p' or office_tag(node) in ('oMath','oMathPara'):
-                text,spans,links,excluded,issue = paragraph(node)
-                properties = next((n for n in node if name(n)=='pPr'),())
-                style = next((attr(n,'val') for n in properties if name(n)=='pStyle'),None) or ''
-                role = 'heading' if style.lower().startswith(('heading','title')) or any(
-                    name(n)=='outlineLvl' for n in properties) else 'body'
-                if excluded:
-                    builder.doc.inventory.append({'location':loc,'selected_edition':'visible final',
-                                                  'excluded_runs':excluded})
-                item = builder.add(text,role,loc,loc={'inline_semantics':[span for span in spans
-                                   if span['kind']!='line_break']},links=links,issue=issue)
-                if item and any(span['kind']=='line_break' and span['source'] == '\n' for span in spans):
-                    item.locator['authored_line_breaks'] = True
-            elif tag=='tbl':
-                rows = []
-                heads = []
-                issue = None
-                if any(name(child) in ('gridSpan','vMerge','drawing','footnoteReference','endnoteReference')
-                       for child in node.iter()) or any(name(child)=='tbl' for child in node.iterdescendants()):
-                    issue = 'Merged cells, nested tables, notes, or visual content need a verified table reading.'
-                semantics = []
-                for row in (n for n in node if name(n)=='tr'):
-                    if any(name(n)=='tblHeader' for n in row.iter()):
-                        heads.append(len(rows))
-                    cells = []
-                    for cell in (item for item in row if name(item)=='tc'):
-                        paragraphs = [paragraph(p) for p in cell if name(p)=='p' or office_tag(p) in ('oMath','oMathPara')]
-                        text,spans = join_formulas((p[0],p[1]) for p in paragraphs)
-                        issue = issue or next((p[4] for p in paragraphs if p[4]),None)
-                        if spans:
-                            semantics.append(cell_semantics(len(rows),len(cells),text,spans))
-                        cells.append(text)
-                    rows.append(cells)
-                builder.table(rows,loc,headers=heads,issue=issue,semantics=semantics)
-            elif tag in ('altChunk','object'):
-                builder.issue('The Word body refers to embedded content that must be reviewed.',loc)
-            elif tag not in ('del','moveFrom','sectPr'):
-                for child in node:
-                    visit(child)
-        visit(document)
-        if any(n.startswith(('word/header','word/footer')) for n in members):
-            builder.doc.warnings.append('Page header and footer parts remain in the portable Word document.')
-
-
 def odt(path,builder):
     from .epub_semantics import uncertainty
     from .source_bundle import safe_name
@@ -927,7 +778,9 @@ def read_document(path,source,sha,cache,title):
     route = source.route
     builder = DocumentBuilder(route,title,sha)
     if route=='docx':
-        docx(path,builder)
+        from .word_intake import read_word
+
+        read_word(path,builder)
     elif route=='odt':
         odt(path,builder)
     elif route=='abiword':

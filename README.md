@@ -95,6 +95,8 @@ AbiWord documents and templates can be opened directly, including compressed cop
 
 Rich-text documents keep authored chapter outlines, notes and readable text boxes. You can open RTF directly or use the same reader in a Scrivener project or TextBundle. [Rich-text intake](docs/INTAKE.md#source-readers)
 
+Word documents can read editable text boxes in their authored story order. Their text, notes and equations go through the same narration preparation as the body. Hamr keeps the original Word file in the companion. [Word intake](docs/INTAKE.md#source-readers)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

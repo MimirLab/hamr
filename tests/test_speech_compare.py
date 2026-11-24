@@ -23,6 +23,9 @@ def test_book_identifier_formatting_preserves_each_digit_and_distinct_counts():
 
 def test_known_orthographic_compounds_do_not_permit_arbitrary_merges():
     assert c('Dust Bowl and MathML')==c('dustbowl and Math ML')
+    assert c('The textbox and two textboxes')==c('The text box and two text boxes')
+    assert c('Second textbox')!=c('Second box')
+    assert c('Second para')!=c('Second parrot')
     assert c('Minimal DTBook')==c('Minimal DT book')
     assert c('nowhere')!=c('now here')
 
