@@ -3,8 +3,8 @@ import re
 from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-27'
-NUMBERING_RULES=('faithful-26',RULES)
+RULES='faithful-28'
+NUMBERING_RULES=('faithful-26','faithful-27',RULES)
 TABLE_PASSAGE_RULES=('faithful-25',*NUMBERING_RULES)
 AUTHORED_LINE_RULES=('faithful-24',*TABLE_PASSAGE_RULES)
 PROJECTED_SOURCE_RULES=('faithful-20','faithful-21','faithful-22','faithful-23',*AUTHORED_LINE_RULES)
@@ -73,7 +73,7 @@ def normalize(text,aliases=None,rule_revision=RULES,abbreviation_audit=None,pres
     text=re.sub(r'[^\S\n]+' if preserve_lines else r'\s+',' ',text).strip()
     if rule_revision in NORMALIZATION_TRACE and typed and (not literals or text==source):
         from .typed_readings import expand as typed_readings
-        revised,edits=typed_readings(text,literals)
+        revised,edits=typed_readings(text,literals,task_label=rule_revision=='faithful-28')
         if normalization_audit is not None and edits:
             normalization_audit.update(input_basis='block_source' if text==source else 'normalization_input',
                                        offsets='half-open Unicode code points',edits=edits)

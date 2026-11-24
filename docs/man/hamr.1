@@ -246,7 +246,11 @@ Use \fB\-\-offline\fR with \fBopen\fR, \fBplan\fR, or \fBqueue\fR to
 use resident or already installed readers only. Use \fBresume JOB\fR to
 continue a saved intake.
 .PP
-For plain text, reStructuredText, TextBundle, or compiled HTML Help with a known character encoding, pass
+The built-in Org reader follows selected headings, notes, tables, and local
+includes from .org files, folders and archives. The companion can recover
+complete included files.
+.PP
+For plain text, Org, reStructuredText, TextBundle, or compiled HTML Help with a known character encoding, pass
 \fB\-\-encoding NAME\fR, for example \fB\-\-encoding windows-1252\fR.
 .PP
 .B hamr source BOOK_DIRECTORY LOCATION_ID --output FILE

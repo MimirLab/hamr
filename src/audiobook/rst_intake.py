@@ -2,7 +2,6 @@
 
 import ast
 import io
-from pathlib import Path
 import re
 from threading import Lock
 
@@ -14,7 +13,7 @@ from docutils.utils import unescape
 from docutils.writers.html5_polyglot import HTMLTranslator, Writer
 
 from .core import Error
-from .document_intake import DocumentBuilder, MAX_STRUCTURE, bounded_read, html_read
+from .document_intake import DocumentBuilder, MAX_STRUCTURE, html_read
 
 
 _PARSE = Lock()
@@ -277,8 +276,3 @@ def rst_document(text,name,sha,title,*,include=None,encoding=None):
     for block in doc.blocks:
         block.locator.pop('resource_references',None)
     return doc
-
-
-def read_rst(path,source,sha,title):
-    return rst_document(decode_rst(bounded_read(path),source.encoding),Path(title).name+path.suffix,
-                        sha,title,encoding=source.encoding)

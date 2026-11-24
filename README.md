@@ -121,6 +121,8 @@ Read classic WordPerfect documents on Linux with Hamr's bundled reader. Flat Ope
 
 Open tested MacWrite, MacWrite Pro, Nisus Writer, ClarisWorks/AppleWorks and WriteNow documents on Linux. Hamr can read checked BinHex files and keep matched Macintosh data and resource forks together. [Classic Mac documents](docs/INTAKE.md#classic-mac-writing-documents)
 
+Turn an Org manuscript into an audiobook with its chosen outline, footnotes, tables, and local includes intact. Hamr ships the reader and keeps the original included files recoverable. [Org mode intake](docs/INTAKE.md#org-mode)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

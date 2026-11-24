@@ -21,6 +21,7 @@ READINGS = re.compile('|'.join(f'(?P<{kind}>{pattern})' for kind, pattern in (
     ('currency_symbol', LEFT + r'\$' + AMOUNT + RIGHT + r'(?![,.][0-9])'),
     ('measurement', LEFT + AMOUNT + r'[^\S\n]*(?:mL|°[CF])' + RIGHT),
     ('decimal_precision', LEFT + r'[+-]?[0-9]{1,9}\.[0-9]{0,11}0' + RIGHT + r'(?!,[0-9])'),
+    ('task_label', LEFT + r'TODO' + RIGHT),
 )))
 
 
@@ -71,16 +72,20 @@ def render(kind, raw):
         first, space, rest = UNITS[unit].partition(' ')
         plural = '' if amount.lstrip('+-') == '1' else 's'
         return decimal(amount) + ' ' + first + plural + space + rest, {'amount': amount, 'unit': unit}
+    if kind == 'task_label':
+        return 'to-do', {'label': raw}
     return decimal(raw), {'number': raw}
 
 
-def expand(text, protected=(), kinds=None):
+def expand(text, protected=(), kinds=None, *, task_label=False):
     protected = [*protected, *(match.span() for match in re.finditer(r'(?i)\b(?:https?://|www\.)\S+', text))]
     out, edits = [], []
     cursor = output_pos = 0
     for match in READINGS.finditer(text):
         a, b = match.span()
-        if (kinds is not None and match.lastgroup not in kinds) or any(a < end and b > start for start, end in protected):
+        if (kinds is not None and match.lastgroup not in kinds or
+                match.lastgroup=='task_label' and not task_label or
+                any(a < end and b > start for start, end in protected)):
             continue
         value, fields = render(match.lastgroup, match[0])
         out.extend((text[cursor:a], value))

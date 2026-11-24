@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev53
+
+- Open Org manuscripts from a file, folder, or archive. The built-in reader follows the authored export selection, notes, tables, lists and local includes through shared reading preparation. Complete included files remain recoverable. [Org mode intake](docs/INTAKE.md#org-mode)
+- Read the written task label `TODO` as “to-do” in ordinary prose. Saved plans and literal identifiers preserve their own reading.
+
 # hamr 0.4.9.dev52
 
 - Open tested ClarisWorks word processing and WriteNow documents with the bundled Linux reader. They pass through the same text preparation as OpenDocument. Hamr recognizes extensionless originals and retains the source in the companion. [Classic Mac intake](docs/INTAKE.md#classic-mac-writing-documents)

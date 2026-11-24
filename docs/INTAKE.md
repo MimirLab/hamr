@@ -24,6 +24,7 @@ Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RT
 | mdBook folders and archives | Hamr follows the chapter links in the source directory's `SUMMARY.md` and reads included local material through the Markdown reader. A draft link stays in the companion. |
 | GitBook folders and archives | Hamr follows the configured home page and summary, including section and nested page order. Each local space in a site can be opened as its own book. |
 | reStructuredText and Sphinx projects | Hamr reads paragraphs, notes, equations and local includes in `.rst` documents. Open a Sphinx source folder or archive to follow its declared page order. A built single-file HTML export also works. |
+| Org mode | Open an `.org` file, a folder, or a ZIP. Hamr follows selected headings, notes, lists, tables and local includes. [Org mode intake](#org-mode) |
 | Scrivener projects and backups | Open the `.scriv` folder, its root `.scrivx` file, or the backup ZIP. Hamr reads the manuscript’s RTF documents in Draft binder order, using the binder labels for chapter navigation. |
 | DTBook and NIMAS | Open DTBook XML, a NIMAS source folder or `.opf`, or the original ZIP. Hamr follows the package's declared reading order. Printed page numbers and the marked table of contents stay in the companion. |
 | Text-bearing DAISY 3 | Open a DAISY 3 folder, `.opf` or ZIP. Hamr reads the DTBook passages in declared SMIL order. Keep the existing audio and synchronization files with the original package. |
@@ -89,6 +90,16 @@ hamr open ~/Documents/Story.hqx --voice cast:james-burke --output ~/Audiobooks
 On Linux x86-64 with Bubblewrap, Hamr reads recognized classic Macintosh files, including files without an extension. Tested originals include MacWrite 4.5, MacWrite Pro 1.0, Nisus Writer 4.0, ClarisWorks word processing 1.0 and 2.0, AppleWorks word processing 6.0, and WriteNow 2.0 and 4.0. Hamr checks BinHex checksums and can use a matching AppleDouble sidecar beside the file or inside an archive. Launch the book from its data file or controlling archive. Keep the matching sidecar and data file together.
 
 Hamr saves the originals for recovery and reads paragraphs, tables, editable text frames and linked notes through shared OpenDocument preparation. Undescribed figures appear in source review. ClarisWorks drawings, spreadsheets and databases require a readable prose export for this intake path.
+
+## Org mode
+
+```sh
+hamr open ~/Documents/Manuscript.org --voice cast:james-burke --output ~/Audiobooks
+```
+
+The built-in reader follows the saved outline, export tags, linked footnotes, tables, and numbered lists. Local `#+INCLUDE` arguments can select a line range, an exact headline, or a custom ID. Keep includes and setup files next to or below the manuscript, or open a ZIP of their common parent. If Hamr lists several manuscripts, choose the main file from that list. A finished book can recover the complete included file, even when it reads only a range of its lines.
+
+Hamr reads saved text and applies supported static macros. Source code uses the ordinary companion policy. A generated passage that needs a macro or selector the reader cannot resolve appears in source review. For editions that depend on arbitrary Emacs Lisp or author-specific export hooks, open the author's rendered HTML or EPUB edition. [Org include files](https://orgmode.org/manual/Include-Files.html)
 
 ## Numbered passages
 

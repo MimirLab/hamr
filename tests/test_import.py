@@ -180,6 +180,16 @@ def test_critical_spoken_forms_are_versioned_and_source_is_unchanged():
     speech=' '.join(u['text'] for u in new['utterances']); assert 'less than 8 kilopascals' in speech and 'greater than or equal to 12 kilopascals' in speech
     assert 'zero three slash zero four slash two zero two six' in speech and '03/04/2026' in d.blocks[1].source
 
+
+def test_task_label_has_a_shared_spoken_form_without_changing_saved_plans():
+    doc = markdown(b'Maintain TODO lists and then open TODO.md.\n')
+    fresh = plan(doc)
+    assert 'Maintain to-do lists' in fresh['utterances'][0]['text']
+    assert 'TODO.md' in doc.blocks[0].source
+    assert 'Maintain TODO lists' in plan(doc,rule_revision='faithful-27')['utterances'][0]['text']
+    literal = markdown(b'Open the `TODO` identifier.\n')
+    assert 'the TODO identifier' in plan(literal)['utterances'][0]['text']
+
 def illustrated_epub():
     b=io.BytesIO()
     with zipfile.ZipFile(b,'w') as z:

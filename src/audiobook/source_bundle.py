@@ -34,7 +34,7 @@ NATIVE = {
     '.wpd':'wordperfect', '.wp':'wordperfect', '.wp4':'wordperfect', '.wp5':'wordperfect', '.wp6':'wordperfect',
     '.hqx':'classic-mac',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
-    '.rst':'rst', '.rest':'rst',
+    '.rst':'rst', '.rest':'rst', '.org':'org',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
 PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
@@ -42,7 +42,7 @@ PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','xml-book','pml','classic-mac'))
+DEPENDENCY_SOURCES = frozenset(('rst','org','xml-book','pml','classic-mac'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -459,9 +459,9 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle','rst','pml','rocket',*PALM_ROUTES):
-        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','pml',*PALM_ROUTES) and source.member_name is None:
+    if encoding and source.route not in ('text','chm','textbundle','rst','org','pml','rocket',*PALM_ROUTES):
+        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, Org, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks or compiled HTML Help.')
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','org','pml',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -821,10 +821,10 @@ def preview(path,cache,**options):
 
 
 def capture_dependencies(path,target_dir,source):
-    if source.kind=='file' and source.route=='rst':
-        from .rst_dependencies import capture_dependencies as rst
+    if source.kind=='file' and source.route in ('rst','org'):
+        from .linked_text_intake import capture_dependencies as linked
 
-        return rst(path,target_dir,source)
+        return linked(path,target_dir,source)
     if source.kind=='file' and source.route=='pml':
         from .pml_package import capture_pml
 

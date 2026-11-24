@@ -46,10 +46,12 @@ def materialized_member(path,kind,index,work):
 def parse(path,source,sha,cache,title):
     from .importers import ADAPTERS, MAX_INPUT, markdown, plain
 
-    if source.route=='rst' and source.kind.endswith('-member'):
-        from .rst_dependencies import read_rst_archive
+    if source.route in ('rst','org'):
+        from .linked_text_intake import read_linked_archive, read_linked_file
 
-        return read_rst_archive(path,source,sha)
+        if source.kind.endswith('-member'):
+            return read_linked_archive(path,source,sha)
+        return read_linked_file(path,source,sha,title)
     if source.route=='xml-book' and source.kind in ('zip','tar','libarchive'):
         from .xml_package import read_xml_archive
 
@@ -160,10 +162,6 @@ def parse(path,source,sha,cache,title):
         from .ncc_intake import read_daisy202
 
         return read_daisy202(path,source,sha)
-    if source.route=='rst':
-        from .rst_intake import read_rst
-
-        return read_rst(path,source,sha,title)
     if source.route=='scan':
         from .scan_intake import scan
 
