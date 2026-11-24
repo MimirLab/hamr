@@ -125,9 +125,10 @@ def cell_semantics(row,column,text,spans):
 
 def html_read(data,builder, *, where='html', metadata=True, fragment=None, encoding=None, collect_links=False,
               collect_resources=False):
-    from .epub_semantics import AUDIT_SPANS, hidden, note_container, uncertainty
+    from .epub_semantics import AUDIT_SPANS, hidden, note_container, reading, uncertainty
     from .importers import html_text
     from .epub_semantics import describe as semantics
+    from .source_notes import Definition, NoteGraph, references
 
     soup = BeautifulSoup(data,'html.parser',from_encoding=encoding)
     for node in soup.find_all(['script','style','template','noscript']):
@@ -145,8 +146,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
         if len(targets)!=1 or targets[0].name in ('a','h1','h2','h3','h4','h5','h6','span'):
             raise Error('source_topic_fragment','The topic link does not name one bounded HTML region.')
         body = targets[0]
-    note_ids = {node['id']:node for node in body.find_all(id=True) if note_container(node)}
-    inserted_notes = {}
+    notes = {}
     atomic = {'p','h1','h2','h3','h4','h5','h6','table','pre','img','svg','math','figcaption','dt','dd','li',
               'blockquote','address','caption'}
 
@@ -168,29 +168,14 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
         source,spans = semantics(node)
         spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
                  collect_links and span['kind']=='hyperlink']
-        links = []
-        for span in spans:
-            if span['kind']!='note_reference':
-                continue
-            href = span.get('href') or ''
-            target = note_ids.get(href.removeprefix('#')) if href.startswith('#') else None
-            if target is None:
-                links.append({'kind':'note','href':href,'source_start':span['source_start'],'text':'',
-                              'issue':'The cited note is unavailable in this HTML source.'})
-                continue
-            link = {'kind':'note','href':href,'source_start':span['source_start']}
-            if target.find('math'):
-                contents,parts = semantics(target)
-                links.append(formula_note(link,contents,parts))
-            else:
-                links.append({**link,'text':target.get_text(' ',strip=True)})
         block = builder.add(source,role,where,loc={'anchor':node.get('id'),'inline_semantics':spans,
-                            'exact':str(node)},links=links,issue=uncertainty(spans))
+                            'exact':str(node)},issue=uncertainty(spans))
         preserve_resources(block,node)
         if block and (node.name == 'blockquote' or node.find_parent('blockquote') is not None):
             block.locator['block_quote'] = True
-        if block and node.get('id'):
-            inserted_notes[node['id']] = block.id
+        if block and role=='note' and node.get('id'):
+            value = reading(block).strip() if references(spans) or node.find('math') else node.get_text(' ',strip=True)
+            notes.setdefault('#'+node['id'],[]).append(Definition(block,value,block.issue))
 
     def visit(node,path):
         if isinstance(node,NavigableString):
@@ -198,11 +183,11 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             if not isinstance(node,NON_TEXT):
                 builder.add(str(node),where=path)
             return
+        if node.get('id') and note_container(node):
+            text_node(node,'note',path)
+            return
         if hidden(node) or node.name=='nav':
             builder.add(node.get_text(' ',strip=True),'hidden',path)
-            return
-        if node.get('id') in note_ids:
-            text_node(node,'note',path)
             return
         if node.name=='table':
             lines = [line for line in node.find_all('tr') if line.find_parent('table') is node]
@@ -241,10 +226,9 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
 
     start = len(builder.doc.blocks)
     visit(body,where)
+    graph = NoteGraph(notes)
     for block in builder.doc.blocks[start:]:
-        for link in block.links:
-            if link['href'].startswith('#') and link['href'][1:] in inserted_notes:
-                link['destinations'] = ['source.html#'+inserted_notes[link['href'][1:]]]
+        block.links.extend(graph.links_for(block.locator.get('inline_semantics',()),follow=block.role!='note'))
 
 
 @contextmanager

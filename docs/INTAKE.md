@@ -66,3 +66,5 @@ You can also use the passage ID from the companion link. If an older saved job h
 A TextBundle folder is saved as a portable TextPack. Open `source.html` and follow the illustration or attachment label for its location ID. Recover individual package files with the same `hamr source` command.
 
 Open an mdBook project folder or its source archive directly. Hamr uses `book.toml` to find a custom source directory and looks in `src/` by default. It preserves chapter order, nested chapter labels, unlisted source files and local includes. If an include points outside the project folder, open or archive the parent directory containing the project and its referenced files. For content produced by custom preprocessors, build with mdBook and open the generated `print.html`.
+
+Markdown and explicitly linked HTML notes can cite other notes. Hamr reads the linked text once per note chain and keeps the original definitions in the companion. In mdBook projects, the first duplicate definition takes precedence, matching mdBook's renderer. If standalone Markdown or HTML contains conflicting definitions, Hamr shows the relevant source location for review.

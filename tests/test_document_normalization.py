@@ -36,7 +36,7 @@ def test_markdown_notes_keep_ast_definitions_and_exact_reference_owners():
 
 
 @pytest.mark.parametrize('text', ['See [^missing].',
-                                  'See [^a].\n\n[^a]: The first note cites [^b].\n\n[^b]: Inner note.',
+                                  'See [^a].\n\n[^a]: The first note cites [^missing].',
                                   'See [^a].\n\n[^a]: First meaning.\n\n[^a]: Second meaning.'])
 def test_unresolved_markdown_note_retains_source_and_holds_spoken_plan(text):
     doc = markdown(text.encode()); result = plan(doc)

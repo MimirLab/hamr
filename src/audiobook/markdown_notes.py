@@ -47,29 +47,34 @@ def target(token):
 
 
 def definition(tokens, inline_sources):
-    """Describe supported note children in document order, retaining uncertainty."""
-    parts = []
-    issues = []
+    """Keep note paragraphs and their dependencies in authored order."""
+    from .core import Block
+    from .epub_semantics import reading
+
+    parts, spoken, spans, issues = [], [], [], []
+    position = 0
     for token in tokens:
         if token.type == 'inline':
-            text, spans = inline(token, inline_sources)
+            text, local = inline(token, inline_sources)
             if text.strip():
                 parts.append(text)
-            if any(span['kind'] == 'note_reference' for span in spans):
-                issues.append('Nested Markdown note references need a verified reading.')
+                value = reading(Block('',text,{'inline_semantics':local},'note','')).strip()
+                if value:
+                    spoken.append(value if value.endswith(('.', '!', '?')) else value + '.')
+                spans.extend({**span,'source_start':span['source_start']+position,
+                              'source_end':span['source_end']+position} for span in local)
+                position += len(text)+2
             if any(c.type == 'image' and not c.content.strip() for c in token.children or ()):
                 issues.append('An image in this Markdown note has no description.')
         elif token.type in ('fence', 'code_block'):
             parts.append(token.content)
+            position += len(token.content)+2
             issues.append('A literal block in this Markdown note needs a verified reading.')
         elif token.type in ('table_open', 'hr', 'footnote_reference_open'):
             issues.append('This Markdown note contains structure that needs a verified reading.')
-    # Paragraphs and list items remain separate. Supply a spoken boundary when
-    # the source item has none, while keeping the definition verbatim in exact.
-    reading = ' '.join(p.strip() if p.rstrip().endswith(('.', '!', '?')) else p.strip() + '.' for p in parts)
-    if not reading:
+    if not (spoken or any(span['kind']=='note_reference' for span in spans)):
         issues.append('This Markdown note has no readable text.')
-    return '\n\n'.join(parts), reading, ' '.join(dict.fromkeys(issues)) or None
+    return '\n\n'.join(parts), ' '.join(spoken), spans, ' '.join(dict.fromkeys(issues)) or None
 
 
 def split_definitions(tokens):
@@ -89,25 +94,3 @@ def split_definitions(tokens):
         else:
             body.append(token)
     return body, notes
-
-
-def links_for(references, notes):
-    links = []
-    for reference in references:
-        if reference['kind'] != 'note_reference':
-            continue
-        href = reference['href']
-        candidates = notes.get(href, [])
-        link = {'kind': 'note', 'href': href, 'source_start': reference['source_start']}
-        if not candidates:
-            link.update(text='', issue='Unresolved Markdown footnote reference requires verification.')
-        else:
-            destinations = ['source.html#' + note.id for note, _ in candidates]
-            link['destinations'] = destinations
-            if len(candidates) == 1:
-                note, reading = candidates[0]
-                link.update(text=note.source, reading=reading, issue=note.locator.get('note_issue'), destination=destinations[0])
-            else:
-                link.update(text='', issue='Duplicate Markdown note definitions need a verified choice.')
-        links.append(link)
-    return links

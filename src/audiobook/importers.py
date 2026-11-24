@@ -15,10 +15,11 @@ MAX_INPUT=200*1024*1024
 def block(text,loc,role='body',chapter='Opening',evidence=None,issue=None,links=None):
     return Block('b'+digest(str(loc).encode())[:16],text,loc,role,chapter,evidence or [],issue,links or [])
 
-def markdown(data:bytes, *, collect_resources=False)->Document:
+def markdown(data:bytes, *, collect_resources=False, first_note_definition=False)->Document:
     from itertools import accumulate
     from markdown_it.token import Token
     from . import markdown_notes
+    from .source_notes import Definition, NoteGraph
 
     try: text=data.decode('utf-8-sig')
     except UnicodeDecodeError as exc:
@@ -52,15 +53,16 @@ def markdown(data:bytes, *, collect_resources=False)->Document:
         return {'format':'markdown','lines':[first+1,last],'start':start,'end':end,'exact':text[start:end]}
 
     def add_note(href, label, children, provenance):
-        source,reading,issue=markdown_notes.definition(children,inline_sources)
+        source,reading,spans,issue=markdown_notes.definition(children,inline_sources)
         candidates=notes.setdefault(href,[])
         loc={'format':'markdown','note':label}
         if candidates:loc['definition_occurrence']=len(candidates)+1
         note=block(source,loc,'note',evidence=['Markdown AST note definition'])
         note.locator.update(provenance)
+        if spans:note.locator['inline_semantics']=spans
         preserve_resources(note.locator,children)
         if issue:note.locator['note_issue']=issue
-        candidates.append((note,reading));note_blocks.append(note)
+        candidates.append(Definition(note,reading,issue));note_blocks.append(note)
 
     for definition,children in definitions:
         label=definition.meta['label']
@@ -68,6 +70,9 @@ def markdown(data:bytes, *, collect_resources=False)->Document:
     for index,note in inline_notes.items():
         add_note(f'markdown-inline-note:{index}',f'inline:{index}',
                  [Token('inline','',0,children=note['tokens'])],{'exact':'^['+note['content']+']'})
+    graph = NoteGraph(notes,first_definition=first_note_definition)
+    for note in note_blocks:
+        note.links = graph.links_for(note.locator.get('inline_semantics',()),follow=False)
     i=0;chapter_id=None;list_depth=0;quote_depth=0
     while i<len(tokens):
         t=tokens[i]
@@ -83,7 +88,7 @@ def markdown(data:bytes, *, collect_resources=False)->Document:
             v=tokens[i+1]; loc=location(*t.map)
             source, spans=markdown_notes.inline(v,inline_sources)
             if any(c.type=='hardbreak' for c in (v.children or [])):loc['authored_line_breaks']=True
-            links=markdown_notes.links_for(spans,notes)
+            links=graph.links_for(spans)
             issue='Image has no authored description; verify whether it carries essential content.' if any(c.type=='image' and not c.content.strip() for c in (v.children or [])) else None
             role='heading' if t.type=='heading_open' else 'body'
             task=re.match(r'^\[([xX ])\]\s+',source) if list_depth and role=='body' else None
@@ -121,7 +126,7 @@ def markdown(data:bytes, *, collect_resources=False)->Document:
             loc={'format':'markdown','lines':[start+1,end],'exact':''.join(lines[start:end]),'rows':rows}
             if chapter_id is not None:loc['chapter_id']=chapter_id
             issue='Markdown table note references need a verified reading.' if references else None
-            b=block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row'],issue,markdown_notes.links_for(references,notes))
+            b=block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row'],issue,graph.links_for(references))
             preserve_resources(b.locator,tokens[i+1:j])
             out.append(b)
             i=j
@@ -751,7 +756,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-28'
+IMPORT_REVISION='import-29'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 

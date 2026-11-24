@@ -248,7 +248,7 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False, extra_span
         if kind in ('note_reference','hidden'):
             note=next((link for link in block.links if link.get('kind')=='note' and link.get('source_start')==a and
                        link.get('reference_href',span.get('href'))==span.get('href')),None)
-            value=' Note. '+note.get('reading',note['text'])+' End note. ' if note and kind=='note_reference' and note_policy=='inline' else ''
+            value=' Note. '+note.get('reading',note['text'])+' End note. ' if note and not note.get('reference_only') and kind=='note_reference' and note_policy=='inline' else ''
             edits.append((a,b,value))
         elif kind=='pagebreak':edits.append((a,b,' '))
         elif kind=='object_label':
@@ -285,9 +285,11 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False, extra_span
             after=sum(len(value)-(y-x) for x,y,value in selected if y<=b)
             protected.append((a+before,b+after))
     for a,b,value in reversed(selected):source=source[:a]+value+source[b:]
-    notes={link['href']:link.get('reading',link['text']) for link in block.links if link.get('kind')=='note' and any(s['source_start']==link.get('source_start') for s in references)}
+    notes={link['href']:link for link in block.links if link.get('kind')=='note' and any(s['source_start']==link.get('source_start') for s in references)}
     if note_policy=='after_paragraph':
-        for text in notes.values():source+=' Note. '+text+' End note.'
+        for note in notes.values():
+            if not note.get('reference_only'):
+                source+=' Note. '+note.get('reading',note['text'])+' End note.'
     elif note_policy=='companion' and notes:source+=' A note is available in the companion.'
     return (source,protected) if with_spans else source
 

@@ -314,7 +314,7 @@ def capture_mdbook(root,target,*,container):
 
 
 def add_chapter(document, label, occurrence, member, content, resources):
-    chapter = markdown(content.encode('utf-8'),collect_resources=True)
+    chapter = markdown(content.encode('utf-8'),collect_resources=True,first_note_definition=True)
     ids = {item.id:'b'+key([member.name,occurrence,item.id])[:16] for item in chapter.blocks}
     destinations = {'source.html#'+source:'source.html#'+target for source,target in ids.items()}
     for item in chapter.blocks:
