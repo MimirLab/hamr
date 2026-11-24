@@ -10,21 +10,31 @@ def physical_lines(text):
     return re.finditer(r'[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$', text)
 
 
-def plain(data):
+def plain(data,encoding=None):
     from .importers import block
 
-    encoding = 'utf-8'
-    for mark, codec in ((codecs.BOM_UTF32_LE, 'utf-32'), (codecs.BOM_UTF32_BE, 'utf-32'),
-                        (codecs.BOM_UTF16_LE, 'utf-16'), (codecs.BOM_UTF16_BE, 'utf-16'),
-                        (codecs.BOM_UTF8, 'utf-8-sig')):
-        if data.startswith(mark):
-            encoding = codec
-            break
+    if encoding is None:
+        encoding = 'utf-8'
+        marks = ((codecs.BOM_UTF32_LE,'utf-32'),(codecs.BOM_UTF32_BE,'utf-32'),
+                 (codecs.BOM_UTF16_LE,'utf-16'),(codecs.BOM_UTF16_BE,'utf-16'),(codecs.BOM_UTF8,'utf-8-sig'))
+        for mark,codec in marks:
+            if data.startswith(mark):
+                encoding = codec
+                break
+    try:
+        encoding = codecs.lookup(encoding).name
+        ''.encode(encoding)
+    except (LookupError, ValueError) as exc:
+        raise Error('text_encoding',f'{encoding} does not name a recognized text encoding.',
+                    'Choose the known source encoding, such as windows-1252, or export as UTF-8.') from exc
     try:
         text = data.decode(encoding)
     except UnicodeDecodeError as exc:
         raise Error('text_encoding', f'Plain text cannot be decoded as {encoding} at byte {exc.start}.',
-                    'Save the original text as UTF-8 or as Unicode with a byte-order mark and try again.') from exc
+                    'Use --encoding for a known legacy encoding or export as UTF-8.') from exc
+    if '\0' in text:
+        raise Error('text_encoding','The decoded file has embedded NUL bytes and may be binary.',
+                    'Choose a readable text export or a correctly encoded Unicode copy.')
     out = []
     start = first = None
     lines = blank = 0

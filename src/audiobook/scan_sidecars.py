@@ -99,6 +99,58 @@ def page_xml(root,source,size):
     return result
 
 
+def abbyy(root,source,size):
+    def children(parent,tag):
+        return [node for node in parent if local(node.tag)==tag]
+
+    pages = children(root,'page')
+    if len(pages)!=1:
+        raise Error('ocr_binding','Bind one ABBYY XML page to its original image.')
+    page, = pages
+    if page.get('originalCoords') not in ('true','1') or page.get('rotation','Normal')!='Normal':
+        raise Error('ocr_binding','ABBYY XML needs unrotated original-image coordinates.')
+    bound_image(page.get('imageFilename'),source,size,(int(page.get('width')),int(page.get('height'))))
+    blocks = children(page,'block')
+    if any(block.get('blockType')!='Text' or block.get('isHidden') in ('1','true') for block in blocks):
+        raise Error('ocr_binding','ABBYY XML with mixed or hidden blocks needs a layout-qualified reading.')
+    paragraphs = [par for block in blocks for text in children(block,'text')
+                  for par in children(text,'par')]
+    result = []
+    for par_index,par in enumerate(paragraphs,1):
+        for line_index,line in enumerate(children(par,'line'),1):
+            letters = [letter for run in children(line,'formatting') for letter in children(run,'charParams')]
+            line_rows = []
+            word, boxes = [], []
+
+            def finish_word():
+                if boxes:
+                    left,top,right,bottom = zip(*boxes,strict=True)
+                    box = min(left),min(top),max(right),max(bottom)
+                    line_rows.append(row(par_index,line_index,''.join(word),box,len(line_rows)+1))
+                    word.clear()
+                    boxes.clear()
+
+            if not letters and ''.join(line.itertext()).strip():
+                raise Error('ocr_binding','ABBYY XML omits character coordinates.')
+            for letter in letters:
+                character = letter.text or ''
+                if not character.strip() or any(letter.get(field) in ('true','1')
+                                                for field in ('wordFirst','wordStart')):
+                    finish_word()
+                if not character.strip():
+                    continue
+                if len(character)!=1 or letter.get('suspicious') in ('true','1'):
+                    raise Error('ocr_binding','ABBYY XML contains an unresolved character reading.')
+                x,y,r,b = box = tuple(int(letter.get(field)) for field in ('l','t','r','b'))
+                if not (0<=x<r<=size[0] and 0<=y<b<=size[1]):
+                    raise Error('ocr_binding','ABBYY XML character geometry falls outside the image.')
+                word.append(character)
+                boxes.append(box)
+            finish_word()
+            result.extend(line_rows)
+    return result
+
+
 class Hocr(HTMLParser):
     """Keep word text once even when an enclosing line repeats its markup."""
     def __init__(self):
@@ -172,6 +224,9 @@ def transcription(data, side, source, size):
                 kind,text = 'alto',tsv(alto(root,source,size))
             elif tag=='PcGts':
                 kind,text = 'pagexml',tsv(page_xml(root,source,size))
+            elif tag=='document' and (root.nsmap.get(root.prefix) or '').startswith(
+                    ('http://www.abbyy.com/','https://www.abbyy.com/')):
+                kind,text = 'abbyy',tsv(abbyy(root,source,size))
             else:
                 raise Error('ocr_binding', 'Unknown archival OCR XML root.')
         words = read_words(text,size)

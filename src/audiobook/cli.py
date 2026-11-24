@@ -176,6 +176,7 @@ def choose_backend(store, json_mode, *, automatic=False, advanced=False, include
 def add_source(p):
     p.add_argument('--entry',help='Publication ID when a directory or archive contains more than one book')
     p.add_argument('--format',dest='source_format',help='Reader to use for an ambiguous file type')
+    p.add_argument('--encoding',help='Known encoding of a plain text source, such as windows-1252')
     p.add_argument('--offline',action='store_true',help='Use only installed source readers and OCR assets')
     p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile',dest='listening_profile',help='Saved listening defaults created with hamr profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
     p.add_argument('--chapters',help='Source chapter occurrences, e.g.5,2-3,2; original order is retained. Use all to reset.')
@@ -535,13 +536,14 @@ def dispatch(argv=None):
             emit(extract_location(a.book,a.location,a.output),jm)
         elif a.command=='plan':
             from .intake import inspect_source
-            doc=inspect_source(a.source,s.root/'extractions',entry=a.entry,format=a.source_format,offline=a.offline)
+            doc=inspect_source(a.source,s.root/'extractions',entry=a.entry,format=a.source_format,offline=a.offline,
+                               encoding=a.encoding)
             result = plan(doc,policy(a),a.aliases,context_reviewer=a.context_review_endpoint)
             emit(result,True)
         elif a.command in ('queue','open'):
             from .book_flow import check_source, finish_book, play_output, preflight
             from .intake import inspect_source
-            source_options = {'entry':a.entry,'format':a.source_format,'offline':a.offline}
+            source_options = {'entry':a.entry,'format':a.source_format,'offline':a.offline,'encoding':a.encoding}
             check_source(a.source,**source_options)
             preview_sha = None
             voice=a.voice or preference(s).get('voice')

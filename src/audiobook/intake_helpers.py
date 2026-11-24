@@ -209,6 +209,64 @@ def legacy_ebook(path,source,sha,cache):
     return doc
 
 
+def print_replica(stream,first_record,records,sha,cache):
+    from .importers import pdf
+    from .source_bundle import CHUNK
+
+    size = os.fstat(stream.fileno()).st_size
+    stream.seek(first_record)
+    palm = stream.read(10)
+    if palm[:2]!=b'\0\1':
+        raise Error('unreadable_replica','This compressed Print Replica rendition needs a PDF export.')
+    text_size = int.from_bytes(palm[4:8],'big')
+    text_records = int.from_bytes(palm[8:10],'big')
+    if not 0<text_records<=len(records):
+        raise Error('unreadable_replica','The Print Replica text record count is invalid.')
+    ends = [*records[1:text_records+1],size][:text_records]
+    records = records[:text_records]
+    start = records[0]
+    stream.seek(start)
+    header = stream.read(min(20,ends[0]-start))
+    if len(header)<20 or not header.startswith(b'%MOP'):
+        raise Error('unreadable_replica','The Kindle edition has no complete Print Replica header.')
+    offset,length = int.from_bytes(header[12:16],'big'),int.from_bytes(header[16:20],'big')
+    if text_size!=ends[-1]-start or offset<20 or length<8 or offset+length>text_size:
+        raise Error('unreadable_replica','The embedded PDF range exceeds the Print Replica records.')
+    with tempfile.TemporaryDirectory(prefix='hamr-replica-',dir=cache) as folder:
+        extracted = Path(folder)/'edition.pdf'
+        if length>shutil.disk_usage(folder).free:
+            raise Error('disk_space','There is insufficient working space for the embedded PDF.')
+        with extracted.open('xb') as dst:
+            remaining = length
+            for left,right in zip(records,ends):
+                if offset>=right-left:
+                    offset -= right-left
+                    continue
+                stream.seek(left+offset)
+                count = min(remaining,right-left-offset)
+                offset = 0
+                while count:
+                    data = stream.read(min(count,CHUNK))
+                    if not data:
+                        raise Error('unreadable_replica','The edition ended while reading the embedded PDF.')
+                    count -= len(data)
+                    remaining -= len(data)
+                    dst.write(data)
+                if not remaining:
+                    break
+        with extracted.open('rb') as payload:
+            if payload.read(5)!=b'%PDF-':
+                raise Error('unreadable_replica','The stored Print Replica section is not a PDF.')
+        doc = pdf(extracted,ocr_cache=cache/'pdf-observations' if cache else None)
+        doc.format = 'print-replica'
+        doc.source_sha256 = sha
+        doc.metadata['converter'] = {'engine':'Print Replica record reader','intermediate':'PDF',
+                                     'derivative_sha256':filehash(extracted)}
+        for item in doc.blocks:
+            item.locator['converter_intermediate'] = True
+        return doc
+
+
 def resident_mobi(path,source,sha,cache):
     from .importers import epub
 
@@ -217,11 +275,29 @@ def resident_mobi(path,source,sha,cache):
         if len(header)!=86 or header[60:68] not in (b'BOOKMOBI',b'TEXtREAd'):
             raise Error('unreadable_mobi','The source does not contain a recognized Kindle or Palm header.')
         first = int.from_bytes(header[78:82],'big')
-        if first<86 or first+14>path.stat().st_size:
+        count = int.from_bytes(header[76:78],'big')
+        size = os.fstat(stream.fileno()).st_size
+        table_end = 78+count*8
+        if not count or first<table_end or first+14>size:
             raise Error('unreadable_mobi','The source has an invalid first record.')
         stream.seek(first+12)
         if stream.read(2)!=b'\0\0':
             raise Error('protected_source','The Kindle/Palm source is encrypted.','Supply a readable EPUB export.')
+        if count>1:
+            stream.seek(86)
+            next_record = int.from_bytes(stream.read(4),'big')
+            if first+14<=next_record<=size-4:
+                stream.seek(next_record)
+                if stream.read(4)==b'%MOP':
+                    stream.seek(86)
+                    entries = stream.read(table_end-86)
+                    positions = [int.from_bytes(entries[i:i+4],'big') for i in range(0,len(entries),8)]
+                    if any(left>=right for left,right in zip(positions,[*positions[1:],size])):
+                        raise Error('unreadable_replica','The Print Replica record order is invalid.')
+                    return print_replica(stream,first,positions,sha,cache)
+        if path.suffix.lower()=='.azw4':
+            raise Error('unreadable_replica','The file does not expose a readable Print Replica PDF.',
+                        'Supply a readable PDF export.')
     machine = platform.machine().lower()
     tools = {
         'linux':('mobitool-linux-x86_64','05567860bd98a8393621183ba977c9e3c4d8abbb4747045711501a1d70bd8b34'),

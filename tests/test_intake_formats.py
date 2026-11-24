@@ -58,6 +58,100 @@ def test_mets_physical_order_and_alto_binding(tmp_path):
     doc = inspect_source(mets,offline=True)
     assert [b.source for b in doc.blocks]==['The archive.','Another page.']
     assert [row['member'] for row in doc.inventory]==['z.png','a.png']
+    archive = tmp_path/'mets.zip'
+    package(archive,{'scans/'+path.name:path.read_bytes() for path in tmp_path.iterdir() if path.is_file()})
+    packaged = inspect_source(archive,offline=True)
+    assert [b.source for b in packaged.blocks]==['The archive.','Another page.']
+    assert [row['member'] for row in packaged.inventory]==['scans/z.png','scans/a.png']
+
+
+def test_zip_page_manifest_owns_sequence_repeats_and_separate_books(tmp_path,monkeypatch):
+    import pytest
+    from audiobook.core import Error
+    from audiobook.pdf_visual import Observer
+
+    monkeypatch.setattr(Observer,'read_raster',lambda _observer,_view,_words,entry,*_a,**_kw:(
+        [{'text':'The page is readable.','locator':{'rect':[10,10,80,30]},'issue':None}],
+        {'status':'observed'}))
+    archive = tmp_path/'book.zip'
+    manifest = {'schema':'hamr.page-sequence.v1','title':'Ordered book','pages':[
+        {'path':'page10.png','occurrence':'opening','crop':[0,0,.5,1]},
+        {'path':'page2.png'}, {'path':'page10.png','occurrence':'reprise'}]}
+    members = {'scan/page2.png':img(),'scan/page10.png':img(),'scan/unselected.png':img(),
+               'scan/pages.hamr.json':json.dumps(manifest),'readme.txt':'Unspoken metadata.'}
+    package(archive,members)
+    document = inspect_source(archive,offline=True)
+    assert document.title=='Ordered book'
+    assert [row['member'] for row in document.inventory]==['scan/page10.png','scan/page2.png','scan/page10.png']
+    assert [row['archive_entry'] for row in document.inventory]==[2,1,2]
+    assert document.inventory[0]['image_transform']['crop_pixels']==[0,0,300,400]
+    assert [row['occurrence'] for row in document.inventory]==['opening','p000002','reprise']
+    package(archive,{**members,'another.txt':'An unrelated novel.'})
+    with pytest.raises(Error) as error:
+        inspect_source(archive,offline=True)
+    assert error.value.code=='source_selection'
+    assert [row['id'] for row in error.value.candidates]==['pages','6']
+    assert inspect_source(archive,entry='pages',offline=True).title=='Ordered book'
+
+
+def test_archived_abbyy_original_geometry_uses_authored_transcription(tmp_path):
+    archive = tmp_path/'proof.zip'
+    sentence = 'The page stays in order.'
+    letters = ''.join(
+        f'<charParams l="{10+6*i}" t="12" r="{16+6*i}" b="27">{c}</charParams>'
+        for i,c in enumerate(sentence))
+    side = '<document xmlns="http://www.abbyy.com/FineReader_xml/FineReader10-schema-v1.xml">' \
+           '<page width="600" height="400" originalCoords="true"><block blockType="Text">' \
+           f'<text><par><line><formatting>{letters}</formatting></line></par></text></block></page></document>'
+    package(archive,{'page.png':img(),'page.abbyy.xml':side})
+    doc = inspect_source(archive,offline=True)
+    assert [block.source for block in doc.blocks]==[sentence]
+    assert doc.inventory[0]['sidecar']['format']=='abbyy'
+    assert doc.inventory[0]['sidecar']['word_count']==5
+    assert doc.inventory[0]['route']=='supplied_text'
+
+
+def test_print_replica_uses_embedded_pdf_and_keeps_original_hash(tmp_path):
+    import struct
+    from audiobook.core import filehash
+    from reportlab.pdfgen.canvas import Canvas
+
+    buffer = io.BytesIO()
+    page = Canvas(buffer)
+    page.drawString(40,150,'The written evidence stays in order.')
+    page.save()
+    payload = buffer.getvalue()
+    content = struct.pack('>4s4I',b'%MOP',1,1,20,len(payload))+payload
+    header = bytearray(78)
+    header[60:68] = b'BOOKMOBI'
+    struct.pack_into('>H',header,76,4)
+    first = 112
+    palm = struct.pack('>HHIHHHH',1,0,len(content),2,4096,0,0)
+    entries = (first, first+len(palm), first+len(palm)+90, first+len(palm)+len(content))
+    records = b''.join(struct.pack('>II',offset,i+1) for i,offset in enumerate(entries))
+    path = tmp_path/'edition.azw4'
+    path.write_bytes(header+records+b'\0\0'+palm+content+b'Metadata')
+    doc = inspect_source(path,offline=True)
+    assert doc.format=='print-replica' and doc.source_sha256==filehash(path)
+    assert doc.blocks[0].source=='The written evidence stays in order.'
+    assert doc.blocks[0].locator['converter_intermediate'] is True
+
+
+def test_archive_legacy_text_uses_explicit_encoding(tmp_path):
+    import pytest
+    from audiobook.core import Error
+
+    archive = tmp_path/'letters.zip'
+    package(archive,{'letter.nfo':'The archive’s account.'.encode('cp1252')})
+    with pytest.raises(Error,match='cannot be decoded') as error:
+        inspect_source(archive,offline=True)
+    assert '--encoding' in error.value.action
+    doc = inspect_source(archive,offline=True,encoding='windows-1252')
+    assert doc.blocks[0].source=='The archive’s account.'
+    assert doc.inventory[0]['encoding']=='cp1252'
+    package(archive,{'letter.nfo':b'a\0b'})
+    with pytest.raises(Error,match='embedded NUL'):
+        inspect_source(archive,offline=True)
 
 
 def test_local_iiif_uses_declared_sequence(tmp_path,monkeypatch):

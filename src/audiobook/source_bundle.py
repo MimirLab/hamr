@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 import os
@@ -18,13 +18,14 @@ from .core import Error, filehash, key, syncdir
 IMAGE_SUFFIXES = frozenset(('.jpg', '.jpeg', '.jfif', '.png', '.tif', '.tiff', '.bmp',
                             '.pnm', '.pbm', '.pgm', '.ppm', '.jp2', '.j2k', '.webp', '.gif'))
 SIDECAR_SUFFIXES = frozenset(('.xml', '.hocr', '.alto', '.page', '.tsv'))
+SIDECAR_ENDINGS = ('.alto.xml','.page.xml','.abbyy.xml','.hocr','.tsv')
 NATIVE = {
-    '.txt':'text', '.md':'markdown', '.markdown':'markdown', '.epub':'epub', '.pdf':'pdf',
+    '.txt':'text', '.text':'text', '.asc':'text', '.nfo':'text', '.md':'markdown', '.markdown':'markdown', '.epub':'epub', '.pdf':'pdf',
     '.djvu':'djvu', '.djv':'djvu', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt',
     '.abw':'xml-book', '.dbk':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
-    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
+    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
 }
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
@@ -40,6 +41,7 @@ class Source:
     entry: int | None = None
     route_override: str | None = None
     offline: bool = False
+    encoding: str | None = None
 
     def json(self):
         return asdict(self)
@@ -84,22 +86,26 @@ def probe(prefix, name):
 def read_manifest(path):
     if path.stat().st_size>MAX_MANIFEST:
         raise Error('source_manifest_size', 'The page order manifest exceeds 16 MiB.')
-    raw = path.read_bytes()
-    if path.suffix.lower() in ('.xml','.mets'):
+    return manifest_data(path.read_bytes(),path.name)
+
+
+def manifest_data(raw,filename):
+    if PurePosixPath(filename).suffix.lower() in ('.xml','.mets'):
         from .archival_manifest import mets
         value = {'schema':'hamr.page-sequence.v1',**mets(raw)}
     else:
         try:
             value = json.loads(raw)
         except (UnicodeError, ValueError) as exc:
-            raise Error('source_manifest', f'Cannot read the page order in {path.name}.') from exc
+            raise Error('source_manifest', f'Cannot read the page order in {filename}.') from exc
         if isinstance(value,dict) and value.get('type')=='Manifest':
             from .archival_manifest import iiif
             value = {'schema':'hamr.page-sequence.v1',**iiif(value)}
     if not isinstance(value,dict):
-        raise Error('source_manifest', f'Cannot read the page order in {path.name}.')
-    if (not isinstance(value,dict) or value.get('schema') not in PAGE_SCHEMAS
-            or not isinstance(value.get('pages'),list) or not value['pages']):
+        raise Error('source_manifest', f'Cannot read the page order in {filename}.')
+    schema = value.get('schema')
+    if (not isinstance(schema,str) or schema not in PAGE_SCHEMAS or not isinstance(value.get('pages'),list)
+            or not value['pages']):
         raise Error('source_manifest', 'Use a hamr.page-sequence.v1 manifest with a nonempty pages list.')
     return value
 
@@ -177,12 +183,12 @@ def zip_members(archive):
 
 
 def zip_source(path, entry, override):
+    from .archive_intake import ZipMembers
+
     try:
-        with ZipFile(path) as archive:
+        with ZipMembers(path) as archive:
             records = zip_members(archive)
             names = {info.filename for _,info in records}
-            if override=='scan':
-                return Source('scan','zip')
             if 'manifest.json' in names and any(name.startswith('blobs/') for name in names):
                 return Source('scan','bundle')
             mimetype = next((info for _,info in records if info.filename=='mimetype' and info.file_size<=256),None)
@@ -200,30 +206,9 @@ def zip_source(path, entry, override):
                         from .fixed_pages import image_only_fixed
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
-                    return Source(route)
-            pages = []
-            routes = {}
-            for index,item in records:
-                if item.filename.startswith('__MACOSX/'):
-                    continue
-                suffix = PurePosixPath(item.filename).suffix.lower()
-                if suffix in SIDECAR_SUFFIXES:
-                    continue
-                if suffix not in NATIVE or suffix in ('.lrf','.lit'):
-                    with archive.open(item) as stream:
-                        detected = probe(stream.read(512),item.filename)
-                else:
-                    detected = NATIVE[suffix]
-                if detected=='scan':
-                    pages.append(index)
-                elif detected:
-                    routes[index] = detected
-            books = [(i,v.filename) for i,v in records if routes.get(i) and routes[i]!='xml-book'
-                     and not (pages and PurePosixPath(v.filename).stem.casefold() in ('readme','metadata','license'))]
-            candidates = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])
-            candidates.extend((str(i),name) for i,name in books)
-            selected = choose(candidates,entry)
-            return Source('scan','zip') if selected=='pages' else Source(routes[int(selected)],'zip-member',int(selected))
+                    if override!='scan':
+                        return Source(route)
+            return archive_publications(archive,'zip',entry,scan_only=override=='scan')
     except BadZipFile as exc:
         raise Error('unreadable_archive', 'The ZIP archive could not be read.') from exc
 
@@ -232,20 +217,65 @@ def wrapped_source(path,kind,entry):
     from .archive_intake import containers
 
     with containers(path,kind) as archive:
-        entries = list(archive.members())
-    pages = [item for item in entries if PurePosixPath(item.name).suffix.lower() in IMAGE_SUFFIXES]
-    books = [(str(item.index),item.name) for item in entries
-             if Path(item.name).suffix.lower() in NATIVE and Path(item.name).suffix.lower() not in SIDECAR_SUFFIXES
-             and not item.name.startswith('__MACOSX/')]
-    candidates = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])+books
-    selected = choose(candidates,entry)
-    if selected=='pages':
-        return Source('scan',kind)
-    member = next(item for item in entries if item.index==int(selected))
-    return Source(NATIVE[Path(member.name).suffix.lower()],kind+'-member',member.index)
+        return archive_publications(archive,kind,entry,scan_only=path.suffix.lower() in ('.cb7','.cbr','.cbt'))
 
 
-def describe(path, *, entry=None, format=None, offline=False):
+def archive_publications(archive,kind,entry,*,scan_only=False):
+    from .scan_intake import bounded
+
+    members = [item for item in archive.members() if not item.name.startswith('__MACOSX/')]
+    manifests, images, documents = [], [], []
+    for item in members:
+        name = PurePosixPath(item.name)
+        basename, suffix = name.name.casefold(),name.suffix.lower()
+        is_manifest = basename in ('pages.hamr.json','mets.xml') or suffix=='.mets'
+        if basename=='manifest.json' and item.size is not None and item.size<=MAX_MANIFEST:
+            with archive.open_member(item) as stream:
+                try:
+                    payload = json.loads(bounded(stream,MAX_MANIFEST))
+                    is_manifest = isinstance(payload,dict) and (payload.get('type')=='Manifest'
+                                  or payload.get('schema') in PAGE_SCHEMAS)
+                except (UnicodeError,ValueError,TypeError):
+                    pass
+        if is_manifest:
+            manifests.append(item)
+            continue
+        if suffix in SIDECAR_SUFFIXES and suffix!='.xml':
+            continue
+        detected = 'scan' if suffix in IMAGE_SUFFIXES else NATIVE.get(suffix)
+        if (kind=='zip' and not detected or suffix in ('.lrf','.lit','.xml')) and not name.name.startswith('.'):
+            with archive.open_member(item) as stream:
+                prefix = stream.read(512)
+            detected = probe(prefix,item.name)
+            if suffix=='.xml' and not re.search(rb'<(?:[A-Za-z][\w.-]*:)?(?:FictionBook|dtbook|TEI|teiCorpus|article|book|docbook)(?:[\s>])',prefix):
+                detected = None
+        if detected=='scan':
+            images.append(item)
+        elif detected and not scan_only:
+            documents.append((item,detected))
+    candidates = {}
+    if manifests:
+        for item in manifests:
+            ident = 'pages' if len(manifests)==1 else 'manifest:'+str(item.index)
+            candidates[ident] = (f'Image sequence ({item.name})', Source('scan',kind,item.index))
+    elif images:
+        candidates['pages'] = (f'Image sequence ({len(images)} files)',Source('scan',kind))
+    for item,route in documents:
+        if (images or manifests) and PurePosixPath(item.name).stem.casefold() in ('readme','metadata','license'):
+            continue
+        candidates[str(item.index)] = (item.name,Source(route,kind+'-member',item.index))
+    selected = choose([(ident,name) for ident,(name,_) in candidates.items()],entry)
+    return candidates[selected][1]
+
+
+def describe(path, *, entry=None, format=None, offline=False, encoding=None):
+    source = _describe(path,entry,format,offline)
+    if encoding and source.route!='text':
+        raise Error('source_encoding','Use --encoding for a plain text publication.')
+    return replace(source,encoding=encoding) if encoding else source
+
+
+def _describe(path,entry,format,offline):
     if not path.exists():
         raise Error('source_missing', f'Document not found: {path}', 'Check the document path.')
     routes = {*NATIVE.values(),'scan'}
@@ -385,7 +415,7 @@ def make_bundle(path,kind,target):
         sidecar = item.get('transcription')
         if sidecar is None and not order:
             base = PurePosixPath(name)
-            candidates = [str(base.with_suffix(ext)) for ext in ('.alto.xml','.page.xml','.hocr','.tsv')
+            candidates = [str(base.with_suffix(ext)) for ext in SIDECAR_ENDINGS
                           if (root/str(base.with_suffix(ext))).is_file()]
             if len(candidates)==1:
                 sidecar = {'path':candidates[0]}

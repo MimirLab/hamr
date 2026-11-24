@@ -48,7 +48,7 @@ def parse(path,source,sha,cache,title):
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):
-            route = describe(member,format=source.route_override,offline=source.offline)
+            route = describe(member,format=source.route_override,offline=source.offline,encoding=source.encoding)
             if route.kind in ('zip-member','tar-member','libarchive-member','directory','manifest'):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
@@ -74,7 +74,8 @@ def parse(path,source,sha,cache,title):
         if path.stat().st_size>MAX_INPUT:
             raise Error('input_limit','This text reader exceeds its current decoded size bound.',
                         'Split the document at a chapter boundary.')
-        return (markdown if source.route=='markdown' else plain)(path.read_bytes())
+        data = path.read_bytes()
+        return markdown(data) if source.route=='markdown' else plain(data,source.encoding)
     from .document_intake import read_document
 
     return read_document(path,source,sha,cache,title)
@@ -101,7 +102,7 @@ def inspect_saved(path,source,cache=None,*,title=None):
                           if p.name in ('importers.py','pronunciation.py','markdown_notes.py','text_source.py',
                                         'text_evidence.py','intake.py')
                           or p.name.startswith(('epub_','pdf_'))}
-        identity = key([sha,source.route,IMPORT_REVISION,dependencies,implementation])
+        identity = key([sha,source.route,source.encoding,IMPORT_REVISION,dependencies,implementation])
         target = cache/(identity+'.json')
         if target.is_symlink():
             raise Error('unsafe_path','Extraction cache entry cannot be a symlink.')

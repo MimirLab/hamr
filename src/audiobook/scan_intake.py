@@ -13,7 +13,10 @@ from .core import Document, Error, fault, key
 from .pdf_headers import mark_headers
 from .pdf_layout import mark_folios, paragraphs
 from .pdf_visual import MAX_PIXELS, Observer, read_words
-from .source_bundle import BUNDLE_SCHEMA, CHUNK, IMAGE_SUFFIXES, MAX_MANIFEST, image_magic, natural, safe_name
+from .source_bundle import (
+    BUNDLE_SCHEMA, CHUNK, IMAGE_SUFFIXES, MAX_MANIFEST, SIDECAR_ENDINGS,
+    image_magic, manifest_data, natural, safe_name,
+)
 
 MAX_MEMBER_SPOOL = 384*1024*1024
 CHAPTER = re.compile(r'\s*(?:chapter|book|part)\s+(?:[ivxlcdm]+|[0-9]+)\s*[.!]?\s*',re.I)
@@ -50,6 +53,42 @@ def bundle_index(archive):
         raise Error('source_manifest', 'The saved source bundle has an invalid manifest or member index.') from exc
 
 
+def archive_order(archive,entries,selected):
+    paths = {}
+    for item in entries:
+        paths.setdefault(item.name,[]).append(item)
+    order = next((item for item in entries if item.index==selected),None)
+    if order is None:
+        raise Error('source_member_missing','The saved archive has no selected page order.')
+    with archive.open_member(order) as stream:
+        manifest = manifest_data(bounded(stream,MAX_MANIFEST),order.name)
+    root = PurePosixPath(order.name).parent
+
+    def member(item):
+        path = str(root / safe_name(item.get('path')))
+        matches = paths.get(path,[])
+        if len(matches)!=1:
+            raise Error('source_manifest',f'The archive page order needs one member named {path}. Found {len(matches)}.')
+        return {'path':path,'entry':matches[0].index}
+
+    pages, occurrences = [], set()
+    for i,row in enumerate(manifest['pages'],1):
+        if not isinstance(row,dict):
+            raise Error('source_manifest',f'Page entry {i} must name a relative image path.')
+        occurrence = row.get('occurrence',f'p{i:06d}')
+        if not isinstance(occurrence,str) or not occurrence or occurrence in occurrences:
+            raise Error('source_manifest',f'Invalid or repeated occurrence in page entry {i}.')
+        occurrences.add(occurrence)
+        page = {**row,**member(row),'occurrence':occurrence}
+        if 'transcription' in row:
+            trans = row['transcription']
+            if not isinstance(trans,dict):
+                raise Error('source_manifest',f'Page entry {i} needs an OCR transcription path.')
+            page['transcription'] = {**trans,**member(trans)}
+        pages.append(page)
+    return manifest.get('title'),pages
+
+
 @contextmanager
 def sequence(path,source):
     if source.kind=='file':
@@ -72,6 +111,13 @@ def sequence(path,source):
             yield title,pages,lambda item:archive.open_member(indexed[item['entry']]),None
         else:
             entries = list(archive.members())
+            indexed = {item.index:item for item in entries}
+            def member(item):
+                return archive.open_member(indexed[item['entry']])
+            if source.entry is not None:
+                title,pages = archive_order(archive,entries,source.entry)
+                yield title,pages,member,None
+                return
             image_names = []
             for item in entries:
                 if item.name.startswith('__MACOSX/'):
@@ -82,21 +128,19 @@ def sequence(path,source):
                     with archive.open_member(item) as candidate:
                         if image_magic(candidate.read(16)):
                             image_names.append(item)
-            by_name = {item.name:item for item in entries}
+            by_name = {}
+            for item in entries:
+                by_name.setdefault(item.name,[]).append(item)
             pages = []
             for item in sorted(image_names,key=lambda candidate:(natural(candidate.name),candidate.index)):
                 row = {'path':item.name,'entry':item.index,'occurrence':f'm{item.index:06d}'}
-                candidates = [by_name.get(str(PurePosixPath(item.name).with_suffix(ext)))
-                              for ext in ('.alto.xml','.page.xml','.hocr','.tsv')]
-                candidates = [match for match in candidates if match]
+                candidates = [match for ext in SIDECAR_ENDINGS
+                              for match in by_name.get(str(PurePosixPath(item.name).with_suffix(ext)),[])]
                 if len(candidates)==1:
                     row['transcription'] = {'path':candidates[0].name,'entry':candidates[0].index}
                 elif candidates:
                     row['transcription_alternatives'] = [match.name for match in candidates]
                 pages.append(row)
-            indexed = {item.index:item for item in entries}
-            def member(item):
-                return archive.open_member(indexed[item['entry']])
             yield None,pages,member,None
 
 
@@ -198,7 +242,7 @@ def scan(path,source,sha,cache=None,title=None):
                                     continue
                                 words = None
                                 side = page.get('transcription')
-                                if side and not page.get('crop') and len(frames)==1:
+                                if side and not page.get('crop') and len(frames)==1 and transform['orientation']==1:
                                     try:
                                         with open_member(side) as stream:
                                             words, evidence = transcription(bounded(stream,MAX_MANIFEST),side,
@@ -208,7 +252,7 @@ def scan(path,source,sha,cache=None,title=None):
                                         entry['sidecar'] = {'member':side['path'],'status':'unresolved','reason':str(exc)}
                                 elif side:
                                     entry['sidecar'] = {'member':side['path'],'status':'unresolved',
-                                                        'reason':'Crop or multi-frame binding needs a page-specific sidecar.'}
+                                                        'reason':'Source coordinates need a qualified crop, frame or orientation binding.'}
                                 if page.get('transcription_alternatives'):
                                     entry['transcription_alternatives'] = page['transcription_alternatives']
                                 if words:
