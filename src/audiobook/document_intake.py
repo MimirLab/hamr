@@ -915,7 +915,8 @@ def read_document(path,source,sha,cache,title):
             if name(root) not in BOOK_ROOTS:
                 raise Error('unsupported_format', f'No book reader is available for XML root {name(root)!r}.')
             if is_dtbook(root):
-                read_dtbook(root,builder,PurePosixPath(title).name+path.suffix)
+                part = source.member_name or PurePosixPath(title).name+path.suffix
+                read_dtbook(root,builder,part)
             else:
                 semantic_xml(root,builder,path.name)
         elif route in ('tcr','amigaguide'):

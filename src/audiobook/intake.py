@@ -7,7 +7,7 @@ import shutil
 import tempfile
 
 from .core import Block, Document, Error, filehash, key, loadjson, writejson
-from .source_bundle import CHUNK, Source, describe, preview, stamp
+from .source_bundle import CHUNK, OPF_FOLDERS, Source, describe, preview, stamp
 
 
 def payload_document(payload):
@@ -101,10 +101,10 @@ def parse(path,source,sha,cache,title):
         from .scrivener_intake import read_scrivener
 
         return read_scrivener(path,source,sha,title)
-    if source.route=='nimas':
-        from .nimas_intake import read_nimas
+    if source.route in OPF_FOLDERS:
+        from .opf_intake import read_opf
 
-        return read_nimas(path,source,sha,title)
+        return read_opf(path,source,sha,title)
     if source.route=='rst':
         from .rst_intake import read_rst
 

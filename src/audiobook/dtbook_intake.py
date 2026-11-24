@@ -96,6 +96,8 @@ def read_dtbook(root,builder,part,*,collect_resources=False):
         literal = node.get(XML_SPACE)=='preserve' or tag.localname=='pre' or literal and node.get(XML_SPACE)!='default'
         label = str(len(annotations)+1)
         annotations[label] = {'source_file':part,'xml_path':tree.getpath(node),'lines':[node.sourceline,node.sourceline]}
+        if anchor:=item.get('id'):
+            annotations[label]['anchor'] = anchor
         item.set('data-hamr-node',label)
         def layout(text):
             return text if literal or text is None else LAYOUT_SPACE.sub(' ',text)

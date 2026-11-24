@@ -128,6 +128,14 @@ def test_zip_finds_xml_root_after_prolog_and_ignores_book_words_in_xml_comment(t
     assert doc.metadata['archive_entry']['name']=='book.xml'
     assert doc.title=='Harbor Watch'
 
+    folder = tmp_path/'documents'
+    folder.mkdir()
+    with ZipFile(target) as archive:
+        for member in archive.namelist():
+            (folder/member).write_bytes(archive.read(member))
+    loose = inspect_source(folder)
+    assert loose.title=='Harbor Watch' and loose.blocks[0].locator['source_file']=='book.xml'
+
 
 def test_moved_publication_recovers_nimas_descriptor_xml_and_assets(tmp_path,book_files):
     from test_media import prepared

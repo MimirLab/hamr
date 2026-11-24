@@ -1,4 +1,4 @@
-"""Follow an OEB package's declared DTBook spine and retain its resources."""
+"""Read metadata, spine and exact member relationships from OEB packages."""
 
 from collections import defaultdict
 from dataclasses import dataclass
@@ -32,6 +32,7 @@ class Resource:
 
 @dataclass(frozen=True)
 class Package:
+    route: str
     title: str
     language: str | None
     authors: tuple[str,...]
@@ -82,7 +83,12 @@ def package(data,part):
                         authors.append(value)
                     else:
                         contributors.append((value,role or field))
-    if not any(re.fullmatch(r'NIMAS(?:\s+1\.[01])?',value,re.I) for value in fields['format']):
+    formats = fields['format']
+    if any(re.fullmatch(r'NIMAS(?:\s+1\.[01])?',value,re.I) for value in formats):
+        route = 'nimas'
+    elif any(re.fullmatch(r'(?:ANSI/NISO\s+)?Z39\.86-(?:2002|2005)',value,re.I) for value in formats):
+        route = 'daisy3'
+    else:
         return None
     manifest = defaultdict(list)
     for item in root.findall(ns+'manifest/'+ns+'item'):
@@ -91,7 +97,7 @@ def package(data,part):
             manifest[ident].append(Resource(href,target(part,href),item.get('media-type','')))
     spine = tuple(item.get('idref','') for item in root.findall(ns+'spine/'+ns+'itemref')
                   if item.get('linear','yes')!='no')
-    return Package(next(iter(fields['title']),PurePosixPath(part).stem),
+    return Package(route,next(iter(fields['title']),PurePosixPath(part).stem),
                    next(iter(fields['language']),root.get(XML_LANG)),tuple(authors),tuple(contributors),
                    tuple(fields['identifier']),dict(manifest),spine)
 
@@ -134,11 +140,11 @@ def archive_books(archive,members):
     return books,claimed
 
 
-def capture_nimas(root,target_zip,ordinal,*,descriptor=None):
+def capture_opf(root,target_zip,ordinal,*,descriptor=None):
     names = [filename for filename,_ in folder_packages(root)]
     if descriptor is None:
         if not ordinal or not 0<ordinal<=len(names):
-            raise Error('source_changed','The selected NIMAS package disappeared before capture.')
+            raise Error('source_changed','The selected OPF package disappeared before capture.')
         descriptor = names[ordinal-1]
 
     def listed():
@@ -147,7 +153,7 @@ def capture_nimas(root,target_zip,ordinal,*,descriptor=None):
         with path.open('rb') as stream:
             data = stream.read(DESCRIPTOR_LIMIT+1)
         if len(data)>DESCRIPTOR_LIMIT or stamp(path.stat())!=before or not (parsed:=package(data,descriptor)):
-            raise Error('source_changed','The selected NIMAS package changed before capture.')
+            raise Error('source_changed','The selected OPF package changed before capture.')
         files = {descriptor:before}
         for item in parsed.resources():
             if item.target is None:
@@ -166,15 +172,15 @@ def capture_nimas(root,target_zip,ordinal,*,descriptor=None):
     return sorted(files).index(descriptor)+1
 
 
-def read_nimas(path,source,sha,title):
+def read_opf(path,source,sha,title):
     with containers(path,source.kind) as archive:
         members = list(archive.members())
         descriptor = next((member for member in members if member.index==source.entry),None)
         if descriptor is None:
-            raise Error('source_member_missing','The selected NIMAS descriptor is missing.')
+            raise Error('source_member_missing','The selected OPF descriptor is missing.')
         parsed = package(member_bytes(archive,descriptor,DESCRIPTOR_LIMIT),descriptor.name)
-        if parsed is None:
-            raise Error('source_nimas','The selected package does not declare a supported NIMAS edition.')
+        if parsed is None or parsed.route!=source.route:
+            raise Error('source_opf','The selected OPF does not declare the expected edition.')
         by_name = defaultdict(list)
         for member in members:
             by_name[member.name].append(member)
@@ -188,7 +194,21 @@ def read_nimas(path,source,sha,title):
             block.locator.update(member=descriptor.name,archive_entry=descriptor.index,
                                  location_id=key([sha,descriptor.index,block.id])[:20])
 
+        def bind_reading(block,body,occurrence):
+            block.locator.update(member=body.name,archive_entry=body.index,spine_occurrence=occurrence,
+                                 location_id=key([sha,body.index,occurrence,block.id])[:20])
+            for ref in block.locator.pop('resource_references',[]):
+                if ref['kind']!='image':
+                    continue
+                asset = records.get(target(body.name,ref['href']))
+                if asset and asset['role']=='asset':
+                    asset['status'] = 'referenced'
+                    block.links.append({'kind':'source_resource','href':ref['href'],'label':ref.get('label'),
+                                        'destinations':['source.html#resource-'+asset['location_id']]})
+
         for item in parsed.resources():
+            if item.target==descriptor.name:
+                continue
             choices = by_name.get(item.target,())
             if len(choices)==1:
                 role = 'text' if item.media==DTBOOK else 'asset'
@@ -196,11 +216,15 @@ def read_nimas(path,source,sha,title):
                 records[item.target] = {**resource,'media_type':item.media,'status':'preserved'}
             else:
                 status = 'unresolved' if item.target is None or choices else 'missing'
-                doc.inventory.append({'kind':'nimas_resource','member':item.target or item.href,'status':status,
+                doc.inventory.append({'kind':parsed.route+'_resource','member':item.target or item.href,'status':status,
                                       'media_type':item.media,'descriptor':descriptor.name})
-        if not parsed.spine:
+        if parsed.route=='daisy3':
+            from .daisy_intake import read_daisy3
+
+            read_daisy3(archive,parsed,descriptor,by_name,builder,records,scoped_issue,bind_reading)
+        elif not parsed.spine:
             scoped_issue('The NIMAS package has no authored reading order.',1)
-        for occurrence,ident in enumerate(parsed.spine,1):
+        for occurrence,ident in enumerate(parsed.spine if parsed.route=='nimas' else (),1):
             candidates = parsed.manifest.get(ident,())
             if len(candidates)!=1:
                 scoped_issue(f'NIMAS spine entry {ident!r} requires one manifest item.',occurrence)
@@ -219,16 +243,7 @@ def read_nimas(path,source,sha,title):
                 continue
             records[body.name].update(status='represented',role='text',media_type=DTBOOK)
             for block in doc.blocks[start:]:
-                block.locator.update(member=body.name,archive_entry=body.index,spine_occurrence=occurrence,
-                                     location_id=key([sha,body.index,occurrence,block.id])[:20])
-                for ref in block.locator.pop('resource_references',[]):
-                    if ref['kind']!='image':
-                        continue
-                    asset = records.get(target(body.name,ref['href']))
-                    if asset and asset['role']=='asset':
-                        asset['status'] = 'referenced'
-                        block.links.append({'kind':'source_resource','href':ref['href'],'label':ref.get('label'),
-                                            'destinations':['source.html#resource-'+asset['location_id']]})
+                bind_reading(block,body,occurrence)
         doc.title = parsed.title or doc.title
         doc.language = parsed.language or doc.language
         if parsed.authors:

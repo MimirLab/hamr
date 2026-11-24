@@ -31,7 +31,8 @@ NATIVE = {
     '.rst':'rst', '.rest':'rst',
 }
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','nimas'))
+OPF_FOLDERS = frozenset(('nimas','daisy3'))
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener')) | OPF_FOLDERS
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -168,7 +169,8 @@ def publication_folder(path):
 
 
 def directory_members(root):
-    from .nimas_intake import folder_packages
+    from .document_intake import xml_book_root
+    from .opf_intake import folder_packages
 
     declared = set()
     pages, other = [], []
@@ -176,7 +178,7 @@ def directory_members(root):
         here = Path(folder)
         if any(Path(filename).suffix.casefold()=='.opf' for filename in files):
             for descriptor,book in folder_packages(here):
-                other.append(((here/descriptor).relative_to(root).as_posix(),'nimas'))
+                other.append(((here/descriptor).relative_to(root).as_posix(),book.route))
                 declared.update((here/item.target).relative_to(root).as_posix()
                                 for item in book.resources() if item.target)
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
@@ -195,6 +197,10 @@ def directory_members(root):
             suffix = path.suffix.lower()
             if suffix in IMAGE_SUFFIXES:
                 pages.append(relative)
+            elif suffix=='.xml' and not path.is_symlink() and path.is_file():
+                with path.open('rb') as stream:
+                    if xml_book_root(stream):
+                        other.append((relative,'xml-book'))
             elif suffix not in SIDECAR_SUFFIXES and suffix in NATIVE and not path.is_symlink():
                 other.append((relative,NATIVE[suffix]))
     return sorted(pages,key=natural), sorted(other,key=lambda row:natural(row[0]))
@@ -378,13 +384,13 @@ def _describe(path,entry,format,offline):
                 ordinal = next(number for number,(ident,_) in enumerate(labels,1) if ident==selected)
             return Source(route,'directory',entry=ordinal,offline=offline)
         manifest = path/'pages.hamr.json'
-        if manifest.exists() and format!='nimas':
+        if manifest.exists() and format not in OPF_FOLDERS:
             relative_file(path,manifest.name)
             read_manifest(manifest)
             return Source('scan','directory',route_override=format,offline=offline)
         pages,books = directory_members(path)
-        if format=='nimas':
-            pages,books = [],[(name,route) for name,route in books if route=='nimas']
+        if format in OPF_FOLDERS:
+            pages,books = [],[(name,route) for name,route in books if route==format]
         inputs = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])
         selectors = {}
         for name,route in books:
@@ -402,10 +408,10 @@ def _describe(path,entry,format,offline):
             name,child = selectors.get(selection,(selection,None))
             selected = relative_path(path,name)
             result = describe(selected,entry=child,format=format,offline=offline)
-            if result.kind=='directory' and result.route=='nimas' and selected.is_file():
+            if result.kind=='directory' and result.route in OPF_FOLDERS and selected.is_file():
                 parent = selected.parent.relative_to(path)
                 return replace(result,member_name=parent.as_posix() if parent.parts else None)
-            return replace(result,member_name=name) if result.kind=='directory' else result
+            return replace(result,member_name=name) if result.kind=='directory' or result.route=='xml-book' else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
@@ -421,14 +427,14 @@ def _describe(path,entry,format,offline):
         if path.name not in names:
             raise Error('source_scrivener_binder','Choose the visible root .scrivx binder for this project.')
         return Source('scrivener','directory',entry=names.index(path.name)+1,offline=offline)
-    if path.suffix.casefold()=='.opf' and format in (None,'nimas'):
-        from .nimas_intake import folder_packages
+    if path.suffix.casefold()=='.opf' and (format is None or format in OPF_FOLDERS):
+        from .opf_intake import folder_packages
 
-        names = [filename for filename,_ in folder_packages(path.parent)]
-        if path.name in names:
-            return Source('nimas','directory',entry=names.index(path.name)+1,offline=offline)
-        raise Error('source_nimas','This OPF does not identify a supported NIMAS package.',
-                    'Open the complete EPUB for an ebook, or select a NIMAS source folder or ZIP.')
+        for ordinal,(filename,book) in enumerate(folder_packages(path.parent),1):
+            if filename==path.name and format in (None,book.route):
+                return Source(book.route,'directory',entry=ordinal,offline=offline)
+        raise Error('source_opf','This OPF does not identify a supported NIMAS or DAISY edition.',
+                    'For an EPUB, open the complete publication. For NIMAS or DAISY, supply the source folder or ZIP.')
     with path.open('rb') as stream:
         prefix = stream.read(512)
     suffix = path.suffix.lower()
@@ -459,7 +465,7 @@ def _describe(path,entry,format,offline):
 
 def _local_source(path, options, source=None):
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
-        if source.route in ('scrivener','nimas') and path.is_file():
+        if (source.route=='scrivener' or source.route in OPF_FOLDERS) and path.is_file():
             return path.parent
         return relative_path(path,source.member_name) if source.member_name else path
     if path.is_dir() and options.get('entry') not in (None,'pages') and not (path/'pages.hamr.json').exists():
@@ -602,11 +608,11 @@ def capture(path,target_dir,**options):
         prepared = capture_dependencies(local,target_dir,source)
     if prepared:
         target,source = prepared
-    elif source.kind=='directory' and source.route=='nimas':
-        from .nimas_intake import capture_nimas
+    elif source.kind=='directory' and source.route in OPF_FOLDERS:
+        from .opf_intake import capture_opf
 
         target = target_dir/'source.zip'
-        ordinal = capture_nimas(local,target,source.entry,descriptor=path.name if path.is_file() else None)
+        ordinal = capture_opf(local,target,source.entry,descriptor=path.name if path.is_file() else None)
         source = replace(source,kind='zip',entry=ordinal,member_name=None)
     elif source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if source.route=='textbundle':
