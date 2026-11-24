@@ -2,6 +2,7 @@
 import re
 import unicodedata
 from bs4 import Comment, Declaration, Doctype, NavigableString, ProcessingInstruction
+from .source_math import MATH_SPANS, mathml, speak as speak_math
 
 EMBEDDED = ('audio', 'canvas', 'embed', 'iframe', 'object', 'video')
 NON_TEXT = (Comment, Declaration, Doctype, ProcessingInstruction)
@@ -22,29 +23,6 @@ def language(node):
     for n in [node,*node.parents]:
         if hasattr(n,'get') and (value:=n.get('xml:lang') or n.get('lang')):return value
     return None
-
-
-def math_reading(node,depth=0):
-    if depth>16:raise ValueError('Math nesting exceeds the supported subset')
-    children=[c for c in node.children if getattr(c,'name',None)]
-    name=node.name
-    if name=='mn':
-        text=node.get_text()
-        return ''.join(str(unicodedata.digit(c)) if c.isdigit() else c for c in text)
-    if name=='mi':return node.get_text()
-    if name=='mo':
-        value=node.get_text().strip()
-        return {'+':'plus','−':'minus','-':'minus','=':'equals','×':'times','·':'times','/':'divided by',
-                '≥':'greater than or equal to','≤':'less than or equal to','>':'greater than','<':'less than','(':'open parenthesis',')':'close parenthesis'}.get(value,value)
-    if name in ('math','mrow','semantics','mstyle'):
-        meaningful=[c for c in children if c.name not in ('annotation','annotation-xml')]
-        return ' '.join(math_reading(c,depth+1) for c in meaningful)
-    if name in ('msup','msub','mfrac') and len(children)==2:
-        a,b=(math_reading(c,depth+1) for c in children)
-        if name=='mfrac':return 'the fraction with numerator '+a+' and denominator '+b
-        if children[0].name=='mrow':a='open parenthesis '+a+' close parenthesis'
-        return a+(' to the power of ' if name=='msup' else ' subscript ')+b
-    raise ValueError('Unsupported mathematical structure: '+name)
 
 
 def hidden(node):
@@ -160,7 +138,7 @@ def describe(node,resolve_asset=None,cover_assets=()):
         elif n.get('role')=='doc-pagebreak' or 'pagebreak' in str(n.get('epub:type','')).split():
             spans.append({**data,'kind':'pagebreak','label':n.get('aria-label') or n.get('title') or n.get_text(),'disposition':'source page lookup'})
         elif n.name=='math' and not n.find_parent('math'):
-            try:reading=math_reading(n);issue=None
+            try:reading=speak_math(mathml(n));issue=None
             except ValueError as exc:reading=None;issue=str(exc)
             spans.append({**data,'kind':'mathml','reading':reading,'issue':issue})
         elif n.name in ('sup','sub') and not any(noteref(a) or a.name=='math' for a in n.parents):
@@ -198,10 +176,10 @@ def describe(node,resolve_asset=None,cover_assets=()):
             children=[child for child in n.children if getattr(child,'name',None)]
             if len(children)==2 and children[1].name in ('mn','mi'):
                 symbol=children[1].get_text()
-                if symbol and symbol==symbol.strip() and ''.join(pieces[first_piece:]).endswith(symbol):
+                if symbol and symbol==symbol.strip() and not children[1].find(True) and ''.join(pieces[first_piece:]).endswith(symbol):
                     spans.append({'source_start':end-len(symbol),'source_end':end,'kind':'math_script',
                                   'relation':'power' if n.name=='msup' else 'index','base':children[0].get_text(),
-                                  'value':math_reading(children[1])})
+                                  'value':speak_math(mathml(children[1]))})
         if n.name=='mi' and n.find_parent('math') and n.get('intent') in ('vector',':vector'):
             spans.append({**data,'kind':'math_vector','intent':n['intent']})
         from .pronunciation import attribute
@@ -273,7 +251,7 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False):
         elif kind=='task_status' and span.get('checked') is not None:edits.append((a,a,'Checked. ' if span['checked'] else 'Unchecked. '))
         elif kind=='lexicon_hint' and span.get('reading') and not span.get('shadowed_by_inline') and not span.get('protected_overlap'):
             edits.append((a,b,span['reading']))
-        elif kind=='mathml' and span.get('reading'):edits.append((a,b,span['reading']))
+        elif kind in MATH_SPANS and span.get('reading'):edits.append((a,b,span['reading']))
         elif kind=='subscript':edits.append((a,b,' subscript '+span['source']+' '))
     # Outermost explicit math/note roles win over their nested presentation.
     selected=[]
@@ -316,6 +294,7 @@ def uncertainty(spans):
         if span['kind']=='task_status' and span.get('checked') is None:return 'Checkbox has an unresolved or mixed authored state; verify the intended reading.'
         if span['kind']=='superscript' and re.fullmatch(r'[+−-]?\d+',span['source']):
             return 'Styled superscript has no explicit mathematical or linked-note role; verify its meaning before speech.'
-        if span['kind']=='mathml' and span.get('issue'):
-            return 'Explicit MathML needs a verified reading: '+span['issue']
+        if span['kind'] in MATH_SPANS and span.get('issue'):
+            label = 'Explicit MathML' if span['kind']=='mathml' else span.get('origin','Authored equation')
+            return label+' needs a verified reading: '+span['issue']
     return None

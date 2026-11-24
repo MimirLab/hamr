@@ -2,8 +2,9 @@ from __future__ import annotations
 import re
 from .core import Document,key,Error,digest
 
-RULES='faithful-18'
-CURRENT_DELIVERY_RULES=('faithful-17',RULES)
+RULES='faithful-19'
+PROSE_SOURCE_RULES=('faithful-18',RULES)
+CURRENT_DELIVERY_RULES=('faithful-17',*PROSE_SOURCE_RULES)
 PERFORMANCE_RULES=('faithful-16',*CURRENT_DELIVERY_RULES)
 CONTEXTUAL_RULES=('faithful-14','faithful-15',*PERFORMANCE_RULES)
 SOURCE_STRUCTURE=('faithful-12','faithful-13',*CONTEXTUAL_RULES)
@@ -174,10 +175,10 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         from .pdf_table_readings import apply_glyph_aliases
         doc=apply_glyph_aliases(doc,document_policy['pdf_glyph_aliases'])
     resolver=None
-    unified_source = rule_revision==RULES
+    unified_source = rule_revision in PROSE_SOURCE_RULES
     if rule_revision in CONTEXTUAL_RULES:
         from .contextual import Resolver
-        resolver=Resolver(doc,policy,document_policy,aliases or {},unified=unified_source)
+        resolver=Resolver(doc,policy,document_policy,aliases or {},unified=unified_source,rule_revision=rule_revision)
     section_defaults={k:v for k,v in policy.items() if k not in ('document','context','context_implementation','context_review','context_review_receipt')}
     from .source_passages import (SourcePassages, chapter_at, chapter_layout,
                                   layout_disputes, prepared_paragraph, split_printed_word)
@@ -186,7 +187,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     source_positions={b.id:i for i,b in enumerate(doc.blocks)}
     from .performance import CONTEXT_VERSION
     performance_context = delivery_context or (
-        (CONTEXT_VERSION if rule_revision == RULES else 34) if automatic_prose else 1)
+        (CONTEXT_VERSION if unified_source else 34) if automatic_prose else 1)
     source_passages = SourcePassages(doc,unified=unified_source and performance_context>=35)
     join_inline_events = automatic_prose and policy.get('performance')!='off' and performance_context>=6
     dialogue_flow = rule_revision in CURRENT_DELIVERY_RULES and performance_context>=11

@@ -7,15 +7,22 @@ import io
 import json
 from pathlib import PurePosixPath
 import re
+from urllib.parse import unquote, urlsplit
 from zipfile import BadZipFile, ZipFile
 
 from bs4 import BeautifulSoup, NavigableString
 from lxml import etree
 
-from .core import Document, Error, key
+from .core import Block, Document, Error, key
+from .source_math import MATHML, MATH_SPANS, mathml, mathml_text, speak
 
 MAX_STRUCTURE = 32*1024*1024
 XML_LANG = '{http://www.w3.org/XML/1998/namespace}lang'
+ODF_DRAW = '{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}'
+ODF_TEXT = '{urn:oasis:names:tc:opendocument:xmlns:text:1.0}'
+ODF_MANIFEST = '{urn:oasis:names:tc:opendocument:xmlns:manifest:1.0}'
+XLINK_HREF = '{http://www.w3.org/1999/xlink}href'
+MATH_ROOT = '{'+MATHML+'}math'
 CONTENT_TAGS = frozenset(('p','para','simpara','title','subtitle','h','hd','heading',
                           'li','item','line','v','l','caption','blockquote','epigraph','programlisting'))
 
@@ -68,12 +75,51 @@ class DocumentBuilder:
     def issue(self,reason,where):
         return self.add('','unreadable',where,issue=reason)
 
-    def table(self,rows,where,*,headers=None,issue=None):
+    def table(self,rows,where,*,headers=None,issue=None,semantics=None):
         text = '\n'.join(' | '.join(cell for cell in row) for row in rows)
         if not text.strip(' |\n') and not issue:
             return
-        return self.add(text,'table',where,loc={'rows':rows,'table_header_cells': [
-            c for c in range(len(rows[0])) if 0 in headers] if headers is not None else None},issue=issue)
+        loc = {'rows':rows,'table_header_cells': [
+            c for c in range(len(rows[0])) if 0 in headers] if headers is not None else None}
+        if semantics:
+            loc['table_cell_semantics'] = semantics
+        return self.add(text,'table',where,loc=loc,issue=issue)
+
+
+def formula_span(raw, parse, start, origin, locator):
+    try:
+        reading, issue = speak(parse()), None
+    except ValueError as error:
+        reading, issue = None, str(error)
+    return {'kind':'formula','source_start':start,'source_end':start+len(raw),'source':raw,
+            'reading':reading,'issue':issue,'origin':origin,'source_locator':locator}
+
+
+def join_formulas(paragraphs):
+    text,spans = [],[]
+    offset = 0
+    for content,parts in paragraphs:
+        text.append(content)
+        spans.extend({**span,'source_start':span['source_start']+offset,'source_end':span['source_end']+offset}
+                     for span in parts if span['kind'] in MATH_SPANS)
+        offset += len(content)+1
+    return ' '.join(text),spans
+
+
+def formula_note(link,text,spans,issue=None):
+    from .epub_semantics import reading, uncertainty
+
+    link['text'] = text
+    if spans:
+        link['inline_semantics'] = spans
+        link['reading'] = reading(Block('',text,{'inline_semantics':spans}))
+    if problem := issue or uncertainty(spans):
+        link['issue'] = problem
+    return link
+
+
+def cell_semantics(row,column,text,spans):
+    return {'row':row,'column':column,'source':text,'spans':spans,'notes':[]}
 
 
 def html_read(data,builder):
@@ -109,8 +155,12 @@ def html_read(data,builder):
                 links.append({'kind':'note','href':href,'source_start':span['source_start'],'text':'',
                               'issue':'The cited note is unavailable in this HTML source.'})
                 continue
-            contents = target.get_text(' ',strip=True)
-            links.append({'kind':'note','href':href,'source_start':span['source_start'],'text':contents})
+            link = {'kind':'note','href':href,'source_start':span['source_start']}
+            if target.find('math'):
+                contents,parts = semantics(target)
+                links.append(formula_note(link,contents,parts))
+            else:
+                links.append({**link,'text':target.get_text(' ',strip=True)})
         block = builder.add(source,role,where,loc={'anchor':node.get('id'),'inline_semantics':spans,
                             'exact':str(node)},links=links,issue=uncertainty(spans))
         if block and (node.name == 'blockquote' or node.find_parent('blockquote') is not None):
@@ -131,13 +181,25 @@ def html_read(data,builder):
             text_node(node,'note',path)
             return
         if node.name=='table':
-            rows = [[html_text(cell).strip() for cell in line.find_all(['th','td'],recursive=False)]
-                    for line in node.find_all('tr') if line.find_parent('table') is node]
-            head = next((r for r in node.find_all('tr') if r.find_parent('table') is node),None)
-            headers = [0] if head and head.find('th',recursive=False) else []
+            lines = [line for line in node.find_all('tr') if line.find_parent('table') is node]
+            headers = [0] if lines and lines[0].find('th',recursive=False) else []
             issue = ('Complex table spans or nesting need a verified reading.' if
                      node.find('table') or node.find(attrs={'rowspan':True}) or node.find(attrs={'colspan':True}) else None)
-            builder.table(rows,path,headers=headers,issue=issue)
+            rows,entries = [],[]
+            for row,line in enumerate(lines):
+                cells = []
+                for column,cell in enumerate(line.find_all(['th','td'],recursive=False)):
+                    if cell.find('math'):
+                        source,spans = semantics(cell)
+                        if any(span['kind']=='note_reference' for span in spans):
+                            issue = issue or 'An authored table note needs a verified reading.'
+                        issue = issue or uncertainty(spans)
+                        entries.append(cell_semantics(row,column,source,spans))
+                    else:
+                        source = html_text(cell).strip()
+                    cells.append(source)
+                rows.append(cells)
+            builder.table(rows,path,headers=headers,issue=issue,semantics=entries)
             if caption:=node.find('caption',recursive=False):
                 text_node(caption,'caption',path+'/caption')
             return
@@ -278,6 +340,7 @@ def semantic_xml(root,builder,part):
 
 def docx(path,builder):
     from .epub_semantics import uncertainty
+    from .source_math import office_math, office_tag, office_text
 
     with structured_zip(path) as (read,members):
         document = xml(read('word/document.xml'))
@@ -295,7 +358,7 @@ def docx(path,builder):
                     if ident and ident not in ('-1','0'):
                         pending_notes[part[:-1]+':'+ident] = note
 
-        def paragraph(node, *, reading_note=False):
+        def paragraph(node, *, note_part=None):
             pieces,spans,links,excluded,problems = [],[],[],[],[]
             offset = 0
 
@@ -324,6 +387,13 @@ def docx(path,builder):
                         if align in ('superscript','subscript') and start<offset:
                             spans.append({'kind':align,'source_start':start,'source_end':offset})
                     return
+                if office_tag(item) in ('oMath','oMathPara'):
+                    raw = office_text(item)
+                    member = 'word/'+(note_part or 'document')+'.xml'
+                    spans.append(formula_span(raw,lambda:office_math(item),offset,'Office Math',
+                                              member+':'+item.getroottree().getpath(item)))
+                    add(raw)
+                    return
                 if tag in ('drawing','pict','object','txbxContent','oMath','oMathPara','altChunk'):
                     label = next((attr(n,'descr') for n in item.iter() if attr(n,'descr')),None)
                     if label:
@@ -332,17 +402,17 @@ def docx(path,builder):
                     else:
                         problems.append(f'Word {tag} needs a verified reading.')
                     return
-                if tag in ('footnoteReference','endnoteReference') and not reading_note:
-                    ident = tag.removesuffix('Reference')+':'+str(attr(item,'id'))
+                if tag in ('footnoteReference','endnoteReference') and not note_part:
+                    kind = tag.removesuffix('Reference')
+                    ident = kind+':'+str(attr(item,'id'))
                     href = '#'+ident
                     spans.append({'kind':'note_reference','source_start':offset,'source_end':offset,'href':href})
                     note = pending_notes.get(ident)
-                    data = (' '.join(paragraph(p,reading_note=True)[0] for p in note if name(p)=='p')
-                            if note is not None else '')
-                    link = {'kind':'note','href':href,'text':data,'source_start':offset}
-                    if not data:
-                        link['issue']='A Word note reference has no readable definition.'
-                    links.append(link)
+                    paragraphs = [paragraph(p,note_part=kind+'s') for p in note if name(p)=='p'] if note is not None else []
+                    text,parts = join_formulas((p[0],p[1]) for p in paragraphs)
+                    problem = next((p[4] for p in paragraphs if p[4]),None) if parts else None
+                    links.append(formula_note({'kind':'note','href':href,'source_start':offset},text,parts,
+                                               problem or ('A Word note reference has no readable definition.' if not text else None)))
                     return
                 if tag=='t':
                     add(item.text or '')
@@ -373,7 +443,7 @@ def docx(path,builder):
         def visit(node):
             tag = name(node)
             loc = 'word/document.xml:'+node.getroottree().getpath(node)
-            if tag=='p':
+            if tag=='p' or office_tag(node) in ('oMath','oMathPara'):
                 text,spans,links,excluded,issue = paragraph(node)
                 properties = next((n for n in node if name(n)=='pPr'),())
                 style = next((attr(n,'val') for n in properties if name(n)=='pStyle'),None) or ''
@@ -390,15 +460,23 @@ def docx(path,builder):
                 rows = []
                 heads = []
                 issue = None
-                if any(name(child) in ('gridSpan','vMerge','drawing','oMath','footnoteReference','endnoteReference')
+                if any(name(child) in ('gridSpan','vMerge','drawing','footnoteReference','endnoteReference')
                        for child in node.iter()) or any(name(child)=='tbl' for child in node.iterdescendants()):
                     issue = 'Merged cells, nested tables, notes, or visual content need a verified table reading.'
+                semantics = []
                 for row in (n for n in node if name(n)=='tr'):
                     if any(name(n)=='tblHeader' for n in row.iter()):
                         heads.append(len(rows))
-                    rows.append([' '.join(paragraph(p)[0] for p in cell if name(p)=='p')
-                                 for cell in row if name(cell)=='tc'])
-                builder.table(rows,loc,headers=heads,issue=issue)
+                    cells = []
+                    for cell in (item for item in row if name(item)=='tc'):
+                        paragraphs = [paragraph(p) for p in cell if name(p)=='p' or office_tag(p) in ('oMath','oMathPara')]
+                        text,spans = join_formulas((p[0],p[1]) for p in paragraphs)
+                        issue = issue or next((p[4] for p in paragraphs if p[4]),None)
+                        if spans:
+                            semantics.append(cell_semantics(len(rows),len(cells),text,spans))
+                        cells.append(text)
+                    rows.append(cells)
+                builder.table(rows,loc,headers=heads,issue=issue,semantics=semantics)
             elif tag in ('altChunk','object'):
                 builder.issue('The Word body refers to embedded content that must be reviewed.',loc)
             elif tag not in ('del','moveFrom','sectPr'):
@@ -410,6 +488,9 @@ def docx(path,builder):
 
 
 def odt(path,builder):
+    from .epub_semantics import uncertainty
+    from .source_bundle import safe_name
+
     with structured_zip(path) as (read,_):
         document = xml(read('content.xml'))
         meta = read('meta.xml',required=False)
@@ -423,7 +504,41 @@ def odt(path,builder):
         if any(name(n)=='changed-region' for n in body.iter()):
             builder.doc.warnings.append('Tracked change records are preserved in the original. The visible body is selected.')
 
-        def paragraph(node):
+        declared_objects = None
+
+        def object_formula(frame):
+            nonlocal declared_objects
+            if frame.tag!=ODF_DRAW+'frame' or frame.get(ODF_TEXT+'anchor-type')!='as-char':
+                return None
+            objects = [child for child in frame if child.tag==ODF_DRAW+'object']
+            if len(objects)!=1:
+                return None
+            href = objects[0].get(XLINK_HREF,'')
+            try:
+                reference = urlsplit(href)
+                if reference.scheme or reference.netloc or reference.query or reference.fragment:
+                    return None
+                directory = safe_name(unquote(reference.path).removeprefix('./').removesuffix('/'))
+            except (ValueError,Error):
+                return None
+            if declared_objects is None:
+                declared_objects = {}
+                if manifest := read('META-INF/manifest.xml',required=False):
+                    for entry in xml(manifest):
+                        if entry.tag==ODF_MANIFEST+'file-entry':
+                            member = entry.get(ODF_MANIFEST+'full-path')
+                            declared_objects[member] = (entry.get(ODF_MANIFEST+'media-type')
+                                                        if member not in declared_objects else None)
+            if declared_objects.get(directory+'/')!='application/vnd.oasis.opendocument.formula':
+                return None
+            member = directory+'/content.xml'
+            if body := read(member,required=False):
+                root = xml(body)
+                if root.tag==MATH_ROOT:
+                    return root,member
+            raise Error('source_formula','The OpenDocument formula has no readable bound MathML member.')
+
+        def paragraph(node, *, in_note=False):
             pieces,spans,links,findings = [],[],[],[]
             offset = 0
 
@@ -438,13 +553,20 @@ def odt(path,builder):
                 if tag in ('tracked-changes','deletion','annotation'):
                     return
                 if tag=='note':
+                    if in_note:
+                        findings.append('A nested OpenDocument note needs a verified reading.')
+                        return
                     locator = f'#odt-note-{offset}'
                     text_node = next((n for n in item if name(n)=='note-body'),None)
-                    text = plain_xml_text(text_node) if text_node is not None else ''
+                    paragraphs = [paragraph(p,in_note=True) for p in text_node if name(p) in ('p','h')] if text_node is not None else []
+                    text,parts = join_formulas((p[0],p[1]) for p in paragraphs)
+                    problem = next((p[3] for p in paragraphs if p[3]),None)
+                    if not parts and text_node is not None:
+                        text = plain_xml_text(text_node)
                     spans.append({'kind':'note_reference','source_start':offset,'source_end':offset,
                                   'source':'','href':locator})
-                    links.append({'kind':'note','href':locator,'source_start':offset,'text':text,
-                                  **({'issue':'OpenDocument note has no body.'} if not text else {})})
+                    links.append(formula_note({'kind':'note','href':locator,'source_start':offset},
+                                               text,parts,problem or ('OpenDocument note has no body.' if not text else None)))
                     return
                 if tag in ('s','tab','line-break'):
                     count = int(attr(item,'c') or '1')
@@ -455,7 +577,22 @@ def odt(path,builder):
                     if tag=='line-break':
                         spans.append({'kind':'line_break','source_start':start,'source_end':offset})
                     return
-                if tag in ('image','object','object-ole','frame'):
+                is_visual = tag in ('image','object','object-ole','frame')
+                formula = (item,'content.xml') if item.tag==MATH_ROOT else None
+                if tag=='frame':
+                    try:
+                        formula = object_formula(item)
+                    except Error as error:
+                        findings.append(str(error))
+                        return
+                if formula:
+                    equation,member = formula
+                    raw = mathml_text(equation)
+                    locator = member+':'+equation.getroottree().getpath(equation)
+                    spans.append(formula_span(raw,lambda:mathml(equation),offset,'OpenDocument equation',locator))
+                    add(raw)
+                    return
+                if is_visual:
                     label = next((plain_xml_text(n) for n in item.iter() if name(n) in ('desc','title')),None)
                     if label:
                         spans.append({'kind':'object_label','source_start':offset,'source_end':offset,
@@ -475,12 +612,14 @@ def odt(path,builder):
                 for part in ('source_start','source_end'):
                     if part in item:
                         item[part] = min(len(text),max(0,item[part]-left))
-            return text,spans,links,' '.join(dict.fromkeys(findings)) or None
+            for span in spans:
+                span['source'] = text[span['source_start']:span['source_end']]
+            return text,spans,links,' '.join(dict.fromkeys(findings)) or uncertainty(spans)
 
         def visit(node):
             tag = name(node)
             loc = 'content.xml:'+node.getroottree().getpath(node)
-            if tag in ('p','h'):
+            if tag in ('p','h') or node.tag==MATH_ROOT:
                 text,spans,links,issue = paragraph(node)
                 item = builder.add(text,'heading' if tag=='h' else 'body',loc,
                                    loc={'inline_semantics':[span for span in spans if span['kind']!='line_break']},
@@ -488,13 +627,13 @@ def odt(path,builder):
                 if item and any(span['kind']=='line_break' and span['source_end']>span['source_start'] for span in spans):
                     item.locator['authored_line_breaks'] = True
             elif tag=='table':
-                rows,headers = [],[]
+                rows,headers,entries = [],[],[]
                 issue = None
                 for row in (n for n in node.iter() if name(n)=='table-row'):
                     repetition = int(attr(row,'number-rows-repeated') or 1)
                     if not 0<repetition<=1000:
                         raise Error('source_structure_size','OpenDocument row repetition exceeds its reading bound.')
-                    cells = []
+                    cells,cell_formulas = [],[]
                     for cell in row:
                         if name(cell) not in ('table-cell','covered-table-cell'):
                             continue
@@ -502,15 +641,23 @@ def odt(path,builder):
                         if not 0<repeats<=1000:
                             raise Error('source_structure_size','OpenDocument cell repetition exceeds its reading bound.')
                         values = [paragraph(p) for p in cell if name(p) in ('p','h')]
-                        if any(v[2] or v[3] for v in values) or name(cell)=='covered-table-cell':
+                        if any(v[2] for v in values) or name(cell)=='covered-table-cell':
                             issue = 'Merged cells or embedded content need a verified table reading.'
-                        cells.extend([' '.join(v[0] for v in values)]*repeats)
+                        issue = issue or next((value[3] for value in values if value[3]),None)
+                        text,spans = join_formulas((p[0],p[1]) for p in values)
+                        if spans:
+                            cell_formulas.append((len(cells),repeats,text,spans))
+                        cells.extend([text]*repeats)
+                    if len(rows)+repetition>10000 or len(cells)>2000:
+                        raise Error('source_structure_size','OpenDocument table exceeds the narration budget.')
                     if any(name(parent)=='table-header-rows' for parent in row.iterancestors()):
                         headers.extend(range(len(rows),len(rows)+repetition))
+                    entries.extend(cell_semantics(index,column,text,spans)
+                                   for index in range(len(rows),len(rows)+repetition)
+                                   for start,count,text,spans in cell_formulas
+                                   for column in range(start,start+count))
                     rows.extend([cells]*repetition)
-                    if len(rows)>10000 or len(cells)>2000:
-                        raise Error('source_structure_size','OpenDocument table exceeds the narration budget.')
-                builder.table(rows,loc,headers=headers,issue=issue)
+                builder.table(rows,loc,headers=headers,issue=issue,semantics=entries)
             elif tag not in ('tracked-changes','annotation','deletion','scripts','forms'):
                 for child in node:
                     visit(child)

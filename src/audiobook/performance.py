@@ -10,6 +10,7 @@ import sys
 from .boundaries import sentence_spans
 from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
+from .source_math import MATH_SPANS
 from .source_passages import Continuation, SourcePassages, legacy_prose_scope
 
 MODES = ('auto', 'off', 'experimental')
@@ -1022,7 +1023,7 @@ def add_structural_directions(units, by_id, decisions, occurrences, disabled, di
         if occurrences[owner] != 1 or unit['text'] != normalize_space(decision['spoken']):
             continue
         has_equation = block.role=='body' and any(
-            span['kind']=='mathml' for span in block.locator.get('inline_semantics',()))
+            span['kind'] in MATH_SPANS for span in block.locator.get('inline_semantics',()))
         if block.role == 'heading':
             recipe, modes = 'heading', ('listen','study','procedure')
         elif block.role in ('table','equation') or has_equation:

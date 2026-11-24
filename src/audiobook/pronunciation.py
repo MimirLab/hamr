@@ -2,6 +2,9 @@
 import re
 from lxml import etree
 from .core import digest
+from .source_math import MATH_SPANS
+
+PROTECTED_SPANS = MATH_SPANS | {'note_reference','ruby','hidden'}
 
 
 def attribute(node,name,inherit=False):
@@ -40,7 +43,8 @@ def annotate(source,spans,entries,default_language):
             if languages:lang=min(languages,key=lambda s:s['source_end']-s['source_start'])['language']
             if not lang or not (lang.lower()==entry['language'].lower() or lang.lower().startswith(entry['language'].lower()+'-')):continue
             shadowed=any(s['kind']=='pronunciation_hint' and s['source_start']<b and s['source_end']>a for s in spans)
-            protected=any(s['kind'] in ('mathml','note_reference','ruby','hidden') and s['source_start']<b and s['source_end']>a for s in spans)
+            protected=any(s['kind'] in PROTECTED_SPANS
+                          and s['source_start']<b and s['source_end']>a for s in spans)
             result.append({'source_start':a,'source_end':b,'source':match[0],'kind':'lexicon_hint',**entry,'shadowed_by_inline':shadowed,'protected_overlap':protected})
     return result
 

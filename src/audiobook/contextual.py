@@ -283,13 +283,13 @@ class Projection:
 
 
 class Resolver:
-    def __init__(self, doc, policy, source_policy, aliases, *, unified):
+    def __init__(self, doc, policy, source_policy, aliases, *, unified, rule_revision):
         from .source_passages import reading_evidence
 
         self.doc=doc
         self.policy=policy
         self.config=context_config.effective(policy.get('context'))
-        self.implementation=context_config.implementation(unified=unified)
+        self.implementation=context_config.implementation(unified=unified,rule_revision=rule_revision)
         self.readings={block.id:reading_evidence(block,unified=unified) for block in doc.blocks}
         if policy.get('context_implementation',self.implementation)!=self.implementation:
             raise Error('context_rules_changed','The saved plan uses a different contextual reader.',

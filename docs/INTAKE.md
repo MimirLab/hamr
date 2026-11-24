@@ -21,6 +21,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | Selected old office formats | A compatible installed LibreOffice Writer can produce an ODT reading in an isolated Linux worker. Hamr keeps the exact original. |
 | LRF and unencrypted LIT ebooks | A compatible local Calibre can be reused. Hamr can acquire a pinned Linux x86-64 helper on first use. The archive is 230 MiB and the installed helper is about 906 MiB. |
 
+Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powers, subscripts, fractions and roots. Hamr preserves each equation in the original and marks ambiguous layouts for source review. Inline equations, ordinary table cells and linked notes can use the same reading.
+
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
 
 ## Page order, recovery and originals
