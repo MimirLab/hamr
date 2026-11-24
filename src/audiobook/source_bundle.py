@@ -28,9 +28,10 @@ NATIVE = {
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
     '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
+    '.rst':'rst', '.rest':'rst',
 }
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook'))
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -151,6 +152,11 @@ def publication_folder(path):
         return 'gitbook'
     if folder_book(path) is not None:
         return 'mdbook'
+    if (path/'conf.py').is_file():
+        from .sphinx_intake import folder_book as sphinx_book
+
+        if sphinx_book(path) is not None:
+            return 'sphinx'
     return 'gitbook' if folder_marker(path) else None
 
 
@@ -238,7 +244,7 @@ def zip_source(path, entry, override):
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
-                                        package_route=override if override in ('mdbook','gitbook') else None)
+                                        package_route=override if override in PACKAGE_FOLDERS-{'textbundle'} else None)
     except BadZipFile as exc:
         raise Error('unreadable_archive', 'The ZIP archive could not be read.') from exc
 
@@ -544,11 +550,16 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_mdbook(local,target,container=path)
-        else:
+        elif source.route=='gitbook':
             from .gitbook_intake import capture_gitbook
 
             target = target_dir/'source.zip'
             capture_gitbook(local,target,entry=source.entry)
+        else:
+            from .sphinx_intake import capture_sphinx
+
+            target = target_dir/'source.zip'
+            capture_sphinx(local,target)
         selected = zip_source(target,None,source.route)
         source = replace(selected,offline=source.offline,encoding=source.encoding)
     elif source.kind in ('directory','manifest'):

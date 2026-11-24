@@ -68,6 +68,7 @@ def archive_packages(archive,members,*,textpack=False):
     """Use the same publication boundaries for discovery and page sequences."""
     from .gitbook_intake import archive_spaces
     from .mdbook_intake import archive_books
+    from .sphinx_intake import archive_books as sphinx_books
     from .textbundle import archive_scopes
 
     bundles,claimed = archive_scopes(archive,members,explicit=textpack)
@@ -81,6 +82,9 @@ def archive_packages(archive,members,*,textpack=False):
     remaining = [item for item in remaining if item.index not in owned]
     books,owned = archive_books(archive,remaining)
     packages.extend(('mdbook',book.summary,book.root or book.source) for book in books)
-    spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in owned],declared=False)
+    remaining = [item for item in remaining if item.index not in owned]
+    projects,project_members = sphinx_books(archive,remaining)
+    packages.extend(('sphinx',config,book.title or book.root or 'Sphinx') for book,config in projects)
+    spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in project_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    return packages,claimed | owned | plain
+    return packages,claimed | owned | project_members | plain

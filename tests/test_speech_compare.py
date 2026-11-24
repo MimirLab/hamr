@@ -119,3 +119,9 @@ def test_unqualified_elapsed_pair_accepts_printed_fields_without_guessing_units(
     assert 'quantity' in critical(expected,'Elapsed time, 3.21.')
     assert 'quantity' in critical('Elapsed time: three minutes twenty seconds.','Elapsed time, 3.20.')
     assert 'quantity' in critical('Reference three twenty.','Reference 3.20.')
+def test_regional_spelling_does_not_create_a_word_error():
+    from audiobook.speech_compare import comparison_tokens
+
+    assert comparison_tokens('The harbour guide.')==comparison_tokens('The Harbor Guide')
+    assert comparison_tokens('The harbour guide.')!=comparison_tokens('The Harvard guide.')
+    assert comparison_tokens('Four boats entered the harbour.')!=comparison_tokens('For boats entered the harbor.')

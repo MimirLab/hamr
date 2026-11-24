@@ -158,6 +158,8 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None, note_ma
         if hidden(n):spans.append({**data,'kind':'hidden','disposition':'companion','evidence':'Explicit hidden attribute or inline visibility declaration'})
         if (note_body and n.get('role')=='doc-backlink') or (note_markup and id(n) in note_markup.backlinks):
             spans.append({**data,'kind':'hidden','disposition':'companion','evidence':'Authored return link to note reference'})
+        if note_markup and id(n) in note_markup.structural:
+            spans.append({**data,'kind':'hidden','disposition':'companion','evidence':'Renderer navigation or note label'})
         if (href:=note_target(n)) is not None:spans.append({**data,'kind':'note_reference','href':href})
         elif n.get('role')=='doc-pagebreak' or 'pagebreak' in str(n.get('epub:type','')).split():
             spans.append({**data,'kind':'pagebreak','label':n.get('aria-label') or n.get('title') or n.get_text(),'disposition':'source page lookup'})

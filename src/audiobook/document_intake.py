@@ -124,7 +124,7 @@ def cell_semantics(row,column,text,spans):
 
 
 def html_read(data,builder, *, where='html', metadata=True, fragment=None, encoding=None, collect_links=False,
-              collect_resources=False):
+              collect_resources=False, source_annotations=None, docutils=False):
     from urllib.parse import unquote
     from .epub_semantics import AUDIT_SPANS, hidden, note_container, uncertainty
     from .html_notes import RenderedNotes
@@ -133,6 +133,8 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
     from .source_notes import Definition, NoteGraph, note_text
 
     soup = BeautifulSoup(data,'html.parser',from_encoding=encoding)
+    sphinx = any(item.get('src','').split('?',1)[0].endswith('/documentation_options.js')
+                 or item.get('id')=='documentation_options' for item in soup.find_all('script'))
     for node in soup.find_all(['script','style','template','noscript']):
         node.decompose()
     if metadata and soup.title and soup.title.get_text(strip=True):
@@ -148,7 +150,13 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             body = main[0]
             builder.doc.inventory.append({'kind':'html_main','element':'#mdbook-content > main',
                                           'basis':'mdBook rendered publication region'})
-    markup = RenderedNotes(body)
+        elif sphinx:
+            main = body.select('.body[role="main"], main[role="main"], main#main-content')
+            if len(main)==1:
+                body = main[0]
+                builder.doc.inventory.append({'kind':'html_main','element':'main',
+                                              'basis':'Sphinx rendered publication region'})
+    markup = RenderedNotes(body,docutils=docutils or sphinx,sphinx=sphinx)
     if fragment:
         targets = body.find_all(lambda node: node.get('id')==fragment or
                                 node.name=='a' and node.get('name')==fragment)
@@ -196,6 +204,22 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             notes.setdefault('#'+node['id'],[]).append(Definition(block,value,issue))
 
     def visit(node,path):
+        annotation = source_annotations.get(node.get('data-hamr-node')) if (
+            source_annotations and not isinstance(node,NavigableString)) else None
+        if annotation and annotation.get('source_control'):
+            builder.add(node.get_text(' ',strip=True),'navigation',path,loc=annotation)
+            return
+        if annotation and (issue:=annotation.get('source_issue')):
+            builder.add('','unreadable',path,loc=annotation,issue=issue)
+            return
+        first = len(builder.doc.blocks)
+        visit_content(node,path)
+        if annotation:
+            for item in builder.doc.blocks[first:]:
+                for field,value in annotation.items():
+                    item.locator.setdefault(field,value)
+
+    def visit_content(node,path):
         if isinstance(node,NavigableString):
             from .epub_semantics import NON_TEXT
             if not isinstance(node,NON_TEXT):

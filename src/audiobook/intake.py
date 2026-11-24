@@ -89,6 +89,14 @@ def parse(path,source,sha,cache,title):
         from .gitbook_intake import read_gitbook
 
         return read_gitbook(path,source,sha,title)
+    if source.route=='sphinx':
+        from .sphinx_intake import read_sphinx
+
+        return read_sphinx(path,source,sha,title)
+    if source.route=='rst':
+        from .rst_intake import read_rst
+
+        return read_rst(path,source,sha,title)
     if source.route=='scan':
         from .scan_intake import scan
 
