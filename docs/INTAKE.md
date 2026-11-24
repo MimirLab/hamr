@@ -28,7 +28,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | TEI editions | Open the `.tei` or `.xml` edition, its folder, or a ZIP. Hamr reads the main text and keeps witness variants alongside the original. |
 | BITS and NCBI Bookshelf | Open a BITS book or chapter as `.bits`, `.nxml`, or `.xml`. For NCBI Bookshelf, open the source archive or extracted folder to follow its table of contents. |
 | DocBook manuals | Open a `.docbook`, `.dbk`, or `.xml` file, a source folder, or an archive. Hamr follows local chapter includes and reads the authored text, notes, descriptions, and simple tables. |
-| Palm Database books | Open recognized PalmDOC and unencrypted eReader books in `.pdb`, `.prc`, or an archive. [Palm Database intake](#palm-database-books) |
+| Palm Database books | Open recognized PalmDOC, Weasel Reader zTXT, and unencrypted eReader books in `.pdb`, `.prc`, or an archive. [Palm Database intake](#palm-database-books) |
 | Palm Markup Language | Open `.pml` files, `.pmlz` books, or a ZIP containing loose PML. The built-in reader preserves chapter order, footnotes, and sidebars. [Palm ebook intake](#palm-markup-language) |
 | FictionBook | Open `.fb2` files and ZIPs, or open a FictionBook 3 file, ZIP, or extracted publication. Hamr follows linked notes and preserves verse lines and original assets. |
 | AbiWord | Open `.abw`, `.awt`, gzip-compressed `.zabw` or `.abw.gz`, and bzip2-compressed `.bzabw` or `.abw.bz2`. The reader follows authored chapter styles and keeps linked notes, simple tables, text boxes, and illustration locations. |
@@ -75,6 +75,8 @@ hamr open path/to/book.pdb
 ```
 
 Hamr checks the book signature before selecting a reader. PalmDOC reads the whole body in saved record order and preserves its original text. Unencrypted eReader books with the 132-byte record header use the built-in Palm Markup Language reader for chapters, footnotes, and sidebars. The companion can recover the exact embedded picture or data record. The default encoding is Windows-1252. Supply `--encoding` for a file saved with a different known encoding.
+
+Weasel Reader zTXT uses the same text preparation as PalmDOC and TXT. The built-in reader handles random-access records and books stored as one continuous compressed stream. Reader bookmarks and annotations are available in the source companion. Playback starts at the beginning and reads the book body.
 
 Open a loose book or a supported member of a ZIP or TAR archive. If an eReader file uses a protected or older layout, supply a readable PML or EPUB export.
 

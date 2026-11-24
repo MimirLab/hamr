@@ -1,4 +1,4 @@
-.TH HAMR 1 "2026-11-23" "hamr 0.4.6.dev4" "User Commands"
+.TH HAMR 1 "2026-11-24" "hamr 0.4.9.dev44" "User Commands"
 .SH NAME
 hamr \- turn EPUB, PDF, Markdown and plain-text documents into local audiobooks
 .SH SYNOPSIS
@@ -167,10 +167,11 @@ folder, or an archive. Local XML includes establish the reading order.
 Authored descriptions, linked notes, and simple CALS tables are read from
 the source. Publisher variables can be resolved in a prepared edition.
 .PP
-PalmDOC and unencrypted eReader books with a 132-byte record header open from
-recognized .pdb and .prc files. PalmDOC reads the entire text stream. eReader
-follows its Palm markup, linked notes, and saved pictures. Source recovery
-can return an original ebook record or embedded PNG.
+PalmDOC, Weasel Reader zTXT, and unencrypted eReader books with a 132-byte
+record header open from recognized .pdb and .prc files. PalmDOC and zTXT
+read the entire text stream. The companion keeps zTXT reader marks and
+annotations. eReader follows its Palm markup, linked notes, and saved
+pictures. Source recovery can return an original ebook record or embedded PNG.
 .PP
 Palm Markup Language (.pml and .pmlz) follows authored chapters and links
 footnotes and sidebars to the passages that cite them. The companion retains

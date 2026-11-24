@@ -3,8 +3,7 @@ from struct import Struct
 
 from .core import Error
 from .document_intake import MAX_STRUCTURE, bounded_read
-from .palm_database import Database, Locations, text_records
-from .text_source import plain
+from .palm_database import Database, plain_record_book, text_records
 
 
 PALMDOC_HEADER = Struct('>HHIHHI')
@@ -23,20 +22,9 @@ def read_palmdoc(path,source,sha,title):
     if length>MAX_STRUCTURE:
         raise Error('source_structure_size','The decoded PalmDOC text exceeds the structured reading budget.')
     chunks = text_records(database,range(1,count+1),codec,record_limit)
-    raw = b''.join(chunk for _,chunk in chunks)
-    if len(raw)!=length:
+    if sum(len(data) for _,data in chunks)!=length:
         raise Error('source_palm_record','The PalmDOC text does not match its declared decoded length.')
-    document = plain(raw,source.encoding,fallback='cp1252')
-    document.title = database.title or title
-    document.format = 'palmdoc'
-    document.source_sha256 = sha
-    encoding = document.inventory[0]['encoding']
-    locations = Locations(chunks,encoding)
-    for block in document.blocks:
-        loc = block.locator
-        loc['source_file'] = source.member_name or path.name
-        loc['palm_records'] = locations.overlaps(loc['start'],loc['end'])
+    document = plain_record_book(database,chunks,source,path.name,title,'palmdoc')
     document.inventory.append({'kind':'palm_database','signature':'TEXtREAd','compression':codec,
                                'stored_position':position,'text_records':count,'text_bytes':length})
-    document.metadata['source_resources'] = [database.asset(index,'palm_text_record') for index,_ in chunks]
     return document

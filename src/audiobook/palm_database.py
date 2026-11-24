@@ -8,7 +8,7 @@ from .core import Error, digest, key
 from .document_intake import MAX_STRUCTURE
 
 
-BOOK_TYPES = {b'TEXtREAd':'palmdoc',b'PNRdPPrs':'ereader'}
+BOOK_TYPES = {b'TEXtREAd':'palmdoc',b'PNRdPPrs':'ereader',b'zTXTGPlm':'ztxt'}
 DIRECTORY_RECORD = Struct('>I4x')
 PALM_HEADER_SIZE = 78
 MAX_PALM_RECORD = 65535
@@ -146,6 +146,23 @@ class Locations:
             selected.append(record)
             index += 1
         return list(dict.fromkeys(selected))
+
+
+def plain_record_book(database,chunks,source,filename,title,route):
+    from .text_source import plain
+
+    document = plain(b''.join(data for _,data in chunks),source.encoding,fallback='cp1252')
+    document.title = database.title or title
+    document.format = route
+    document.source_sha256 = database.sha
+    encoding = document.inventory[0]['encoding']
+    locations = Locations(chunks,encoding)
+    for block in document.blocks:
+        locator = block.locator
+        locator['source_file'] = source.member_name or filename
+        locator['palm_records'] = locations.overlaps(locator['start'],locator['end'])
+    document.metadata['source_resources'] = [database.asset(index,'palm_text_record') for index,_ in chunks]
+    return document
 
 
 def recover(data,asset):

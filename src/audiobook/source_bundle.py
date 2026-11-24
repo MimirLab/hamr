@@ -35,7 +35,7 @@ NATIVE = {
     '.rst':'rst', '.rest':'rst',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
-PALM_ROUTES = frozenset(('palmdoc','ereader'))
+PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}

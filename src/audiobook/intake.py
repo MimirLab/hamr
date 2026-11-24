@@ -7,7 +7,7 @@ import shutil
 import tempfile
 
 from .core import Block, Document, Error, filehash, key, loadjson, writejson
-from .source_bundle import CHUNK, DEPENDENCY_SOURCES, OPF_FOLDERS, Source, describe, preview, stamp
+from .source_bundle import CHUNK, DEPENDENCY_SOURCES, OPF_FOLDERS, PALM_ROUTES, Source, describe, preview, stamp
 
 
 def payload_document(payload):
@@ -80,7 +80,7 @@ def parse(path,source,sha,cache,title):
             route = describe(member,format=source.route_override,offline=source.offline,encoding=source.encoding)
             if route.kind in ('zip-member','tar-member','libarchive-member','directory','manifest'):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
-            if route.kind=='file' and route.route in ('abiword','pml','palmdoc','ereader'):
+            if route.kind=='file' and route.route in ('abiword','pml',*PALM_ROUTES):
                 route = replace(route,member_name=entry.name)
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
             doc.source_sha256 = sha
@@ -106,6 +106,10 @@ def parse(path,source,sha,cache,title):
         from .ereader_intake import read_ereader
 
         return read_ereader(path,source,sha,title)
+    if source.route=='ztxt':
+        from .ztxt_intake import read_ztxt
+
+        return read_ztxt(path,source,sha,title)
     if source.route=='epub':
         return ADAPTERS['.epub'](path)
     if source.route=='djvu':
@@ -326,7 +330,7 @@ def capabilities():
     import platform
     import sys
     from .pdf_ocr import resident_binary
-    from .source_bundle import NATIVE, PACKAGE_FOLDERS, PALM_ROUTES
+    from .source_bundle import NATIVE, PACKAGE_FOLDERS
     from .intake_helpers import CALIBRE_BYTES,CALIBRE_UNPACKED
     from .xps_visual import available as xps_renderer_ready
 

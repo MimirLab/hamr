@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev44
+
+- Read Weasel Reader zTXT books directly or from archives. The built-in reader handles both serial and random-access compression and preserves the original text, reader bookmarks, and annotations. Weasel Reader books use the same narration preparation as ordinary text. [Palm Database books](docs/INTAKE.md#palm-database-books)
+
 # hamr 0.4.9.dev43
 
 - Read ordered-list numbers and repeated printed paragraph labels as part of the narration. Recognized Roman chapter labels stay with their headings, and the original notation remains in the companion. Lists and numbered paragraphs use the same preparation across document readers.

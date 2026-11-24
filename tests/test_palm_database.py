@@ -39,6 +39,75 @@ def ereader_header(non_text,*,compression=10,images=(0,0),footnotes=(0,0),sideba
     return bytes(header)
 
 
+def ztxt(records,length,*,version=0x012c,record_size=8192,flags=0,crc=None,marks=(),notes=()):
+    first = len(records)+1
+    bookmark_record = b''.join(pack('>I20s',*mark) for mark in marks)
+    note_index = b''.join(pack('>I20s',offset,title) for offset,title,_ in notes)
+    annotations = [note_index,*(body for _,_,body in notes)] if notes else []
+    checksum = zlib.crc32(b''.join(records)) if crc is None else crc
+    header = pack('>HHI5HBBI8x',version,len(records),length,record_size,
+                  len(marks),first if marks else 0,len(notes),first+bool(marks) if notes else 0,flags,0,checksum)
+    extras = ([bookmark_record] if marks else [])+annotations
+    return database(b'zTXTGPlm',[header,*records,*extras])
+
+
+def test_ztxt_preserves_shared_text_and_annotation_assets(tmp_path):
+    raw = 'The harbor was quiet. It’s late.\r\n\r\nThe captain came home.'.encode()
+    first = raw.index('’'.encode())+2
+    encoder = zlib.compressobj()
+    records = [encoder.compress(chunk)+encoder.flush(zlib.Z_FULL_FLUSH)
+               for chunk in (raw[:first],raw[first:])]
+    original = ztxt(records,len(raw),flags=3,marks=[(0,b'Beginning')],
+                   notes=[(first+1,b'Private reader note',b'Keep this with the source.\0')])
+    file = tmp_path/'vigil.prc'
+    file.write_bytes(original)
+    plain = tmp_path/'vigil.txt'
+    plain.write_bytes(raw)
+    archive_file = tmp_path/'shelf.zip'
+    with ZipFile(archive_file,'w') as archive:
+        archive.writestr('Books/Vigil.pdb',original)
+    expected = [row['text'] for row in plan(inspect_source(plain))['utterances']]
+    for path in (file,archive_file):
+        doc = inspect_source(path,encoding='utf-8')
+        assert doc.format=='ztxt'
+        assert [row['text'] for row in plan(doc)['utterances']]==expected
+        assert doc.blocks[0].locator['palm_records']==[1,2]
+        assert doc.blocks[1].locator['palm_records']==[2]
+        marks = doc.metadata['ztxt_reader_marks']
+        assert marks['bookmarks']==[{'title':'Beginning','text_byte_offset':0}]
+        note, = marks['annotations']
+        assert note['text_byte_offset']==first+1
+        asset = next(row for row in doc.metadata['source_resources'] if row['location_id']==note['location_id'])
+        folder = tmp_path/path.suffix[1:]
+        folder.mkdir()
+        (folder/path.name).write_bytes(path.read_bytes())
+        companion = {'original_source':path.name,'source_sha256':doc.source_sha256,
+                     'source_kind':'zip-member' if path==archive_file else 'file',
+                     'source_locations':{note['location_id']:asset}}
+        (folder/'companion.json').write_text(json.dumps(companion))
+        extracted = folder/'note.txt'
+        extract_location(folder,note['location_id'],extracted)
+        assert extracted.read_bytes()==b'Keep this with the source.\0'
+
+
+def test_ztxt_validates_both_stream_endings_and_integrity(tmp_path):
+    raw = b'The lighthouse stood watch. The crew was returning safely.'
+    data = zlib.compress(raw)
+    source = tmp_path/'test.pdb'
+    for version in (0x010a,0x012c):
+        source.write_bytes(ztxt([data[:12],data[12:]],len(raw),version=version))
+        assert inspect_source(source).blocks[0].locator['palm_records']==[1,2]
+    source.write_bytes(ztxt([data[:-1]],len(raw)))
+    with pytest.raises(Error,match='stream ending'):
+        inspect_source(source)
+    source.write_bytes(ztxt([data],len(raw),crc=1))
+    with pytest.raises(Error,match='its CRC'):
+        inspect_source(source)
+    source.write_bytes(ztxt([data],len(raw),flags=1))
+    with pytest.raises(Error,match='full-flush boundary'):
+        inspect_source(source)
+
+
 def test_bookmark_does_not_change_plain_text_or_archive_intake(tmp_path):
     raw = b'The harbour was quiet. It\x92s late.\r\n\r\nThe last lamp went out.\r\n'
     chunks = [raw[:12],raw[12:]]
