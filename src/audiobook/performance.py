@@ -13,7 +13,7 @@ from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 33
+CONTEXT_VERSION = 34
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -1381,6 +1381,18 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
             if exc.code not in ('speech_input_limit','unspeakable_text'):
                 raise
             continue
+        if (version>=34 and mode=='auto' and unit.get('delivery_boundary')=='pdf_voice_description'
+                and candidate.get('evidence',[{}])[0].get('signal')=='softened_delivery'):
+            from .quote_timing import source_spellings
+            # The compiler can expand words before the question. Match the
+            # owner again to obtain offsets in the text sent to Breeze.
+            compiled = trailing_voice_description(quotation_text(neutral,version),registry['context'],preference,version)
+            if compiled and compiled[1][0]['signal']=='softened_delivery':
+                start,stop = compiled[1][0]['quotation_spans'][0]
+                scoped = {'version':1,'direction':'softened','quotation':[start,stop]}
+                if spellings:=source_spellings((decisions[b.id] for b in blocks),include_names=True):
+                    scoped['source_spellings'] = spellings
+                unit['quote_timing'] = scoped
         candidate.update(neutral=neutral, registry_sha256=registry_sha, revision=registry['schema_version'])
         # This receipt identifies a source occurrence, independent of utterance numbering.
         candidate['id'] = candidate_id(document.source_sha256,candidate)

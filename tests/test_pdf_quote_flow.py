@@ -123,6 +123,9 @@ def test_pdf_gives_trailing_voice_description_to_the_previous_reporter(tmp_path,
     direction = unit['performance_candidate']
     assert direction['recipe']=='murmured'
     evidence, = direction['evidence']
+    scope = unit['quote_timing']
+    assert scope['direction']=='softened'
+    assert unit['text'][slice(*scope['quotation'])]=='"What now?"'
     assert evidence['block']==document.blocks[1].id
     assert tail[slice(*evidence['span'])]=='her voice had softened too'
     quote, = evidence['quotation_parts']
@@ -153,6 +156,7 @@ def test_tagged_pdf_keeps_lead_in_for_owned_voice_description(tmp_path,tags,lead
         return
     unit, = result['utterances']
     assert unit['delivery_boundary']=='tagged_pdf_voice_description'
+    assert 'quote_timing' not in unit
     assert unit['sources']==[block.id for block in document.blocks]
     evidence, = unit['performance_candidate']['evidence']
     quote, = evidence['quotation_parts']

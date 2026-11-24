@@ -516,9 +516,17 @@ def bind(store, job):
 
 def active(job, unit):
     target = unit.get('quote_timing')
-    return (target and job.get('quote_timing_models') and not unit.get('performance')
-            and performance.supports_frame_guidance(job.get('backend') or {},multiple='quotations' in target)
-            and (job.get('voice') or {}).get('reference_sha256'))
+    backend = job.get('backend') or {}
+    if not (target and job.get('quote_timing_models') and (job.get('voice') or {}).get('reference_sha256')):
+        return False
+    direction = unit.get('performance') or {}
+    if target.get('direction')=='softened':
+        return (direction.get('recipe')=='murmured' and direction.get('instruction')
+                and not any(field in direction for field in ('passage_instruction','frame_guidance',
+                                                             'narration_instruction','tuning'))
+                and supports_inline_whisper(backend))
+    return (not direction
+            and performance.supports_frame_guidance(backend,multiple='quotations' in target))
 
 
 def summarize(job, selection_for):
@@ -794,11 +802,15 @@ def decoder_take(trial, job, text, ordinary, target, quotations, instruction, sy
     if len(measured)!=len(windows) or not all(measured):
         return None,{**report,'reason':'words_or_timing_uncertain'}
     report['quote_edges_samples'] = [asdict(edges) for edges in measured]
-    report['maximum_quote_power_ratio'] = contrast = maximum_quote_power(data,measured)
+    verify_contrast = target.get('direction')!='softened'
+    if verify_contrast:
+        report['maximum_quote_power_ratio'] = contrast = maximum_quote_power(data,measured)
     if corroborated:
         report['fluid_corroborated_quotes'] = corroborated
     if not all(edges.contains(window) for edges,window in zip(measured,windows,strict=True)):
         return None,{**report,'reason':'guidance_outside_quote'}
+    if not verify_contrast:
+        return result,report
     # A scoped whisper may be voiced, but a quote louder than the reading
     # around it is a poor automatic substitution. Keep the timed fallback.
     opening = target.get('version') == OPENING_VERSION
@@ -923,6 +935,73 @@ def causal_take(checkpoint, job, text, ordinary, target, quotations, instruction
     return decoded,'decoder',reports
 
 
+def render_softened(checkpoint, job, text, seed, target, instruction, synthesize):
+    """Keep retrospective softening inside its quote, with one lower-strength retry."""
+    quotations = [target['quotation']]
+    ordinary = {'seed':seed}
+    detail = {**target,'trials':[]}
+    reason = 'timing_models_changed'
+    if verified_models(job['quote_timing_models']):
+        result,report = decoder_take(checkpoint/'decoder',job,text,ordinary,target,quotations,instruction,synthesize)
+        detail['decoder_attempt'] = report
+        if result:
+            data,receipt = result
+            return data,{**receipt,'quote_timing':{**detail,'selected':'directed','controller':'decoder'}}
+
+        reason = report['reason']
+        window = None
+        if reason=='guidance_outside_quote':
+            checked, = report['quote_edges_samples']
+            actual, = report['windows']
+            window = Edges(**checked).proposal(actual)
+            if not window:
+                reason = 'no_clear_frame_window'
+        gentler = False
+        for index in range(3):
+            if not window:
+                break
+            schedule = {'windows':[{field:window[field] for field in (
+                'start_frame','end_frame','release_frames','scale')}],'base_scale':0}
+            if any(row['schedule']==schedule for row in detail['trials']):
+                break
+            trial = checkpoint/str(index)
+            options = {**ordinary,'instruction':instruction,'narration_instruction':NARRATION_INSTRUCTION,
+                       'frame_guidance':schedule}
+            try:
+                (data,receipt),reused = checkpoint_take(trial,text,options,synthesize,'after_quote_candidate')
+            except Error as exc:
+                if exc.code not in ('frame_guidance_unavailable','frame_guidance_unconfirmed','frame_guidance_unreached'):
+                    raise
+                reason = exc.code
+                break
+            row = {'pcm_sha256':receipt['sha256'],'schedule':schedule,'checkpoint_reused':reused}
+            detail['trials'].append(row)
+            trace = receipt.get('frame_guidance') or {}
+            if any(trace.get(field)!=value for field,value in schedule.items()):
+                reason = 'guidance_scope_mismatch'
+                break
+            measured,corroborated = verified_edges(job,trial,receipt,text,quotations,target)
+            if corroborated:
+                row['fluid_corroborated_quotes'] = corroborated
+            if not measured or measured[0] is None:
+                reason = row['reason'] = 'words_or_timing_uncertain'
+                if gentler:
+                    break
+                window = {**window,'scale':window['scale']/2}
+                gentler = True
+                continue
+            edge = measured[0]
+            row['edges_samples'] = asdict(edge)
+            if edge.contains(window):
+                return data,{**receipt,'quote_timing':{**detail,'selected':'directed','controller':'frames'}}
+            reason = row['reason'] = 'guidance_outside_quote'
+            adjusted = edge.proposal(window)
+            window = {**adjusted,'scale':window['scale']} if adjusted else None
+
+    (data,receipt),_ = checkpoint_take(checkpoint/'ordinary',text,ordinary,synthesize,'after_quote_anchor')
+    return data,{**receipt,'quote_timing':{**detail,'selected':'ordinary','reason':reason}}
+
+
 def render(store, job, unit, clip, synthesize):
     """Reuse completed trials and adopt a direction only on measured speech."""
     recipe = job['quote_timing_models']
@@ -936,6 +1015,8 @@ def render(store, job, unit, clip, synthesize):
     checkpoint = root/clip
     owned_checkpoint(checkpoint)
     text, ordinary = performance.request(unit)
+    if target.get('direction')=='softened':
+        return render_softened(checkpoint,job,text,ordinary['seed'],target,ordinary['instruction'],synthesize)
     ends_in_quote = multiple and not words(text[quotations[-1][1]:])
     history = []
     reason = 'timing_models_changed'

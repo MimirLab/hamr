@@ -424,6 +424,71 @@ def test_compiled_spellings_do_not_change_neighboring_or_unlicensed_words():
     assert quote_timing.observation_spellings(observed[1:],expected,spellings) == observed[1:]
 
 
+@pytest.mark.parametrize('success',[True,False])
+def test_softened_quote_recovers_a_verified_window_or_keeps_ordinary_speech(tmp_path,monkeypatch,success):
+    passage = 'She set the letter down. “What now?” she asked him. And her voice had softened too.'
+    target = {'direction':'softened','quotation':[passage.index('“'),passage.index('”')+1]}
+    direction = {'recipe':'murmured','instruction':'Read the quoted question gently.',
+                 'cfg_scale':1,'synthesis':passage}
+    unit = {'text':passage,'performance':direction,'quote_timing':target}
+    store = Store(tmp_path/'home')
+    job = {'id':'af23456789012345','quote_timing_models':{},'backend':{},
+           'voice':{'reference_sha256':'reference'}}
+    store.path(job).mkdir()
+    frame = quote_timing.FRAME
+    native = {'scope':1,'start_frame':3,'end_frame':10,'release_frames':0}
+    requests = []
+
+    def synthesize(text,options):
+        assert text==passage
+        requests.append(options)
+        data = bytes([len(requests),0])*(14*frame)
+        receipt = {'sha256':digest(data),'samples':len(data)//2}
+        if scopes:=options.get('quote_guidance'):
+            receipt['quote_guidance'] = {'windows':[native],'scopes':scopes}
+        if schedule:=options.get('frame_guidance'):
+            receipt['frame_guidance'] = schedule
+        return data,receipt
+
+    def measure(recipe,trial,receipt,text,quotations,spellings):
+        assert text==passage and quotations==[target['quotation']]
+        observed = {
+            'decoder':quote_timing.Edges(3*frame,4*frame,11*frame,11*frame),
+            '0':None,
+            '1':quote_timing.Edges(3*frame,4*frame,9*frame,10*frame) if success else None,
+            '2':quote_timing.Edges(3*frame,4*frame,9*frame,10*frame),
+        }
+        return [observed[trial.name]],[]
+
+    def interrupt(stage):
+        if stage=='after_quote_candidate':
+            raise InterruptedError
+
+    monkeypatch.setattr(quote_timing,'supports_inline_whisper',lambda backend:True)
+    monkeypatch.setattr(quote_timing.performance,'supports_narration_conditioning',lambda backend:True)
+    monkeypatch.setattr(quote_timing,'verified_models',lambda recipe:True)
+    monkeypatch.setattr(quote_timing,'measure_take',measure)
+    monkeypatch.setattr(quote_timing,'fault',interrupt)
+    assert quote_timing.active({**job,'quote_timing_models':{'worker':'worker'}},unit)
+    explicit = {**unit,'performance':{**direction,'passage_instruction':direction['instruction']}}
+    assert not quote_timing.active({**job,'quote_timing_models':{'worker':'worker'}},explicit)
+    with pytest.raises(InterruptedError):
+        quote_timing.render(store,job,unit,'a'*64,synthesize)
+    monkeypatch.setattr(quote_timing,'fault',lambda stage:None)
+    data,receipt = quote_timing.render(store,job,unit,'a'*64,synthesize)
+    report = receipt['quote_timing']
+    assert report['decoder_attempt']['checkpoint_reused'] and report['trials'][0]['checkpoint_reused']
+    windows = [row['schedule']['windows'][0] for row in report['trials']]
+    assert [(w['start_frame'],w['end_frame'],w['scale']) for w in windows[:2]] == [(3,11,1.5),(3,11,.75)]
+    assert data[0]==4 and len(requests)==4
+    if success:
+        assert report['selected']=='directed' and report['controller']=='frames'
+        assert (windows[2]['start_frame'],windows[2]['end_frame'],windows[2]['scale'])==(3,9,.75)
+    else:
+        assert report['selected']=='ordinary' and report['reason']=='words_or_timing_uncertain'
+        assert requests[-1]=={'seed':42}
+
+
 def test_source_spelling_can_normalize_an_exact_prefix_without_hiding_extra_words():
     expected = ['doctor','hale','shone','the','lamp']
     spellings = [[0,'dr','doctor']]
