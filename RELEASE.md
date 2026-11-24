@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev35
+
+- Searchable PDFs and scans can read simple borderless tables with aligned headings and repeated numeric or date columns. Detected tables with competing grouped readings appear at their page location in source review. Native PDF extraction caches follow updates to the table reader. [Table intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev34
 
 - Searchable PDFs and scanned pages can read tables with a visible grid, including merged cells. The companion keeps each cell's page and glyph or OCR location. Hamr checks possible OCR border characters against a separate crop of the cell. [Table intake](docs/INTAKE.md#source-readers)

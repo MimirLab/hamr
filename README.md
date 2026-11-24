@@ -99,7 +99,7 @@ Word documents can read editable text boxes in their authored story order. Their
 
 Merged and nested tables in Word, OpenDocument, HTML, EPUB and supported tagged PDFs can read with their authored headers and original cell order. Hamr can join a tagged table across pages, keeping one copy of each value and skipping repeated print headings. [Table intake](docs/INTAKE.md#source-readers)
 
-Searchable PDFs and scanned pages can also read tables whose printed grid establishes the cells and their order, including merged cells. Each cell points back to its place on the original page. [Table intake](docs/INTAKE.md#source-readers)
+Searchable PDFs and scanned pages can also read tables whose printed grid or repeated alignment establishes the cells and their order. Each cell points back to its place on the original page. [Table intake](docs/INTAKE.md#source-readers)
 
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 

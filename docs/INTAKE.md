@@ -45,7 +45,9 @@ Word, OpenDocument, HTML, EPUB and supported tagged PDFs use the same reading fo
 
 In a tagged PDF, Hamr matches table tags to visible text, follows the same table across pages, and keeps verified repeated print headers in the companion. Each reconstructed cell retains its original page and glyph ranges. When ownership cannot be established, the plan reports that it used the visible reading.
 
-In a searchable PDF or scan, visible intersecting rules can establish cell boundaries and merged positions. Hamr reads those cells in order and keeps the native glyph or OCR locations. A recognized grid with competing cell assignments points to the table in source review. Borderless tables and layouts without enough visible rules still use the ordinary page reading. Use the plan to check whether their values need a different reading.
+In a searchable PDF or scan, visible intersecting rules can establish cell boundaries and merged positions. Repeated alignment can also establish simple borderless tables with distinguishable headings and consistent number or date columns. Hamr reads these cells in order and keeps the native glyph or OCR locations.
+
+When grouped labels or incomplete boundaries leave competing cell assignments, source review points to the affected table and retains its visible rows. Other ambiguous layouts can still use the ordinary page reading. Use the plan to check the reading where the page alone gives little structural evidence.
 
 Structured XML such as JATS can supply the same readings through one authored MathML rendition. Hamr keeps the other renditions in the original article.
 

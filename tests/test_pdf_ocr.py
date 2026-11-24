@@ -144,6 +144,7 @@ def test_ocr_pipe_needs_prose_and_a_matching_glyph(connector,stem,bar_bottom,exp
 
 
 def test_native_cache_does_not_probe_ocr(tmp_path,monkeypatch):
+    from audiobook import intake
     from audiobook.importers import ADAPTERS, cached_inspect
 
     source=tmp_path/'Native.pdf'
@@ -166,6 +167,15 @@ def test_native_cache_does_not_probe_ocr(tmp_path,monkeypatch):
     second=cached_inspect(source,cache)
     assert first.json()==second.json()
     assert calls == [1]
+
+    digest = intake.filehash
+
+    def changed_table_reader(path):
+        return '0'*64 if path.name=='visual_table_alignment.py' else digest(path)
+
+    monkeypatch.setattr(intake,'filehash',changed_table_reader)
+    assert cached_inspect(source,cache).json()==first.json()
+    assert calls == [1,1]
 
 
 def test_authored_decorative_raster_bypasses_ocr(monkeypatch):

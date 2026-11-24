@@ -361,7 +361,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 marker = resolver.table_ditto(b,block_chapter,block_chapter_id) if resolver else None
                 text,cells,prepared_spans,table_issue = grid_for_speech(b,note_policy,table_context,marker=marker)
                 prepared_text = text
-                reason = ('Read the cells in the order established by the printed grid.' if b.locator.get('table_evidence')
+                reason = ('Read the cells in the order established by the printed layout.' if b.locator.get('table_evidence')
                           else 'Read each authored table cell with its verified labels in source order.')
                 if table_issue:
                     action,reason,text,cells = 'unreadable',table_issue,'',()

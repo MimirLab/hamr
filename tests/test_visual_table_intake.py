@@ -4,6 +4,7 @@ from PIL import Image, ImageDraw
 from reportlab.pdfgen.canvas import Canvas
 
 from audiobook.importers import pdf
+from audiobook.planner import plan
 from audiobook.visual_table_intake import visual_ocr_parts
 
 
@@ -65,3 +66,58 @@ def test_scan_rule_glyph_requires_a_separate_matching_cell_observation():
         assert 'vertical table border' in result[1]['issue']
         assert '||Wind' in result[1]['text'].replace(' ','')
         assert not result[0]['issue'] and not result[2]['issue']
+
+
+def borderless_pdf(draws):
+    data = BytesIO()
+    canvas = Canvas(data,pagesize=(430,320),invariant=True)
+    for x,y,text in draws:
+        canvas.drawString(x,y,text)
+    canvas.save()
+    return pdf(data.getvalue())
+
+
+def test_repeated_typed_columns_use_the_same_narration_as_authored_cells():
+    rows = [
+        ('Landing','Arrivals','Departures'),
+        ('River pier','9','12'),
+        ('West platform','14','8'),
+        ('Island dock','19','10'),
+    ]
+    draws = [(x,y,text) for y,row in zip((220,193,166,139),rows)
+             for x,text in zip((55,174,290),row)]
+    document = borderless_pdf([(32,274,'The ferry log follows.'),*draws,(32,95,'The log is closed.')])
+    before,table,after = document.blocks
+    assert (before.source,after.source)==('The ferry log follows.','The log is closed.')
+    assert table.issue is None
+    assert table.locator['rows']==[list(row) for row in rows]
+    assert all(cell['location']['native_ranges'] for cell in table.locator['table_grid']['cells'])
+    speech = ' '.join(u['text'] for u in plan(document)['utterances'])
+    assert 'Landing: West platform. Arrivals: 14. Departures: 8.' in speech
+
+
+def test_aligned_prose_columns_do_not_infer_table_labels_or_pause_the_book():
+    draws = [(x,y,text) for y,pair in zip((255,236,217,198,179),[
+        ('Winter roads','At the station'),
+        ('The first plow arrived.', 'Trains left on time.'),
+        ('A second one followed.', 'The coffee was good.'),
+        ('Salt was low.', 'A child waved goodbye.'),
+        ('A storm was brewing.', 'Snow fell before dawn.'),
+    ]) for x,text in zip((35,245),pair)]
+    document = borderless_pdf(draws)
+    assert len(document.blocks)==10
+    assert all(b.role=='body' and not b.issue for b in document.blocks)
+    assert all(word in ' '.join(b.source for b in document.blocks)
+               for word in ('Salt was low.', 'A child waved goodbye.'))
+
+
+def test_missing_gaps_do_not_turn_adjacent_values_into_one_numeric_cell():
+    rows = [
+        ('Landing','Arrivals','Departures'),
+        ('River pier','6 12','3 9'),
+        ('West platform','9 27','4 8'),
+        ('Island dock','4 23','6 8'),
+    ]
+    document = borderless_pdf([(x,y,text) for y,row in zip((220,193,166,139),rows)
+                               for x,text in zip((55,174,290),row)])
+    assert all(not b.locator.get('table_grid') for b in document.blocks)

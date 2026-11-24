@@ -1,12 +1,13 @@
-"""Bind source observations to the common ruled-table projection."""
+"""Bind source observations to the common visual table projection."""
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from itertools import pairwise
 from statistics import median
 import math
 import re
 
 from .pdf_layout import paragraphs
+from .visual_table_alignment import aligned_tables
 from .visual_table_grid import Token, raster_rules, ruled_tables
 
 
@@ -20,30 +21,39 @@ def observation_rect(rect, top):
     return left,top-high,right,top-bottom
 
 
-def read_tables(image, tokens, locate, read_cell):
+def read_tables(image, tokens, baseline, locate, read_cell):
     heights = [token.rect[3]-token.rect[1] for token in tokens if token.text.strip()]
     if len(heights)<4:
         return []
-    size = median(heights)
-    horizontal,vertical = raster_rules(image,size)
-    return ruled_tables(horizontal,vertical,tokens,locate,read_cell,max(1.5,.22*size))
+    ruled = []
+    if image is not None:
+        size = median(heights)
+        horizontal,vertical = raster_rules(image,size)
+        ruled = ruled_tables(horizontal,vertical,tokens,locate,read_cell,max(1.5,.22*size))
+    occupied = set().union(*(claim for claim,_ in ruled))
+    rest = [token for token in tokens if token.key not in occupied]
+    # The taller boxes better represent line height than punctuation and
+    # lowercase x-height when estimating gaps from text without rules.
+    line_height = sorted(heights)[3*len(heights)//4]
+    return ordered_tables(ruled+aligned_tables(rest,baseline,line_height,locate,read_cell),tokens)
 
 
 def ordered_tables(tables, tokens):
     """Only splice tables that have an independent place in the page flow."""
     if not tables:
         return []
-    owned = set().union(*(claim for claim,_ in tables))
-    if len(owned)!=sum(len(claim) for claim,_ in tables):
-        return []
+    count = Counter(key for claim,_ in tables for key in claim)
+    by_key = {token.key:token for token in tokens}
+    result = []
     # A side-by-side article and table need a separate reading-order witness.
     # Leave that page on its established flow path.
-    for claim,_ in tables:
-        top = min(t.rect[1] for t in tokens if t.key in claim)
-        bottom = max(t.rect[3] for t in tokens if t.key in claim)
-        if any(t.key not in claim and t.rect[1]<bottom and t.rect[3]>top for t in tokens):
-            return []
-    return tables
+    for claim,table in tables:
+        top = min(by_key[key].rect[1] for key in claim)
+        bottom = max(by_key[key].rect[3] for key in claim)
+        if (not any(count[key]>1 for key in claim)
+                and not any(t.key not in claim and t.rect[1]<bottom and t.rect[3]>top for t in tokens)):
+            result.append((claim,table))
+    return result
 
 
 def visual_ocr_parts(image, words, page, width, height, *, format, scale, region, read_crop):
@@ -68,7 +78,7 @@ def visual_ocr_parts(image, words, page, width, height, *, format, scale, region
     for index,item in enumerate(words):
         x,y,w,h = map(int,item[6:10])
         tokens.append(Token(index,item[11],(x,y,x+w,y+h)))
-    tables = ordered_tables(read_tables(image,tokens,locate,read_cell),tokens)
+    tables = read_tables(image,tokens,lambda t:(t.rect[1]+t.rect[3])/2,locate,read_cell)
     if not tables:
         return None
     pending = set(range(len(words)))
@@ -113,11 +123,16 @@ def native_parts(page, textpage, glyphs, number, width, height):
     from .pdf_tagged_tables import ranges
     from .pdf_visual import raster, SCALE
 
-    if not next(page.get_objects(filter=[raw.FPDF_PAGEOBJ_PATH]),None):
-        return []
-
     def locate(rect):
         return {'format':'pdf','page':number,'rect':bottom_up(rect,0,height,SCALE)}
+
+    y_positions = {}
+
+    def baseline(token):
+        if token.key not in y_positions:
+            origin = glyph_baseline(textpage,token.key,0,height-token.rect[3]/SCALE)
+            y_positions[token.key] = (height-origin)*SCALE
+        return y_positions[token.key]
 
     def read_cell(owned, bounds):
         # Keep each glyph's original index. PDFium's inserted separators
@@ -125,14 +140,14 @@ def native_parts(page, textpage, glyphs, number, width, height):
         lines = defaultdict(list)
         measures = []
         for token in owned:
-            baseline = glyph_baseline(textpage,token.key,0,height-token.rect[3]/SCALE)
-            lines[round(baseline*2)/2].append(token)
-            measures.append((token,baseline,raw.FPDFText_GetFontSize(textpage,token.key)))
+            y = baseline(token)/SCALE
+            lines[round(y*2)/2].append(token)
+            measures.append((token,y,raw.FPDFText_GetFontSize(textpage,token.key)))
         scripts = any(min(size,next_size)<.85*max(size,next_size) and .8<=abs(y-next_y)<.65*max(size,next_size)
                       and abs(other.rect[0]-token.rect[2])<SCALE*max(size,next_size)
                       for (token,y,size),(other,next_y,next_size) in pairwise(sorted(measures,key=lambda m:m[0].key)))
         pieces = []
-        for _,line in sorted(lines.items(),reverse=True):
+        for _,line in sorted(lines.items()):
             last = None
             text = ''
             for token in sorted(line,key=lambda t:(t.rect[0],t.key)):
@@ -148,9 +163,12 @@ def native_parts(page, textpage, glyphs, number, width, height):
 
     tokens = [Token(index,ch,tuple(point*SCALE for point in observation_rect(rect,height)))
               for ch,rect,index in glyphs if ch.strip()]
-    try:
-        picture = raster(page,[0,0,width,height])
-    except Error:
-        return []
-    with picture:
-        return ordered_tables(read_tables(picture,tokens,locate,read_cell),tokens)
+    if next(page.get_objects(filter=[raw.FPDF_PAGEOBJ_PATH]),None):
+        try:
+            picture = raster(page,[0,0,width,height])
+        except Error:
+            picture = None
+        if picture is not None:
+            with picture:
+                return read_tables(picture,tokens,baseline,locate,read_cell)
+    return read_tables(None,tokens,baseline,locate,read_cell)
