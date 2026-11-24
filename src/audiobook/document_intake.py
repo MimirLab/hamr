@@ -93,7 +93,7 @@ class DocumentBuilder:
         from .importers import block
 
         text = text.strip()
-        if not (text or issue or loc and loc.get('inline_semantics')):
+        if not (text or issue or loc and (loc.get('inline_semantics') or loc.get('table_grid'))):
             return
         ordinal = len(self.doc.blocks)+1
         if role=='heading' and text:
@@ -118,6 +118,13 @@ class DocumentBuilder:
         if semantics:
             loc['table_cell_semantics'] = semantics
         return self.add(text,'table',where,loc=loc,issue=issue)
+
+    def grid(self,grid,where,*,loc=None):
+        from .table_grid import passages, source_rows, source_text
+
+        text = source_text(grid)
+        if text or grid['issue'] or any(part['spans'] for part in passages(grid)):
+            return self.add(text,'table',where,loc={**(loc or {}),'table_grid':grid,'rows':source_rows(grid)},issue=grid['issue'])
 
 
 def formula_span(raw, parse, start, origin, locator):
@@ -240,11 +247,16 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             if span['kind']=='note_reference' and (span.get('href') or '').startswith('#'):
                 span['target_href'] = unquote(span['href'])
 
-    def annotated_semantics(node,*,note_body=False):
-        source,spans = semantics(node,note_markup=markup,note_body=note_body,projected=projected)
+    def annotated_semantics(node,*,note_body=False,children=None):
+        source,spans = semantics(node,note_markup=markup,note_body=note_body,projected=projected,children=children)
         if inline_locations:
+            from bs4 import Tag
+
+            anchors = (node.find_all('a') if children is None else
+                       [anchor for child in children if isinstance(child,Tag)
+                        for anchor in ([child] if child.name=='a' else child.find_all('a'))])
             markers = [(tag.get('href') or '',inline_locations[id(tag)])
-                       for tag in node.find_all('a') if id(tag) in inline_locations]
+                       for tag in anchors if id(tag) in inline_locations]
             notes = [span for span in spans if span['kind']=='note_reference']
             if len(markers)==len(notes) and all(href==span['href'] for (href,_),span in zip(markers,notes)):
                 for (_,location),span in zip(markers,notes):
@@ -322,6 +334,20 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                         else:
                             visit(cell,where)
                 return
+            from .html_table import read_grid, requires_grid
+
+            if requires_grid(node):
+                ranks = {id(tag):rank for rank,tag in enumerate(node.descendants)}
+                def read_cell(owner,children):
+                    source,spans = annotated_semantics(owner,children=children)
+                    local_notes(spans)
+                    return source,spans,source_issue(spans)
+                def locate(owner):
+                    return {'element':path,'table_dom_rank':ranks[id(owner)],
+                            **({'anchor':owner['id']} if owner.get('id') else {})}
+                block = builder.grid(read_grid(node,read_cell,locate),path)
+                preserve_resources(block,node)
+                return
             headers = [0] if lines and lines[0].find('th',recursive=False) else []
             issue = ('Complex table spans or nesting need a verified reading.' if
                      node.find('table') or node.find(attrs={'rowspan':multiple_cells}) or
@@ -365,6 +391,12 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
     for block in builder.doc.blocks[start:]:
         block.links.extend(graph.links_for(block.locator.get('inline_semantics',()),follow=block.role!='note'))
         if cells:=block.locator.get('table_cell_semantics'):
+            graph.bind_cells(cells)
+            block.links.extend(link for cell in cells for link in cell['notes'])
+        if grid:=block.locator.get('table_grid'):
+            from .table_grid import passages
+
+            cells = list(passages(grid))
             graph.bind_cells(cells)
             block.links.extend(link for cell in cells for link in cell['notes'])
 
@@ -571,6 +603,7 @@ def semantic_xml(root,builder,part):
 def odt(path,builder):
     from .epub_semantics import uncertainty
     from .source_bundle import safe_name
+    from .table_grid import Grid, count, join_passages, simple_matrix
 
     with structured_zip(path) as (read,_):
         document = xml(read('content.xml'))
@@ -637,7 +670,7 @@ def odt(path,builder):
                     if in_note:
                         findings.append('A nested OpenDocument note needs a verified reading.')
                         return
-                    locator = f'#odt-note-{offset}'
+                    locator = '#odt-note-'+key(item.getroottree().getpath(item))[:16]
                     text_node = next((n for n in item if name(n)=='note-body'),None)
                     paragraphs = [paragraph(p,in_note=True) for p in text_node if name(p) in ('p','h')] if text_node is not None else []
                     text,parts = join_formulas((p[0],p[1]) for p in paragraphs)
@@ -646,8 +679,11 @@ def odt(path,builder):
                         text = plain_xml_text(text_node)
                     spans.append({'kind':'note_reference','source_start':offset,'source_end':offset,
                                   'source':'','href':locator})
-                    links.append(formula_note({'kind':'note','href':locator,'source_start':offset},
-                                               text,parts,problem or ('OpenDocument note has no body.' if not text else None)))
+                    link = formula_note({'kind':'note','href':locator,'reference_href':locator,'source_start':offset,
+                                         'source_locator':{'source_file':'content.xml','xml_path':item.getroottree().getpath(item)}},
+                                        text,parts,problem or ('OpenDocument note has no body.' if not text else None))
+                    link.setdefault('reading',text)
+                    links.append(link)
                     return
                 if tag in ('s','tab','line-break'):
                     count = int(attr(item,'c') or '1')
@@ -697,6 +733,76 @@ def odt(path,builder):
                 span['source'] = text[span['source_start']:span['source_end']]
             return text,spans,links,' '.join(dict.fromkeys(findings)) or uncertainty(spans)
 
+        def table_rows(node,header=False):
+            for child in node:
+                tag = name(child)
+                if tag=='table-row':
+                    yield child,header
+                elif tag in ('table-row-group','table-rows','table-header-rows'):
+                    yield from table_rows(child,header or tag=='table-header-rows')
+
+        def table_content(node):
+            for child in node:
+                kind = name(child)
+                if kind in ('list','list-item','list-header','numbered-paragraph','section'):
+                    yield from table_content(child)
+                elif kind in ('table','p','h','frame','image','object','object-ole') or child.tag==MATH_ROOT:
+                    yield child
+
+        def table(node):
+            grid = Grid()
+            for row,header in table_rows(node):
+                repeats = count(attr(row,'number-rows-repeated'),maximum=1000)
+                authored = []
+                for cell in row:
+                    tag = name(cell)
+                    if tag not in ('table-cell','covered-table-cell'):
+                        continue
+                    loc = {'source_file':'content.xml','xml_path':cell.getroottree().getpath(cell)}
+                    copies = count(attr(cell,'number-columns-repeated'),maximum=1000)
+                    columns = count(attr(cell,'number-columns-spanned'))
+                    rows = count(attr(cell,'number-rows-spanned'),maximum=10000)
+                    parts, paragraphs, locations = [],[],[]
+
+                    def flush():
+                        part = join_passages(paragraphs)
+                        if part['source'] or part['spans']:
+                            part['location'] = locations[0] if len(locations)==1 else loc
+                            if len(locations)>1:
+                                part['source_members'] = locations.copy()
+                            parts.append(part)
+                        paragraphs.clear()
+                        locations.clear()
+
+                    if tag=='table-cell':
+                        for child in table_content(cell):
+                            if name(child)=='table':
+                                flush()
+                                parts.append({'table':table(child)})
+                            else:
+                                source,spans,links,issue = paragraph(child)
+                                if issue:
+                                    grid.issue(issue)
+                                if source or spans:
+                                    paragraphs.append((source,spans,links))
+                                    locations.append({'source_file':'content.xml','xml_path':child.getroottree().getpath(child)})
+                        flush()
+                    authored.append((tag,loc,copies,columns,rows,parts))
+                for row_repeat in range(repeats):
+                    grid.begin_row()
+                    for tag,loc,copies,columns,rows,parts in authored:
+                        for cell_repeat in range(copies):
+                            location = {**loc,'row_repeat':row_repeat,'cell_repeat':cell_repeat}
+                            start = grid.column
+                            if tag=='covered-table-cell':
+                                grid.cover(location)
+                            else:
+                                grid.place(parts,location,columns=columns,rows=rows,role='column' if header else 'data')
+                                # ODF serializes covered cells explicitly.
+                                grid.column = start+1
+                    grid.end_row()
+            return grid.finish()
+
         def visit(node):
             tag = name(node)
             loc = 'content.xml:'+node.getroottree().getpath(node)
@@ -708,37 +814,12 @@ def odt(path,builder):
                 if item and any(span['kind']=='line_break' and span['source_end']>span['source_start'] for span in spans):
                     item.locator['authored_line_breaks'] = True
             elif tag=='table':
-                rows,headers,entries = [],[],[]
-                issue = None
-                for row in (n for n in node.iter() if name(n)=='table-row'):
-                    repetition = int(attr(row,'number-rows-repeated') or 1)
-                    if not 0<repetition<=1000:
-                        raise Error('source_structure_size','OpenDocument row repetition exceeds its reading bound.')
-                    cells,cell_formulas = [],[]
-                    for cell in row:
-                        if name(cell) not in ('table-cell','covered-table-cell'):
-                            continue
-                        repeats = int(attr(cell,'number-columns-repeated') or 1)
-                        if not 0<repeats<=1000:
-                            raise Error('source_structure_size','OpenDocument cell repetition exceeds its reading bound.')
-                        values = [paragraph(p) for p in cell if name(p) in ('p','h')]
-                        if any(v[2] for v in values) or name(cell)=='covered-table-cell':
-                            issue = 'Merged cells or embedded content need a verified table reading.'
-                        issue = issue or next((value[3] for value in values if value[3]),None)
-                        text,spans = join_formulas((p[0],p[1]) for p in values)
-                        if spans:
-                            cell_formulas.append((len(cells),repeats,text,spans))
-                        cells.extend([text]*repeats)
-                    if len(rows)+repetition>10000 or len(cells)>2000:
-                        raise Error('source_structure_size','OpenDocument table exceeds the narration budget.')
-                    if any(name(parent)=='table-header-rows' for parent in row.iterancestors()):
-                        headers.extend(range(len(rows),len(rows)+repetition))
-                    entries.extend(cell_semantics(index,column,text,spans)
-                                   for index in range(len(rows),len(rows)+repetition)
-                                   for start,count,text,spans in cell_formulas
-                                   for column in range(start,start+count))
-                    rows.extend([cells]*repetition)
-                builder.table(rows,loc,headers=headers,issue=issue,semantics=entries)
+                grid = table(node)
+                if matrix:=simple_matrix(grid):
+                    rows,headers,entries = matrix
+                    builder.table(rows,loc,headers=headers,semantics=entries)
+                else:
+                    builder.grid(grid,loc)
             elif tag not in ('tracked-changes','annotation','deletion','scripts','forms'):
                 for child in node:
                     visit(child)

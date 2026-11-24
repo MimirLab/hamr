@@ -39,7 +39,9 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 
 Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powers, subscripts, fractions and roots. Hamr preserves each equation in the original and marks ambiguous layouts for source review. Inline equations, ordinary table cells and linked notes can use the same reading.
 
-In Word, each editable text box keeps its exact XML location. Unresolved links between boxes, merged or nested Word tables, and drawings without a readable text story or description may need source review.
+In Word, each editable text box keeps its exact XML location. Unresolved links between boxes and drawings without a readable text story or description may need source review.
+
+Word, OpenDocument, HTML and EPUB use the same reading for supported merged and nested table cells. Hamr reads a merged value once, follows nested tables between the surrounding passages, and uses the headers that apply to each value. The companion retains original cell locations and distinguishes a covered position, a missing position, and an authored empty cell. Conflicting geometry or missing authored header targets appear in source review. Printed table geometry still depends on the source PDF or scan.
 
 Structured XML such as JATS can supply the same readings through one authored MathML rendition. Hamr keeps the other renditions in the original article.
 

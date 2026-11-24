@@ -2,11 +2,12 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from .document_intake import (attr, cell_semantics, formula_span, multiple_cells, name,
+from .document_intake import (attr, formula_span, name,
                               plain_xml_text, structured_zip, xml)
 from .epub_semantics import uncertainty
 from .source_math import office_math, office_tag, office_text
 from .source_notes import Definition, NoteGraph, note_text
+from .table_grid import Grid, count, passage, passages, simple_matrix
 from .word_stories import ALTERNATE, MISSING_BRANCH, TEXTBOX, Stories, branch, enabled, excluded_kind, properties, visible
 
 
@@ -17,6 +18,7 @@ class Paragraph:
     excluded: list = field(default_factory=list)
     issue: str | None = None
     stories: list = field(default_factory=list)
+    location: dict | None = None
 
 
 def join_paragraphs(paragraphs, *, note=False):
@@ -47,6 +49,14 @@ def table_members(node,tag):
             yield from table_members(child,tag)
         elif child.tag==ALTERNATE and (selected:=branch(child)) is not None:
             yield from table_members(selected,tag)
+
+
+def setting(node,group,key,default=None):
+    return next((attr(child,'val') or default for child in properties(node,group) if name(child)==key),None)
+
+
+def word_location(node,part='document'):
+    return {'source_file':f'word/{part}.xml','xml_path':node.getroottree().getpath(node)}
 
 
 def read_word(path,builder):
@@ -154,15 +164,15 @@ def read_word(path,builder):
                 span['source_end'] = min(len(text),max(0,span['source_end']-left))
                 span['source'] = text[span['source_start']:span['source_end']]
             issue = ' '.join(dict.fromkeys(problems)) or uncertainty(spans)
-            return Paragraph(text,spans,excluded,issue,textboxes)
+            return Paragraph(text,spans,excluded,issue,textboxes,word_location(node,note_part or 'document'))
 
-        def embedded_paragraphs(node,*,note_part=None):
+        def embedded_content(node,*,note_part=None):
             for child in node:
                 if excluded_kind(child):
                     continue
                 if child.tag==ALTERNATE:
                     if (selected:=branch(child)) is not None:
-                        yield from embedded_paragraphs(selected,note_part=note_part)
+                        yield from embedded_content(selected,note_part=note_part)
                     else:
                         yield Paragraph(issue=MISSING_BRANCH)
                     continue
@@ -170,13 +180,73 @@ def read_word(path,builder):
                     result = paragraph(child,note_part=note_part)
                     yield result
                     for story in result.stories:
-                        yield from embedded_paragraphs(story,note_part=note_part)
+                        yield from embedded_content(story,note_part=note_part)
                 elif name(child) in ('sdt','sdtContent','customXml','ins','moveTo'):
-                    yield from embedded_paragraphs(child,note_part=note_part)
+                    yield from embedded_content(child,note_part=note_part)
                 elif name(child)=='tbl':
-                    yield Paragraph(issue='A nested Word table needs a verified reading.')
+                    yield child
                 elif name(child) in ('altChunk','object'):
                     yield Paragraph(issue='The Word story refers to embedded content that must be reviewed.')
+
+        def table(node):
+            grid = Grid()
+            if any(child.tag==ALTERNATE and branch(child) is None for child in visible(node)):
+                grid.issue(MISSING_BRANCH)
+            vertical = {}
+            for row in table_members(node,'tr'):
+                grid.begin_row(count(setting(row,'trPr','gridBefore'),minimum=0,default=0))
+                head = setting(row,'trPr','tblHeader','true')
+                role = 'column' if head is not None and enabled(head) else 'data'
+                next_vertical = {}
+                left = None
+                for cell in table_members(row,'tc'):
+                    columns = count(setting(cell,'tcPr','gridSpan','0'))
+                    v_merge = setting(cell,'tcPr','vMerge','continue')
+                    h_merge = setting(cell,'tcPr','hMerge','continue')
+                    loc = word_location(cell)
+                    pieces, parts = [],[]
+
+                    def flush():
+                        content = join_paragraphs(pieces)
+                        if content.issue:
+                            grid.issue(content.issue)
+                        if content.text or content.spans:
+                            part = passage(content.text,content.spans)
+                            locations = [p.location for p in pieces if p.location and (p.text or p.spans)]
+                            part['location'] = locations[0] if len(locations)==1 else loc
+                            if len(locations)>1:
+                                part['source_members'] = locations
+                            parts.append(part)
+                        pieces.clear()
+
+                    for content in embedded_content(cell):
+                        if isinstance(content,Paragraph):
+                            pieces.append(content)
+                        else:
+                            flush()
+                            parts.append({'table':table(content)})
+                    flush()
+                    start = grid.column
+                    if h_merge=='continue' and left is not None and not parts and v_merge is None:
+                        left['columns'] += columns
+                        left.setdefault('continuations',[]).append(loc)
+                        grid.claim(left,start,start+columns)
+                        continue
+                    if v_merge=='continue' and start in vertical and not parts and h_merge is None:
+                        owner = vertical[start]
+                        grid.cover(loc,columns=columns,continuation=owner)
+                        next_vertical[start] = owner
+                        left = None
+                        continue
+                    if h_merge not in (None,'restart') or v_merge not in (None,'restart'):
+                        grid.issue('A merged Word cell has an unresolved continuation. Check the recorded origin.')
+                    origin = grid.place(parts,loc,columns=columns,role=role)
+                    if v_merge=='restart':
+                        next_vertical[start] = origin
+                    left = origin if h_merge=='restart' else None
+                vertical = next_vertical
+                grid.end_row(count(setting(row,'trPr','gridAfter'),minimum=0,default=0))
+            return grid.finish()
 
         def visit(node,textbox=None):
             tag = name(node)
@@ -211,33 +281,13 @@ def read_word(path,builder):
                 for story in content.stories:
                     visit(story,story)
             elif tag=='tbl':
-                rows = []
-                heads = []
-                issue = None
-                for child in visible(node):
-                    child_tag = name(child)
-                    if child.tag==ALTERNATE and branch(child) is None:
-                        issue = MISSING_BRANCH
-                        break
-                    if child is not node and (child_tag in ('tbl','vMerge','hMerge') or
-                            child_tag=='gridSpan' and multiple_cells(attr(child,'val') or '0')):
-                        issue = 'Merged cells or nested Word tables need a verified table reading.'
-                        break
-                semantics = []
-                for row in table_members(node,'tr'):
-                    if any(name(n)=='tblHeader' and enabled(attr(n,'val')) for n in properties(row,'trPr')):
-                        heads.append(len(rows))
-                    cells = []
-                    for cell in table_members(row,'tc'):
-                        content = join_paragraphs(embedded_paragraphs(cell))
-                        issue = issue or content.issue
-                        if content.spans:
-                            semantics.append(cell_semantics(len(rows),len(cells),content.text,content.spans))
-                        cells.append(content.text)
-                    rows.append(cells)
-                item = builder.table(rows,loc,headers=heads if rows else None,issue=issue,semantics=semantics)
-                if item:
-                    item.locator.update(provenance)
+                grid = table(node)
+                if matrix:=simple_matrix(grid):
+                    rows,headers,entries = matrix
+                    if item:=builder.table(rows,loc,headers=headers,semantics=entries):
+                        item.locator.update(provenance)
+                else:
+                    builder.grid(grid,loc,loc=provenance)
             elif tag in ('altChunk','object'):
                 builder.issue('The Word body refers to embedded content that must be reviewed.',loc)
             elif tag not in ('del','moveFrom','sectPr','sdtPr','sdtEndPr'):
@@ -247,7 +297,9 @@ def read_word(path,builder):
         definitions = defaultdict(list)
         for href,notes in pending_notes.items():
             for part,node in notes:
-                content = join_paragraphs(embedded_paragraphs(node,note_part=part),note=True)
+                content = join_paragraphs((token if isinstance(token,Paragraph) else
+                                           Paragraph(issue='A table in a Word note needs a verified reading.')
+                                           for token in embedded_content(node,note_part=part)),note=True)
                 xml_path = node.getroottree().getpath(node)
                 member = 'word/'+part+'.xml'
                 location = {'source_file':member,'xml_path':xml_path,'note_kind':part[:-1],
@@ -258,6 +310,10 @@ def read_word(path,builder):
         for item in builder.doc.blocks:
             item.links.extend(graph.links_for(item.locator.get('inline_semantics',()),follow=item.role!='note'))
             if cells:=item.locator.get('table_cell_semantics'):
+                graph.bind_cells(cells)
+                item.links.extend(link for cell in cells for link in cell['notes'])
+            if grid:=item.locator.get('table_grid'):
+                cells = list(passages(grid))
                 graph.bind_cells(cells)
                 item.links.extend(link for cell in cells for link in cell['notes'])
         if any(n.startswith(('word/header','word/footer')) for n in members):

@@ -345,13 +345,22 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             column_headers=b.locator.get('table_header_cells') if rule_revision in ('faithful-15',*CURRENT_DELIVERY_RULES) else None
             excluded={tuple(pair) for pair in b.locator.get('table_hidden_cells',())} if column_headers is not None else set()
             caption='';note_suffix='';cell_spans={}
-            if resolver and rows:
+            if resolver and rows and not b.locator.get('table_grid'):
                 from .table_readings import split_cell_fractions
                 table_fragments=split_cell_fractions(rows,0 if column_headers==[] else 1,excluded=excluded)
             if effective['tables']=='companion': action='companion'; reason='User explicitly selected table lookup in companion.'; text='The full table is available in the companion.'; connector=True
             elif table_fragments:
                 action='companion';reason='The table contains fraction-like fragments in separate cells.'
                 text='The full table is available in the companion.';connector=True
+            elif b.locator.get('table_grid'):
+                from .table_readings import grid_for_speech
+
+                marker = resolver.table_ditto(b,block_chapter,block_chapter_id) if resolver else None
+                text,cells,prepared_spans,table_issue = grid_for_speech(b,note_policy,table_context,marker=marker)
+                prepared_text = text
+                reason = 'Read each authored table cell with its verified labels in source order.'
+                if table_issue:
+                    action,reason,text,cells = 'unreadable',table_issue,'',()
             elif rows:
                 if rule_revision in SOURCE_STRUCTURE:
                     from .table_readings import rows_for_speech
@@ -362,7 +371,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                                                    header_columns=b.locator.get('header_columns') if resolver else None,
                                                    column_headers=column_headers,excluded=excluded)
                     if table_issue:action='unreadable';reason=table_issue;text='';rows=[]
-            if rows and action=='speak':
+            if rows and action=='speak' and not b.locator.get('table_grid'):
                 headers=rows[0]
                 if column_headers!=[] and any(len(r)!=len(headers) for r in rows): action='unreadable'; reason='Table cells do not have reliable header associations.'; text=''
                 else:

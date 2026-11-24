@@ -195,7 +195,13 @@ def observations(block, cells, table_fragments, *, source_digest, reading, sourc
     hidden_rows={index for index,row in enumerate(rows) if row and all((index,column) in hidden_cells for column in range(len(row)))}
     cell_ids=block.locator.get('cell_ids',{})
     cell_evidence={(cell['row'],cell['column']):witness for cell,witness in source_readings.cell_spans}
-    for _,_,row,column,header,value in cells:
+    for _,_,row,column,header,value,*evidence in cells:
+        if evidence:
+            info = evidence[0]
+            fields = {'header_path':info['header_path'],'cell_boundaries_preserved':True,'value':value}
+            add('table_relation','authored_cell',{'row':row,'column':column,**info},fields,
+                ('CR-L045','table_relational_narration',fields,()))
+            continue
         original=rows[row][column]
         row_counts[row]=row_counts.get(row,0)+1
         if witness:=cell_evidence.get((row,column)):

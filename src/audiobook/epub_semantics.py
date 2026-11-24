@@ -114,8 +114,9 @@ def ruby_base(node):
                    for child in node.children if not isinstance(child,NON_TEXT))
 
 
-def describe(node,resolve_asset=None,cover_assets=(), *, projected=None, note_markup=None, note_body=False):
+def describe(node,resolve_asset=None,cover_assets=(), *, projected=None, note_markup=None, note_body=False, children=None):
     pieces=[];spans=[];position=0
+    root_children=children
     def note_target(tag):
         if note_markup:
             if id(tag) in note_markup.wrappers:
@@ -149,7 +150,7 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None, note_ma
             pieces.append('\n');position+=1
             spans.append({'source_start':start,'source_end':position,'kind':'line_break','origin':'Authored XHTML br element'})
         else:
-            for child in n.children:visit(child)
+            for child in (root_children if n is node and root_children is not None else n.children):visit(child)
         end=position
         if end<=start:return
         if paragraph:mark_boundary(end)
@@ -334,6 +335,11 @@ def note_issues(block,note_policy):
             issues.extend(problems(cell['spans'],cell['notes']))
     if caption:=block.locator.get('table_caption'):
         issues.extend(problems(caption['spans'],caption['notes']))
+    if grid:=block.locator.get('table_grid'):
+        from .table_grid import passages
+
+        for part in passages(grid):
+            issues.extend(problems(part['spans'],part['notes']))
     return list(dict.fromkeys(issues))
 
 

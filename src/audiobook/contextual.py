@@ -73,7 +73,9 @@ def table_view(rows, header_columns=None, *, column_headers=None, caption='',exc
 
 def column_anchors(cells, date_headers, originals, header_columns):
     observations = defaultdict(lambda: defaultdict(list))
-    for _,_,row,column,header,value in cells:
+    for _,_,row,column,header,value,*evidence in cells:
+        if evidence:
+            continue
         if header.casefold().strip() not in date_headers:
             continue
         if originals and (row>=len(originals) or column>=len(originals[row]) or originals[row][column]!=value):
@@ -90,7 +92,7 @@ def column_anchors(cells, date_headers, originals, header_columns):
 
 
 class Evidence:
-    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column, chronology=None, *, header_by_id=False, wrapped_prose=False):
+    def __init__(self, resolver, text, start, end, header, anchors, chapter, chapter_id, table_id, column, chronology=None, *, header_by_id=False, wrapped_prose=False, header_path=None):
         self.resolver = resolver
         self.text = text
         self.start = start
@@ -106,6 +108,8 @@ class Evidence:
         header_ids=resolver.table_header_ids.get(table_id,())
         if self.header_source and column<len(header_ids) and header_ids[column]:
             self.header_source['id']=header_ids[column]
+        if header_path is not None:
+            self.header_source = {'block':table_id,**header_path[-1]} if header_path else None
         self.header_by_id=header_by_id
         self.inferred_order = next(iter(anchors)) if len(anchors)==1 and len({row['surface'].strip() for row in next(iter(anchors.values()))})>=2 else None
         self.settings = {}
@@ -461,19 +465,22 @@ class Resolver:
         anchors=column_anchors(cells,self.config['cues']['date_column'],block.locator.get('rows',[]),header_columns) if cells else {}
         views=cells or [(0,len(text),None,None,None,text)]
         guard_slots={(a,b):i for i,(a,b,_,_) in enumerate(slots)}
-        for start,_,row,column,header,value in views:
+        for start,_,row,column,header,value,*evidence in views:
             cell=f'{row}:{column}'
             header_column=header_columns.get(cell,column)
             authored_header=cell in header_columns
             view=({'kind':'table_cell','row':row,'column':column,'header':header,'input':value} if row is not None else
                   {'kind':'block_source' if value==block.source else 'prepared_reading'})
+            if evidence:
+                view.update(evidence[0])
+            path = evidence[0]['header_path'] if evidence else None
             view['text_sha256']=digest(value.encode())
             for match in context_lexical.OPAQUE.finditer(value):
                 a,b=start+match.start(),start+match.end()
                 if (a,b) not in guard_slots or any(a<end and b>begin for begin,end in literal_spans+aliases):
                     continue
                 env=Evidence(self,value,match.start(),match.end(),header,anchors.get(header_column,{}),chapter,chapter_id,
-                             block.id if row is not None else None,header_column,header_by_id=authored_header)
+                             block.id if row is not None else None,header_column,header_by_id=authored_header,header_path=path)
                 option=context_lexical.opaque_reading(match.lastgroup,match[0],env)
                 if option is not None:
                     result,spoken=self.outcome(block,view,match,env,[option])
@@ -489,7 +496,7 @@ class Resolver:
                          and match.lastgroup in ('heteronym','colon'))
                 env=Evidence(self,value,match.start(),match.end(),header,inferred,chapter,chapter_id,
                              block.id if row is not None else None,header_column,chronology,
-                             header_by_id=authored_header,wrapped_prose=wrapped)
+                             header_by_id=authored_header,wrapped_prose=wrapped,header_path=path)
                 if (match.lastgroup in ('separators','measurement','uncertainty') and value==block.source and row is None
                         and not any(a<end and begin<b for begin,end in self.number_exclusions.get(block.id,()))):
                     env.number_anchors=self.number_anchors.get(self.scope(block),{})

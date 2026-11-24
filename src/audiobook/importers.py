@@ -208,6 +208,8 @@ def document_reference(document_path,href):
     return archive_path(posixpath.dirname(document_path),href)
 
 def epub(data:bytes|Path)->Document:
+    from .html_table import read_grid, requires_grid
+    from .table_grid import passages, source_rows, source_text
     from .epub_obfuscation import font_references, verify_font_manifest
 
     try: z=zipfile.ZipFile(io.BytesIO(data) if isinstance(data,bytes) else data)
@@ -342,7 +344,8 @@ def epub(data:bytes|Path)->Document:
             from .epub_styles import issues as style_issues
             css_issues=style_issues(node)
             if css_issues:issue=' '.join(dict.fromkeys(css_issues))
-            if vars(s).get('_audiobook_lexicon_problems'):issue=' '.join(vars(s)['_audiobook_lexicon_problems'])
+            lexicon_problems = vars(s).get('_audiobook_lexicon_problems')
+            if lexicon_problems:issue=' '.join(lexicon_problems)
             if node.name in ('img','image'):
                 href=node.get('src') if node.name=='img' else (node.get('xlink:href') or node.get('href'))
                 if href: image_resource,_=archive_path(posixpath.dirname(path),href)
@@ -385,6 +388,29 @@ def epub(data:bytes|Path)->Document:
                     links.append({'kind':'description','href':path+'#'+identifier,'label':'Extended description'})
             if any(a.get('id') in ('pg-header','pg-footer','project-gutenberg-license') for a in [node,*node.parents] if hasattr(a,'get')): role='reference'
             elif text.strip()=='[Illustration]': role='placeholder'
+            grid = None
+            if role=='table' and requires_grid(node):
+                def read_cell(owner,children):
+                    from .pronunciation import unresolved
+
+                    source,spans=describe(owner,lambda href:archive_path(posixpath.dirname(path),href)[0],
+                                          cover_assets,children=children)
+                    spans+=annotate(source,spans,vars(s).get('_audiobook_lexicons',[]),language(owner) or (lang[0] if lang else 'en'))
+                    problem = uncertainty(spans) or ' '.join(unresolved(block(source,{'inline_semantics':spans})))
+                    return source,notes.bind(path,spans),problem
+                def locate(owner):
+                    return {'path':path,'occurrence':occurrence,'dom_rank':ranks[id(owner)],
+                            **({'anchor':owner['id']} if owner.get('id') else {})}
+                grid = read_grid(node,read_cell,locate,identifiers=identifiers)
+                cells = list(passages(grid))
+                notes.graph.bind_cells(cells)
+                links = [link for link in links if link['kind']!='note']
+                links.extend(link for cell in cells for link in cell['notes'])
+                base_text = text = source_text(grid)
+                semantics = []
+                issue = grid['issue'] or ' '.join(dict.fromkeys([*css_issues,*(lexicon_problems or ())])) or None
+                if not text and not issue and not any(cell['spans'] for cell in cells):
+                    continue
             loc={'format':'epub','occurrence':occurrence,'path':path,'anchor':node.get('id'),'element':idx,'dom_rank':ranks[id(node)],'base_text_length':len(base_text)}
             identity_spans=[{k:v for k,v in s.items() if s['kind']!='ruby' or k not in ('base','pronunciation')}
                             for s in semantics if s['kind'] not in AUDIT_SPANS]
@@ -394,11 +420,14 @@ def epub(data:bytes|Path)->Document:
                 issue=issue or uncertainty(identity_spans)
             if language(node):loc['language']=language(node)
             if role=='table':
-                table_cells=[r.find_all(['th','td']) for r in node.find_all('tr')]
-                rows=[[html_text(c).strip() for c in row] for row in table_cells]
-                loc['rows']=rows
-                if node.find(attrs={'rowspan':True}) or node.find(attrs={'colspan':True}): issue='Merged table header associations require review.'
-                if node.find('table'):issue='Nested table associations need a verified reading.'
+                if grid is not None:
+                    loc['table_grid'] = grid
+                    loc['rows'] = source_rows(grid)
+                    loc['exact'] = str(node)
+                    table_cells = []
+                else:
+                    table_cells=[r.find_all(['th','td']) for r in node.find_all('tr')]
+                    loc['rows']=[[html_text(c).strip() for c in row] for row in table_cells]
             out.append(block(text,loc,role,chapter,['EPUB spine occurrence and DOM element'],issue,links)); found+=1
             if node.find_parent('blockquote') is not None:out[-1].locator['block_quote']=True
             if leaves and text==base_text and role in ('body','heading','caption'):
@@ -556,6 +585,8 @@ def epub(data:bytes|Path)->Document:
         cell_entries=[*b.locator.get('table_cell_semantics',())]
         if caption:=b.locator.get('table_caption'):
             cell_entries.append(caption)
+        if grid:=b.locator.get('table_grid'):
+            cell_entries.extend(passages(grid))
         for link in [*b.links,*(link for cell in cell_entries for link in cell['notes'])]:
             href=link.get('href')
             address=notes.addresses.get(href) if link['kind']=='note' else href_addresses.get(href)

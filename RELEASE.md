@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev32
+
+- Word, OpenDocument, HTML and EPUB read merged and nested table cells through one shared model. Grouped headers, cell notes, nested reading order and original locations stay attached to the facts they describe. [Document intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev31
 
 - Word DOCX reads grouped, nested and linked editable text boxes, selecting the authored compatibility branch once. Ordinary table cells can read their linked notes. Hamr preserves the Word source locations through ZIP selection, narration and companion export. [Document intake](docs/INTAKE.md#source-readers)
