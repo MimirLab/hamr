@@ -14,7 +14,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | PDF, EPUB, Markdown and plain text | The ordinary Hamr readers preserve the original source, planned narration and companion. Searchable PDFs retain native structure. For a known legacy text encoding, pass `--encoding windows-1252` or the actual encoding of the file. |
 | Loose scans, individual images, TIFF and CBZ | The shared raster reader handles supported JPEG, PNG and TIFF page images, expands frames, and preserves crops and ordering. English OCR and its runtime are in the Linux x86-64 and Windows x64 packages. |
 | Supplied OCR and ordered archives | Local hOCR, ALTO, PAGE XML, TSV and selected ABBYY XML sidecars can supply text for a scan. ABBYY XML uses one text page with original unrotated coordinates. A physical METS map or a local IIIF Presentation 3 sequence can name the pages. Binding and dimensions are checked before reuse. |
-| HTML, OpenDocument and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. Writer/Web OpenDocument files use the same reader, including `.oth` packages. Selected complex objects that require a verified reading appear in source review. |
+| HTML, OpenDocument and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. OpenDocument Writer uses the same reader for `.odt`, `.oth` and Flat OpenDocument text (`.fodt`). Selected complex objects that require a verified reading appear in source review. |
 | Word documents (DOCX) | Read editable DrawingML and VML text boxes in the selected Word compatibility branch. Hamr reads each story after its anchor paragraph and follows linked frames in their authored order. Visible revisions, notes, equations and simple tables use the shared preparation step. |
 | TextBundle folders and TextPack archives | Hamr opens the descriptor's text payload and preserves its companion files. Version 1 uses Markdown. Version 2 can declare Markdown, plain text, HTML, or RTF. |
 | mdBook folders and archives | Hamr follows the chapter links in the source directory's `SUMMARY.md` and reads included local material through the Markdown reader. A draft link stays in the companion. |
@@ -42,6 +42,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | Unencrypted classic Kindle and DjVu | The Linux x86-64 and Windows x64 packages include a compact Kindle reader. Supported uncompressed Kindle Print Replica editions (AZW4) go through the PDF reader. The Linux DjVu reader uses available page text and runs raster OCR for pages without it. |
 | Compiled HTML Help (`.chm`) | The resident Linux x86-64 reader follows the authored HTML table of contents. A linked topic outside the contents stays accessible in the companion. The plan reports unlisted topics and unreadable entries. |
 | Selected old office formats | A compatible installed LibreOffice Writer can produce an ODT reading in an isolated Linux worker. Hamr keeps the exact original. |
+| WordPerfect | The resident Linux x86-64 reader uses Bubblewrap and the shared OpenDocument text reader. Open a classic `.wp` or `.wpd` directly, inside a folder, or in an archive. [WordPerfect intake](#wordperfect-documents) |
 | LRF and unencrypted LIT ebooks | A compatible local Calibre can be reused. Hamr can acquire a pinned Linux x86-64 helper on first use. The archive is 230 MiB and the installed helper is about 906 MiB. |
 
 Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powers, subscripts, fractions and roots. Hamr preserves each equation in the original and marks ambiguous layouts for source review. Inline equations, ordinary table cells and linked notes can use the same reading.
@@ -65,6 +66,14 @@ When a searchable PDF establishes an equation, raised script or scientific table
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
 
 For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the actual source encoding. The resident CHM decoder runs locally with Bubblewrap. Its tested path uses a readable HTML contents file inside the CHM. Binary-only contents and popup controls without a local HTML target still need qualification.
+
+## WordPerfect documents
+
+```sh
+hamr open ~/Documents/Harbor.wpd --voice cast:james-burke --output ~/Audiobooks
+```
+
+On Linux x86-64 with Bubblewrap, Hamr brings its own WordPerfect reader and uses it offline. The reader understands the tested classic Mac, DOS, and later WordPerfect headers. Recognized WPC headers also work when the file has a `.doc` extension. The reader converts the body to Flat OpenDocument for ordinary text preparation, leaving printed running headers in page styles. Hamr keeps the original WordPerfect file for source recovery. A password-protected file needs a readable local copy. An edition with a different layout can be exported as ODT or EPUB.
 
 ## Numbered passages
 

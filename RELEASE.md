@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev47
+
+- Open tested WordPerfect documents with the resident Linux reader. It uses the shared OpenDocument narration path and keeps the exact original. [WordPerfect intake](docs/INTAKE.md#wordperfect-documents)
+- Open Flat OpenDocument text directly, from a folder, or inside an archive. Body text and inline MathML use the same reader as packaged OpenDocument Writer documents.
+
 # hamr 0.4.9.dev46
 
 - Open Shanda Bambook ebooks through the shared narration pipeline. Follow the authored chapter directory and retain exact embedded chapter files and artwork. [Bambook intake](docs/INTAKE.md#bambook-ebooks)

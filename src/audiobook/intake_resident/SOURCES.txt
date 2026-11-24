@@ -38,3 +38,23 @@ ZIP decompression dependencies. The release used GCC 16.2.1, CMake 4.4.4,
 and GNU binutils 2.47. Run tools/build_intake_xps.py with the pinned
 binary packages, resulting library, upstream COPYING file, and desired
 archive path to assemble the resident runtime.
+
+WordPerfect reader for Linux x86-64, separate local worker:
+https://deb.debian.org/debian/pool/main/libw/libwpd/libwpd_0.10.3.orig.tar.xz
+https://deb.debian.org/debian/pool/main/libr/librevenge/librevenge_0.0.6.orig.tar.bz2
+https://deb.debian.org/debian/pool/main/libo/libodfgen/libodfgen_0.1.9.orig.tar.xz
+https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz
+https://zlib.net/fossils/zlib-1.4.tar.gz
+
+The source and complete link instructions ship in tools/intake_wordperfect.cc
+and tools/build_intake_wordperfect.sh. The script verifies the exact source
+archive digests before compiling. Build using sh tools/build_intake_wordperfect.sh
+SOURCE_ARCHIVES NEW_BUILD_DIRECTORY OUTPUT. The three Document Liberation
+libraries are distributed under their MPL 2.0 terms. See LICENSE.wordperfect
+and LICENSE.gpl3 for the bundled library notices. The release linked the Arch
+Linux glibc 2.44+r50+g1848099f063e-1 and GCC 16.2.1+r23+gd564253eb6c8-1 runtimes.
+The corresponding runtime source and distribution build specifications are:
+https://github.com/bminor/glibc/tree/1848099f063e99d4ffecbd7667766d54862398b9
+https://gitlab.archlinux.org/archlinux/packaging/packages/glibc
+https://github.com/gcc-mirror/gcc/tree/d564253eb6c859e266d3cae18e82fb4db9a88316
+https://gitlab.archlinux.org/archlinux/packaging/packages/gcc

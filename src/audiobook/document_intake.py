@@ -69,9 +69,12 @@ def xml_root(stream):
 
 def xml_route(stream):
     from .docbook_intake import is_docbook
+    from .odf_content import flat_text
     from .odf_presentation import flat_presentation
 
     element = xml_start(stream)
+    if flat_text(element):
+        return 'odt'
     if flat_presentation(element):
         return 'odp'
     if element is not None and (name(element) in BOOK_ROOTS or is_docbook(element,'')):
@@ -671,46 +674,56 @@ def semantic_xml(root,builder,part):
         visit(child)
 
 
-def odt(path,builder):
-    from .odf_content import Content
+def odt(path,builder,source_file=None):
+    from .odf_content import Content, OFFICE, flat_text
+
+    with path.open('rb') as stream:
+        flat = flat_text(xml_start(stream))
+    if flat:
+        document = xml(bounded_read(path))
+        _odt_body(document,builder,Content(None,source_file or path.name),document.find(OFFICE+'meta'))
+    else:
+        with structured_zip(path) as (read,_):
+            document = xml(read('content.xml'))
+            metadata = read('meta.xml',required=False)
+            _odt_body(document,builder,Content(read),xml(metadata) if metadata else None)
+
+
+def _odt_body(document,builder,content,metadata):
+    from .odf_content import OFFICE
     from .table_grid import simple_matrix
 
-    with structured_zip(path) as (read,_):
-        document = xml(read('content.xml'))
-        meta = read('meta.xml',required=False)
-        if meta:
-            title = next((plain_xml_text(n) for n in xml(meta).iter() if name(n)=='title'),None)
-            if title:
-                builder.doc.title = title
-        body = next((n for n in document.iter() if name(n)=='body'),None)
-        if body is None:
-            raise Error('source_xml','OpenDocument has no document body.')
-        if any(name(n)=='changed-region' for n in body.iter()):
-            builder.doc.warnings.append('Tracked change records are preserved in the original. The visible body is selected.')
+    if metadata is not None:
+        title = next((plain_xml_text(n) for n in metadata.iter() if name(n)=='title'),None)
+        if title:
+            builder.doc.title = title
+    body = document.find(OFFICE+'body')
+    if body is None:
+        raise Error('source_xml','OpenDocument has no document body.')
+    if any(name(n)=='changed-region' for n in body.iter()):
+        builder.doc.warnings.append('Tracked change records are preserved in the original. The visible body is selected.')
 
-        content = Content(read)
-
-        def visit(node):
-            tag = name(node)
-            loc = 'content.xml:'+node.getroottree().getpath(node)
-            if tag in ('p','h') or node.tag==MATH_ROOT:
-                text,spans,links,issue = content.paragraph(node)
-                item = builder.add(text,'heading' if tag=='h' else 'body',loc,
-                                   loc={'inline_semantics':[span for span in spans if span['kind']!='line_break']},
-                                   links=links,issue=issue)
-                if item and any(span['kind']=='line_break' and span['source_end']>span['source_start'] for span in spans):
-                    item.locator['authored_line_breaks'] = True
-            elif tag=='table':
-                grid = content.table(node)
-                if matrix:=simple_matrix(grid):
-                    rows,headers,entries = matrix
-                    builder.table(rows,loc,headers=headers,semantics=entries)
-                else:
-                    builder.grid(grid,loc)
-            elif tag not in ('tracked-changes','annotation','deletion','scripts','forms'):
-                for child in node:
-                    visit(child)
-        visit(body)
+    def visit(node):
+        tag = name(node)
+        loc = content.source_file+':'+node.getroottree().getpath(node)
+        if tag in ('p','h') or node.tag==MATH_ROOT:
+            text,spans,links,issue = content.paragraph(node)
+            item = builder.add(text,'heading' if tag=='h' else 'body',loc,
+                               loc={'inline_semantics':[span for span in spans if span['kind']!='line_break']},
+                               links=links,issue=issue)
+            if item and any(span['kind']=='line_break' and span['source_end']>span['source_start'] for span in spans):
+                item.locator['authored_line_breaks'] = True
+        elif tag=='table':
+            grid = content.table(node)
+            if matrix:=simple_matrix(grid):
+                rows,headers,entries = matrix
+                builder.table(rows,loc,headers=headers,semantics=entries)
+            else:
+                builder.grid(grid,loc)
+        elif tag not in ('tracked-changes','annotation','deletion','scripts','forms'):
+            for child in node:
+                visit(child)
+    visit(body)
 
 
 def mime_read(data,builder,route):
@@ -750,7 +763,7 @@ def read_document(path,source,sha,cache,title):
 
         read_word(path,builder)
     elif route=='odt':
-        odt(path,builder)
+        odt(path,builder,source.member_name)
     elif route=='abiword':
         from .abiword_intake import read_abiword, read_xml
 
@@ -768,6 +781,10 @@ def read_document(path,source,sha,cache,title):
     elif route=='office-legacy':
         from .intake_helpers import legacy_document
         return legacy_document(path,source,builder,cache)
+    elif route=='wordperfect':
+        from .wordperfect_intake import read_wordperfect
+
+        return read_wordperfect(path,source,builder,cache)
     else:
         data = bounded_read(path)
         if route=='html':

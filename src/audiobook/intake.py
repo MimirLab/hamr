@@ -80,7 +80,7 @@ def parse(path,source,sha,cache,title):
             route = describe(member,format=source.route_override,offline=source.offline,encoding=source.encoding)
             if route.kind in ('zip-member','tar-member','libarchive-member','directory','manifest'):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
-            if route.kind=='file' and route.route in ('abiword','pml',*PALM_ROUTES):
+            if route.kind=='file' and route.route in ('abiword','odt','pml',*PALM_ROUTES):
                 route = replace(route,member_name=entry.name)
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
             doc.source_sha256 = sha
@@ -346,6 +346,7 @@ def capabilities():
     from .pdf_ocr import resident_binary
     from .source_bundle import NATIVE, PACKAGE_FOLDERS
     from .intake_helpers import CALIBRE_BYTES,CALIBRE_UNPACKED
+    from .wordperfect_intake import resident as wordperfect_reader
     from .xps_visual import available as xps_renderer_ready
 
     arch = platform.machine().lower()
@@ -355,6 +356,8 @@ def capabilities():
     external = {
         'office-legacy':{'ready':bool(shutil.which('libreoffice') and shutil.which('bwrap')),
                          'source':'verified local Writer conversion'},
+        'wordperfect':{'ready':wordperfect_reader() is not None and bool(shutil.which('bwrap')),
+                       'source':'resident libwpd and shared OpenDocument text reader'},
         'legacy-ebook':{'managed_available':linux and bool(shutil.which('bwrap')),
                         'download_bytes':CALIBRE_BYTES,'unpacked_bytes':CALIBRE_UNPACKED},
         'djvu':{'ready':linux and (assets/'djvu-linux-x86_64').is_file() and bool(shutil.which('bwrap'))},

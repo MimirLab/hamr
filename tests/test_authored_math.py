@@ -117,6 +117,37 @@ def test_note_and_cell_use_the_same_formula_reading(tmp_path):
         assert next(block for block in d.blocks if block.role=='table').locator['rows']==[['Value'],['x2']]
 
 
+def test_flat_writer_reads_body_and_inline_formula_from_files_and_archives(tmp_path):
+    directory = tmp_path/'reading'
+    directory.mkdir()
+    flat = directory/'Harbor.fodt'
+    formula = HTML_POWER.replace('<math>','<math xmlns="http://www.w3.org/1998/Math/MathML">')
+    flat.write_text(
+        '<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"'
+        ' xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"'
+        ' xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0"'
+        ' xmlns:dc="http://purl.org/dc/elements/1.1/"'
+        ' office:mimetype="application/vnd.oasis.opendocument.text">'
+        '<office:meta><dc:title>The Harbor</dc:title></office:meta>'
+        '<office:master-styles><text:p>Repeated running header.</text:p></office:master-styles>'
+        '<office:body><office:text><text:p>The value is '
+        f'<draw:frame text:anchor-type="as-char"><draw:object>{formula}</draw:object></draw:frame>.'
+        '</text:p></office:text></office:body></office:document>',
+        encoding='utf-8')
+    archive = tmp_path/'Harbor.zip'
+    with ZipFile(archive,'w') as container:
+        container.write(flat,'edition/Harbor.xml')
+    for path,original in ((flat,'Harbor.fodt'),(directory,'Harbor.fodt'),(archive,'edition/Harbor.xml')):
+        doc = inspect_source(path,offline=True)
+        planned = plan(doc)
+        assert doc.title=='The Harbor'
+        assert planned['issues']==[]
+        assert [unit['text'] for unit in planned['utterances']]==['The value is x to the power of 2.']
+        block, = doc.blocks
+        assert block.locator['element'].startswith(original+':')
+        assert block.locator['inline_semantics'][0]['source_locator'].startswith(original+':')
+
+
 @pytest.mark.parametrize('href',['https://example.invalid/Math','../Object%201','./Object%201#different'])
 def test_writer_does_not_bind_unrelated_or_external_formula(tmp_path,href):
     path = tmp_path/'book.odt'

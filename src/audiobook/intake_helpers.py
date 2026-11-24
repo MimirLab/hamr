@@ -51,7 +51,7 @@ def converter_argv(path, work, binary, arguments, runtime=None):
     return [*argv,'--',invocation,*arguments]
 
 
-def convert(path,work,binary,arguments,output,*,runtime=None):
+def convert(path,work,binary,arguments,output,*,runtime=None,exit_errors=None):
     from .platform_support import spawn_owned,close_windows_job
 
     argv = converter_argv(path,work,binary,arguments,runtime)
@@ -71,6 +71,8 @@ def convert(path,work,binary,arguments,output,*,runtime=None):
             if process.poll() is None:
                 process.kill()
                 process.wait()
+        if exit_errors and code in exit_errors:
+            raise Error(*exit_errors[code])
         if code or not output.is_file() or output.is_symlink() or output.stat().st_size==0:
             log.seek(0,os.SEEK_END)
             log.seek(max(0,log.tell()-2048))

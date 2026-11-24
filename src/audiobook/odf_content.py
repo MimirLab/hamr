@@ -17,6 +17,16 @@ TABLE = '{urn:oasis:names:tc:opendocument:xmlns:table:1.0}'
 MANIFEST = '{urn:oasis:names:tc:opendocument:xmlns:manifest:1.0}'
 XLINK_HREF = '{http://www.w3.org/1999/xlink}href'
 MATH_ROOT = '{'+MATHML+'}math'
+TEXT_MEDIA = frozenset((
+    'application/vnd.oasis.opendocument.text',
+    'application/vnd.oasis.opendocument.text-template',
+    'application/vnd.oasis.opendocument.text-web',
+))
+
+
+def flat_text(root):
+    return (root is not None and root.tag==OFFICE+'document'
+            and root.get(OFFICE+'mimetype') in TEXT_MEDIA)
 
 
 def table_rows(node,header=False):
@@ -47,6 +57,11 @@ class Content:
             return None
         objects = [child for child in frame if child.tag==DRAW+'object']
         if len(objects)!=1:
+            return None
+        inline = objects[0].findall(MATH_ROOT)
+        if len(inline)==1 and not objects[0].get(XLINK_HREF):
+            return inline[0],self.source_file
+        if self.read is None:
             return None
         href = objects[0].get(XLINK_HREF,'')
         try:
