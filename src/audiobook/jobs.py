@@ -685,6 +685,8 @@ def publish(store,j,*,record_run_metrics=None):
         labels = [f'Page {page}'] if type(page) is int and page>0 else []
         if member:
             labels.append(member)
+        if locator.get('json_path') and locator.get('element'):
+            labels.append(locator['element'])
         original_link = original
         if labels and source_kind=='file' and Path(original).suffix.lower()=='.pdf' and type(page) is int and page>0:
             original_link += f'#page={page}'
@@ -692,7 +694,7 @@ def publish(store,j,*,record_run_metrics=None):
         source+=f'<section id="{b["id"]}"><h2>{html.escape(b["chapter"])}</h2>'
         source+=f'<p><a href="{html.escape(original_link,quote=True)}">{description}</a> · Source location <code>{html.escape(location_id)}</code></p>'
         source+=f'<a href="book.m4b#t={pointers[b["id"]]:.3f}">Listen near {ts(pointers[b["id"]])}</a><p>{html.escape(dumps(locator))}</p><pre style="white-space:pre-wrap">{html.escape(locator.get("exact",b["source"]))}</pre>'
-        if b.get('issue'):source+='<p>Uncertainty in the scanned text: '+html.escape(b['issue'])+'</p>'
+        if b.get('issue'):source+='<p>Source review. '+html.escape(b['issue'])+'</p>'
         for link in b.get('links',[]):
             for destination in link.get('destinations',[]):
                 source+='<p><a href="'+html.escape(destination,quote=True)+'">'+html.escape(link.get('label') or ('Note' if link.get('kind')=='note' else 'Linked source'))+'</a></p>'
@@ -720,10 +722,10 @@ def publish(store,j,*,record_run_metrics=None):
                 source+=f'<li><strong>{detail}</strong> {value}</li>'
             source+='</ul></details>'
     if resources:
-        source+='<h2>Original package files</h2><ul>'
+        source+='<h2>Original source resources</h2><ul>'
         for resource in resources:
             ident = html.escape(resource['location_id'],quote=True)
-            member = resource.get('inner_member',{}).get('member') or resource['member']
+            member = resource.get('resource_label') or resource.get('inner_member',{}).get('member') or resource['member']
             source+=f'<li id="resource-{ident}">{html.escape(member)} · Source location <code>{ident}</code></li>'
         source+='</ul>'
     atomic(stage/'source.html',source.encode())

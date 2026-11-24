@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev38
+
+- Open Jupyter v3 and v4 notebooks directly or in a ZIP. Hamr reads saved cells in order, speaks a single reading of each usable result, and keeps code and graphics in the companion. Source recovery can return exact embedded images. [Notebook intake](docs/INTAKE.md#jupyter-notebooks)
+- Speech verification resolves a documented spelling variation for the name SymPy in matching context and retains the unedited recognition report.
+
 # hamr 0.4.9.dev37
 
 - Read XPS and OpenXPS pages printed as images or glyph outlines using the bundled renderer and OCR on compatible Linux hosts. Hamr compares readings at multiple resolutions, keeps unresolved text at its original page location, and preserves exact page parts for later recovery. [Document intake](docs/INTAKE.md#source-readers)

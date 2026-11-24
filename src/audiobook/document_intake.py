@@ -916,24 +916,9 @@ def read_document(path,source,sha,cache,title):
             if rows:
                 builder.table(rows,'delimited table',headers=[0])
         elif route=='notebook':
-            from .importers import markdown
-            loaded = json.loads(data)
-            if loaded.get('nbformat')!=4:
-                raise Error('unsupported_format','This notebook version is not supported.')
-            for index,cell in enumerate(loaded['cells'],1):
-                text = ''.join(cell['source'])
-                cell_type = cell.get('cell_type')
-                if cell_type=='markdown':
-                    for item in markdown(text.encode()).blocks:
-                        builder.add(item.source,item.role,f'cell {index}',loc={
-                            k:v for k,v in item.locator.items() if k in ('inline_semantics','exact','rows')},
-                            issue=item.issue,links=item.links)
-                elif cell_type=='code':
-                    builder.add(text,'code',f'cell {index}')
-                else:
-                    builder.add(text,where=f'cell {index}')
-                if cell.get('outputs'):
-                    builder.doc.inventory.append({'cell':index,'status':'authored outputs retained in original'})
+            from .notebook_intake import read_notebook
+
+            read_notebook(data,builder)
         elif route=='outline':
             from .structured_intake import read_outline
             read_outline(data,builder)

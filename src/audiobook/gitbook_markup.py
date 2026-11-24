@@ -48,7 +48,7 @@ def directive(state,start,end,silent):
 
 
 def inline_markup(state):
-    from bs4 import BeautifulSoup
+    from .markdown_notes import html_inline
 
     for token in state.tokens:
         if not token.children:
@@ -61,14 +61,8 @@ def inline_markup(state):
                 if match:=TAG.search(child.content):
                     token.meta['source_issue'] = f'GitBook component {match[1]!r} needs its rendered content.'
             elif child.type=='html_inline':
-                tag = BeautifulSoup(child.content,'html.parser').find(True)
-                if tag and tag.name=='br':
-                    child.type = 'hardbreak'
-                elif tag and tag.name=='img':
-                    child.type = 'image'
-                    child.content = tag.get('alt','')
-                    child.attrs = {'src':tag.get('src','')}
-                else:
+                child = html_inline(child)
+                if child is None:
                     continue
             result.append(child)
         token.children = result

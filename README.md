@@ -103,6 +103,8 @@ Searchable PDFs and scanned pages can also read tables whose printed grid or rep
 
 XPS and OpenXPS packages can open directly or inside ZIPs. Hamr follows declared pages and authored stories. On compatible Linux hosts, it can also read pages printed as images or glyph outlines through its built-in OCR. The companion can recover exact page files. [Document intake](docs/INTAKE.md#source-readers)
 
+Open Jupyter notebooks to hear their Markdown, equations, and readable saved results in cell order. Code and graphics are available in the companion, including the exact embedded image files. [Notebook intake](docs/INTAKE.md#jupyter-notebooks)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

@@ -198,6 +198,10 @@ page parts can be recovered through the companion. On x86-64 Linux with glibc
 OCR. Source review locates pages or words whose reading could not be verified.
 Writer/Web OpenDocument packages (.oth) open with the OpenDocument reader.
 .PP
+Jupyter notebook versions 3 and 4 (.ipynb) use saved cell and output order.
+The reader prepares prose, tables, notes and supported equations without a
+kernel. Embedded graphics and exact cell locations remain in the companion.
+.PP
 Use \fB\-\-offline\fR with \fBopen\fR, \fBplan\fR, or \fBqueue\fR to
 use resident or already installed readers only. Use \fBresume JOB\fR to
 continue a saved intake.
@@ -206,7 +210,8 @@ For plain text, reStructuredText, TextBundle, or compiled HTML Help with a known
 \fB\-\-encoding NAME\fR, for example \fB\-\-encoding windows-1252\fR.
 .PP
 .B hamr source BOOK_DIRECTORY LOCATION_ID --output FILE
-recovers the original file or archive member from a finished book folder.
+recovers an original file, archive member, or embedded notebook graphic
+from a finished book folder.
 Use the location or passage ID from source.html. Keep the original file
 and companion together when moving a book.
 .SH CONTEXT REVIEW

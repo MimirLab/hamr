@@ -30,7 +30,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | DocBook manuals | Open a `.docbook`, `.dbk`, or `.xml` file, a source folder, or an archive. Hamr follows local chapter includes and reads the authored text, notes, descriptions, and simple tables. |
 | FictionBook | Open `.fb2` files and ZIPs, or open a FictionBook 3 file, ZIP, or extracted publication. Hamr follows linked notes and preserves verse lines and original assets. |
 | AbiWord | Open `.abw`, `.awt`, gzip-compressed `.zabw` or `.abw.gz`, and bzip2-compressed `.bzabw` or `.abw.bz2`. The reader follows authored chapter styles and keeps linked notes, simple tables, text boxes, and illustration locations. |
-| Publishing XML and other structured sources | Resident readers accept selected DTBook, DocBook, JATS, TEI and BITS documents, saved mail and MHTML, CSV, Jupyter notebook text, XLSX worksheet contents, PPTX slide text, OPML, SVG text and subtitles. Content and reading order depend on the source structures present. |
+| Jupyter notebooks | Open an `.ipynb` file or a ZIP containing one. The built-in reader follows saved cells and outputs in order. [Notebook intake](#jupyter-notebooks) |
+| Publishing XML and other structured sources | Resident readers accept selected DTBook, DocBook, JATS, TEI and BITS documents, saved mail and MHTML, CSV, XLSX worksheet contents, PPTX slide text, OPML, SVG text and subtitles. Content and reading order depend on the source structures present. |
 | Archive containers | ZIP and TAR are built in. 7z and RAR use a compatible local libarchive. Encrypted or unresolved members appear as an intake error. |
 | Unencrypted classic Kindle and DjVu | The Linux x86-64 and Windows x64 packages include a compact Kindle reader. Supported uncompressed Kindle Print Replica editions (AZW4) go through the PDF reader. The Linux DjVu reader uses available page text and runs raster OCR for pages without it. |
 | Compiled HTML Help (`.chm`) | The resident Linux x86-64 reader follows the authored HTML table of contents. A linked topic outside the contents stays accessible in the companion. The plan reports unlisted topics and unreadable entries. |
@@ -58,6 +59,18 @@ When a searchable PDF establishes an equation, raised script or scientific table
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
 
 For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the actual source encoding. The resident CHM decoder runs locally with Bubblewrap. Its tested path uses a readable HTML contents file inside the CHM. Binary-only contents and popup controls without a local HTML target still need qualification.
+
+## Jupyter notebooks
+
+Open a saved Jupyter v3 or v4 notebook with `hamr open Lab.ipynb --voice cast:carl-sagan --output ~/Audiobooks`. The same command accepts a ZIP containing the notebook. Hamr reads the cells in saved order, including notes, tables, and supported equations. For display outputs it chooses the first usable Markdown, HTML, TeX equation, or plain-text reading. It reads saved standard output and keeps code, diagnostic messages, and graphics in the companion. A plot with authored alt text can be described using those words. The reader uses saved results and runs without Jupyter or a kernel.
+
+Source review identifies the worksheet, cell, and output for a damaged entry or unresolved equation. To recover the exact bytes of an embedded PNG, JPEG, GIF, WebP, or SVG, use its location ID from `source.html`.
+
+```bash
+hamr source ~/Audiobooks/BOOK_FOLDER LOCATION_ID --output figure.png
+```
+
+Use the extension shown by the resource's media type. A cell location recovers the original notebook.
 
 ## Page order, recovery and originals
 

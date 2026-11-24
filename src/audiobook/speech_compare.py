@@ -10,7 +10,7 @@ from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v42'
+POLICY='bounded-english-composed-scale-typed-v43'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -48,6 +48,7 @@ DOMAIN_END=r'(?![\w-]|\.[a-z0-9])'
 WWW_DOMAIN=re.compile(DOMAIN_START+r'www\.(?:[a-z0-9-]+\.){1,6}[a-z]{2,20}'+DOMAIN_END,re.I)
 SPOKEN_PADDED_CODE=re.compile(r'\bzero(?:[ \t]+(?:'+'|'.join(SMALL[:10])+r')){1,7}\b',re.I)
 PRINTED_PADDED_CODE=re.compile(r'(?<![\w/.:+−-])0[0-9]{1,7}(?![\w/:-]|\.\d)')
+NAME_OBSERVATIONS = ((re.compile(r'\bSymPy\b'),re.compile(r'\bsimpy\b',re.I)),)
 
 
 def isbn_notation(text):
@@ -61,7 +62,7 @@ def isbn_notation(text):
     return ISBN.sub(joined,text)
 
 
-def year_context(text,start,end):
+def word_context(text,start,end):
     def adjacent(value,last):
         items = LEX.findall(value)
         return re.sub(r'\W','',items[-1 if last else 0]).casefold() if items else ''
@@ -72,7 +73,7 @@ def year_context(text,start,end):
 def contextual_years(expected,observed):
     written = {}
     for match in YEAR_TEXT.finditer(expected):
-        context = year_context(expected,*match.span())
+        context = word_context(expected,*match.span())
         if any(context):
             written.setdefault(match[0].lower(),set()).add(context)
     if not written:
@@ -87,7 +88,7 @@ def contextual_years(expected,observed):
             parts = second.replace('-',' ').split()
             value = sum(TENS_VALUES.get(part,SMALL_VALUES.get(part,0)) for part in parts)
             year = f'{century}{value:02d}'
-        context = year_context(observed,*match.span())
+        context = word_context(observed,*match.span())
         return year if context in written.get(year,()) else match[0]
 
     return SPOKEN_YEAR.sub(year,observed)
@@ -104,11 +105,21 @@ def domain_notation(expected,observed):
     return observed
 
 
+def name_observation(expected,observed):
+    for source,alternate in NAME_OBSERVATIONS:
+        spellings = {context:match[0] for match in source.finditer(expected)
+                     if any(context:=word_context(expected,*match.span()))}
+        if spellings:
+            observed = alternate.sub(lambda match:spellings.get(word_context(observed,*match.span()),match[0]),observed)
+    return observed
+
+
 def notation_observation(expected, observed):
     """Resolve ASR formatting that represents the chosen spoken reading."""
     observed=spoken_currency_observation(expected,observed)
     observed=contextual_years(expected,observed)
     observed=domain_notation(expected,observed)
+    observed=name_observation(expected,observed)
     # Recognizers write spoken identifiers as digits. Keep every leading zero
     # and only recover a spelling that the planned request actually uses.
     forms = {''.join(str(SMALL_VALUES[word]) for word in match[0].casefold().split()):match[0]

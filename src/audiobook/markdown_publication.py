@@ -4,6 +4,7 @@ import posixpath
 from urllib.parse import unquote, urlsplit
 
 from .core import Document, Error, key
+from .fragment_locations import rebase_blocks
 from .importers import block, markdown
 from .publication_package import member_bytes, member_location
 from .source_bundle import safe_name
@@ -39,16 +40,9 @@ def utf8(raw,name,label):
 def add_chapter(document, label, occurrence, member, content, resources,*,first_note_definition=False,configure=None):
     chapter = markdown(content.encode('utf-8'),collect_resources=True,
                        first_note_definition=first_note_definition,configure=configure)
-    ids = {item.id:'b'+key([member.name,occurrence,item.id])[:16] for item in chapter.blocks}
-    destinations = {'source.html#'+source:'source.html#'+target for source,target in ids.items()}
+    rebase_blocks(chapter.blocks,(member.name,occurrence))
     for item in chapter.blocks:
-        item.id = ids[item.id]
         item.chapter = label
-        for link in item.links:
-            if 'destinations' in link:
-                link['destinations'] = [destinations.get(destination,destination) for destination in link['destinations']]
-            if 'destination' in link:
-                link['destination'] = destinations.get(link['destination'],link['destination'])
         for ref in item.locator.pop('resource_references',[]):
             target = local_path(ref['href'],member.name,'')
             resource = resources.get(target)

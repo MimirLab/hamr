@@ -272,6 +272,19 @@ def extract_location(book,location,output):
                     os.fsync(stream.fileno())
         if stamp(original.stat())!=before or expected and filehash(staged)!=expected:
             raise Error('snapshot_changed','The source does not match its recorded identity.')
+        if asset := loc.get('json_asset'):
+            from . import json_source
+            from .core import digest
+            from .document_intake import bounded_read
+
+            document = json_source.load(bounded_read(staged))
+            data = json_source.decode(json_source.value_at(document,asset.get('path',())),asset.get('encoding'))
+            if digest(data)!=asset.get('sha256'):
+                raise Error('snapshot_changed','The embedded asset does not match its recorded identity.')
+            with staged.open('wb') as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
         rename_new(staged,output)
     return {'output':str(output),'location':loc}
 

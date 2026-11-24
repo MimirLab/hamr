@@ -1,6 +1,46 @@
 """Keep Markdown note definitions and reference occurrences from one AST."""
 
 
+def html_inline(child):
+    from bs4 import BeautifulSoup
+
+    tag = BeautifulSoup(child.content,'html.parser').find(True)
+    if tag and tag.name=='br':
+        child.type = 'hardbreak'
+        return child
+    if tag and tag.name=='img':
+        child.type = 'image'
+        child.content = tag.get('alt','')
+        child.attrs = {'src':tag.get('src','')}
+        return child
+    return None
+
+
+def visible_inline_html(state):
+    hidden_tags = {'script','style','template','noscript'}
+    for token in state.tokens:
+        if not token.children:
+            continue
+        result = []
+        hidden = None
+        for child in token.children:
+            if child.type=='html_inline':
+                markup = child.content.lower().strip()
+                if hidden and markup.startswith('</'+hidden):
+                    hidden = None
+                    continue
+                if hidden:
+                    continue
+                opened = markup.removeprefix('<').split(maxsplit=1)[0].rstrip('>/')
+                if opened in hidden_tags:
+                    hidden = opened
+                    continue
+                child = html_inline(child)
+            if child is not None and not hidden:
+                result.append(child)
+        token.children = result
+
+
 def inline(token, inline_sources):
     """Return visible inline text and exact note and literal spans."""
     pieces, spans, marks = [], [], []
@@ -27,6 +67,12 @@ def inline(token, inline_sources):
             if child.type == 'code_inline':
                 spans.append({'kind': 'literal', 'source': value,
                               'source_start': position, 'source_end': position + len(value)})
+        elif child.type == 'math_inline':
+            from .document_intake import formula_span
+            from .tex_math import tex_math
+
+            value = child.markup+child.content+child.markup
+            spans.append(formula_span(value,lambda:tex_math(child.content),position,'Authored Markdown math',{}))
         elif child.type == 'image':
             value = 'Figure. ' + child.content
         elif child.type in ('softbreak', 'hardbreak'):
@@ -58,6 +104,10 @@ def definition(tokens, inline_sources):
         if token.type == 'inline':
             text, local = inline(token, inline_sources)
             if text.strip():
+                from .epub_semantics import uncertainty
+
+                if issue := uncertainty(local):
+                    issues.append(issue)
                 parts.append(text)
                 value = reading(Block('',text,{'inline_semantics':local},'note','')).strip()
                 if value:

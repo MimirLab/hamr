@@ -187,3 +187,13 @@ def test_regional_spelling_does_not_create_a_word_error():
     assert comparison_tokens('The harbour guide.')==comparison_tokens('The Harbor Guide')
     assert comparison_tokens('The harbour guide.')!=comparison_tokens('The Harvard guide.')
     assert comparison_tokens('Four boats entered the harbour.')!=comparison_tokens('For boats entered the harbor.')
+
+
+def test_scoped_name_spelling_preserves_other_words_and_name_positions():
+    from audiobook.speech_compare import notation_observation
+
+    expected = 'A simple SymPy example.'
+    assert notation_observation(expected,'A simple, simpy example.')=='A simple, SymPy example.'
+    assert notation_observation(expected,'A simple, simple example.')=='A simple, simple example.'
+    assert notation_observation(expected,'A complex simpy example.')=='A complex simpy example.'
+    assert notation_observation('A simple SimPy example.','A simple simpy example.')=='A simple simpy example.'

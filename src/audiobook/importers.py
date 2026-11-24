@@ -19,6 +19,8 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
     from itertools import accumulate
     from markdown_it.token import Token
     from . import markdown_notes
+    from .epub_semantics import uncertainty
+    from .source_math import MATH_SPANS
     from .source_notes import Definition, NoteGraph
 
     try: text=data.decode('utf-8-sig')
@@ -97,6 +99,10 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
             html_read(t.content.encode('utf-8'),fragment,where=f'Markdown HTML at line {start+1}',
                       metadata=False,collect_resources=collect_resources)
             for item in fragment.doc.blocks:
+                if item.role=='heading':
+                    chapter = item.chapter
+                    title = title or chapter
+                    chapter_id = f'markdown-html:{start+1}:{item.locator["ordinal"]}'
                 item.chapter=chapter
                 item.locator.update({k:v for k,v in location(start,end).items() if k!='exact'})
                 if chapter_id is not None:item.locator['chapter_id']=chapter_id
@@ -111,7 +117,7 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
             if any(c.type=='hardbreak' for c in (v.children or [])):loc['authored_line_breaks']=True
             links=graph.links_for(spans)
             issue='Image has no authored description; verify whether it carries essential content.' if any(c.type=='image' and not c.content.strip() for c in (v.children or [])) else None
-            issue = issue or v.meta.get('source_issue')
+            issue = issue or v.meta.get('source_issue') or uncertainty(spans)
             role='heading' if t.type=='heading_open' else 'body'
             task=re.match(r'^\[([xX ])\]\s+',source) if list_depth and role=='body' else None
             if task:loc['checklist']={'checked':task[1].lower()=='x','marker':task[0],'origin':'Explicit Markdown task marker in a list item'}
@@ -135,6 +141,16 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
             loc={'format':'markdown','lines':[t.map[0]+1,t.map[1]],'exact':''.join(lines[t.map[0]:t.map[1]])}
             if chapter_id is not None:loc['chapter_id']=chapter_id
             out.append(block(t.content,loc,'code',chapter,['AST literal block']))
+        if t.type == 'math_block':
+            from .document_intake import formula_span
+            from .tex_math import tex_math
+
+            loc = location(*t.map)
+            if chapter_id is not None:loc['chapter_id']=chapter_id
+            source = loc['exact'].strip()
+            span = formula_span(source,lambda:tex_math(t.content),0,'Authored Markdown math',{})
+            loc['inline_semantics'] = [span]
+            out.append(block(source,loc,'equation',chapter,issue=span['issue']))
         if t.type=='table_open':
             start=t.map[0]; end=t.map[1]; rows=[]; row=[]; cells=[]; j=i+1
             while j<len(tokens) and tokens[j].type!='table_close':
@@ -142,7 +158,7 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
                 if q.type=='tr_open': row=[]
                 if q.type=='inline':
                     source, spans=markdown_notes.inline(q,inline_sources)
-                    if any(span['kind']=='note_reference' for span in spans):
+                    if any(span['kind']=='note_reference' or span['kind'] in MATH_SPANS for span in spans):
                         cells.append({'row':len(rows),'column':len(row),'source':source,'spans':spans})
                     row.append(source)
                 if q.type=='tr_close': rows.append(row)
@@ -152,6 +168,7 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
             b=block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row'])
             if cells:
                 graph.bind_cells(cells)
+                b.issue = next((issue for cell in cells if (issue:=uncertainty(cell['spans']))),None)
                 b.locator['table_cell_semantics']=cells
                 b.locator['table_header_cells']=list(range(len(rows[0])))
                 b.links.extend(link for cell in cells for link in cell['notes'])
