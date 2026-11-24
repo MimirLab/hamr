@@ -176,7 +176,8 @@ def test_dev8_pinned_prose_keeps_delivery_context(tmp_path):
     path = tmp_path/'book.txt'
     path.write_text('"Wait for the lantern,\nthen count the bells," she whispered.')
     pinned = 'dae46ffba0f49f2a1ba6f415a8f6c878a3829bf188ebdce5936d99fc9529415c'
-    result = plan(inspect_source(path),{'context_implementation':pinned},rule_revision='faithful-18')
+    result = plan(inspect_source(path),{'context_implementation':pinned},rule_revision='faithful-18',
+                  delivery_context=35)
     assert result['policy']['context_implementation']==pinned
     assert result['performance']['context_version']==35
     assert result['utterances'][0]['performance_candidate']['recipe']=='whisper'

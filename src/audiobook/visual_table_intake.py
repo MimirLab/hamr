@@ -1,6 +1,7 @@
 """Bind source observations to the common visual table projection."""
 
 from collections import Counter, defaultdict
+from ctypes import c_void_p, cast
 from itertools import pairwise
 from statistics import median
 import math
@@ -21,7 +22,7 @@ def observation_rect(rect, top):
     return left,top-high,right,top-bottom
 
 
-def read_tables(image, tokens, baseline, locate, read_cell):
+def read_tables(image, tokens, baseline, locate, read_cell, word_join=None):
     heights = [token.rect[3]-token.rect[1] for token in tokens if token.text.strip()]
     if len(heights)<4:
         return []
@@ -35,7 +36,7 @@ def read_tables(image, tokens, baseline, locate, read_cell):
     # The taller boxes better represent line height than punctuation and
     # lowercase x-height when estimating gaps from text without rules.
     line_height = sorted(heights)[3*len(heights)//4]
-    return ordered_tables(ruled+aligned_tables(rest,baseline,line_height,locate,read_cell),tokens)
+    return ordered_tables(ruled+aligned_tables(rest,baseline,line_height,locate,read_cell,word_join),tokens)
 
 
 def ordered_tables(tables, tokens):
@@ -134,6 +135,19 @@ def native_parts(page, textpage, glyphs, number, width, height):
             y_positions[token.key] = (height-origin)*SCALE
         return y_positions[token.key]
 
+    def word_join(left, right, size):
+        # Only bridge the measured word gap within one native print run.
+        # Independently positioned cells and numeric cells stay separate.
+        if (not left.text.isalpha() or not right.text.isalpha()
+                or right.rect[0]-left.rect[2]>1.3*size or right.key-left.key!=2):
+            return False
+        space = left.key+1
+        if raw.FPDFText_IsGenerated(textpage,space)!=0 or not textpage.get_text_range(space,1).isspace():
+            return False
+        owners = [cast(raw.FPDFText_GetTextObject(textpage,key),c_void_p).value
+                  for key in (left.key,space,right.key)]
+        return owners[0] is not None and owners[0]==owners[1]==owners[2]
+
     def read_cell(owned, bounds):
         # Keep each glyph's original index. PDFium's inserted separators
         # can lie between cells, so use the observed ink to order lines.
@@ -170,5 +184,5 @@ def native_parts(page, textpage, glyphs, number, width, height):
             picture = None
         if picture is not None:
             with picture:
-                return read_tables(picture,tokens,baseline,locate,read_cell)
-    return read_tables(None,tokens,baseline,locate,read_cell)
+                return read_tables(picture,tokens,baseline,locate,read_cell,word_join)
+    return read_tables(None,tokens,baseline,locate,read_cell,word_join)

@@ -14,7 +14,7 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, BadZipFile, ZipFile
 from PIL import Image
 
 from .core import Error, filehash
-from .intake_helpers import convert
+from .intake_helpers import convert, linux_sandbox, sandbox_status
 from .pdf_visual import MAX_PIXELS, Observer
 from .source_bundle import CHUNK, safe_name
 
@@ -26,12 +26,19 @@ MAX_DIMENSION = 8192
 MIN_GLIBC = (2,36)
 
 
-def available():
+def worker_available():
     libc,version = platform.libc_ver()
     return (sys.platform.startswith('linux') and platform.machine().lower() in ('x86_64','amd64')
             and libc=='glibc' and bool(re.fullmatch(r'\d+\.\d+(?:\.\d+)?',version))
             and tuple(map(int,version.split('.')[:2]))>=MIN_GLIBC
-            and bool(shutil.which('bwrap')) and RUNTIME.is_file())
+            and RUNTIME.is_file())
+
+
+def readiness():
+    if not worker_available():
+        return {'ready':False,'reason':'source_helper_unavailable'}
+    status = sandbox_status()
+    return {field:status[field] for field in ('ready','reason','diagnostic') if field in status}
 
 
 def resolution(size):
@@ -51,10 +58,11 @@ def resolution(size):
 
 
 def unpack(directory):
-    if not available():
+    if not worker_available():
         raise Error('source_helper_unavailable',
                     'Graphics-only XPS rendering needs Linux x86-64, glibc 2.36 or newer, and Bubblewrap.',
                     'Use a compatible host or open an image or searchable PDF export.')
+    linux_sandbox()
     if RUNTIME.is_symlink() or filehash(RUNTIME)!=RUNTIME_SHA256:
         raise Error('asset_integrity','The bundled XPS renderer did not match its checksum.',
                     'Reinstall the checked Hamr package.')

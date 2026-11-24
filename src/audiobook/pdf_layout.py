@@ -59,7 +59,7 @@ def apply_line_wraps(text, joins):
     return text
 
 
-def column_order(items, width, rect, *, min_lines=3):
+def column_order(items, width, rect, *, min_lines=3, baseline=None, coincident_boundary=None):
     """Keep whole columns in order when geometry establishes a central gutter."""
     left = [item for item in items if rect(item)[2] <= width * .52]
     right = [item for item in items if rect(item)[0] >= width * .48 and item not in left]
@@ -70,16 +70,23 @@ def column_order(items, width, rect, *, min_lines=3):
     if min(max(rect(item)[3] for item in side) for side in (left,right)) <= max(
             min(rect(item)[1] for item in side) for side in (left,right)):
         return None
-    spanning = [item for item in items if item not in left and item not in right]
+    reading_height = baseline or (lambda item:rect(item)[3])
+    spanning = {}
+    for item in items:
+        if item not in left and item not in right:
+            spanning.setdefault(reading_height(item),[]).append(item)
     ordered, high = [], float('inf')
-    for item in sorted(spanning,key=lambda value: -rect(value)[3]):
-        y = rect(item)[3]
+    for y, middle in sorted(spanning.items(),reverse=True):
         for side in (left,right):
-            ordered.extend(sorted((part for part in side if y <= rect(part)[3] < high), key=lambda part: -rect(part)[3]))
-        ordered.append(item)
+            ordered.extend(sorted((part for part in side if y < reading_height(part) < high),key=reading_height,reverse=True))
+        coincident = [part for side in (left,right) for part in side if reading_height(part)==y]
+        row = sorted(middle+coincident,key=lambda part:rect(part)[0])
+        if coincident and coincident_boundary:
+            coincident_boundary(row)
+        ordered.extend(row)
         high = y
     for side in (left,right):
-        ordered.extend(sorted((part for part in side if rect(part)[3] < high), key=lambda part: -rect(part)[3]))
+        ordered.extend(sorted((part for part in side if reading_height(part)<high),key=reading_height,reverse=True))
     return ordered
 
 

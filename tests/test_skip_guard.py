@@ -153,6 +153,107 @@ def test_word_substitution_needs_the_same_anchored_source_word():
     assert pipeline.substitution_sites(expected,'Jane cried loudly.') == set()
 
 
+@pytest.mark.parametrize('observed,operation,expected_site,observed_site',[
+    ('unlocked','replace',['locked'],['unlocked']),
+    ('','delete',['locked'],[]),
+])
+def test_low_wer_residual_cannot_approve_a_take(tmp_path,monkeypatch,observed,operation,expected_site,observed_site):
+    from audiobook import qa
+
+    expected = 'When the family returned to the house after the storm, the caretaker explained that the door was locked and the windows were secure.'
+    source = tmp_path/'book.md'
+    source.write_text(expected)
+    store,job = prepared(tmp_path,source)
+    pcm = jobs.valid_clip(store,jobs.clip_key(job['plan']['utterances'][0],job))
+
+    def observe(store,job,utterances,python,model):
+        unit, = utterances
+        transcript = unit['text'].replace('locked',observed)
+        row = {'utterance':unit['id'],'text':transcript,'audio_seconds':pcm['seconds'],
+               'pcm_sha256':pcm['sha256'],'audio_samples':pcm['samples'],
+               'segments':[{'text':transcript,'start':0,'end':pcm['seconds']}]}
+        return [row],{'model_files':{}},{}
+
+    monkeypatch.setattr(pipeline.qa_cache,'observe',observe)
+    result = qa.check(store,job['id'],Path('/unused'),Path('/unused-model'),require_review=True)
+    report = json.loads(Path(result['report']).read_text())
+    row, = report['rows']
+    site, = row['residual_word_edits']
+    assert result['status']=='needs_review' and result['wer']<.05
+    assert row['flags']==[qa.RESIDUAL_WORD_REVIEW] and row['pcm_sha256']==pcm['sha256']
+    assert (site['operation'],site['expected'],site['observed'])==(operation,expected_site,observed_site)
+    assert site['expected_token_range']==[17,18]
+    assert not store.get(job['id']).get('audio_gate_approved_takes')
+
+
+@pytest.mark.parametrize('second,retake',[
+    ('unlocked', True), ('locked', False), ('blocked', False),
+])
+def test_residual_retake_corroboration_requires_separate_observers_and_the_same_edit(
+        tmp_path,monkeypatch,second,retake):
+    source = tmp_path/'book.md'
+    source.write_text('After the family returned from the storm, the caretaker explained that the door was locked and the windows were secure.')
+    store,job = prepared(tmp_path,source)
+    old = jobs.clip_key(job['plan']['utterances'][0],job)
+    primary = Path('/primary')
+    secondary = Path('/secondary')
+    seen = []
+
+    def identity(python,model,worker):
+        return {'model_files':{'model.bin':model.name}}
+
+    def observe(store,job,utterances,python,model):
+        unit, = utterances
+        clip = jobs.clip_key(unit,job)
+        pcm = jobs.valid_clip(store,clip)
+        heard = unit['text']
+        if clip==old:
+            heard = heard.replace('locked','unlocked' if model==primary else second)
+        seen.append((clip,model,heard))
+        row = {'utterance':unit['id'],'text':heard,'audio_seconds':pcm['seconds'],
+               'pcm_sha256':pcm['sha256'],'audio_samples':pcm['samples'],
+               'segments':[{'text':heard,'start':0,'end':pcm['seconds']}]}
+        return [row],identity(python,model,None),{}
+
+    class Engine:
+        def __init__(self,*a): pass
+        def __enter__(self): return self
+        def __exit__(self,*a): pass
+        def speech(self,text,voice,seed=42):
+            pcm = (np.sin(np.arange(6000)*2*np.pi*(440+seed)/24000)*10000).astype('<i2').tobytes()
+            return validate_pcm(pcm)
+
+    monkeypatch.setattr(pipeline.qa_cache,'observer_identity',identity)
+    monkeypatch.setattr(pipeline.qa_cache,'observe',observe)
+    monkeypatch.setattr(jobs,'Engine',Engine)
+    if retake:
+        def interrupt(point):
+            if point=='after_automatic_retake_commit':
+                raise KeyboardInterrupt
+
+        with monkeypatch.context() as patch:
+            patch.setattr(pipeline,'fault',interrupt)
+            with pytest.raises(KeyboardInterrupt):
+                pipeline.run(store,job['id'],Path('/unused'),primary,second_model=secondary)
+        assert store.get(job['id'])['status']=='paused'
+        assert jobs.valid_clip(store,old)
+
+    result = pipeline.run(store,job['id'],Path('/unused'),primary,second_model=secondary)
+    state = store.get(job['id'])
+    assert any(clip==old and model==secondary for clip,model,_ in seen)
+    assert bool(state['automatic_retakes'])==retake
+    assert result['status']==('ready' if retake else 'needs_review')
+    if retake:
+        record, = state['automatic_retakes']
+        assert record['reasons']==['residual_word_disagreement'] and record['previous_clip']==old
+        witness = record['word_disagreement']
+        assert witness['pcm_sha256']==jobs.valid_clip(store,old)['sha256']
+        assert len(set(witness['observer_sha256']))==2 and witness['sites'][0][2]==['unlocked']
+        assert state['audio_gate_approved_takes']==jobs.take_signature(store,state)
+    else:
+        assert not state.get('audio_gate_approved_takes')
+
+
 def test_copied_model_cannot_confirm_its_own_disagreement(tmp_path,monkeypatch):
     source=tmp_path/'book.md'
     source.write_text('Fill this vessel with exactly five liters of clean water before final inspection.')

@@ -14,7 +14,7 @@ from .source_math import MATH_SPANS
 from .source_passages import Continuation, SourcePassages, legacy_prose_scope
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 35
+CONTEXT_VERSION = 36
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -36,6 +36,9 @@ ROLE_CLAUSE_WORDS = (
 ROLE_WORD = rf"(?!(?i:{ROLE_CLAUSE_WORDS})\b)[A-Za-z]+(?:[-'’][A-Za-z]+)*"
 ROLE_TAIL = r'(?!(?i:very|rather|somewhat|quite|slightly|almost|barely|hardly|really|still)\b)'
 ROLE_ATTRIBUTION = rf'(?:{ATTRIBUTION}|{ROLE_DETERMINER}\s+(?:{ROLE_WORD}\s+){{0,3}}{ROLE_TAIL}{ROLE_WORD})'
+ROLE_DESCRIPTION = (rf'{ROLE_DETERMINER}\s+(?:{ROLE_WORD}\s+){{0,3}}{ROLE_TAIL}{ROLE_WORD}'
+                    rf'\s+(?:with|in|of|from)\s+(?:{ROLE_DETERMINER}\s+)?'
+                    rf'(?:{ROLE_WORD}\s+){{0,2}}{ROLE_TAIL}{ROLE_WORD}')
 MIXED_DOUBLE_QUOTES = re.compile(r'(?P<before>[^"“”]*)(?:“(?P<curly>[^"“”\n]+)"|'
                                  r'(?<!\w)"(?P<straight>[^"“”\n]+)”)(?P<after>[^"“”]*)')
 NEUTRAL_REPORTING = ('said','added','answered','replied','continued','asked','remarked','observed','returned','repeated')
@@ -214,13 +217,18 @@ def locate_passage_candidate(candidate, blocks):
 
 
 def attribution_actor(version):
+    if version>=36:
+        return rf'(?:{ROLE_ATTRIBUTION}|{ROLE_DESCRIPTION})'
     return ROLE_ATTRIBUTION if version>=8 else ATTRIBUTION
 
 
 def attributed_modifiers(registry, version):
     if version<15:
         return {}
-    return {f'{verb} {word}':affect for verb,modifiers in registry['attributed_modifiers'].items()
+    catalogs = [registry['attributed_modifiers']]
+    if version>=36:
+        catalogs.append(registry['compound_attribution_extension']['modifiers'])
+    return {f'{verb} {word}':affect for catalog in catalogs for verb,modifiers in catalog.items()
             for word,affect in modifiers.items()}
 
 
@@ -340,10 +348,19 @@ def attributed_turn_continuation(source, cue_pattern, postposed, *, actor, conte
     if len(quotes) != 2:
         return None
     first, second = quotes
+    tail = source[second.end():].strip()
     if (first.start() or first[0][0] != second[0][0] or not second[0][1].isupper()
-            or second[0][-2] not in '.!?' or source[second.end():].strip() not in ('', '.', '!', '?')
+            or second[0][-2] not in '.!?'
             or not re.fullmatch(r'[^\n]+\.\s+', source[first.end():second.start()])):
         return None
+    if tail not in ('', '.', '!', '?'):
+        if context_version<36 or '\n' in tail or not tail[0].isupper() or tail[-1] not in '.!?':
+            return None
+        reporter = '|'.join((*NEUTRAL_REPORTING,'shouted','called','cried','yelled','spoke','exclaimed',
+                             'muttered','murmured','hissed','growled','snapped','announced'))
+        if re.match(rf'(?:{actor})\s+(?:{cue_pattern}|{reporter})\b',tail,re.I) or re.match(
+                rf'(?:{cue_pattern}|{reporter})\s+(?:{actor})\b',tail,re.I):
+            return None
     reporting = dialogue_attribution(source[:second.start()].rstrip(), cue_pattern, postposed,
                                      actor=actor, context_version=context_version)
     if reporting and reporting.start('quote') == 0:
@@ -556,6 +573,37 @@ def dialogue_context(source, config, previous, preference, context_version):
     if not strong and (preference != 'corroborated' or not corroborated):
         return None
     return recipe, [item for _,item in matching], owner is None
+
+
+def prior_voice_action(source, config, context_version):
+    """Bind a speaker lowering their voice to their next unattributed quote."""
+    if context_version<36 or len(source)>480:
+        return None
+    quotes = list(re.finditer(QUOTATION,source))
+    if len(quotes)!=1 or source[quotes[0].end():].strip() not in ('','.','!','?'):
+        return None
+    quote, = quotes
+    preceding = list(sentence_spans(source[:quote.start()]))
+    if not preceding or quote[0][-2] not in '.!?':
+        return None
+    sentence = preceding[-1]
+    setup = sentence['text'].removesuffix('.')
+    if sentence['text']==setup:
+        return None
+    actor_pattern = attribution_actor(context_version)
+    for match in re.finditer(r'\s+',setup):
+        actor = setup[:match.start()]
+        if len(actor)>110:
+            break
+        if re.fullmatch(actor_pattern,actor) and (cue:=speaker_evidence(actor,setup,config['speaker_cues'],
+                                                                       allow_local_pronoun=True,
+                                                                       context_version=context_version)):
+            if cue['signal']=='lowered_voice' and cue['strong']:
+                return cue['recipe'],[{'kind':'same_speaker_setup','signal':cue['signal'],
+                                      'span':[sentence['start'],sentence['start']+len(setup)],
+                                      'speaker_span':[sentence['start'],sentence['start']+len(actor)],
+                                      'quotation_spans':[list(quote.span())]}],True
+    return None
 
 
 def trailing_voice_description(source, config, preference, context_version):
@@ -844,6 +892,8 @@ def contextual_direction(source, config, previous=None, preference='corroborated
     """Keep prose evidence local to a speaker or a coherent scene."""
     if result := dialogue_context(source,config,previous,preference,context_version):
         return result
+    if preference!='off' and (result:=prior_voice_action(source,config,context_version)):
+        return result
     if len(source)>480 or any(quote in source for quote in ('“','”','"','‘')) or re.search(QUOTATION,source):
         return None
     scene=config['quiet_scene']
@@ -1086,7 +1136,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None, pass
         fragments.annotate(plan['utterances'],by_id,decisions,source_order,occurrences,disabled,passages)
     by_source_candidate={}
     candidates = 0
-    registry_sha = key(registry)
+    registry_sha = key(registry if version>=36 else {
+        field:value for field,value in registry.items() if field!='compound_attribution_extension'})
     for unit in plan['utterances']:
         sources = unit['sources']
         blocks = [by_id[bid] for bid in sources]
@@ -1133,6 +1184,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None, pass
                 kind := verbs.get(attribution_phrase(turn[0]))):
             direction = kind, turn[0]
             following_quote = turn[1]
+            if version>=36 and source[following_quote[1]:].strip() not in ('','.','!','?'):
+                surrounding = (0,following_quote[1])
         elif inline_rules and (inline_event:=inline_vocal_event(source,neutral,sources[0],inline_rules,actor,version)):
             pass
         elif modern_context and (owned:=embedded_attribution(source,cue_pattern,postposed,actor=actor,
@@ -1186,7 +1239,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None, pass
                 offset,stop=surrounding
                 start+=offset
                 end+=offset
-                if continuation:
+                if continuation or following_quote:
                     instruction = recipe.get('continued_turn_instruction') or instruction
                     instruction += ' Read the narration around and between the quotes in the usual reference voice.'
                 elif not role_instruction:
@@ -1195,6 +1248,9 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None, pass
                          'instruction':instruction, 'cfg_scale':recipe.get('cfg_scale',1),
                          'source':{'block':sources[0], 'span':[start,end]},
                          'evidence':[{'kind':'direct_attribution','span':[start,end]}]}
+            if version>=36 and (following_quote or attribution_phrase(attribution) in affects):
+                offset = surrounding[0] if surrounding else 0
+                candidate['evidence'][0]['speaker_span'] = [offset+i for i in attribution.span('actor')]
             if continuation or following_quote:
                 candidate['contextual']=True
                 form = 'continued_quotation' if following_quote else 'interrupted_quotation'
@@ -1214,10 +1270,13 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None, pass
             if surrounding:
                 candidate['contextual']=True
                 spans = [attribution.span('quote')]
-                if continuation:
+                if following_quote:
+                    spans.append(following_quote)
+                elif continuation:
                     spans.append(attribution.span('continuation'))
                 candidate['evidence'][0].update(
-                    form='embedded_interrupted_quotation' if continuation else 'embedded_quotation',
+                    form=('embedded_continued_quotation' if following_quote else
+                          'embedded_interrupted_quotation' if continuation else 'embedded_quotation'),
                     turn_span=[offset,stop], quotation_spans=[[offset+i for i in span] for span in spans])
             if described:
                 offset = surrounding[0] if surrounding else 0
@@ -1228,7 +1287,11 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None, pass
                 candidate['evidence'][0].setdefault('quotation_spans',[list(attribution.span('quote'))])
             phrase = attribution_phrase(attribution)
             if phrase not in custom and (affect:=affects.get(phrase)):
-                apply_attributed_affect(candidate,attribution,phrase,affect,registry['compound_attribution'],
+                templates = registry['compound_attribution']
+                if version>=36:
+                    templates = {**templates,'affect':{**templates['affect'],
+                                  **registry['compound_attribution_extension']['affect']}}
+                apply_attributed_affect(candidate,attribution,phrase,affect,templates,
                                          surrounding,following_quote)
             if suffixes:=recipe.get('voice_suffixes'):
                 candidate['voice_suffixes']=suffixes
@@ -1344,7 +1407,9 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None, pass
         if joined_passage:
             locate_passage_candidate(candidate,blocks)
         narrated_context = surrounding or candidate.get('evidence',[{}])[0].get('kind') in (
-            'trailing_voice_description','attached_voice_description')
+            'trailing_voice_description','attached_voice_description') or (
+            version>=36 and candidate.get('evidence',[{}])[0].get('kind')=='same_speaker_setup'
+            and candidate['evidence'][0].get('quotation_spans'))
         if ((direction or candidate.get('contextual')) and not focus and not candidate.get('anchor')
                 and not narrated_context and not candidate.get('composition')):
             if marker:=recipe.get('quote_marker'):

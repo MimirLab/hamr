@@ -1,3 +1,11 @@
+# hamr 0.4.9.dev50
+
+- Read saved automatic numbering in Word documents and Roman markers in HTML and EPUB. The plan keeps the original marker notation, start values, and supported nesting and restarts.
+- Keep a compound description such as “she whispered angrily” attached to that speaker’s dialogue. Continuing quotes keep their delivery when plain narration follows.
+- Recover multiword labels in searchable PDF tables when native print runs and repeated alignment agree. Preserve every fragment when column order needs review.
+- Report the exact disputed words when required speech checks find a mismatch. A low overall error rate can still hide a word that changes the meaning. Automatic retakes for a residual word change require independent observations of the same change.
+- Check that Bubblewrap can start the required isolation before reporting a local converter ready.
+
 # hamr 0.4.9.dev49
 
 - Open tested MacWrite, MacWrite Pro and Nisus Writer documents with the bundled Linux reader. Read their text, linked notes and tables through the ordinary OpenDocument preparation.

@@ -4,7 +4,7 @@ from difflib import SequenceMatcher
 from .core import Error,writejson,key,check_revision
 from .jobs import clip_key,valid_clip,summary,final_path,verify_publication,take_signature
 from .planner import count_words,SMALL,TENS,COUNT_RE
-from .speech_compare import POLICY,comparison_tokens,quantities,negations,mathematical_markers,notation_observation,unit_sites
+from .speech_compare import POLICY,comparison_tokens,quantities,negations,mathematical_markers,notation_observation,unit_sites,residual_edits
 
 
 def tokens(s):
@@ -144,6 +144,7 @@ def missing_parenthetical_counts(expected,observed,protected=None):
     return missing
 
 WORD_ERROR_REVIEW = 'WER above 20%; inspect this passage for drops/insertions.'
+RESIDUAL_WORD_REVIEW = 'ASR differs at a spoken-word site; verify the words before publication.'
 
 
 def check(store,jid,python,model,all_clips=False,require_review=False):
@@ -188,11 +189,16 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             if missing_final_words(u['text'],comparison_text):flags.append('ASR recovers a source prefix but misses its ending; inspect possible mid-sentence truncation.')
             missing_counts=missing_parenthetical_counts(u['text'],comparison_text,u.get('protected_counts'))
             if missing_counts:flags.append('Parenthetical count not recovered by ASR; inspect the source and take: '+', '.join(missing_counts))
+            residual = residual_edits(ref,hyp) if edits and not sound else []
+            if residual and not flags:
+                flags.append(RESIDUAL_WORD_REVIEW)
             warnings=[]
             if sound and sound['status']=='ambiguous_vocalization':
                 warnings.append('The words match around an authored sound. The recognizer cannot determine whether the extra tokens were spoken or vocalized.')
             if any(s['start']>row['audio_seconds']+.1 or s['end']>row['audio_seconds']+1 for s in row['segments']):warnings.append('ASR timestamps extend beyond the physical clip; transcript tail is unreliable. Check recognition before changing the audio.')
             rows.append({**row,'expected':u['text'],'source_blocks':u['sources'],'listening_findings':findings,'comparison_text':comparison_text,'ASR_segments_wholly_after_audio':len(row['segments'])-len(plausible),'word_errors':edits,'reference_words':len(ref),'wer':edits/max(1,len(ref)),'raw_word_errors':literal_edits,'raw_reference_words':len(literal_ref),'raw_wer':literal_edits/max(1,len(literal_ref)),'comparison_quantities_expected':quantities(ref),'comparison_quantities_observed':quantities(hyp),'expected_numbers':expected_numbers,'asr_numbers':observed_numbers,'missing_parenthetical_counts':missing_counts,'observation_warnings':warnings,'flags':flags,'retake_action':f'hamr repair {jid} --retake {u["id"]}'})
+            if residual:
+                rows[-1]['residual_word_edits'] = residual
             if event:=(u.get('performance') or {}).get('event'):
                 rows[-1]['expected_intentional_event']={k:event[k] for k in ('kind','position')}
             if sound:
@@ -221,7 +227,9 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             j['audio_gate_checked_plan']=j['plan']['plan_sha256']
             j['audio_gate_checked_takes']=observed_signature
             j['audio_gate_checked_comparison_policy']=POLICY
-            j['audio_review']=[{'utterance':r['utterance'],'clip_key':clip_key(by_id[r['utterance']],j),'pcm_sha256':r['pcm_sha256'],'sources':by_id[r['utterance']]['sources'],'flags':r['flags'],'report':str(dest)} for r in rows if r['flags'] and (clip_key(by_id[r['utterance']],j),r['pcm_sha256']) not in accepted]
+            j['audio_review']=[{'utterance':r['utterance'],'clip_key':clip_key(by_id[r['utterance']],j),'pcm_sha256':r['pcm_sha256'],'sources':by_id[r['utterance']]['sources'],'flags':r['flags'],'report':str(dest),
+                                **({'residual_word_edits':r['residual_word_edits']} if r.get('residual_word_edits') else {})}
+                               for r in rows if r['flags'] and (clip_key(by_id[r['utterance']],j),r['pcm_sha256']) not in accepted]
             if j['audio_review']:
                 j['audio_gate_approved_plan']=None;j['audio_gate_approved_takes']=None;j['audio_gate_approved_comparison_policy']=None; j['status']='needs_review'; j['error']={'code':'speech_qa_review','message':'Speech QA or recorded listening evidence requires review. Verified clips and unrelated jobs are retained.','action':f'hamr show {jid} --content; inspect the QA report, then retake or explicitly accept the checked clip.'}
             else:

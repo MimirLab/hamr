@@ -121,7 +121,7 @@ After a timed whisper, Hamr checks the return to the narrator on phrases such as
 
 The timing check can recognize spellings the book compiler already expanded, such as “Dr.” and “Doctor” at the same place in the passage. When the two timing checks disagree, an installed Fluid checker can corroborate the complete wording and the location of the disputed quote. The Whisper profile uses the existing pair of lower-memory checks.
 
-“Wait for the lantern,” she whispered. “The latch is still closed.” When the same turn continues in a second complete quotation within the paragraph, Hamr can keep both lines in one Breeze request. The narrator still reads the attribution between them. The plan marks both quotation spans under `continued_quotation`.
+“Wait for the lantern,” she whispered. “The latch is still closed.” When the same turn continues in a second complete quotation within the paragraph, Hamr can keep both lines in one Breeze request. The narrator reads the attribution and any trailing narration in the usual voice. The plan records both quotation spans.
 
 On a searchable PDF these quotations can sit on separate printed lines. Hamr can keep adjacent aligned lines together for speech. A shared authored paragraph tag lets the delivery carry across both quotations. With only line geometry, Breeze reads the combined passage in its usual voice. The companion retains both source locations. Use `hamr repair JOB --reimport --performance auto` to check an older PDF for paragraph tags.
 
@@ -137,7 +137,7 @@ A written sigh or cough can also fall between two complete sentences in one attr
 
 If the same quotation is whispered, Hamr can keep the whisper and the authored sound in that request. It can also carry one unambiguous author-marked stress. The plan records the attribution, the marked sound, and the emphasized word separately. The sound marker tells Breeze where to act and is omitted from the expected spoken words.
 
-An attribution can specify both delivery and emotion. “She whispered eagerly” asks for a whisper with a little anticipation, and “she whispered shyly” asks for a hesitant warmth. A direct lead-in such as `Mara whispered: “Wait by the door.”` scopes the direction to the quotation. If the attribution interrupts one continuous turn, both quoted parts share the delivery and the attribution uses the usual narrator voice.
+An attribution can specify both delivery and emotion. “She whispered eagerly” asks for a whisper with a little anticipation. “She whispered angrily” keeps the line quiet and gives it restrained anger. Hamr can connect longer speaker descriptions such as “the tall man with a scar” to the same reporting clause. If the attribution interrupts one continuous turn, both quoted parts share the delivery and the attribution uses the usual narrator voice.
 
 Authored sounds are available in the ordinary workflow. Listening evidence includes leading sighs for Nigel Thornberry and Cave Johnson on Linux CPU Q8, trailing sighs on Linux Vulkan Q8, and Nigel's opening chuckle on Vulkan Q8 and F16. The plan records the direction that ran. Delivery varies with the voice, engine and passage.
 

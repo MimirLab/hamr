@@ -53,7 +53,7 @@ class Line:
     runs: tuple
 
 
-def lines(tokens, baseline, size, read_cell):
+def lines(tokens, baseline, size, read_cell, word_join=None):
     """Find word runs separated by space large enough to hold a cell gutter."""
     bands = []
     for token in sorted(tokens, key=lambda t:(baseline(t),t.rect[0],t.key)):
@@ -67,7 +67,8 @@ def lines(tokens, baseline, size, read_cell):
         groups = []
         end = float('-inf')
         for token in band:
-            if not groups or token.rect[0]-end>.55*size:
+            if not groups or (token.rect[0]-end>.55*size and
+                              not (word_join and word_join(groups[-1][-1],token,size))):
                 groups.append([])
             groups[-1].append(token)
             end = max(end,token.rect[2])
@@ -233,10 +234,10 @@ def unresolved(region, locate, read_cell):
     return {t.key for t in tokens},{'text':text,'locator':locator,'issue':issue,'role':'table'}
 
 
-def aligned_tables(tokens, baseline, size, locate, read_cell):
+def aligned_tables(tokens, baseline, size, locate, read_cell, word_join=None):
     if not 8<=len(tokens)<=MAX_TOKENS or size<=0:
         return []
-    observed = list(lines(tokens,baseline,size,read_cell))
+    observed = list(lines(tokens,baseline,size,read_cell,word_join))
     result = []
     for start,rows,kinds,tracks in data_runs(observed,size):
         minimum = 4 if len(kinds)==2 else 3

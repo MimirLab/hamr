@@ -9,16 +9,86 @@ NS = (f'xmlns:w="{WORD}" xmlns:mc="{MC[1:-1]}" xmlns:s="{SHAPE}" xmlns:v="{VML}"
       'xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:unknown="urn:unknown"')
 
 
-def package(path,body,notes=''):
+def package(path,body,notes='',numbering='',styles=''):
     with ZipFile(path,'w') as book:
         book.writestr('word/document.xml',f'<w:document {NS}><w:body>{body}</w:body></w:document>')
         if notes:
             book.writestr('word/footnotes.xml',f'<w:footnotes {NS}>{notes}</w:footnotes>')
+        if numbering:
+            relationship = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+            entry = f'<Relationship Id="numbering" Type="{relationship}numbering" Target="lists/numbering.xml"/>'
+            if styles:
+                entry += f'<Relationship Id="styles" Type="{relationship}styles" Target="styles.xml"/>'
+                book.writestr('word/styles.xml',f'<w:styles {NS}>{styles}</w:styles>')
+            book.writestr('word/_rels/document.xml.rels',
+                          '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                          +entry+'</Relationships>')
+            book.writestr('word/lists/numbering.xml',f'<w:numbering {NS}>{numbering}</w:numbering>')
     return path
 
 
 def paragraph(text):
     return f'<w:p><w:r><w:t>{text}</w:t></w:r></w:p>'
+
+
+def numbered(text,num=None,level=None,style=None):
+    style_xml = f'<w:pStyle w:val="{style}"/>' if style else ''
+    numbering = f'<w:numId w:val="{num}"/>' if num is not None else ''
+    if level is not None:
+        numbering = f'<w:ilvl w:val="{level}"/>'+numbering
+    props = style_xml+(f'<w:numPr>{numbering}</w:numPr>' if numbering else '')
+    return f'<w:p><w:pPr>{props}</w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>'
+
+
+def test_saved_word_instances_styles_and_restarts_feed_common_list_reading(tmp_path):
+    definition = (
+        '<w:abstractNum w:abstractNumId="0">'
+        '<w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>'
+        '<w:lvl w:ilvl="1"><w:start w:val="4"/><w:numFmt w:val="upperRoman"/>'
+        '<w:pStyle w:val="Indented"/><w:lvlText w:val="%1.%2."/></w:lvl>'
+        '</w:abstractNum><w:num w:numId="2"><w:abstractNumId w:val="0"/>'
+        '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="3"/></w:lvlOverride></w:num>'
+        '<w:num w:numId="3"><w:abstractNumId w:val="0"/></w:num>')
+    styles = ('<w:style w:type="paragraph" w:styleId="Indented"><w:pPr>'
+              '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="2"/></w:numPr>'
+              '</w:pPr></w:style><w:style w:type="paragraph" w:styleId="Child">'
+              '<w:basedOn w:val="Indented"/></w:style>')
+    body = (numbered('3. Open the gate.',2)+numbered('Check the hinge.',style='Child')
+            +paragraph('Watch the road.')+numbered('Inspect the latch.',2,1)
+            +numbered('Check the lamp.',2)+numbered('Check the cover.',style='Child')
+            +numbered('Close the gate.',3)+numbered('Park the cart.',0,style='Child'))
+    source = package(tmp_path/'counter.docx',body,numbering=definition,styles=styles)
+    wrapped = tmp_path/'counter.zip'
+    with ZipFile(wrapped,'w') as zipfile:
+        zipfile.write(source,'manual/Counter.docx')
+    for path in (source,wrapped):
+        result = plan(inspect_source(path,offline=True))
+        assert not result['issues']
+        assert [unit['text'] for unit in result['utterances']]==[
+            'Number three, Open the gate.','Number three dot four, Check the hinge.',
+            'Watch the road.','Number three dot five, Inspect the latch.',
+            'Number four, Check the lamp.','Number four dot four, Check the cover.',
+            'Number one, Close the gate.','Park the cart.']
+        labels = [a for row in result['decisions'] for a in row.get('source_numbering',())]
+        assert [label['authored_marker'] for label in labels]==['3.','3.IV.','3.V.','4.','4.IV.','1.']
+        assert labels[0]['source']=='3. ' and labels[1]['ordinal_values']==[3,4]
+        assert labels[1]['marker_location']['source_file']=='word/lists/numbering.xml'
+        assert labels[0]['marker_location']['override_path'].endswith('/w:lvlOverride')
+
+
+def test_word_bullet_never_gains_speech_and_unsupported_marker_holds_one_item(tmp_path):
+    definition = ('<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0">'
+                  '<w:numFmt w:val="bullet"/><w:lvlText w:val="•"/></w:lvl></w:abstractNum>'
+                  '<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0">'
+                  '<w:numFmt w:val="hebrew1"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+                  '<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>'
+                  '<w:num w:numId="7"><w:abstractNumId w:val="1"/></w:num>')
+    path = package(tmp_path/'markers.docx',numbered('Watch the road.',1)+numbered('Inspect the latch.',7),
+                   numbering=definition)
+    doc = inspect_source(path)
+    result = plan(doc)
+    assert len(result['issues'])==1 and result['issues'][0]['block']==doc.blocks[1].id
+    assert [unit['text'] for unit in result['utterances']]==['Watch the road.']
 
 
 def drawing(content):

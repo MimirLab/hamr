@@ -2,13 +2,16 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from .core import Block
 from .document_intake import (attr, formula_span, name,
                               plain_xml_text, structured_zip, xml)
 from .epub_semantics import uncertainty
 from .source_math import office_math, office_tag, office_text
 from .source_notes import Definition, NoteGraph, note_text
+from .source_numbering import clear, ordered_label
 from .table_grid import Grid, count, passage, passages, simple_matrix
 from .word_stories import ALTERNATE, MISSING_BRANCH, TEXTBOX, Stories, branch, enabled, excluded_kind, properties, visible
+from .word_numbering import Numbering
 
 
 @dataclass
@@ -19,6 +22,7 @@ class Paragraph:
     issue: str | None = None
     stories: list = field(default_factory=list)
     location: dict | None = None
+    numbering: tuple | None = None
 
 
 def join_paragraphs(paragraphs, *, note=False):
@@ -62,6 +66,7 @@ def word_location(node,part='document'):
 def read_word(path,builder):
     with structured_zip(path) as (read,members):
         document = xml(read('word/document.xml'))
+        numbering = Numbering(read,members)
         drawing_parts = {'document':Stories(document)}
         meta = read('docProps/core.xml',required=False)
         if meta:
@@ -79,7 +84,7 @@ def read_word(path,builder):
                     if ident is not None and attr(note,'type') in (None,'normal'):
                         pending_notes['#'+part[:-1]+':'+ident].append((part,note))
 
-        def paragraph(node, *, note_part=None):
+        def paragraph(node, *, note_part=None, embed=False):
             pieces,spans,excluded,problems = [],[],[],[]
             textboxes = []
             drawings = drawing_parts[note_part or 'document']
@@ -164,7 +169,15 @@ def read_word(path,builder):
                 span['source_end'] = min(len(text),max(0,span['source_end']-left))
                 span['source'] = text[span['source_start']:span['source_end']]
             issue = ' '.join(dict.fromkeys(problems)) or uncertainty(spans)
-            return Paragraph(text,spans,excluded,issue,textboxes,word_location(node,note_part or 'document'))
+            order = numbering.next(node)
+            if order:
+                value,marker = order
+                issue = issue or marker.get('issue')
+                if embed and text and not issue:
+                    entry = Block('',text,{'inline_semantics':spans})
+                    if clear(entry,0,0):
+                        spans.insert(0,ordered_label(entry,value,marker).span(text))
+            return Paragraph(text,spans,excluded,issue,textboxes,word_location(node,note_part or 'document'),order)
 
         def embedded_content(node,*,note_part=None):
             for child in node:
@@ -177,7 +190,7 @@ def read_word(path,builder):
                         yield Paragraph(issue=MISSING_BRANCH)
                     continue
                 if name(child)=='p' or office_tag(child) in ('oMath','oMathPara'):
-                    result = paragraph(child,note_part=note_part)
+                    result = paragraph(child,note_part=note_part,embed=True)
                     yield result
                     for story in result.stories:
                         yield from embedded_content(story,note_part=note_part)
@@ -276,6 +289,9 @@ def read_word(path,builder):
                 spans = [span for span in content.spans if span['kind']!='line_break']
                 item = builder.add(content.text,role,loc,loc={**provenance,'inline_semantics':spans},
                                    issue=content.issue)
+                if item and content.numbering:
+                    value,marker = content.numbering
+                    item.locator.update(ordered_item=value,ordered_marker=marker)
                 if item and any(span['kind']=='line_break' and span['source']=='\n' for span in content.spans):
                     item.locator['authored_line_breaks'] = True
                 for story in content.stories:

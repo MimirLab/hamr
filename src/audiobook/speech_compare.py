@@ -5,12 +5,13 @@ canonicalized. Decimal/version strings and leading zeros remain distinct.
 Homophones such as for/four and know/no are deliberately not equated.
 """
 from calendar import monthrange
+from difflib import SequenceMatcher
 import re,unicodedata
 from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v44'
+POLICY='bounded-english-composed-scale-typed-v45'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -427,6 +428,40 @@ def comparison_tokens(text):
 
 def quantities(ts):return [t[1:] for t in ts if t.startswith('#')]
 def negations(ts):return sum(t in ('not','never','no',"ain't") for t in ts)
+
+
+def residual_edits(expected, observed):
+    """Locate differences after applying the established spoken equivalences."""
+    return [
+        {'operation':operation, 'expected_token_range':[start,end],
+         'observed_token_range':[first,last], 'expected':expected[start:end],
+         'observed':observed[first:last]}
+        for operation,start,end,first,last in
+        SequenceMatcher(None,expected,observed,autojunk=False).get_opcodes()
+        if operation!='equal'
+    ]
+
+
+def shared_residual_sites(expected, first, second):
+    """Both unprompted observations must dispute the same bounded source site."""
+    reference = comparison_tokens(expected)
+
+    def sites(observation):
+        heard = comparison_tokens(notation_observation(expected,observation))
+        result = set()
+        alignment = SequenceMatcher(None,reference,heard,autojunk=False).get_opcodes()
+        for index,(operation,start,end,first,last) in enumerate(alignment):
+            if operation not in ('replace','delete'):
+                continue
+            left = alignment[index-1] if index else None
+            right = alignment[index+1] if index+1<len(alignment) else None
+            anchors = ((left[2]-left[1] if left and left[0]=='equal' else 0)
+                       + (right[2]-right[1] if right and right[0]=='equal' else 0))
+            if anchors>=2:
+                result.add((start,end,tuple(heard[first:last])))
+        return result
+
+    return sites(first)&sites(second)
 
 
 UNITS=r'(?:centi|milli|kilo)?met(?:er|re)s?|milligrams?|kilograms?|grams?|pounds?|yards?|seconds?|degrees?|inch(?:es)?|feet|foot|cm|mm|mg|kg|lbs?|(?:milli|micro)?volts?|kilopascals?|megabytes?|megabits?|kilobytes?|kilobits?|cups?|teaspoons?|tablespoons?|lit(?:er|re)s?|millilit(?:er|re)s?|celsius|fahrenheit|kelvin|ounces?|hours?|minutes?'

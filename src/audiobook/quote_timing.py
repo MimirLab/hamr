@@ -48,11 +48,21 @@ def owned_whisper(text, context_version):
     return turn[0] if turn else None
 
 
+@lru_cache(maxsize=8)
+def whisper_grammar(context_version):
+    if context_version<36:
+        return 'whispered',None,{'whispered':'whisper'}
+    meanings,_,postposed = performance.attribution_rules(loadjson(performance.RULES_FILE),context_version,{})
+    cue = '|'.join(re.escape(phrase) for phrase,kind in meanings.items() if kind=='whisper')
+    return cue,postposed,meanings
+
+
 def owned_whisper_turn(text, context_version):
     """Return the unique owned quotations and their reporting clause."""
     quoted = performance.quotation_text(text, context_version)
     sentences = list(sentence_spans(quoted))
     actor = performance.attribution_actor(context_version)
+    cue,postposed,meanings = whisper_grammar(context_version)
     found = []
     for quote in re.finditer(performance.QUOTATION, quoted):
         boundary = max((part['end'] for part in sentences if part['end'] <= quote.start()), default=0)
@@ -60,16 +70,19 @@ def owned_whisper_turn(text, context_version):
         for part in sentences:
             if part['end'] < quote.end():
                 continue
-            turn = performance.dialogue_attribution(quoted[start:part['end']].rstrip(), 'whispered',
-                actor=actor, allow_colon=True, context_version=context_version)
-            if turn and not turn.groupdict().get('continuation'):
+            turn = performance.dialogue_attribution(quoted[start:part['end']].rstrip(),cue,postposed,
+                actor=actor,allow_colon=True,context_version=context_version)
+            if (turn and meanings.get(performance.attribution_phrase(turn))=='whisper'
+                    and not turn.groupdict().get('continuation')):
                 offsets = tuple(start + offset for offset in turn.span('quote'))
                 if offsets == quote.span():
+                    end = turn.end('modifier') if turn.groupdict().get('modifier') else turn.end('verb')
                     reporting = (start+min(turn.start('actor'),turn.start('verb')),
-                                 start+max(turn.end('actor'),turn.end('verb')))
+                                 start+max(turn.end('actor'),end))
                     continuation = performance.attributed_turn_continuation(
-                        quoted[quote.start():], 'whispered', None, actor=actor, context_version=context_version)
-                    if continuation and context_version >= 21:
+                        quoted[quote.start():],cue,postposed,actor=actor,context_version=context_version)
+                    if (continuation and context_version>=21
+                            and meanings.get(performance.attribution_phrase(continuation[0]))=='whisper'):
                         following = tuple(quote.start()+offset for offset in continuation[1])
                         found.append(((offsets,following),reporting))
                     elif not continuation:

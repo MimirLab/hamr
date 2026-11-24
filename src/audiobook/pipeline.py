@@ -6,7 +6,7 @@ import math,time
 from .core import Error,key,writejson,loadjson,filehash,fault
 from . import jobs,performance,qa,qa_cache
 from .asr_fluid import BOOK_RAM_HEADROOM, Recipe, memory_available
-from .speech_compare import comparison_tokens,quantities,negations,mathematical_markers,notation_observation,unit_sites
+from .speech_compare import comparison_tokens,quantities,negations,mathematical_markers,notation_observation,unit_sites,shared_residual_sites
 
 
 def binding(job):
@@ -108,6 +108,8 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
         observer=qa_cache.observer_identity(python,model,Path(__file__).with_name('qa_worker.py'))
         confirming_observer=None
         if state.get('observer_sha256')!=key(observer):state['observed_pcm']={}
+        state.pop('second_observer_sha256',None)
+        state.pop('second_observer_status',None)
         state.update(observer_sha256=key(observer),observer_profile=observer.get('profile','whisper'),observer_options={'python':str(python),'model':str(model),'second_model':str(second_model) if second_model else None})
         state.update(binding=owner,job=jid,plan_sha256=job['plan']['plan_sha256'],phase='starting',error=None,resident_model=resident)
         state['runs'].append({'revision':job['revision'],'started':time.time(),'batch_takes':batch_takes,'max_retakes':max_retakes,'prepare_clear':prepare_clear,'resident':resident,'batch_rest_seconds':batch_rest_seconds,'overlap_batch_rest':overlap_batch_rest})
@@ -190,13 +192,17 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                 first=row['comparison_text']
                 mismatch=critical(u['text'],first,u.get('protected_counts'),(j.get('voice') or {}).get('transcript'))
                 sites = set()
-                if row.get('flags')==[qa.WORD_ERROR_REVIEW]:
+                flags = row.get('flags')
+                residual = flags==[qa.RESIDUAL_WORD_REVIEW]
+                if residual or flags==[qa.WORD_ERROR_REVIEW]:
                     receipt = jobs.valid_clip(store,clip)
                     timed = (receipt or {}).get('quote_timing',{})
-                    if timed.get('selected')!='directed':
+                    if timed.get('selected')=='directed':
+                        residual = False
+                    elif not residual:
                         sites = substitution_sites(u['text'],first)
-                if (mismatch or sites) and sum(t['identity']==identity for t in state['retakes'])<2:
-                    candidates.append((row,sites))
+                if (mismatch or sites or residual) and sum(t['identity']==identity for t in state['retakes'])<2:
+                    candidates.append((row,sites,residual))
             confirmed=[]
             if second_model and candidates and len(state['retakes'])<max_retakes:
                 if confirming_observer is None:
@@ -206,13 +212,15 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                         other=qa_cache.model_fingerprint(secondary)
                         confirming_observer=secondary if primary and other and primary!=other else False
                         state['second_observer_status']='distinct_model' if confirming_observer else 'duplicate_or_unverified_model'
+                        if confirming_observer:
+                            state['second_observer_sha256'] = key(secondary)
                     except (Error,OSError):
                         confirming_observer=False
                         state['second_observer_status']='unavailable'
                 if not confirming_observer:return confirmed
                 progress('second_observer',candidates=len(candidates))
                 try:
-                    others,observed_identity=observe([byid[row['utterance']] for row,_ in candidates],second_model)
+                    others,observed_identity=observe([byid[row['utterance']] for row,_,_ in candidates],second_model)
                 except (FileNotFoundError,Error) as exc:
                     if isinstance(exc,Error) and exc.code not in ('asr_environment','asr_failed','asr_contract'):raise
                     confirming_observer=False
@@ -222,20 +230,30 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
                     confirming_observer=False
                     state['second_observer_status']='changed_model'
                     return confirmed
-                for (row,sites),other in zip(candidates,others):
+                for (row,sites,residual),other in zip(candidates,others):
                     u=byid[row['utterance']]
+                    if other['utterance']!=row['utterance'] or other['pcm_sha256']!=row['pcm_sha256']:
+                        raise Error('qa_clip_changed','Speech changed between independent observations.',
+                                    f'Run hamr resume {jid} to check the current takes.')
                     first,second=row['comparison_text'],spoken_observation(other,u)
                     shared=corroborated(u['text'],first,second,u.get('protected_counts'),(j.get('voice') or {}).get('transcript'))
                     if sites & substitution_sites(u['text'],second):
                         shared.add('word_substitution')
-                    if shared:confirmed.append((u,shared))
+                    witness = None
+                    if residual and (aligned:=shared_residual_sites(u['text'],first,second)):
+                        shared.add('residual_word_disagreement')
+                        witness = {'pcm_sha256':row['pcm_sha256'],
+                                   'observer_sha256':[key(observer),key(confirming_observer)],
+                                   'sites':[[start,end,list(words)] for start,end,words in sorted(aligned)]}
+                    if shared:confirmed.append((u,shared,witness))
             return confirmed
         def queue_retakes(confirmed):
             nonlocal owner
-            for u,reasons in confirmed[:max(0,max_retakes-len(state['retakes']))]:
+            for u,reasons,witness in confirmed[:max(0,max_retakes-len(state['retakes']))]:
                 before=current()
                 wait_writer(lambda:jobs.repair(store,jid,retake=u['id'],expect_revision=before['revision'],
-                                               automatic={'limit':max_retakes,'reasons':sorted(reasons)}))
+                                               automatic={'limit':max_retakes,'reasons':sorted(reasons),
+                                                          'word_disagreement':witness}))
                 fault('after_automatic_retake_commit')
                 j=store.get(jid);state['retakes']=j['automatic_retakes']
                 owner=binding(j);state.update(binding=owner,plan_sha256=j['plan']['plan_sha256']);progress('bounded_retake_queued')

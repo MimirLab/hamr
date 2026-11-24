@@ -349,27 +349,35 @@ def capabilities():
     import sys
     from .pdf_ocr import resident_binary
     from .source_bundle import NATIVE, PACKAGE_FOLDERS
-    from .intake_helpers import CALIBRE_BYTES,CALIBRE_UNPACKED
+    from .intake_helpers import CALIBRE_BYTES,CALIBRE_UNPACKED,sandbox_status
     from .legacy_office_intake import resident as legacy_office_reader
-    from .xps_visual import available as xps_renderer_ready
+    from .xps_visual import readiness as xps_readiness
 
     arch = platform.machine().lower()
     x64 = arch in ('x86_64','amd64')
     linux = sys.platform.startswith('linux') and x64
     assets = Path(__file__).with_name('intake_resident')
+    sandbox = sandbox_status()
+    isolation = {field:sandbox[field] for field in ('ready','reason','diagnostic') if field in sandbox}
+
+    def worker(available):
+        return isolation if available else {'ready':False,'reason':'source_helper_unavailable'}
+
     external = {
-        'office-legacy':{'ready':bool(shutil.which('libreoffice') and shutil.which('bwrap')),
+        'office-legacy':{**worker(bool(shutil.which('libreoffice') or shutil.which('soffice'))),
                          'source':'verified local Writer conversion'},
-        'wordperfect':{'ready':legacy_office_reader() is not None and bool(shutil.which('bwrap')),
+        'wordperfect':{**worker(legacy_office_reader() is not None),
                        'source':'resident libwpd and shared OpenDocument text reader'},
-        'classic-mac':{'ready':legacy_office_reader() is not None and bool(shutil.which('bwrap')),
+        'classic-mac':{**worker(legacy_office_reader() is not None),
                        'source':'resident libmwaw and shared OpenDocument text reader'},
-        'legacy-ebook':{'managed_available':linux and bool(shutil.which('bwrap')),
+        'legacy-ebook':{'managed_available':linux and sandbox['ready'],
+                        **({field:isolation[field] for field in ('reason','diagnostic') if field in isolation}
+                           if linux else {'reason':'source_helper_unavailable'}),
                         'download_bytes':CALIBRE_BYTES,'unpacked_bytes':CALIBRE_UNPACKED},
-        'djvu':{'ready':linux and (assets/'djvu-linux-x86_64').is_file() and bool(shutil.which('bwrap'))},
-        'chm':{'ready':linux and (assets/'chm-linux-x86_64').is_file() and bool(shutil.which('bwrap')),
+        'djvu':worker(linux and (assets/'djvu-linux-x86_64').is_file()),
+        'chm':{**worker(linux and (assets/'chm-linux-x86_64').is_file()),
                'source':'resident CHMLib with ordered HTML contents'},
-        'xps-renderer':{'ready':xps_renderer_ready(),'source':'resident libgxps and shared OCR'},
+        'xps-renderer':{**xps_readiness(),'source':'resident libgxps and shared OCR'},
         'mobi':{'ready':(linux and (assets/'mobitool-linux-x86_64').is_file()
                          or os.name=='nt' and x64 and (assets/'mobitool-windows-x86_64.exe').is_file()
                          or bool(shutil.which('mobitool')))},

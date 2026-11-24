@@ -10,6 +10,78 @@ from audiobook.importers import inspect
 TEXT = 'The rain stopped. The room was empty. “Wait by the door,” she whispered. The lamps went out.'
 
 
+@pytest.mark.parametrize('source,recipe,owner,affect',[
+    ('“Stay here,” she whispered angrily.','whisper','she','quiet_anger'),
+    ('“Stay here,” the tall man with a scar whispered.','whisper','the tall man with a scar',None),
+    ('She lowered her voice. “Stay here.”','murmured','She',None),
+])
+def test_delivery_composition_and_descriptive_ownership(tmp_path,source,recipe,owner,affect):
+    path = tmp_path/'story.md'
+    path.write_text(source,encoding='utf-8')
+    plan = planner.plan(inspect(path))
+    unit, = plan['utterances']
+    candidate = unit['performance_candidate']
+    assert unit['text']==candidate['speech']==source
+    assert candidate['recipe']==recipe
+    evidence = candidate['evidence'][0]
+    assert source[slice(*evidence['speaker_span'])]==owner
+    assert [source[slice(*span)] for span in evidence['quotation_spans']]==[
+        '“Stay here.”' if recipe=='murmured' else '“Stay here,”']
+    assert candidate.get('composition',{}).get('affect')==affect
+    assert any(phrase in candidate['instruction'].lower() for phrase in
+               ('narrator','normal speaking voice','usual reference voice'))
+    if recipe=='whisper':
+        spans = quote_timing.owned_whisper(source,performance.CONTEXT_VERSION)
+        assert tuple(source[slice(*span)] for span in spans)==('“Stay here,”',)
+
+
+@pytest.mark.parametrize('source',[
+    '“Stay here,” she did not whisper.',
+    '“Stay here.” The trees whispered angrily.',
+    '“Stay here,” Alice said to Bob, who whispered angrily.',
+    '“The instruction says to whisper,” she said.',
+    'She did not lower her voice. “Stay here.”',
+    'She lowered his voice. “Stay here.”',
+    'She lowered her voice. “Stay here,” Bob said.',
+    'She lowered her voice. He bent closer. “Stay here.”',
+])
+def test_new_owners_do_not_direct_negated_literal_or_other_turns(tmp_path,source):
+    path = tmp_path/'negative.txt'
+    path.write_text(source,encoding='utf-8')
+    plan = planner.plan(inspect(path))
+    assert all(not unit.get('performance_candidate') and not unit.get('quote_timing')
+               for unit in plan['utterances'])
+
+
+def test_both_continuing_quotes_keep_their_scope_with_trailing_narration(tmp_path):
+    turn = '“Stay for 5 minutes,” she whispered. “Wait for me.”'
+    tail = 'The street was empty.'
+    for separator in ('',' ','\n\n'):
+        source = turn+separator+tail if separator else turn
+        path = tmp_path/'book.md'
+        path.write_text(source,encoding='utf-8')
+        unit = planner.plan(inspect(path))['utterances'][0]
+        candidate = unit['performance_candidate']
+        assert candidate['recipe']=='whisper'
+        assert len(candidate['evidence'][0]['quotation_spans'])==2
+        if separator==' ':
+            assert candidate['evidence'][0]['form']=='embedded_continued_quotation'
+            assert 'narration around and between the quotes' in candidate['instruction']
+        compiled = quote_timing.scope(source,unit['text'],performance.CONTEXT_VERSION)
+        assert compiled is not None and len(compiled['quotations'])==2
+        assert unit['text'][slice(*compiled['quotations'][1])]=='“Wait for me.”'
+
+    for changed in ('“Stay here,” she whispered. “Wait for me,” Bob shouted.',
+                    '“Stay here,” she whispered. “Wait for me.” Bob muttered.',
+                    '“Stay here,” she whispered. The lamp went out. “Wait for me.”'):
+        spans = quote_timing.owned_whisper(changed,performance.CONTEXT_VERSION)
+        assert tuple(changed[slice(*span)] for span in spans)==('“Stay here,”',)
+    path.write_text('“Stay here,” she whispered.\n\n“Wait for me.”',encoding='utf-8')
+    first,second = planner.plan(inspect(path))['utterances']
+    assert first['performance_candidate']['recipe']=='whisper'
+    assert (second.get('performance_candidate') or {}).get('recipe')!='whisper'
+
+
 @pytest.mark.parametrize(('source','expected'),[
     (TEXT, '“Wait by the door,”'),
     ('“Wait by the door,” she whispered. The street was empty. She lowered the lamp.',

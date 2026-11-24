@@ -287,7 +287,8 @@ def summary(store,j):
     reviews=list(j['plan']['issues'])
     for r in j.get('audio_review',[]):
         locations=[{k:v for k,v in b['locator'].items() if k not in ('exact','rows')} for b in j['document']['blocks'] if b['id'] in r['sources']]
-        reviews.append({'utterance':r['utterance'],'location':locations,'reason':' '.join(r['flags']),'report':r['report'],'repair':f'hamr repair {j["id"]} --retake {r["utterance"]}'})
+        reviews.append({'utterance':r['utterance'],'location':locations,'reason':' '.join(r['flags']),'report':r['report'],'repair':f'hamr repair {j["id"]} --retake {r["utterance"]}',
+                        **({'residual_word_edits':r['residual_word_edits']} if r.get('residual_word_edits') else {})})
     qa_progress=None
     try:
         recorded=loadjson(store.path(j)/'qa-progress.json')
@@ -834,12 +835,15 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
                 if len(history)>=automatic['limit'] or sum(r['identity']==identity for r in history)>=2:
                     raise Error('automatic_retake_budget','The saved automatic retake budget has been used.')
                 original = {}
-                if 'word_substitution' in automatic['reasons']:
+                witness = automatic.get('word_disagreement')
+                if witness or 'word_substitution' in automatic['reasons']:
                     previous_key = clip_key(target,j)
                     receipt = valid_clip(store,previous_key)
-                    if not receipt:
+                    if not receipt or witness and witness['pcm_sha256']!=receipt['sha256']:
                         raise Error('qa_clip_changed','The take marked for a word retake is no longer available.')
                     original = {'previous_clip':previous_key,'previous_pcm_sha256':receipt['sha256']}
+                    if witness:
+                        original['word_disagreement'] = witness
                 history.append({'identity':identity,'utterance':retake,'reasons':automatic['reasons'],'at':time.time(),
                                 'text':target['text'],'sources':target['sources'],'revision':j['revision']+1,
                                 **original,

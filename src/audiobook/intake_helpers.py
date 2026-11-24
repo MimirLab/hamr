@@ -1,5 +1,6 @@
 """Isolated structural conversion for formats with a qualified native helper."""
 from contextlib import contextmanager
+from functools import lru_cache
 import os
 from pathlib import Path
 import platform
@@ -18,31 +19,76 @@ CALIBRE_URL = f'https://download.calibre-ebook.com/{CALIBRE_VERSION}/{CALIBRE_NA
 CALIBRE_BYTES = 241_350_288
 CALIBRE_UNPACKED = 949_758_632
 CALIBRE_SHA256 = '35c1cbda1a2548aceeb89cb0a4be47a36025b5dc102ac046f7eaf98ba46a452d'
+SANDBOX_ENV = {'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'}
+SANDBOX_REASONS = {
+    'source_sandbox_platform': 'This local converter needs Linux Bubblewrap isolation.',
+    'source_sandbox_missing': 'Bubblewrap is required for this local converter and was not found.',
+    'source_sandbox_blocked': 'Bubblewrap could not start the required isolated converter environment.',
+}
+
+
+def sandbox_prefix(binary):
+    argv = [binary,'--die-with-parent','--unshare-net','--unshare-ipc','--unshare-pid',
+            '--ro-bind','/usr','/usr','--ro-bind','/etc','/etc','--dev','/dev','--proc','/proc',
+            '--tmpfs','/tmp','--tmpfs','/run']
+    for alias in ('/bin','/lib','/lib64','/sbin'):
+        if Path(alias).is_symlink():
+            argv.extend(['--symlink',os.readlink(alias),alias])
+        elif Path(alias).is_dir():
+            argv.extend(['--ro-bind',alias,alias])
+    return argv
+
+
+@lru_cache(maxsize=8)
+def probe_sandbox(binary, stamp):
+    try:
+        result = subprocess.run([*sandbox_prefix(binary),'--','/usr/bin/true'],env=SANDBOX_ENV,
+                                stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,
+                                timeout=5)
+    except (OSError,subprocess.TimeoutExpired) as error:
+        return type(error).__name__
+    if result.returncode:
+        return result.stderr[-512:].decode('utf-8','replace').strip() or f'Exit status {result.returncode}'
+    return None
+
+
+def sandbox_status():
+    if not sys.platform.startswith('linux'):
+        return {'ready':False,'reason':'source_sandbox_platform'}
+    if not (binary:=shutil.which('bwrap')):
+        return {'ready':False,'reason':'source_sandbox_missing'}
+    try:
+        info = Path(binary).stat()
+    except OSError:
+        return {'ready':False,'reason':'source_sandbox_missing'}
+    stamp = (info.st_dev,info.st_ino,info.st_size,info.st_mtime_ns,info.st_ctime_ns)
+    if diagnostic:=probe_sandbox(binary,stamp):
+        return {'ready':False,'reason':'source_sandbox_blocked','diagnostic':diagnostic}
+    return {'ready':True,'binary':binary}
 
 
 def linux_sandbox():
-    if not sys.platform.startswith('linux') or not (binary:=shutil.which('bwrap')):
-        raise Error('source_helper_unavailable','This converter needs local Bubblewrap isolation.',
-                    'Install Bubblewrap or export a readable copy to EPUB or ODT.')
-    return binary
+    capability = sandbox_status()
+    if not capability['ready']:
+        reason = capability['reason']
+        message = SANDBOX_REASONS[reason]
+        if diagnostic:=capability.get('diagnostic'):
+            message += ' '+diagnostic
+        action = ('Install Bubblewrap' if reason=='source_sandbox_missing' else
+                  'Use a compatible host where Bubblewrap can start')
+        raise Error(reason,message,action+', or open a readable EPUB, ODT, PDF, or image export.')
+    return capability['binary']
 
 
 def converter_argv(path, work, binary, arguments, runtime=None):
     sandbox = linux_sandbox()
     if path.parent==work:
         raise Error('unsafe_path','The converter work directory must be separate from the original.')
-    argv = [sandbox,'--die-with-parent','--unshare-net','--unshare-ipc','--unshare-pid',
-            '--ro-bind','/usr','/usr','--ro-bind','/etc','/etc','--dev','/dev','--proc','/proc',
-            '--tmpfs','/tmp','--tmpfs','/run','--dir','/input',
+    argv = [*sandbox_prefix(sandbox),'--dir','/input',
             '--ro-bind',str(path),'/input/'+path.name,'--bind',str(work),'/work',
             '--setenv','HOME','/work','--setenv','XDG_CONFIG_HOME','/work/config',
             '--setenv','XDG_CACHE_HOME','/work/cache','--setenv','QT_QPA_PLATFORM','offscreen',
             '--setenv','CALIBRE_CONFIG_DIRECTORY','/work/calibre','--chdir','/work']
-    for alias in ('/bin','/lib','/lib64','/sbin'):
-        if Path(alias).is_symlink():
-            argv.extend(['--symlink',os.readlink(alias),alias])
-        elif Path(alias).is_dir():
-            argv.extend(['--ro-bind',alias,alias])
     if runtime is not None:
         argv.extend(['--ro-bind',str(runtime),'/reader'])
         invocation = '/reader/'+binary.relative_to(runtime).as_posix()
@@ -55,9 +101,8 @@ def convert(path,work,binary,arguments,output,*,runtime=None,exit_errors=None):
     from .platform_support import spawn_owned,close_windows_job
 
     argv = converter_argv(path,work,binary,arguments,runtime)
-    environment = {'PATH':'/usr/bin:/bin','LANG':'C.UTF-8'}
     with tempfile.TemporaryFile(dir=work) as log:
-        process,job = spawn_owned(argv,parent_death=True,env=environment,stdin=subprocess.DEVNULL,
+        process,job = spawn_owned(argv,parent_death=True,env=SANDBOX_ENV,stdin=subprocess.DEVNULL,
                                   stdout=log,stderr=subprocess.STDOUT)
         try:
             code = process.wait(timeout=180)

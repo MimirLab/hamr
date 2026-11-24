@@ -53,3 +53,32 @@ def test_generated_list_ordinals_follow_saved_start_reverse_and_value(tmp_path):
     assert [u['text'] for u in result['utterances']]==[
         'Number eight, The first check','Number three, The next check','Number two, The final check',
         'In 1944, five point two feet was the reading.']
+
+
+def test_roman_labels_keep_notation_and_nested_items_under_the_common_reading(tmp_path):
+    source = tmp_path/'roman.html'
+    source.write_text('<ol type="I" start="5" reversed><li><p>Open the gate.</p>'
+                      '<ol type="i" start="2"><li>Inspect the latch.</li></ol>'
+                      '<p>Watch the road.</p></li><li value="3">III. Check the lamp.</li>'
+                      '<li style="list-style-type: none">No marker here.</li>'
+                      '<li type="1">Close the gate.</li></ol>',encoding='utf-8')
+    doc = inspect_source(source)
+    result = plan(doc)
+    assert not result['issues']
+    assert [u['text'] for u in result['utterances']]==[
+        'Number five, Open the gate.','Number two, Inspect the latch.',
+        'Watch the road.','Number three, Check the lamp.','No marker here.',
+        'Number one, Close the gate.']
+    labels = [a for row in result['decisions'] for a in row.get('source_numbering',())]
+    assert [row.get('authored_marker') for row in labels]==['V.','ii.','III.',None]
+    assert labels[2]['source']=='III. ' and labels[2]['source_end']==5
+
+
+def test_unresolved_inline_ordered_marker_reports_its_own_item(tmp_path):
+    source = tmp_path/'custom.html'
+    source.write_text('<ol style="list-style-type: custom-counter"><li>Inspect the latch.</li></ol>'
+                      '<ul><li>Watch the road.</li></ul>',encoding='utf-8')
+    doc = inspect_source(source)
+    result = plan(doc)
+    assert len(result['issues'])==1 and result['issues'][0]['block']==doc.blocks[0].id
+    assert [unit['text'] for unit in result['utterances']]==['Watch the road.']

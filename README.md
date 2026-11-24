@@ -95,11 +95,11 @@ AbiWord documents and templates can be opened directly, including compressed cop
 
 Rich-text documents keep authored chapter outlines, notes and readable text boxes. You can open RTF directly or use the same reader in a Scrivener project or TextBundle. [Rich-text intake](docs/INTAKE.md#source-readers)
 
-Word documents can read editable text boxes in their authored story order. Their text, notes and equations go through the same narration preparation as the body. Hamr keeps the original Word file in the companion. [Word intake](docs/INTAKE.md#source-readers)
+Word documents keep automatic list labels and read editable text boxes in their authored story order. Their text, notes and equations go through the same narration preparation as the body. Hamr keeps the original Word file in the companion. [Word intake](docs/INTAKE.md#source-readers)
 
 Merged and nested tables in Word, OpenDocument, HTML, EPUB and supported tagged PDFs can read with their authored headers and original cell order. Hamr can join a tagged table across pages, keeping one copy of each value and skipping repeated print headings. [Table intake](docs/INTAKE.md#source-readers)
 
-Searchable PDFs and scanned pages can also read tables whose printed grid or repeated alignment establishes the cells and their order. Each cell points back to its place on the original page. [Table intake](docs/INTAKE.md#source-readers)
+Searchable PDFs and scanned pages can also read tables whose printed grid or repeated alignment establishes the cells and their order. Searchable PDFs use native text to keep multiword labels together when the columns agree. Each cell points back to its place on the original page. [Table intake](docs/INTAKE.md#source-readers)
 
 XPS and OpenXPS packages can open directly or inside ZIPs. Hamr follows declared pages and authored stories. On compatible Linux hosts, it can also read pages printed as images or glyph outlines through its built-in OCR. The companion can recover exact page files. [Document intake](docs/INTAKE.md#source-readers)
 

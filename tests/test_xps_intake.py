@@ -159,16 +159,14 @@ def write_raster_book(path):
 
 
 def test_raster_openxps_follows_declared_document_order(tmp_path):
-    from audiobook.xps_visual import available
+    from audiobook.xps_visual import readiness
 
-    if not available():
-        pytest.skip('Resident XPS renderer needs a compatible Linux host with Bubblewrap')
+    capability = readiness()
+    if not capability['ready']:
+        pytest.skip(capability['reason']+': '+capability.get('diagnostic','XPS renderer unavailable'))
     source = tmp_path/'watch.oxps'
     write_raster_book(source)
     result = inspect_source(source,tmp_path/'cache')
-    if result.inventory[0].get('visual_failure')=='source_helper_failed' and any(
-            'namespace' in b.issue for b in result.blocks if b.issue):
-        pytest.skip('Bubblewrap cannot create a namespace on this host')
     assert [page['member'] for page in result.inventory]==['Z/Page.fpage','A/Page.fpage']
     assert [page['route'] for page in result.inventory]==['visual_ocr','visual_ocr']
     assert [block.source for block in result.blocks]==list(RASTER_READING)
@@ -178,9 +176,24 @@ def test_raster_openxps_follows_declared_document_order(tmp_path):
 def test_missing_renderer_names_each_original_page(tmp_path,monkeypatch):
     from audiobook import xps_visual
 
-    monkeypatch.setattr(xps_visual,'available',lambda:False)
+    monkeypatch.setattr(xps_visual,'worker_available',lambda:False)
     source = tmp_path/'watch.oxps'
     write_raster_book(source)
     result = inspect_source(source)
     assert [page['visual_failure'] for page in result.inventory]==['source_helper_unavailable']*2
+    assert [issue['location']['member'] for issue in plan(result)['issues']]==['Z/Page.fpage','A/Page.fpage']
+
+
+def test_render_available_worker_reports_sandbox_failure_for_each_page(tmp_path,monkeypatch):
+    from audiobook import intake_helpers, xps_visual
+
+    status = {'ready':False,'reason':'source_sandbox_blocked','diagnostic':'Bubblewrap could not create a network namespace.'}
+    monkeypatch.setattr(xps_visual,'worker_available',lambda:True)
+    monkeypatch.setattr(xps_visual,'sandbox_status',lambda:status)
+    monkeypatch.setattr(intake_helpers,'sandbox_status',lambda:status)
+    assert xps_visual.readiness()==status
+    source = tmp_path/'watch.oxps'
+    write_raster_book(source)
+    result = inspect_source(source)
+    assert [page['visual_failure'] for page in result.inventory]==['source_sandbox_blocked']*2
     assert [issue['location']['member'] for issue in plan(result)['issues']]==['Z/Page.fpage','A/Page.fpage']

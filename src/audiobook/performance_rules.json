@@ -26,6 +26,15 @@
       "presently": null
     }
   },
+  "compound_attribution_extension": {
+    "modifiers": {
+      "whispered": {"angrily":"quiet_anger", "furiously":"quiet_anger", "urgently":"quiet_urgency"}
+    },
+    "affect": {
+      "quiet_anger": {"single":"Let restrained anger come through the quoted words while keeping them whispered."},
+      "quiet_urgency": {"single":"Give the quoted words a sense of urgency while keeping them whispered and clear."}
+    }
+  },
   "compound_attribution": {
     "delivery": {
       "whisper": {

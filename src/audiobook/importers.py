@@ -780,17 +780,16 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                         if authorship and (paragraph := line_paragraph(tp, chunk, authorship)) is not None:
                             segment['tagged_paragraph'] = paragraph
                         segments.append(segment)
-            left=[s for s in segments if s['rect'][2]<w*.52]; right=[s for s in segments if s['rect'][0]>w*.48]
-            two=len(left)>=3 and len(right)>=3 and max(s['rect'][2] for s in left)+12<min(s['rect'][0] for s in right)
-            if two and not panels:
-                # Spanning elements split the page into bands; each band's left column precedes right.
-                full=[s for s in segments if s not in left and s not in right]; ordered=[]; high=float('inf')
-                for spanning in sorted(full,key=lambda s:-s['y'])+[{'y':-1,'text':''}]:
-                    band=[s for s in left+right if spanning['y']<s['y']<high]
-                    ordered+=sorted(band,key=lambda s:(s in right,-s['y']))
-                    if spanning['text']: ordered.append(spanning)
-                    high=spanning['y']
-                segments=ordered; entry['route']='geometric_two_columns'
+            if not panels:
+                from .pdf_layout import column_order
+                def uncertain_boundary(row):
+                    for item in row:
+                        item['issue'] = ('Native PDF column order is uncertain where text shares a baseline '
+                                         'with a spanning segment. Verify this row before narration.')
+                if ordered:=column_order(segments,w,lambda item:item['rect'],baseline=lambda item:item['y'],
+                                         coincident_boundary=uncertain_boundary):
+                    segments=ordered
+                    entry['route']='geometric_two_columns'
             coverage=lambda value:Counter(c for c in value if not c.isspace())
             issue=None
             if coverage(visible_native)!=coverage(''.join(s['text'] for s in segments)):

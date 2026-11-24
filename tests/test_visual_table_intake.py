@@ -1,4 +1,5 @@
 from io import BytesIO
+import pytest
 
 from PIL import Image, ImageDraw
 from reportlab.pdfgen.canvas import Canvas
@@ -121,3 +122,42 @@ def test_missing_gaps_do_not_turn_adjacent_values_into_one_numeric_cell():
     document = borderless_pdf([(x,y,text) for y,row in zip((220,193,166,139),rows)
                                for x,text in zip((55,174,290),row)])
     assert all(not b.locator.get('table_grid') for b in document.blocks)
+
+
+@pytest.mark.parametrize('suffix',['',' pier'])
+def test_native_word_gaps_keep_labels_inside_their_repeated_table_columns(suffix):
+    before = 'Harbor observations follow.'
+    after = 'These measurements were recorded before dawn.'
+    rows = [('Station','Water','Wind'),
+            *zip([name+suffix for name in ('North','East','South','West')],
+                 ['3.5','4.2','3.8','4.1'],['12','9','14','10'])]
+    inputs = [(x,y,text) for y,row in zip((250,221,192,163,134),rows)
+              for x,text in zip((40,210,335),row)]
+    doc = borderless_pdf([(35,300,before),*inputs,(35,65,after)])
+    start,table,end = doc.blocks
+    assert (start.source,end.source)==(before,after)
+    assert doc.inventory[0]['glyph_character_coverage']=='exact'
+    assert table.locator['rows']==[list(row) for row in rows]
+    result = plan(doc)
+    assert not result['issues']
+    spoken = ' '.join(unit['text'] for unit in result['utterances'])
+    assert spoken.count(before)==spoken.count(after)==1
+    assert all(f'Station: {label}. Water: {water}. Wind: {wind}.' in spoken for label,water,wind in rows[1:])
+
+
+def test_geometric_fallback_retains_every_fragment_at_a_shared_baseline(monkeypatch):
+    import audiobook.visual_table_intake as visual
+
+    monkeypatch.setattr(visual,'native_parts',lambda *args:[])
+    header = [(35,288,'Station'),(200,288,'Water'),(291,288,'Wind')]
+    columns = [(x,y,text) for y,pair in zip((253,222,191),[
+        ('The left side began.','The right side began.'),
+        ('The left side continued.','The right side continued.'),
+        ('The left side finished.','The right side finished.')
+    ]) for x,text in zip((35,291),pair)]
+    doc = borderless_pdf(header+columns)
+    assert doc.inventory[0]['route']=='geometric_two_columns'
+    assert doc.inventory[0]['glyph_character_coverage']=='exact'
+    assert [block.source for block in doc.blocks[:3]]==['Station','Water','Wind']
+    assert all(block.issue for block in doc.blocks[:3])
+    assert all(not block.issue for block in doc.blocks[3:])
