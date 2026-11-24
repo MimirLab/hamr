@@ -9,12 +9,13 @@ import re,unicodedata
 from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v36'
+POLICY='bounded-english-composed-scale-typed-v37'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
 SPECIAL_NEGATIVES={"can't":'can',"won't":'will',"shan't":'shall'}
 SPELLING_VARIANTS={'harbour':'harbor','harbours':'harbors','harboured':'harbored','harbouring':'harboring'}
+COMPOUND_SPELLINGS={'dustbowl':('dust','bowl'),'mathml':('math','ml')}
 ORDINALS={word:i for i,word in enumerate(['zeroth','first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth','eleventh','twelfth','thirteenth','fourteenth','fifteenth','sixteenth','seventeenth','eighteenth','nineteenth','twentieth'])}
 ORDINALS.update(thirtieth=30,fortieth=40,fiftieth=50,sixtieth=60,seventieth=70,eightieth=80,ninetieth=90)
 SCALES={'thousand':1000,'million':10**6,'billion':10**9}
@@ -31,11 +32,63 @@ PRINTED_CURRENCY=re.compile(rf'(?<![\w$£€¥])([+−-]?)([£¥])[ \t]*({PRINTE
 GLUED_DOLLAR=re.compile(rf'(?<=[^\W\d_])\$[ \t]*{PRINTED_AMOUNT}(?!\w|[.,][0-9]|[$£€¥])')
 DOLLAR_BEFORE_YEN=re.compile(rf'(?<![\w$£€¥])\$[ \t]*({PRINTED_AMOUNT})(?=[ \t]+yen\b)',re.I)
 ELAPSED_PAIR=re.compile(r'(\belapsed?[ \t]+time[ \t]*[:,]?[ \t]+)([0-9]{1,3})[.:]([0-5][0-9])(?!\w|[.:][0-9])',re.I)
+ISBN=re.compile(r'\bisbn(?:-1[03])?[\s:]+((?:[0-9][ -]?){9,12}[0-9x])(?!\w|[ -][0-9])',re.I)
+YEAR_TEXT=re.compile(r'(?<!\w)(?:1[1-9]|20)\d{2}s?(?!\w)',re.I)
+YEAR_PREFIX='|'.join(SMALL[11:20]+['twenty'])
+YEAR_TENS=('twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety')
+YEAR_DECADES=('twenties','thirties','forties','fifties','sixties','seventies','eighties','nineties')
+YEAR_ONES='|'.join(SMALL[1:10])
+YEAR_TAIL='|'.join(SMALL[10:20])+r'|(?:'+ '|'.join(YEAR_TENS)+r')(?:[ -]+(?:'+YEAR_ONES+r'))?|oh[ -]+(?:'+YEAR_ONES+r')'
+SPOKEN_YEAR=re.compile(r'\b('+YEAR_PREFIX+r')[ -]+('+ '|'.join(YEAR_DECADES)+r'|'+YEAR_TAIL+r')\b',re.I)
+
+
+def isbn_notation(text):
+    def joined(match):
+        digits = re.sub(r'[ -]','',match[1])
+        canonical = re.fullmatch(r'(?:[0-9]{13}|[0-9]{9}[0-9x])',digits,re.I)
+        if canonical:
+            return match[0][:match.start(1)-match.start()]+digits
+        return match[0]
+
+    return ISBN.sub(joined,text)
+
+
+def year_context(text,start,end):
+    def adjacent(value,last):
+        items = LEX.findall(value)
+        return re.sub(r'\W','',items[-1 if last else 0]).casefold() if items else ''
+
+    return adjacent(text[max(0,start-90):start],True),adjacent(text[end:end+90],False)
+
+
+def contextual_years(expected,observed):
+    written = {}
+    for match in YEAR_TEXT.finditer(expected):
+        context = year_context(expected,*match.span())
+        if any(context):
+            written.setdefault(match[0].lower(),set()).add(context)
+    if not written:
+        return observed
+
+    def year(match):
+        first,second = match[1].lower(),match[2].lower()
+        century = TENS_VALUES.get(first) or SMALL_VALUES.get(first)
+        if second in YEAR_DECADES:
+            year = f'{century}{20+10*YEAR_DECADES.index(second):02d}s'
+        else:
+            parts = second.replace('-',' ').split()
+            value = sum(TENS_VALUES.get(part,SMALL_VALUES.get(part,0)) for part in parts)
+            year = f'{century}{value:02d}'
+        context = year_context(observed,*match.span())
+        return year if context in written.get(year,()) else match[0]
+
+    return SPOKEN_YEAR.sub(year,observed)
 
 
 def notation_observation(expected, observed):
     """Resolve ASR formatting that represents the chosen spoken reading."""
     observed=spoken_currency_observation(expected,observed)
+    observed=contextual_years(expected,observed)
     if 'elapsed time' not in expected.casefold():return observed
 
     def elapsed(match):
@@ -270,7 +323,7 @@ def money_tokens(tokens):
 def comparison_tokens(text):
     from .abbreviations import expand
     from .linguistic import comparison_text
-    text=comparison_text(LITERAL_DIGIT_RUN.sub(literal_digit_run,text))
+    text=comparison_text(LITERAL_DIGIT_RUN.sub(literal_digit_run,isbn_notation(text)))
     text,_,_=expand(text)
     text=text.lower().replace('’',"'").replace('±',' plus or minus ')
     ts=[];end=0
@@ -304,6 +357,7 @@ def comparison_tokens(text):
         elif t=="ain't":out.append(t)
         elif t=="it's":out.append('its')
         elif t=='alright':out.extend(('all','right'))
+        elif t in COMPOUND_SPELLINGS:out.extend(COMPOUND_SPELLINGS[t])
         elif re.fullmatch('n+o+',t):out.append('no')
         else:out.append(SPELLING_VARIANTS.get(t,t))
         i+=1

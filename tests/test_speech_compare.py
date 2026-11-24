@@ -1,6 +1,30 @@
 from audiobook.speech_compare import comparison_tokens as c,negations,quantities
 from audiobook.speech_compare import mathematical_markers as math
 
+
+def test_observed_year_pairs_need_the_same_value_and_surrounding_words():
+    from audiobook.speech_compare import notation_observation
+
+    expected = 'From the 1930s into the 1940s, and later in 1957, the figures changed.'
+    observed = 'From the nineteen thirties into the nineteen forties, and later in nineteen fifty seven, the figures changed.'
+    assert c(notation_observation(expected,observed))==c(expected)
+    wrong_value = observed.replace('fifty seven','fifty eight')
+    assert quantities(c(notation_observation(expected,wrong_value)))!=quantities(c(expected))
+    assert notation_observation('in 1957 the total fell','in nineteen, fifty seven the total fell')=='in nineteen, fifty seven the total fell'
+    assert notation_observation('in 1957 the total fell','she called nineteen fifty seven then')=='she called nineteen fifty seven then'
+
+
+def test_book_identifier_formatting_preserves_each_digit_and_distinct_counts():
+    assert c('ISBN: 9781122334455')==c('ISBN 978-1122-334455')
+    assert quantities(c('ISBN: 9781122334455'))!=quantities(c('ISBN 978-1122-3344550'))
+    assert quantities(c('ISBN: 9781122334455'))!=quantities(c('ISBN 978-1122-334456'))
+    assert quantities(c('978 1122 334455'))==['978','1122','334455']
+
+
+def test_known_orthographic_compounds_do_not_permit_arbitrary_merges():
+    assert c('Dust Bowl and MathML')==c('dustbowl and Math ML')
+    assert c('nowhere')!=c('now here')
+
 def test_cardinal_spellings_match_values_without_changing_critical_values():
     assert c('TWO')==c('2.')
     assert c('fifty-seven and four')==c('57 and 4')
