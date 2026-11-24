@@ -32,6 +32,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | AbiWord | Open `.abw`, `.awt`, gzip-compressed `.zabw` or `.abw.gz`, and bzip2-compressed `.bzabw` or `.abw.bz2`. The reader follows authored chapter styles and keeps linked notes, simple tables, text boxes, and illustration locations. |
 | Jupyter notebooks | Open an `.ipynb` file or a ZIP containing one. The built-in reader follows saved cells and outputs in order. [Notebook intake](#jupyter-notebooks) |
 | PowerPoint | Open a `.pptx` file, its extracted package, or a ZIP containing it. The built-in reader follows the saved slide order. [PowerPoint intake](#powerpoint-presentations) |
+| OpenDocument presentations | Open an `.odp`, `.otp`, or `.fodp` file. Packaged presentations also open from extracted folders and ZIPs. [OpenDocument presentation intake](#opendocument-presentations) |
 | Publishing XML and other structured sources | Resident readers accept selected DTBook, DocBook, JATS, TEI and BITS documents, saved mail and MHTML, CSV, XLSX worksheet contents, OPML, SVG text and subtitles. Content and reading order depend on the source structures present. |
 | Archive containers | ZIP and TAR are built in. 7z and RAR use a compatible local libarchive. Encrypted or unresolved members appear as an intake error. |
 | Unencrypted classic Kindle and DjVu | The Linux x86-64 and Windows x64 packages include a compact Kindle reader. Supported uncompressed Kindle Print Replica editions (AZW4) go through the PDF reader. The Linux DjVu reader uses available page text and runs raster OCR for pages without it. |
@@ -72,6 +73,18 @@ Hamr uses the saved slide and shape order, including text in nested groups. Slid
 Merged tables use their authored cell spans and header settings. Supported categorical charts read saved series labels and numeric values. Hamr reads authored image descriptions and sends a slide made from one eligible raster image through shared OCR. Unresolved charts and graphics appear in source review at their slide and package location.
 
 Use a location ID from `source.html` with `hamr source BOOK_FOLDER LOCATION_ID --output FILE` to recover the exact slide, notes, chart, or embedded image part.
+
+## OpenDocument presentations
+
+```bash
+hamr open Lecture.odp --voice cast:carl-sagan --output ~/Audiobooks
+```
+
+Open a presentation, template, or flat XML export through the same command. Hamr reads slide titles, grouped text, and presenter notes in the saved order. It uses one saved representation per frame and respects hidden slides, including visibility set through a page style. The existing notes policy can send presenter notes to the companion.
+
+Writer documents and presentations share their table and paragraph preparation. Supported charts read the saved category and series ranges from the embedded table. Authored descriptions and text recovered from an eligible image-only slide use the same image preparation as PowerPoint.
+
+Find exact package parts, or an embedded image inside flat XML, by using its location ID from `source.html`. Graphics and chart layouts that need another reading appear in source review at the affected slide.
 
 ## Jupyter notebooks
 

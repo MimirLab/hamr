@@ -66,6 +66,10 @@ def parse(path,source,sha,cache,title):
         from .presentation_intake import read_pptx
 
         return read_pptx(path,source,sha,title,cache)
+    if source.route=='odp' and source.kind in ('file','zip','tar','libarchive'):
+        from .odf_presentation import read_odp
+
+        return read_odp(path,source,sha,title,cache)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):
@@ -276,6 +280,7 @@ def extract_location(book,location,output):
                     os.fsync(stream.fileno())
         if stamp(original.stat())!=before or expected and filehash(staged)!=expected:
             raise Error('snapshot_changed','The source does not match its recorded identity.')
+        data = None
         if asset := loc.get('json_asset'):
             from . import json_source
             from .core import digest
@@ -285,6 +290,12 @@ def extract_location(book,location,output):
             data = json_source.decode(json_source.value_at(document,asset.get('path',())),asset.get('encoding'))
             if digest(data)!=asset.get('sha256'):
                 raise Error('snapshot_changed','The embedded asset does not match its recorded identity.')
+        elif asset := loc.get('xml_asset'):
+            from .document_intake import bounded_read, xml
+            from .xml_source import extract
+
+            data = extract(xml(bounded_read(staged)),asset)
+        if data is not None:
             with staged.open('wb') as stream:
                 stream.write(data)
                 stream.flush()

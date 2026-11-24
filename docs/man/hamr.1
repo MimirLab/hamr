@@ -207,6 +207,11 @@ Presenter notes, merged tables, saved values in supported charts, and text from
 eligible image-only slides use the shared reading pipeline. Hidden slides and
 exact slide, note, chart, and image parts remain available with the original.
 .PP
+OpenDocument presentations (.odp, .otp, .fodp) follow saved slide order and
+visibility. The reader uses authored shape text, notes, paragraphs, tables,
+supported chart data and eligible image-only slides. The companion locates
+original package members and embedded flat XML images.
+.PP
 Use \fB\-\-offline\fR with \fBopen\fR, \fBplan\fR, or \fBqueue\fR to
 use resident or already installed readers only. Use \fBresume JOB\fR to
 continue a saved intake.
@@ -215,7 +220,7 @@ For plain text, reStructuredText, TextBundle, or compiled HTML Help with a known
 \fB\-\-encoding NAME\fR, for example \fB\-\-encoding windows-1252\fR.
 .PP
 .B hamr source BOOK_DIRECTORY LOCATION_ID --output FILE
-recovers an original file, archive member, or embedded notebook graphic
+recovers an original file, archive member, or supported embedded graphic
 from a finished book folder.
 Use the location or passage ID from source.html. Keep the original file
 and companion together when moving a book.

@@ -28,7 +28,8 @@ NATIVE = {
     '.abw.gz':'abiword', '.abw.bz2':'abiword',
     '.dbk':'xml-book', '.docbook':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book', '.bits':'xml-book', '.nxml':'xml-book',
-    '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
+    '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.odp':'odp', '.otp':'odp', '.fodp':'odp',
+    '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
     '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst',
@@ -36,7 +37,7 @@ NATIVE = {
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx')) | DESCRIPTOR_FOLDERS
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp')) | DESCRIPTOR_FOLDERS
 DEPENDENCY_SOURCES = frozenset(('rst','xml-book'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
@@ -158,6 +159,7 @@ def relative_file(root, name):
 
 def publication_folder(path):
     from .fictionbook_package import folder_marker as fb3_folder
+    from .odf_presentation import folder_marker as odp_folder
     from .presentation_intake import folder_marker as pptx_folder
     from .xps_intake import folder_marker as xps_folder
 
@@ -167,6 +169,8 @@ def publication_folder(path):
         return 'fb3'
     if pptx_folder(path):
         return 'pptx'
+    if odp_folder(path):
+        return 'odp'
     if path.suffix.casefold()=='.textbundle':
         return 'textbundle'
     if path.suffix.casefold()=='.scriv':
@@ -192,7 +196,7 @@ def publication_folder(path):
 
 
 def directory_members(root):
-    from .document_intake import xml_book_root
+    from .document_intake import xml_route
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
     from .xml_package import SUFFIXES as XML_SUFFIXES, loose_assets, loose_document
@@ -245,8 +249,8 @@ def directory_members(root):
                 pages.append(relative)
             elif suffix=='.xml' and not path.is_symlink() and path.is_file():
                 with path.open('rb') as stream:
-                    if xml_book_root(stream):
-                        other.append((relative,'xml-book'))
+                    if route:=xml_route(stream):
+                        other.append((relative,route))
             elif suffix not in SIDECAR_SUFFIXES and suffix in NATIVE and not path.is_symlink():
                 other.append((relative,NATIVE[suffix]))
     return sorted(pages,key=natural), sorted(other,key=lambda row:natural(row[0]))
@@ -287,6 +291,7 @@ def zip_members(archive):
 
 def zip_source(path, entry, override):
     from .archive_intake import ZipMembers
+    from .odf_presentation import MEDIA as ODF_PRESENTATION_TYPES
 
     try:
         with ZipMembers(path) as archive:
@@ -297,12 +302,16 @@ def zip_source(path, entry, override):
                 package_route = 'xps'
             if path.suffix.casefold()=='.pptx' and override is None:
                 package_route = 'pptx'
+            if path.suffix.casefold() in ('.odp','.otp') and override is None:
+                package_route = 'odp'
             records = zip_members(archive)
             names = {info.filename for _,info in records}
             if 'manifest.json' in names and any(name.startswith('blobs/') for name in names):
                 return Source('scan','bundle')
             mimetype = next((info for _,info in records if info.filename=='mimetype' and info.file_size<=256),None)
             media = archive.read(mimetype).strip() if mimetype else b''
+            if override is None and media in ODF_PRESENTATION_TYPES:
+                package_route = 'odp'
             for predicate,route in (
                 ('META-INF/container.xml' in names or media==b'application/epub+zip','epub'),
                 ('word/document.xml' in names,'docx'),
@@ -314,7 +323,7 @@ def zip_source(path, entry, override):
                         from .fixed_pages import image_only_fixed
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
-                    if override!='scan' and package_route not in ('fb3','xps','pptx'):
+                    if override!='scan' and package_route not in ('fb3','xps','pptx','odp'):
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
@@ -332,7 +341,7 @@ def wrapped_source(path,kind,entry,override=None):
 
 
 def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,package_route=None):
-    from .document_intake import xml_book_root
+    from .document_intake import xml_route
     from .publication_package import archive_packages
     from .scan_intake import bounded
 
@@ -365,7 +374,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         detected = 'scan' if suffix in IMAGE_SUFFIXES else NATIVE.get(suffix)
         if suffix=='.xml' and not name.name.startswith('.'):
             with archive.open_member(item) as stream:
-                detected = 'xml-book' if xml_book_root(stream) else None
+                detected = xml_route(stream)
         elif (kind=='zip' and not detected or suffix in ('.lrf','.lit')) and not name.name.startswith('.'):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
@@ -513,12 +522,17 @@ def _describe(path,entry,format,offline):
     if (suffix in ('.7z','.rar','.cb7','.cbr') or prefix.startswith((b'7z\xbc\xaf\x27\x1c',b'Rar!'))):
         selected = wrapped_source(path,'libarchive',entry,format)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
-    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx') or prefix.startswith(b'PK\x03\x04'):
+    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx','.odp','.otp') or prefix.startswith(b'PK\x03\x04'):
         selected = zip_source(path,entry,format or ('scan' if suffix=='.cbz' else None))
         if format and format!=selected.route and selected.kind!='file':
             raise Error('source_format', 'The selected container does not match the requested format.')
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
     route = format or probe(prefix,path.name)
+    if suffix=='.xml' and format is None:
+        from .document_intake import xml_route
+
+        with path.open('rb') as stream:
+            route = xml_route(stream) or route
     if route=='legacy-ebook' and not prefix.startswith((b'L\0R\0F\0',b'ITOLITLS')):
         raise Error('unsupported_format','The file does not identify a supported legacy ebook.')
     if not route:
@@ -700,7 +714,7 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_sphinx(local,target)
-        elif source.route in ('fb3','xps','pptx'):
+        elif source.route in ('fb3','xps','pptx','odp'):
             from .publication_package import capture_folder, folder_files
 
             target = target_dir/'source.zip'

@@ -81,6 +81,7 @@ def archive_packages(archive,members,*,textpack=False):
     from .gitbook_intake import archive_spaces
     from .mdbook_intake import archive_books
     from .ncc_intake import archive_books as ncc_books
+    from .odf_presentation import archive_books as odp_books
     from .opf_intake import archive_books as opf_books
     from .presentation_intake import archive_books as pptx_books
     from .scrivener_intake import archive_books as scrivener_books
@@ -106,6 +107,9 @@ def archive_packages(archive,members,*,textpack=False):
     slides,pptx_members = pptx_books(archive,remaining)
     packages.extend(('pptx',descriptor,title) for descriptor,title in slides)
     remaining = [item for item in remaining if item.index not in pptx_members]
+    slides,odp_members = odp_books(archive,remaining)
+    packages.extend(('odp',descriptor,title) for descriptor,title in slides)
+    remaining = [item for item in remaining if item.index not in odp_members]
     spaces,owned = archive_spaces(archive,remaining)
     packages.extend(('gitbook',item,book.title or book.root or 'GitBook') for book,item in spaces)
     claimed |= owned
@@ -126,4 +130,4 @@ def archive_packages(archive,members,*,textpack=False):
     packages.extend(('xml-book',descriptor,title) for descriptor,title in editions)
     spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in xml_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    return packages,claimed | xps_members | fb3_members | pptx_members | owned | project_members | opf_members | ncc_members | xml_members | plain
+    return packages,claimed | xps_members | fb3_members | pptx_members | odp_members | owned | project_members | opf_members | ncc_members | xml_members | plain

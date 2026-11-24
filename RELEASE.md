@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev40
+
+- Open OpenDocument presentations, templates, and flat XML directly. Hamr follows saved slides and presenter notes, reads authored tables and supported chart data, and uses resident OCR for eligible image-only slides. Recover exact package members and embedded flat XML images. [OpenDocument presentation intake](docs/INTAKE.md#opendocument-presentations)
+
 # hamr 0.4.9.dev39
 
 - Turn a PowerPoint deck into chapters with its saved slide order, grouped text, presenter notes, merged tables, and supported chart data. Image-only slides can use Hamr's built-in OCR. Recover exact slide, note, chart, and image parts from the companion. [PowerPoint intake](docs/INTAKE.md#powerpoint-presentations)

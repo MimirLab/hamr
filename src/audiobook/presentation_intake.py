@@ -1,9 +1,6 @@
 """Read PresentationML in declared slide and shape order."""
 
-from io import BytesIO
 from pathlib import PurePosixPath
-import re
-from unicodedata import normalize
 
 from . import drawing_text, table_grid
 from .archive_intake import containers
@@ -11,6 +8,7 @@ from .core import Error
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, name, xml
 from .epub_semantics import uncertainty
 from .opc_source import Parts, TYPES, TYPES_NAME, manifest_xml
+from .presentation_common import canonical, observe_picture, speaker_note, visual_label
 from .publication_package import bind_member_block, member_bytes, member_location
 
 
@@ -26,7 +24,6 @@ POSITIONAL = frozenset(('dt','ftr','hdr','sldNum','sldImg'))
 TITLES = frozenset(('title','ctrTitle'))
 LIMIT = 1024*1024
 CORE_PROPERTIES = 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties'
-IMAGE_FILENAME = re.compile(r'[^/\\]+\.(?:png|jpe?g|gif|tiff?|webp|bmp|svg|emf|wmf)',re.I)
 
 
 def identifies(manifest):
@@ -76,18 +73,11 @@ def placeholder(shape):
     return child(nonvisual(shape,'nvPr'),'ph')
 
 
-def canonical(text):
-    return ' '.join(normalize('NFC',text).split())
-
-
 def description(identity,kind):
     if identity is None:
         return ''
-    for field in ('descr','title'):
-        text = (identity.get(field) or '').strip()
-        if text and (kind!='pic' or not IMAGE_FILENAME.fullmatch(text)):
-            return text
-    return ''
+    desc,title = identity.get('descr'),identity.get('title')
+    return visual_label(desc,title) if kind=='pic' else (desc or title or '').strip()
 
 
 def where(node,number,shape=None,groups=()):
@@ -195,9 +185,6 @@ class Presentation:
                     yield from self.shapes(shape,(*groups,label))
 
     def picture(self,shape,member,location,label,raster_only,record):
-        from .scan_intake import location as pixel_location, prepare_image
-        from PIL import Image
-
         fill = child(shape,'blipFill')
         blip = drawing_text.child(fill,'blip')
         target = self.target(member,'image',(related_id(blip,'embed') or '') if blip is not None else '',
@@ -237,23 +224,13 @@ class Presentation:
         crop = drawing_text.child(fill,'srcRect')
         try:
             bounds = [int(crop.get(side,'0'))/100000 for side in ('l','t','r','b')] if crop is not None else [0,0,0,0]
-            bounds[2:] = [1-value for value in bounds[2:]]
-            with Image.open(BytesIO(self.read(target))) as source:
-                if getattr(source,'n_frames',1)!=1:
-                    raise Error('source_slide_image','A slide image has more than one possible frame.')
-                image,observation = prepare_image(source,0,bounds)
-            with image:
-                size = image.size
-                entries,receipt = self.observer.read_raster(lambda:image,None,
-                                                          {'page':location['slide'],'size':size,'native_geometry_qualified':False},
-                                                          [0,0,*size],format='scan',scale=1)
-        except (OSError,ValueError,Image.DecompressionBombError) as error:
-            raise Error('source_slide_image','The embedded slide raster could not be opened.') from error
-        receipt.update(member=target.name,archive_entry=target.index,shape_id=location.get('shape_id'),
-                       image_transform=observation)
+        except ValueError as error:
+            raise Error('source_slide_image','The embedded slide image uses an invalid crop.') from error
+        bounds[2:] = [1-value for value in bounds[2:]]
+        entries,receipt = observe_picture(self.observer,self.read(target),location,bounds)
+        receipt.update(member=target.name,archive_entry=target.index,shape_id=location.get('shape_id'))
         record.setdefault('visual_observations',[]).append(receipt)
-        for row in entries:
-            mapped = pixel_location(location,row['locator']['rect'],observation)
+        for row,mapped in entries:
             self.add(row['text'],row.get('role','body'),target,mapped,issue=row.get('issue'))
         if not entries:
             raise Error('source_slide_image','The embedded slide image has no verified readable text.')
@@ -301,11 +278,8 @@ class Presentation:
             if ph is None or ph.get('type')!='body':
                 continue
             for node,text,spans in drawing_text.paragraphs(child(item,'txBody')):
-                prior = known.get(canonical(text))
-                place = where(node,number)|{'supplemental_note':True,'slide_member':member.name}
-                if prior:
-                    place['duplicates_slide_passage'] = prior
-                self.paragraph(node,text,spans,target,place,'note' if prior else 'body')
+                role,place = speaker_note(text,where(node,number),known,slide_member=member.name)
+                self.paragraph(node,text,spans,target,place,role)
         return target.name
 
     def slide(self,member,number):
