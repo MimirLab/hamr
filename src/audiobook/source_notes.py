@@ -11,6 +11,40 @@ def references(spans):
             not any(start<=span['source_start'] and span['source_end']<=end for start,end in hidden)]
 
 
+def target(reference):
+    return reference.get('target_href',reference.get('href')) or ''
+
+
+def finish_sentence(text):
+    return text if text.endswith(('.', '!', '?')) else text+'.'
+
+
+def note_text(block,*,terminal=False):
+    """Project the visible text of note paragraphs and list items."""
+    from .epub_semantics import reading
+
+    spans = block.locator.get('inline_semantics',())
+    boundaries = sorted({0,len(block.source),*(span['source_start'] for span in spans
+                                               if span['kind']=='note_boundary')})
+    if len(boundaries)<=2:
+        text = reading(block).strip()
+        return finish_sentence(text) if terminal and text else text
+    parts = []
+    for start,end in zip(boundaries,boundaries[1:]):
+        local = []
+        for span in spans:
+            a,b = span['source_start'],span['source_end']
+            if start<=a<=b<=end and (a<end or a<b):
+                local.append({**span,'source_start':a-start,'source_end':b-start})
+            elif span['kind']=='hidden' and a<end and b>start:
+                low,high = max(a,start),min(b,end)
+                local.append({**span,'source_start':low-start,'source_end':high-start,'source':block.source[low:high]})
+        fragment = Block('',block.source[start:end],{'inline_semantics':local},'note',block.chapter)
+        if text:=reading(fragment).strip():
+            parts.append(finish_sentence(text))
+    return ' '.join(parts)
+
+
 @dataclass(frozen=True)
 class Definition:
     block: Block
@@ -19,7 +53,7 @@ class Definition:
 
     @property
     def targets(self):
-        return tuple(ref.get('href') or '' for ref in references(self.block.locator.get('inline_semantics',())))
+        return tuple(target(ref) for ref in references(self.block.locator.get('inline_semantics',())))
 
     @property
     def delivery(self):
@@ -27,12 +61,11 @@ class Definition:
 
 
 class NoteGraph:
-    def __init__(self,definitions,*,first_definition=False):
-        self.definitions = definitions
+    def __init__(self,lookup,*,first_definition=False):
+        self.lookup = lookup
         self.first_definition = first_definition
 
-    def select(self,href):
-        candidates = self.definitions.get(href,())
+    def select(self,candidates):
         if not candidates:
             return None,'The cited note is unavailable in this source.',None
         primary = candidates[0]
@@ -45,19 +78,34 @@ class NoteGraph:
         return None,'The cited note has conflicting definitions. Verify the intended reading.',None
 
     def links_for(self,spans,*,follow=True):
-        cited = references(spans)
-        roots = {span.get('href') or '' for span in cited}
+        return self.link_groups((spans,),follow=follow)[0]
+
+    def bind_cells(self,cells):
+        for cell,links in zip(cells,self.link_groups(cell['spans'] for cell in cells)):
+            for link in links:
+                link.setdefault('reference_href',link['href'])
+            cell['notes'] = links
+
+    def link_groups(self,groups,*,follow=True):
+        references_by_group = [references(spans) for spans in groups]
+        roots = {target(span) for group in references_by_group for span in group}
         resolved, linked = set(), {}
-        links = []
-        for reference in cited:
-            href = reference.get('href') or ''
-            if href not in linked:
-                note,touched = self.expand(href,roots,resolved,follow)
-                if not note.get('issue'):
-                    resolved.update(touched-{href})
-                linked[href] = note
-            links.append({'kind':'note','href':href,'source_start':reference['source_start'],**linked[href]})
-        return links
+        result = []
+        for group in references_by_group:
+            links = []
+            for reference in group:
+                href = target(reference)
+                if href not in linked:
+                    note,touched = self.expand(href,roots,resolved,follow)
+                    if not note.get('issue'):
+                        resolved.update(touched-{href})
+                    linked[href] = note
+                link = {'kind':'note','href':href,'source_start':reference['source_start'],**linked[href]}
+                if href!=reference.get('href'):
+                    link['reference_href'] = reference.get('href')
+                links.append(link)
+            result.append(links)
+        return result
 
     def expand(self,href,roots,resolved,follow):
         pending = [href]
@@ -74,8 +122,9 @@ class NoteGraph:
                 covered_elsewhere = True
                 continue
             visited.add(target)
-            definition,issue,choice = self.select(target)
-            destinations.extend('source.html#'+item.block.id for item in self.definitions.get(target,()))
+            candidates = self.lookup(target) or ()
+            definition,issue,choice = self.select(candidates)
+            destinations.extend('source.html#'+item.block.id for item in candidates)
             if target==href:
                 primary,resolution = definition,choice
             if issue:
@@ -90,6 +139,8 @@ class NoteGraph:
             link['destination'] = 'source.html#'+primary.block.id
             if spans := primary.block.locator.get('inline_semantics'):
                 link['inline_semantics'] = spans
+            if language := primary.block.locator.get('language'):
+                link['language'] = language
         if destinations:
             link['destinations'] = list(dict.fromkeys(destinations))
         if resolution:

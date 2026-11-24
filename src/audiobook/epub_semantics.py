@@ -114,8 +114,19 @@ def ruby_base(node):
                    for child in node.children if not isinstance(child,NON_TEXT))
 
 
-def describe(node,resolve_asset=None,cover_assets=(), *, projected=None):
+def describe(node,resolve_asset=None,cover_assets=(), *, projected=None, note_markup=None, note_body=False):
     pieces=[];spans=[];position=0
+    def note_target(tag):
+        if note_markup:
+            if id(tag) in note_markup.wrappers:
+                return note_markup.wrappers[id(tag)]
+            if id(tag) in note_markup.anchors:
+                return None
+        return (tag.get('href') or '') if noteref(tag) else None
+
+    def mark_boundary(at):
+        spans.append({'kind':'note_boundary','source_start':at,'source_end':at})
+
     def visit(n):
         nonlocal position
         if isinstance(n,NavigableString):
@@ -124,6 +135,8 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None):
             return
         if n.name in ('script','style'):return
         start=position;first_piece=len(pieces)
+        paragraph = note_body and n is not node and n.name in ('p','li','dt','dd','pre','blockquote')
+        if paragraph:mark_boundary(start)
         if projected and (semantic:=projected.get(id(n))):
             raw=semantic['source']
             pieces.append(raw);position+=len(raw)
@@ -139,18 +152,23 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None):
             for child in n.children:visit(child)
         end=position
         if end<=start:return
+        if paragraph:mark_boundary(end)
         data={'source_start':start,'source_end':end}
         if n.get('id'):spans.append({**data,'kind':'anchor','id':n['id']})
         if hidden(n):spans.append({**data,'kind':'hidden','disposition':'companion','evidence':'Explicit hidden attribute or inline visibility declaration'})
-        if noteref(n):spans.append({**data,'kind':'note_reference','href':n.get('href')})
+        if (note_body and n.get('role')=='doc-backlink') or (note_markup and id(n) in note_markup.backlinks):
+            spans.append({**data,'kind':'hidden','disposition':'companion','evidence':'Authored return link to note reference'})
+        if (href:=note_target(n)) is not None:spans.append({**data,'kind':'note_reference','href':href})
         elif n.get('role')=='doc-pagebreak' or 'pagebreak' in str(n.get('epub:type','')).split():
             spans.append({**data,'kind':'pagebreak','label':n.get('aria-label') or n.get('title') or n.get_text(),'disposition':'source page lookup'})
         elif n.name=='math' and not n.find_parent('math'):
             try:reading=speak_math(mathml(n));issue=None
             except ValueError as exc:reading=None;issue=str(exc)
             spans.append({**data,'kind':'mathml','reading':reading,'issue':issue})
-        elif n.name in ('sup','sub') and not any(noteref(a) or a.name=='math' for a in n.parents):
-            spans.append({**data,'kind':'superscript' if n.name=='sup' else 'subscript'})
+        elif n.name in ('sup','sub') and not any(note_target(a) is not None or a.name=='math' for a in n.parents):
+            children = n.find_all(True,recursive=False) if n.name=='sup' else []
+            if len(children)!=1 or note_target(children[0]) is None or n.get_text(strip=True)!=children[0].get_text(strip=True):
+                spans.append({**data,'kind':'superscript' if n.name=='sup' else 'subscript'})
         elif n.name in ('code','kbd','samp'):
             spans.append({**data,'kind':'literal'})
         elif n.name=='ruby':
@@ -164,7 +182,7 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None):
             from .epub_styles import properties
             alignment=properties(n).get('vertical-align',{}).get('value')
             if alignment in ('super','sub'):spans.append({**data,'kind':'superscript' if alignment=='super' else 'subscript','origin':'Authored CSS vertical alignment'})
-        if n.name=='a' and n.get('href') and not noteref(n):
+        if n.name=='a' and n.get('href') and note_target(n) is None and not (note_markup and id(n) in note_markup.anchors):
             spans.append({**data,'kind':'hyperlink','href':n['href']})
         if n.name=='abbr' and n.get('title'):
             spans.append({**data,'kind':'abbreviation_label','expansion':n['title']})
@@ -206,8 +224,8 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None):
             for side,at in [('before',start),('after',position)]:
                 declaration=properties(n).get(side)
                 if declaration and declaration['value']:spans.append({'source_start':at,'source_end':at,'kind':'generated_label','reading':declaration['value'],'origin':declaration['origin'],'selector':declaration['selector']})
-        if not isinstance(n,NavigableString) and position==start and noteref(n):
-            spans.append({'source_start':start,'source_end':start,'kind':'note_reference','href':n.get('href')})
+        if not isinstance(n,NavigableString) and position==start and (href:=note_target(n)) is not None:
+            spans.append({'source_start':start,'source_end':start,'kind':'note_reference','href':href})
         if not isinstance(n,NavigableString) and (n.get('role')=='checkbox' or n.name=='input' and n.get('type')=='checkbox'):
             status=n.get('aria-checked')
             if status is None and n.name=='input':status='true' if n.has_attr('checked') else 'false'
@@ -225,7 +243,7 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None):
         if n.name=='svg' and not label and n.find(['img','image']):return
         spans.append({'source_start':start,'source_end':position,'kind':'object_label','source':'',
                       'reading':label,'image_resource':asset,'cover':cover,'decorative':decorative,
-                      'inside_note':any(noteref(a) for a in n.parents),
+                      'inside_note':any(note_target(a) is not None for a in n.parents),
                       'issue':None if label or cover or decorative else 'Image or SVG has no authored accessible description; verify its essential content.'})
     visit(node);raw=''.join(pieces);left=len(raw)-len(raw.lstrip());source=raw.strip()
     for span in spans:
@@ -296,9 +314,24 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False, extra_span
 
 def note_issues(block,note_policy):
     if note_policy=='companion':return []
-    spans=block.locator.get('inline_semantics',[])
-    references=[s for s in spans if s['kind']=='note_reference' and not any(h['kind']=='hidden' and h['source_start']<=s['source_start'] and h['source_end']>=s['source_end'] for h in spans)]
-    return list(dict.fromkeys(link['issue'] for link in block.links if link.get('kind')=='note' and link.get('issue') and any(s['source_start']==link.get('source_start') for s in references)))
+    from .source_notes import references
+
+    def problems(spans,links):
+        visible = {}
+        for ref in references(spans):
+            visible.setdefault(ref['source_start'],set()).add(ref.get('href'))
+        return [link['issue'] for link in links if link.get('kind')=='note' and link.get('issue')
+                and link.get('source_start') in visible
+                and ('reference_href' not in link or link['reference_href'] in visible[link['source_start']])]
+
+    issues = problems(block.locator.get('inline_semantics',()),block.links)
+    excluded = {tuple(pair) for pair in block.locator.get('table_hidden_cells',())}
+    for cell in block.locator.get('table_cell_semantics',()):
+        if (cell['row'],cell['column']) not in excluded:
+            issues.extend(problems(cell['spans'],cell['notes']))
+    if caption:=block.locator.get('table_caption'):
+        issues.extend(problems(caption['spans'],caption['notes']))
+    return list(dict.fromkeys(issues))
 
 
 def uncertainty(spans):

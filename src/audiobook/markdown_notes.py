@@ -50,6 +50,7 @@ def definition(tokens, inline_sources):
     """Keep note paragraphs and their dependencies in authored order."""
     from .core import Block
     from .epub_semantics import reading
+    from .source_notes import finish_sentence
 
     parts, spoken, spans, issues = [], [], [], []
     position = 0
@@ -60,7 +61,7 @@ def definition(tokens, inline_sources):
                 parts.append(text)
                 value = reading(Block('',text,{'inline_semantics':local},'note','')).strip()
                 if value:
-                    spoken.append(value if value.endswith(('.', '!', '?')) else value + '.')
+                    spoken.append(finish_sentence(value))
                 spans.extend({**span,'source_start':span['source_start']+position,
                               'source_end':span['source_end']+position} for span in local)
                 position += len(text)+2

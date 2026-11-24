@@ -70,7 +70,7 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
     for index,note in inline_notes.items():
         add_note(f'markdown-inline-note:{index}',f'inline:{index}',
                  [Token('inline','',0,children=note['tokens'])],{'exact':'^['+note['content']+']'})
-    graph = NoteGraph(notes,first_definition=first_note_definition)
+    graph = NoteGraph(notes.get,first_definition=first_note_definition)
     for note in note_blocks:
         note.links = graph.links_for(note.locator.get('inline_semantics',()),follow=False)
     i=0;chapter_id=None;list_depth=0;quote_depth=0
@@ -114,19 +114,25 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
             if chapter_id is not None:loc['chapter_id']=chapter_id
             out.append(block(t.content,loc,'code',chapter,['AST literal block']))
         if t.type=='table_open':
-            start=t.map[0]; end=t.map[1]; rows=[]; row=[]; references=[]; j=i+1
+            start=t.map[0]; end=t.map[1]; rows=[]; row=[]; cells=[]; j=i+1
             while j<len(tokens) and tokens[j].type!='table_close':
                 q=tokens[j]
                 if q.type=='tr_open': row=[]
                 if q.type=='inline':
-                    source, refs=markdown_notes.inline(q,inline_sources)
-                    row.append(source); references.extend(ref for ref in refs if ref['kind']=='note_reference')
+                    source, spans=markdown_notes.inline(q,inline_sources)
+                    if any(span['kind']=='note_reference' for span in spans):
+                        cells.append({'row':len(rows),'column':len(row),'source':source,'spans':spans})
+                    row.append(source)
                 if q.type=='tr_close': rows.append(row)
                 j+=1
             loc={'format':'markdown','lines':[start+1,end],'exact':''.join(lines[start:end]),'rows':rows}
             if chapter_id is not None:loc['chapter_id']=chapter_id
-            issue='Markdown table note references need a verified reading.' if references else None
-            b=block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row'],issue,graph.links_for(references))
+            b=block('\n'.join(' | '.join(r) for r in rows),loc,'table',chapter,['AST table with explicit header row'])
+            if cells:
+                graph.bind_cells(cells)
+                b.locator['table_cell_semantics']=cells
+                b.locator['table_header_cells']=list(range(len(rows[0])))
+                b.links.extend(link for cell in cells for link in cell['notes'])
             preserve_resources(b.locator,tokens[i+1:j])
             out.append(b)
             i=j
@@ -278,6 +284,10 @@ def epub(data:bytes|Path)->Document:
                     target,anchor=archive_path(posixpath.dirname(path),src[0]); chapter_labels[(target,anchor)]=label[0]
                     navigation.append({'path':target,'anchor':anchor,'label':label[0],'origin':path})
     from .epub_semantics import AUDIT_SPANS,EMBEDDED,NON_TEXT,describe,language,uncertainty,hidden,accessible_label,note_container,table_headers
+    from .epub_notes import EpubNotes
+    from .epub_semantics import noteref
+    notes=EpubNotes(soup,document_reference,lambda path,href:archive_path(posixpath.dirname(path),href)[0],
+                    cover_assets,lang[0] if lang else 'en')
     out=[]; inventory=[]; chapter='Opening';linked_targets={}
     for occurrence,item in enumerate(opf.xpath('//*[local-name()="spine"]/*'),1):
         if item.get('linear')=='no': continue
@@ -334,30 +344,9 @@ def epub(data:bytes|Path)->Document:
 
             if not text and not issue and not any(s['kind']=='object_label' and (s.get('reading') or s.get('cover')) for s in semantics): continue
             if role=='heading': chapter=text
-            links=[]; table_notes={}
-            note_references=iter(sorted((s for s in semantics if s['kind']=='note_reference'),key=lambda s:s['source_start']))
+            links=notes.links_for(path,semantics)
             for a in node.find_all('a',href=True):
-                if 'noteref' in str(a.get('epub:type','')) or a.get('role')=='doc-noteref':
-                    location=next(note_references,None)
-                    try:np,anchor=document_reference(path,a['href']); n=soup(np).find(id=anchor)
-                    except Error:issue='Linked note resource is missing or unsupported.';continue
-                    if not n: issue='Linked note target is missing.'; continue
-                    note,note_spans=describe(n,lambda href:archive_path(posixpath.dirname(np),href)[0],cover_assets)
-                    note_spans+=annotate(note,note_spans,vars(soup(np)).get('_audiobook_lexicons',[]),language(n) or (lang[0] if lang else 'en'))
-                    note_loc={'format':'epub','path':np,'anchor':anchor,'inline_semantics':note_spans,'language':language(n) or (lang[0] if lang else 'en')}
-                    note_block=block(note,note_loc,'note',chapter)
-                    from .epub_semantics import reading as note_reading
-                    from .pronunciation import unresolved
-                    note_problems=[uncertainty(note_spans),*style_issues(n),*vars(soup(np)).get('_audiobook_lexicon_problems',[]),*unresolved(note_block)]
-                    if any(not any(hidden(a) for a in [obj,*obj.parents]) for obj in n.find_all(EMBEDDED)):
-                        note_problems.append('This EPUB note contains embedded content that needs a verified reading.')
-                    if n.find('a',attrs={'role':'doc-noteref'}) or any('noteref' in str(a.get('epub:type','')).split() for a in n.find_all('a')):note_problems.append('Nested linked notes require a verified reading; recursive note expansion is not inferred.')
-                    note_problem=' '.join(dict.fromkeys(p for p in note_problems if p)) or None
-                    target=(np,anchor);linked_targets[target]=n
-                    link={'kind':'note','href':np+'#'+anchor,'text':note,'reading':note_reading(note_block),'inline_semantics':note_spans,'language':note_loc['language'],'issue':note_problem,**({'source_start':location['source_start']} if location else {})}
-                    links.append(link)
-                    if role=='table':table_notes[id(a)]=link
-                elif role!='navigation':
+                if role!='navigation' and not noteref(a):
                     try:
                         np,anchor=document_reference(path,a['href'])
                         if not np.lower().endswith(('.xhtml','.html','.htm','.svg')):continue
@@ -399,17 +388,11 @@ def epub(data:bytes|Path)->Document:
                 table_locator,header_issue=table_headers(table_cells,identifiers)
                 loc.update(table_locator)
                 if header_issue and not out[-1].issue:out[-1].issue=header_issue
-                from .epub_semantics import noteref,reading
+                from .epub_semantics import reading
                 def table_entry(owner):
                     source,spans=describe(owner,lambda href:archive_path(posixpath.dirname(path),href)[0],cover_assets)
                     spans+=annotate(source,spans,vars(s).get('_audiobook_lexicons',[]),language(owner) or (lang[0] if lang else 'en'))
-                    note_spans=(span for span in spans if span['kind']=='note_reference')
-                    notes=[]
-                    for anchor in (tag for tag in owner.find_all('a') if noteref(tag)):
-                        local=next(note_spans,None)
-                        if local is not None and id(anchor) in table_notes:
-                            notes.append({**table_notes[id(anchor)],'source_start':local['source_start'],'reference_href':local['href']})
-                    return {'source':source,'spans':spans,'notes':notes}
+                    return {'source':source,'spans':notes.bind(path,spans),'notes':[]}
                 ruby_cells=[];semantic_cells=[];hidden_cells=[]
                 for i,row in enumerate(table_cells):
                     for j,cell in enumerate(row):
@@ -417,7 +400,7 @@ def epub(data:bytes|Path)->Document:
                             hidden_cells.append([i,j])
                         entry=table_entry(cell)
                         source,spans=entry['source'],entry['spans']
-                        if spans or entry['notes']:
+                        if spans:
                             semantic_cells.append({'row':i,'column':j,**entry})
                         if not cell.find('ruby'):continue
                         inline=[span for span in spans if span['kind'] in ('ruby','hidden')]
@@ -429,6 +412,8 @@ def epub(data:bytes|Path)->Document:
                 loc['table_header_cells']=[i for i,c in enumerate(table_cells[0]) if c.name=='th' and c.get('scope') in (None,'col') and [0,i] not in hidden_cells]
                 if (caption:=node.find('caption',recursive=False)) and not hidden(caption):
                     loc['table_caption']=table_entry(caption)
+                visible_cells=[cell for cell in semantic_cells if [cell['row'],cell['column']] not in hidden_cells]
+                notes.graph.bind_cells(([loc['table_caption']] if 'table_caption' in loc else [])+visible_cells)
             # Append asset evidence after identity creation to preserve existing img locators.
             if image_resource:
                 out[-1].locator['image_resource']=image_resource
@@ -502,30 +487,64 @@ def epub(data:bytes|Path)->Document:
     # Addressable auxiliary source is separate from the primary spine. Link
     # every calling occurrence to one local companion target with backlinks.
     auxiliary=[];target_ids={};auxiliary_chars=0
-    for (path,anchor),node in linked_targets.items():
-        body=soup(path).find('body') or soup(path);ranks={id(n):i for i,n in enumerate(body.descendants)}
-        subtree={ranks[id(n)] for n in [node,*node.descendants] if id(n) in ranks}
-        existing=[b for b in out if b.locator.get('path')==path and (not anchor or b.locator.get('anchor')==anchor or b.locator.get('dom_rank',b.locator.get('text_node_rank')) in subtree or any(s.get('kind')=='anchor' and s.get('id')==anchor for s in b.locator.get('inline_semantics',[])))]
+    note_addresses={candidate[0].block.id:notes.addresses[href] for href,candidate in notes.definitions.items() if candidate}
+    linked_targets.update((address,node) for address,(node,_) in notes.nodes.items())
+    blocks_by_path={}
+    for item in out:
+        blocks_by_path.setdefault(item.locator.get('path'),[]).append(item)
+    document_ranks={}
+    for address,node in linked_targets.items():
+        path,anchor=address
+        existing=[]
+        if candidates:=blocks_by_path.get(path):
+            if path not in document_ranks:
+                body=soup(path).find('body') or soup(path)
+                document_ranks[path]={id(n):i for i,n in enumerate(body.descendants)}
+            ranks=document_ranks[path]
+            subtree={ranks[id(n)] for n in [node,*node.descendants] if id(n) in ranks}
+            existing=[b for b in candidates if not anchor or b.locator.get('anchor')==anchor or
+                      b.locator.get('dom_rank',b.locator.get('text_node_rank')) in subtree or
+                      any(s.get('kind')=='anchor' and s.get('id')==anchor for s in b.locator.get('inline_semantics',[]))]
         if existing:
-            # A document link with no fragment lands at the first block in
-            # each legitimate repeated spine occurrence.
             existing=list({b.locator.get('occurrence'):b for b in reversed(existing)}.values())
-            target_ids[path+'#'+anchor]=existing;continue
+            target_ids[address]=existing
+            continue
         source=html_text(node).strip();auxiliary_chars+=len(source)
         loc={'format':'epub','path':path,'anchor':anchor,'auxiliary':True,'exact':str(node)}
         issue=None
         if auxiliary_chars>4*1024*1024:
             source='';issue='Linked auxiliary source exceeds the bounded companion import; inspect the original EPUB.'
-        target=block(source,loc,'note',out[-1].chapter if out else 'Opening',['Authored internal link target retained for offline lookup'],issue)
-        target_ids[path+'#'+anchor]=[target];auxiliary.append(target)
-    for b in out:
-        for link in b.links:
-            if link.get('href') in target_ids:
-                candidates=target_ids[link['href']]
-                local=[target for target in candidates if target.locator.get('path')==b.locator.get('path') and target.locator.get('occurrence')==b.locator.get('occurrence')]
-                destinations=['source.html#'+target.id for target in local or candidates]
-                link['destinations']=destinations
-                if len(destinations)==1:link['destination']=destinations[0]
+        if address in notes.nodes and not issue:
+            target=notes.nodes[address][1]
+            target.chapter=out[-1].chapter if out else 'Opening'
+            target.links=notes.graph.links_for(target.locator['inline_semantics'],follow=False)
+        else:
+            target=block(source,loc,'note',out[-1].chapter if out else 'Opening',['Authored internal link target retained for offline lookup'],issue)
+        target_ids[address]=[target];auxiliary.append(target)
+    href_addresses={path+'#'+anchor:(path,anchor) for path,anchor in target_ids}
+    def destinations(block,addresses):
+        result=[]
+        for address in addresses:
+            candidates=target_ids.get(address,())
+            local=[target for target in candidates if target.locator.get('path')==block.locator.get('path') and
+                   target.locator.get('occurrence')==block.locator.get('occurrence')]
+            result.extend('source.html#'+target.id for target in local or candidates)
+        return list(dict.fromkeys(result))
+    for b in [*out,*auxiliary]:
+        cell_entries=[*b.locator.get('table_cell_semantics',())]
+        if caption:=b.locator.get('table_caption'):
+            cell_entries.append(caption)
+        for link in [*b.links,*(link for cell in cell_entries for link in cell['notes'])]:
+            href=link.get('href')
+            address=notes.addresses.get(href) if link['kind']=='note' else href_addresses.get(href)
+            chain_addresses=[note_addresses.get(value.removeprefix('source.html#'))
+                             for value in link.get('destinations',())] if link['kind']=='note' else []
+            if address is not None:
+                main=destinations(b,[address])
+                if all_destinations:=destinations(b,[address,*chain_addresses]):
+                    link['destinations']=all_destinations
+                if len(main)==1:link['destination']=main[0]
+                else:link.pop('destination',None)
     out.extend(auxiliary)
     for path,parsed in soups.items():
         warnings.extend(path+': '+warning for warning in vars(parsed).get('_audiobook_css_warnings',[]))
@@ -756,7 +775,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-29'
+IMPORT_REVISION='import-30'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 

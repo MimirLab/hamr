@@ -125,10 +125,12 @@ def cell_semantics(row,column,text,spans):
 
 def html_read(data,builder, *, where='html', metadata=True, fragment=None, encoding=None, collect_links=False,
               collect_resources=False):
-    from .epub_semantics import AUDIT_SPANS, hidden, note_container, reading, uncertainty
+    from urllib.parse import unquote
+    from .epub_semantics import AUDIT_SPANS, hidden, note_container, uncertainty
+    from .html_notes import RenderedNotes
     from .importers import html_text
     from .epub_semantics import describe as semantics
-    from .source_notes import Definition, NoteGraph, references
+    from .source_notes import Definition, NoteGraph, note_text
 
     soup = BeautifulSoup(data,'html.parser',from_encoding=encoding)
     for node in soup.find_all(['script','style','template','noscript']):
@@ -140,6 +142,13 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
     if soup.find('link',rel='stylesheet'):
         builder.doc.warnings.append('External stylesheet retained as a reference. Its remote contents were not fetched.')
     body = soup.body or soup
+    if not fragment:
+        main = body.select('div#mdbook-content.content > main')
+        if len(main)==1:
+            body = main[0]
+            builder.doc.inventory.append({'kind':'html_main','element':'#mdbook-content > main',
+                                          'basis':'mdBook rendered publication region'})
+    markup = RenderedNotes(body)
     if fragment:
         targets = body.find_all(lambda node: node.get('id')==fragment or
                                 node.name=='a' and node.get('name')==fragment)
@@ -164,18 +173,27 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
         if resources:
             block.locator['resource_references'] = resources
 
+    def local_notes(spans):
+        for span in spans:
+            if span['kind']=='note_reference' and (span.get('href') or '').startswith('#'):
+                span['target_href'] = unquote(span['href'])
+
     def text_node(node,role,where):
-        source,spans = semantics(node)
+        source,spans = semantics(node,note_markup=markup,note_body=role=='note')
         spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
                  collect_links and span['kind']=='hyperlink']
+        local_notes(spans)
+        issue = uncertainty(spans)
         block = builder.add(source,role,where,loc={'anchor':node.get('id'),'inline_semantics':spans,
-                            'exact':str(node)},issue=uncertainty(spans))
+                            'exact':str(node)},issue=None if role=='note' else issue)
         preserve_resources(block,node)
         if block and (node.name == 'blockquote' or node.find_parent('blockquote') is not None):
             block.locator['block_quote'] = True
         if block and role=='note' and node.get('id'):
-            value = reading(block).strip() if references(spans) or node.find('math') else node.get_text(' ',strip=True)
-            notes.setdefault('#'+node['id'],[]).append(Definition(block,value,block.issue))
+            value = note_text(block,terminal=id(node) in markup.definitions)
+            if issue:
+                block.locator['note_issue'] = issue
+            notes.setdefault('#'+node['id'],[]).append(Definition(block,value,issue))
 
     def visit(node,path):
         if isinstance(node,NavigableString):
@@ -183,7 +201,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             if not isinstance(node,NON_TEXT):
                 builder.add(str(node),where=path)
             return
-        if node.get('id') and note_container(node):
+        if node.get('id') and (note_container(node) or id(node) in markup.definitions):
             text_node(node,'note',path)
             return
         if hidden(node) or node.name=='nav':
@@ -198,10 +216,13 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             for row,line in enumerate(lines):
                 cells = []
                 for column,cell in enumerate(line.find_all(['th','td'],recursive=False)):
-                    if cell.find('math'):
-                        source,spans = semantics(cell)
-                        if any(span['kind']=='note_reference' for span in spans):
-                            issue = issue or 'An authored table note needs a verified reading.'
+                    math = cell.find('math')
+                    if math or cell.find('a'):
+                        source,spans = semantics(cell,note_markup=markup)
+                    else:
+                        spans = []
+                    if math or any(span['kind']=='note_reference' for span in spans):
+                        local_notes(spans)
                         issue = issue or uncertainty(spans)
                         entries.append(cell_semantics(row,column,source,spans))
                     else:
@@ -226,9 +247,12 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
 
     start = len(builder.doc.blocks)
     visit(body,where)
-    graph = NoteGraph(notes)
+    graph = NoteGraph(notes.get)
     for block in builder.doc.blocks[start:]:
         block.links.extend(graph.links_for(block.locator.get('inline_semantics',()),follow=block.role!='note'))
+        if cells:=block.locator.get('table_cell_semantics'):
+            graph.bind_cells(cells)
+            block.links.extend(link for cell in cells for link in cell['notes'])
 
 
 @contextmanager

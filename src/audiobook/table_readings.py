@@ -34,6 +34,7 @@ def semantic_cells(block,note_policy, *, projected=()):
             if ref is None or any(h['source_start']<=start and ref['source_end']<=h['source_end'] for h in hidden):continue
             if note['href'] in seen:continue
             seen.add(note['href'])
+            if note.get('reference_only') and note_policy!='companion':continue
             if note_policy=='inline' and not (row==0 and column in headers):source.links.append(note)
             else:trailing[note['href']]=note['reading']
         text, spans=reading(source,'inline',with_spans=True)

@@ -2,8 +2,8 @@ from __future__ import annotations
 import re
 from .core import Document,key,Error,digest
 
-RULES='faithful-22'
-PROJECTED_SOURCE_RULES=('faithful-20','faithful-21',RULES)
+RULES='faithful-23'
+PROJECTED_SOURCE_RULES=('faithful-20','faithful-21','faithful-22',RULES)
 PROSE_SOURCE_RULES=('faithful-18','faithful-19',*PROJECTED_SOURCE_RULES)
 CURRENT_DELIVERY_RULES=('faithful-17',*PROSE_SOURCE_RULES)
 PERFORMANCE_RULES=('faithful-16',*CURRENT_DELIVERY_RULES)

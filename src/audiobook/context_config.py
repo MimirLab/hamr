@@ -118,8 +118,11 @@ def implementation(*, unified=True, rule_revision=None):
         return '996d510e1617f02aa68f5539c9a48d2d603b3d19580fb1f7a0d385dcf2066287'
     if rule_revision=='faithful-21':
         return 'eb6ca8979e18251cfd982133424cb7ea2f26175d7bd0969c52426cfa3329b473'
+    if rule_revision=='faithful-22':
+        return '152e0fdc935a0f515685b688feda123be0e509c6c22af9b63d09c59a29a0079d'
     return key({name: filehash(Path(__file__).with_name(name))
                 for name in ('context_config.py','contextual.py','context_grammar.py','context_candidate.py','context_forms.py','context_lexical.py','context_numbers.py',
                              'context_structure.py','context_reviewer.py','context_rules.json','abbreviations.py','boundaries.py','epub_semantics.py','epub_styles.py','linguistic.py','pronunciation.py',
                              'markdown_notes.py','pdf_formula.py','pdf_geometry.py','pdf_layout.py','pdf_overlays.py','pdf_rules.py','pdf_tables.py','pdf_table_readings.py',
-                             'pdf_words.py','pdf_reading_spans.py','source_passages.py','source_math.py','source_notes.py','spoken_forms.py','table_readings.py','typed_readings.py')})
+                             'pdf_words.py','pdf_reading_spans.py','source_passages.py','source_math.py','source_notes.py',
+                             'epub_notes.py','html_notes.py','spoken_forms.py','table_readings.py','typed_readings.py')})
