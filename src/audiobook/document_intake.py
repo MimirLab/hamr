@@ -123,10 +123,22 @@ def cell_semantics(row,column,text,spans):
     return {'row':row,'column':column,'source':text,'spans':spans,'notes':[]}
 
 
+def renderer_controls(body,docutils,sphinx):
+    controls = []
+    if docutils or sphinx:
+        controls.extend(body.select('aside[role="doc-footnote"] > span.label, span.sphinx-navigation'))
+    if sphinx:
+        controls.extend(body.select('a.headerlink, span.section-number'))
+        generated = {'genindex.html','modindex.html','py-modindex.html','search.html'}
+        controls.extend(node for node in body.select('a.reference.internal[href]') if node['href'] in generated)
+    return {id(node):{'source':node.get_text(),'kind':'hidden','disposition':'companion',
+                      'evidence':'Renderer navigation or note label'} for node in controls}
+
+
 def html_read(data,builder, *, where='html', metadata=True, fragment=None, encoding=None, collect_links=False,
               collect_resources=False, source_annotations=None, docutils=False):
     from urllib.parse import unquote
-    from .epub_semantics import AUDIT_SPANS, hidden, note_container, uncertainty
+    from .epub_semantics import AUDIT_SPANS, hidden, note_container, reading, uncertainty
     from .html_notes import RenderedNotes
     from .importers import html_text
     from .epub_semantics import describe as semantics
@@ -156,13 +168,14 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                 body = main[0]
                 builder.doc.inventory.append({'kind':'html_main','element':'main',
                                               'basis':'Sphinx rendered publication region'})
-    markup = RenderedNotes(body,docutils=docutils or sphinx,sphinx=sphinx)
+    markup = RenderedNotes(body)
     if fragment:
         targets = body.find_all(lambda node: node.get('id')==fragment or
                                 node.name=='a' and node.get('name')==fragment)
         if len(targets)!=1 or targets[0].name in ('a','h1','h2','h3','h4','h5','h6','span'):
             raise Error('source_topic_fragment','The topic link does not name one bounded HTML region.')
         body = targets[0]
+    projected = renderer_controls(body,docutils,sphinx)
     notes = {}
     atomic = {'p','h1','h2','h3','h4','h5','h6','table','pre','img','svg','math','figcaption','dt','dd','li',
               'blockquote','address','caption'}
@@ -187,13 +200,16 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                 span['target_href'] = unquote(span['href'])
 
     def text_node(node,role,where):
-        source,spans = semantics(node,note_markup=markup,note_body=role=='note')
+        source,spans = semantics(node,note_markup=markup,note_body=role=='note',projected=projected)
         spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
                  collect_links and span['kind']=='hyperlink']
         local_notes(spans)
         issue = uncertainty(spans)
         block = builder.add(source,role,where,loc={'anchor':node.get('id'),'inline_semantics':spans,
                             'exact':str(node)},issue=None if role=='note' else issue)
+        if block and role=='heading' and projected and any(id(child) in projected for child in node.find_all(True)):
+            if label:=reading(block):
+                block.chapter = builder.chapter = label
         preserve_resources(block,node)
         if block and (node.name == 'blockquote' or node.find_parent('blockquote') is not None):
             block.locator['block_quote'] = True
@@ -253,7 +269,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                 for column,cell in enumerate(line.find_all(['th','td'],recursive=False)):
                     math = cell.find('math')
                     if math or cell.find('a'):
-                        source,spans = semantics(cell,note_markup=markup)
+                        source,spans = semantics(cell,note_markup=markup,projected=projected)
                     else:
                         spans = []
                     if math or any(span['kind']=='note_reference' for span in spans):

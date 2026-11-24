@@ -196,3 +196,17 @@ def test_unrelated_python_folder_with_rst_selections_is_not_a_publication(tmp_pa
     with pytest.raises(Error) as error:
         describe(project)
     assert {row['id'] for row in error.value.candidates}=={'first.rst','second.rst'}
+
+
+def test_rendered_sphinx_heading_and_chapter_label_exclude_generated_navigation(tmp_path):
+    html = write_sources(tmp_path,{'book.html':'''<!doctype html>
+<head><script src="_static/documentation_options.js"></script><title>Harbor</title></head>
+<body><div class="body" role="main">
+<h1><span class="section-number">1. </span>Harbor<a class="headerlink" href="#harbor">¶</a></h1>
+<p>The ship arrived at noon.</p>
+</div><aside><p>Navigation panel</p></aside></body>'''})/'book.html'
+    doc = inspect_source(html)
+    reading = plan(doc)
+    assert reading['chapters']==['Harbor']
+    assert lines(doc)==['Harbor','The ship arrived at noon.']
+    assert '¶' in doc.blocks[0].source

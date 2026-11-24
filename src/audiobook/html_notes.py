@@ -1,10 +1,10 @@
-"""Recognize linked notes and generated reader controls in rendered documents."""
+"""Recognize the explicitly linked footnote markup produced by mdBook."""
 
 from urllib.parse import unquote
 
 
 class RenderedNotes:
-    def __init__(self,root,*,docutils=False,sphinx=False):
+    def __init__(self,root):
         definitions = [
             node for node in root.select('ol.footnote-definition > li[id]')
             if node['id'].startswith('footnote-')
@@ -30,12 +30,3 @@ class RenderedNotes:
                 target = unquote(link['href']).removeprefix('#')
                 if link['href'].startswith('#') and target in references and link.get_text(strip=True).startswith('↩'):
                     self.backlinks.add(id(link))
-        self.structural = set()
-        if docutils:
-            self.structural.update(id(node) for node in root.select(
-                'aside[role="doc-footnote"] > span.label, span.sphinx-navigation'))
-        if sphinx:
-            self.structural.update(id(node) for node in root.select('a.headerlink, span.section-number'))
-            generated = {'genindex.html','modindex.html','py-modindex.html','search.html'}
-            self.structural.update(id(node) for node in root.select('a.reference.internal[href]')
-                                   if node['href'] in generated)
