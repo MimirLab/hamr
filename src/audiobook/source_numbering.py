@@ -3,6 +3,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 import re
 
+from .core import Block
 from .spoken_forms import roman
 from .typed_readings import decimal
 
@@ -94,6 +95,12 @@ def ordered_label(block, value, marker=None):
     return Label(0,end,tuple(marker['values']) if marker else (value,),'authored ordered list',marker)
 
 
+def embed_ordered_label(text, spans, label):
+    block = Block('',text,{'inline_semantics':spans})
+    if text and clear(block,0,0):
+        spans.insert(0,ordered_label(block,*label).span(text))
+
+
 def identity(block):
     loc = block.locator
     return (block.chapter,loc.get('chapter_id'),loc.get('member'),loc.get('occurrence'))
@@ -118,7 +125,10 @@ def collect(document):
         headings.clear()
 
     for block in document.blocks:
-        if block.role=='heading':
+        declared = block.locator.get('ordered_item')
+        if block.role=='heading' and type(declared) is int:
+            finish_headings()
+        elif block.role=='heading':
             hit = ROMAN_HEADING.match(block.source)
             value = roman(hit[1]) if hit and clear(block,*hit.span()) else None
             if not value or headings and value!=headings[-1][1].values[-1]+1:
@@ -131,7 +141,6 @@ def collect(document):
         if chapter!=previous:
             finish_run()
             previous = chapter
-        declared = block.locator.get('ordered_item')
         if (block.role in ('body','heading') and type(declared) is int and clear(block,0,0)
                 and not block.locator.get('checklist')):
             finish_run()

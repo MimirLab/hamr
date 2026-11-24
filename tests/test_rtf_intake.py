@@ -16,6 +16,35 @@ def source(tmp_path,body):
     return path
 
 
+def test_saved_list_markers_use_their_declared_rtf_kind_and_source_span(tmp_path):
+    source = tmp_path/'numbers.rtf'
+    raw = (
+        br'{\rtf1\ansi{\*\listtable'
+        br'{\list{\listlevel\levelnfc1\levelstartat3}\listid4}'
+        br'{\list{\listlevel\levelnfc23}\listid5}}'
+        br'{\*\listoverridetable{\listoverride\listid4\listoverridecount0\ls7}'
+        br'{\listoverride\listid5\listoverridecount0\ls8}}'
+        br'\pard{\listtext III.\tab}\ilvl0\ls7 III. Open the gate.\par'
+        br'\pard Stay near the gate.\par'
+        br'\pard{\listtext IV.\tab}\ilvl0\ls7 Check the lamp.\par'
+        br'\pard{\listtext \bullet\tab}\ilvl0\ls8 Park the cart.\par'
+        br'\pard{\pntext 8.\tab}Watch the road.\par'
+        br'\pard\ilvl0\ls7 Inspect the latch.\par}'
+    )
+    source.write_bytes(raw)
+    document = inspect_source(source)
+    result = plan(document)
+    assert [unit['text'] for unit in result['utterances']]==[
+        'Number three, Open the gate.','Stay near the gate.','Number four, Check the lamp.',
+        'Park the cart.','Number eight, Watch the road.']
+    labels = [marker for row in result['decisions'] for marker in row.get('source_numbering',())]
+    assert [marker['authored_marker'] for marker in labels]==['III.','IV.','8.']
+    assert labels[0]['source']=='III. '
+    first,last = labels[0]['marker_location']['byte_range']
+    assert raw[first:last]==br'\listtext III.\tab}'
+    assert len(result['issues'])==1 and result['issues'][0]['block']==document.blocks[-1].id
+
+
 def test_rtf_reads_outline_inheritance_and_an_explicit_body_override(tmp_path):
     raw = br'''{\stylesheet{\s1\outlinelevel0 Heading;}{\s2\sbasedon1 Custom;}
 {\*\cs4\outlinelevel1 Inline styling;}{\s3\sbasedon4 Cycle;}{\s4\sbasedon3 Cycle;}}

@@ -93,7 +93,7 @@ Hamr also opens NIMAS textbooks, text-bearing DAISY packages, JATS research arti
 
 AbiWord documents and templates can be opened directly, including compressed copies. Hamr reads authored chapter styles, linked notes and tables and keeps the original file with the audiobook. [AbiWord intake](docs/INTAKE.md#source-readers)
 
-Rich-text documents keep authored chapter outlines, notes and readable text boxes. You can open RTF directly or use the same reader in a Scrivener project or TextBundle. [Rich-text intake](docs/INTAKE.md#source-readers)
+Rich-text documents keep authored chapter outlines, notes, readable text boxes and saved list labels. You can open RTF directly or use the same reader in a Scrivener project or TextBundle. [Rich-text intake](docs/INTAKE.md#source-readers)
 
 Word documents keep automatic list labels and read editable text boxes in their authored story order. Their text, notes and equations go through the same narration preparation as the body. Hamr keeps the original Word file in the companion. [Word intake](docs/INTAKE.md#source-readers)
 

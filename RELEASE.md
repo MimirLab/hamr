@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev51
+
+- Read automatic list labels in OpenDocument Writer and Flat OpenDocument text. Hamr follows saved item starts and explicit continuation links and uses the same spoken labels as Word and HTML.
+- Read RTF’s saved list marker when its declared type and displayed text agree. The plan retains the original byte range. An unresolved numbered item appears in source review.
+
 # hamr 0.4.9.dev50
 
 - Read saved automatic numbering in Word documents and Roman markers in HTML and EPUB. The plan keeps the original marker notation, start values, and supported nesting and restarts.

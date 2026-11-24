@@ -2,13 +2,12 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from .core import Block
 from .document_intake import (attr, formula_span, name,
                               plain_xml_text, structured_zip, xml)
 from .epub_semantics import uncertainty
 from .source_math import office_math, office_tag, office_text
 from .source_notes import Definition, NoteGraph, note_text
-from .source_numbering import clear, ordered_label
+from .source_numbering import embed_ordered_label
 from .table_grid import Grid, count, passage, passages, simple_matrix
 from .word_stories import ALTERNATE, MISSING_BRANCH, TEXTBOX, Stories, branch, enabled, excluded_kind, properties, visible
 from .word_numbering import Numbering
@@ -173,10 +172,8 @@ def read_word(path,builder):
             if order:
                 value,marker = order
                 issue = issue or marker.get('issue')
-                if embed and text and not issue:
-                    entry = Block('',text,{'inline_semantics':spans})
-                    if clear(entry,0,0):
-                        spans.insert(0,ordered_label(entry,value,marker).span(text))
+                if embed and not issue:
+                    embed_ordered_label(text,spans,order)
             return Paragraph(text,spans,excluded,issue,textboxes,word_location(node,note_part or 'document'),order)
 
         def embedded_content(node,*,note_part=None):

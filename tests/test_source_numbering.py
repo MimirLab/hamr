@@ -1,3 +1,5 @@
+from zipfile import ZipFile
+
 from audiobook.intake import inspect_source
 from audiobook.planner import plan
 
@@ -81,4 +83,62 @@ def test_unresolved_inline_ordered_marker_reports_its_own_item(tmp_path):
     doc = inspect_source(source)
     result = plan(doc)
     assert len(result['issues'])==1 and result['issues'][0]['block']==doc.blocks[0].id
+    assert [unit['text'] for unit in result['utterances']]==['Watch the road.']
+
+
+def test_writer_number_starts_restarts_and_nested_ownership_share_the_list_policy(tmp_path):
+    namespaces = ('xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+                  'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+                  'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"')
+    styles = ('<office:styles><text:list-style style:name="Steps">'
+              '<text:list-level-style-number text:level="1" style:num-format="I" style:num-suffix="." text:start-value="3"/>'
+              '<text:list-level-style-number text:level="2" style:num-format="a" style:num-suffix=")"/>'
+              '</text:list-style><text:list-style style:name="Bullets">'
+              '<text:list-level-style-bullet text:level="1" text:bullet-char="•"/>'
+              '</text:list-style></office:styles>')
+    body = ('<office:body><office:text><text:list text:style-name="Steps" xml:id="one">'
+            '<text:list-header><text:p>Watch the road.</text:p></text:list-header>'
+            '<text:list-item><text:p>III. Open the gate.</text:p><text:list>'
+            '<text:list-item><text:p>Inspect the latch.</text:p></text:list-item></text:list>'
+            '<text:p>Stay near the gate.</text:p></text:list-item>'
+            '<text:list-item text:start-value="7"><text:p>Check the lamp.</text:p></text:list-item></text:list>'
+            '<text:list text:style-name="Steps" text:continue-list="one">'
+            '<text:list-item><text:p>Close the gate.</text:p></text:list-item></text:list>'
+            '<text:list text:style-name="Bullets"><text:list-item><text:p>Park the cart.</text:p>'
+            '</text:list-item></text:list></office:text></office:body>')
+    flat = tmp_path/'list.fodt'
+    portable = tmp_path/'list.odt'
+    mime = 'application/vnd.oasis.opendocument.text'
+    flat.write_text(f'<office:document {namespaces} office:mimetype="{mime}">{styles}{body}</office:document>',
+                    encoding='utf-8')
+    with ZipFile(portable,'w') as archive:
+        archive.writestr('mimetype',mime)
+        archive.writestr('content.xml',f'<office:document-content {namespaces}>{body}</office:document-content>')
+        archive.writestr('styles.xml',f'<office:document-styles {namespaces}>{styles}</office:document-styles>')
+    for source in (flat,portable):
+        result = plan(inspect_source(source,offline=True))
+        assert not result['issues']
+        assert [unit['text'] for unit in result['utterances']]==[
+            'Watch the road.','Number three, Open the gate.','Letter A, Inspect the latch.',
+            'Stay near the gate.','Number seven, Check the lamp.','Number eight, Close the gate.',
+            'Park the cart.']
+        labels = [a for row in result['decisions'] for a in row.get('source_numbering',())]
+        assert [a['authored_marker'] for a in labels]==['III.','a)','VII.','VIII.']
+        assert labels[0]['source']=='III. '
+        assert labels[0]['marker_location']['source_file']==('styles.xml' if source==portable else flat.name)
+
+
+def test_writer_keeps_conflicting_saved_marker_evidence_at_the_exact_list_item(tmp_path):
+    path = tmp_path/'broken.fodt'
+    path.write_text('''<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+        xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"
+        office:mimetype="application/vnd.oasis.opendocument.text"><office:body><office:text>
+        <text:list><text:list-item><text:number>III.</text:number>
+        <text:p>Open the gate.</text:p></text:list-item></text:list>
+        <text:p>Watch the road.</text:p></office:text></office:body></office:document>''',encoding='utf-8')
+    document = inspect_source(path)
+    affected,normal = document.blocks
+    result = plan(document)
+    assert affected.locator['ordered_marker']['notation']=='III.' and not normal.issue
+    assert result['issues'][0]['block']==affected.id
     assert [unit['text'] for unit in result['utterances']]==['Watch the road.']

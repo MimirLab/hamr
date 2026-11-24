@@ -7,7 +7,7 @@ hamr open ~/Downloads/novel.zip --voice cast:nigel-thornberry --output ~/Audiobo
 
 A folder or ZIP of loose page images is one book. Hamr uses an enclosed page manifest when present and otherwise sorts filenames naturally, so `page2.jpg` comes before `page10.jpg`. The plan lists the page sequence. An archive containing one recognized document opens that document. If several publications are available, Hamr prints their entry IDs. Repeat with `--entry ID` to select one. The selected contents determine what Hamr can read.
 
-Word automatic lists and decimal, Roman, or lettered lists in HTML and EPUB keep their authored labels. For example, both `3.` and `III.` can read as “Number three.” Hamr uses the saved start value and preserves the printed form and source location in the plan. An unfamiliar explicit marker appears in source review.
+Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RTF uses its saved marker text and list type. For example, both `3.` and `III.` can read as “Number three.” The plan records the label value and source location. An unfamiliar explicit marker appears in source review.
 
 `hamr agent capabilities` checks whether Linux converters can start their required Bubblewrap isolation. It distinguishes a missing worker, a missing Bubblewrap executable, and isolation that the host blocks.
 

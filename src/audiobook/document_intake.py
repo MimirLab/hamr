@@ -675,7 +675,7 @@ def semantic_xml(root,builder,part):
 
 
 def odt(path,builder,source_file=None):
-    from .odf_content import Content, OFFICE, flat_text
+    from .odf_content import Content, OFFICE, TEXT, flat_text
 
     with path.open('rb') as stream:
         flat = flat_text(xml_start(stream))
@@ -686,11 +686,15 @@ def odt(path,builder,source_file=None):
         with structured_zip(path) as (read,_):
             document = xml(read('content.xml'))
             metadata = read('meta.xml',required=False)
-            _odt_body(document,builder,Content(read),xml(metadata) if metadata else None)
+            lists = next(document.iter(TEXT+'list',TEXT+'numbered-paragraph'),None)
+            styles = read('styles.xml',required=False) if lists is not None else None
+            _odt_body(document,builder,Content(read),xml(metadata) if metadata else None,
+                      xml(styles) if styles else None)
 
 
-def _odt_body(document,builder,content,metadata):
+def _odt_body(document,builder,content,metadata,styles=None):
     from .odf_content import OFFICE
+    from .odf_numbering import authored_marks
     from .table_grid import simple_matrix
 
     if metadata is not None:
@@ -700,6 +704,8 @@ def _odt_body(document,builder,content,metadata):
     body = document.find(OFFICE+'body')
     if body is None:
         raise Error('source_xml','OpenDocument has no document body.')
+    declarations = [('styles.xml',styles)] if styles is not None else []
+    content.numbering = authored_marks(body,[*declarations,(content.source_file,document)])
     if any(name(n)=='changed-region' for n in body.iter()):
         builder.doc.warnings.append('Tracked change records are preserved in the original. The visible body is selected.')
 
@@ -707,10 +713,13 @@ def _odt_body(document,builder,content,metadata):
         tag = name(node)
         loc = content.source_file+':'+node.getroottree().getpath(node)
         if tag in ('p','h') or node.tag==MATH_ROOT:
-            text,spans,links,issue = content.paragraph(node)
+            text,spans,links,issue = content.paragraph(node,body=True)
             item = builder.add(text,'heading' if tag=='h' else 'body',loc,
                                loc={'inline_semantics':[span for span in spans if span['kind']!='line_break']},
                                links=links,issue=issue)
+            if item and (label:=content.numbering.get(node)):
+                value,marker = label
+                item.locator.update(ordered_item=value,ordered_marker=marker)
             if item and any(span['kind']=='line_break' and span['source_end']>span['source_start'] for span in spans):
                 item.locator['authored_line_breaks'] = True
         elif tag=='table':
@@ -720,7 +729,7 @@ def _odt_body(document,builder,content,metadata):
                 builder.table(rows,loc,headers=headers,semantics=entries)
             else:
                 builder.grid(grid,loc)
-        elif tag not in ('tracked-changes','annotation','deletion','scripts','forms'):
+        elif tag not in ('tracked-changes','annotation','deletion','scripts','forms','number'):
             for child in node:
                 visit(child)
     visit(body)

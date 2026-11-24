@@ -5,6 +5,8 @@ from dataclasses import dataclass, field, replace
 import re
 
 from .core import Error
+from .rtf_numbering import ISSUE as RTF_LIST_ISSUE, cached_marker, list_formats
+from .source_numbering import embed_ordered_label
 from .source_notes import Definition, NoteGraph, note_text
 
 WORD = re.compile(rb'([a-zA-Z]+)(-?[0-9]+)? ?')
@@ -83,6 +85,8 @@ class Formatting:
     outline: int | None = None
     font: int | None = None
     codepage: str | None = None
+    list_instance: int | None = None
+    list_level: int = 0
 
 
 @dataclass
@@ -96,6 +100,7 @@ class Passage:
     text: str
     spans: list
     outline: int | None
+    list_context: tuple | None = None
 
 
 @dataclass
@@ -104,6 +109,9 @@ class Flow:
     byte_run: bytearray = field(default_factory=bytearray)
     outline: int | None = None
     started: bool = False
+    list_instance: int | None = None
+    list_level: int = 0
+    marker: tuple | None = None
 
     def decode(self,encoding,position):
         if self.byte_run:
@@ -148,10 +156,11 @@ class Flow:
         for span in spans:
             index = min(len(text),max(0,span['source_start']-left))
             span.update(source_start=index,source_end=index)
-        result = Passage(text,spans,self.outline)
+        result = Passage(text,spans,self.outline,(self.marker,self.list_instance,self.list_level))
         self.fragments.clear()
         self.outline = None
         self.started = False
+        self.list_instance,self.list_level,self.marker = None,0,None
         return result
 
 
@@ -189,6 +198,7 @@ class Group:
     owns_shape: bool = False
     opens_shape_text: bool = False
     inside_shape_text: bool = False
+    marker: tuple | None = None
 
 
 class Reader:
@@ -239,6 +249,8 @@ class Reader:
         if not group.flow.started and value.strip():
             group.flow.started = True
             group.flow.outline = self.outline()
+            group.flow.list_instance = group.formatting.list_instance
+            group.flow.list_level = group.formatting.list_level
         if isinstance(value,bytes):
             group.flow.byte_run.extend(value)
         else:
@@ -266,13 +278,22 @@ class Reader:
         passage = group.flow.take(self.position)
         if not (passage.text or passage.spans):
             return
+        label = cached_marker(*passage.list_context,self.list_formats)
+        issue = label[1].get('issue') if label else None
         if group.note is not None:
+            if issue:
+                group.note.issue = group.note.issue or issue
+            elif label:
+                embed_ordered_label(passage.text,passage.spans,label)
             group.note.passages.append(passage)
             return
         self.flush_table()
         role = 'heading' if passage.outline in range(9) else 'body'
-        loc = {'inline_semantics':passage.spans} if passage.spans else None
-        item = self.builder.add(passage.text,role,f'rtf:{self.position}',loc=loc)
+        loc = {'inline_semantics':passage.spans} if passage.spans else {}
+        if label:
+            value,marker = label
+            loc.update(ordered_item=value,ordered_marker=marker)
+        item = self.builder.add(passage.text,role,f'rtf:{self.position}',loc=loc,issue=issue)
         if '\n' in passage.text:
             item.locator['authored_line_breaks'] = True
 
@@ -377,7 +398,13 @@ class Reader:
             self.decode()
             flow = self.group.flow
             if name.endswith('cell') or flow.fragments:
-                self.cells.append(flow.take(self.position))
+                passage = flow.take(self.position)
+                if label:=cached_marker(*passage.list_context,self.list_formats):
+                    if issue:=label[1].get('issue'):
+                        self.table_issue = self.table_issue or issue
+                    else:
+                        embed_ordered_label(passage.text,passage.spans,label)
+                self.cells.append(passage)
             if name.endswith('row') and self.cells:
                 self.rows.append(self.cells.copy())
                 self.cells.clear()
@@ -387,10 +414,19 @@ class Reader:
         group = self.group
         if group.optional:
             group.optional = False
-            if name not in ('footnote','stylesheet','fonttbl','nesttableprops','shpinst','shptxt') and not (
+            if name not in ('footnote','stylesheet','fonttbl','nesttableprops','shpinst','shptxt','listtext','pntext') and not (
                     group.mode=='style' and name=='s'):
                 group.mode = 'skip'
         if group.mode=='skip':
+            return
+        if group.mode=='list_marker':
+            if name=='uc' and number is not None:
+                group.formatting.fallback = max(0,number)
+            elif name=='u' and number is not None:
+                self.glyph(chr(number&0xffff))
+                self.skip_fallback = group.formatting.fallback
+            elif name in WORDS:
+                self.glyph(WORDS[name])
             return
         if group.mode in ('fonts','font'):
             self.font_control(name,number)
@@ -424,6 +460,10 @@ class Reader:
             group.note.kind = 'endnote'
         elif name=='nesttableprops':
             self.table_control(name,number)
+        elif name in ('listtext','pntext') and not fmt.hidden:
+            group.mode = 'list_marker'
+            group.marker = name,start
+            group.flow = Flow()
         elif name in DESTINATIONS or name=='footnote':
             if name in OBJECTS and not fmt.hidden:
                 self.embedded_issue(f'RTF contains an embedded {name} requiring source review.',f'rtf:{start}')
@@ -454,6 +494,11 @@ class Reader:
             fmt.font = fmt.codepage = None
         elif name=='pard':
             fmt.style,fmt.outline = 0,None
+            fmt.list_instance,fmt.list_level = None,0
+        elif name=='ls':
+            fmt.list_instance = number
+        elif name=='ilvl' and number is not None:
+            fmt.list_level = number
         elif name=='s' and number is not None:
             fmt.style,fmt.outline = number,None
         elif name=='outlinelevel' and number is not None:
@@ -474,6 +519,7 @@ class Reader:
                 self.glyph(WORDS[name])
 
     def read(self,data):
+        self.list_formats = list_formats(tokens(data)) if b'\\listtable' in data else {}
         for kind,value,start,end in tokens(data):
             self.position = end
             group = self.group
@@ -492,6 +538,17 @@ class Reader:
                 else:
                     if group.opened_note:
                         self.close_note()
+                    elif group.marker:
+                        name,offset = group.marker
+                        parent = self.stack[-1].flow
+                        text = group.flow.take(self.position).text
+                        if not parent.started:
+                            if parent.marker and parent.marker[0]!=text:
+                                parent.marker = '',parent.marker[1],end,'conflicting cached markers'
+                            elif parent.marker is None:
+                                parent.marker = text,offset,end,name
+                        elif self.in_row:
+                            self.table_issue = self.table_issue or RTF_LIST_ISSUE
                     elif group.mode=='style' and group.style_id is not None:
                         self.styles[group.style_id] = group.base_style,group.style_outline
                         self.outlines.clear()
@@ -518,7 +575,7 @@ class Reader:
                 self.control(*value,start)
             elif kind=='optional':
                 group.optional = True
-            elif kind=='text' and group.mode=='body' and not group.optional:
+            elif kind=='text' and group.mode in ('body','list_marker') and not group.optional:
                 self.glyph(value)
         if self.stack:
             raise Error('unreadable_rtf','RTF ended before its last group closed.')

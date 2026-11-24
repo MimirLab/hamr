@@ -51,6 +51,7 @@ class Content:
         self.read = read
         self.source_file = source_file
         self.declared_objects = None
+        self.numbering = {}
 
     def object_formula(self,frame):
         if frame.tag!=DRAW+'frame' or frame.get(TEXT+'anchor-type')!='as-char':
@@ -88,7 +89,7 @@ class Content:
                 return root,member
         raise Error('source_formula','The OpenDocument formula has no readable bound MathML member.')
 
-    def paragraph(self,node, *, in_note=False):
+    def paragraph(self,node, *, in_note=False, body=False):
         pieces,spans,links,findings = [],[],[],[]
         offset = 0
 
@@ -167,6 +168,14 @@ class Content:
                     item[part] = min(len(text),max(0,item[part]-left))
         for span in spans:
             span['source'] = text[span['source_start']:span['source_end']]
+        if label:=self.numbering.get(node):
+            from .source_numbering import embed_ordered_label
+
+            _,marker = label
+            if issue:=marker.get('issue'):
+                findings.append(issue)
+            elif not body:
+                embed_ordered_label(text,spans,label)
         return text,spans,links,' '.join(dict.fromkeys(findings)) or uncertainty(spans)
 
     def table(self,node,*,typed=False):
