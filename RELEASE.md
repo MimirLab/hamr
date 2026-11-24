@@ -1,3 +1,12 @@
+# hamr 0.4.9.dev4
+
+- A description after a quotation can guide the words it describes. When a narrator reports that a speaker's voice has softened, Hamr can read the preceding quotation more gently and return to the usual voice for the attribution. Tagged PDF paragraphs keep the lead-in together when it belongs to the same paragraph.
+- On compatible timed-guidance runtimes, Hamr checks quote placement and wording in the short searchable PDF case. It can lower the strength, adjust the exit on the resulting take, and reuse saved attempts after an interruption. If the directed take stays uncertain, the job continues with ordinary narration. [Expressive narration guide](docs/USAGE.md#expressive-narration)
+
+# hamr 0.4.9.dev3
+
+- The timing verifier recognizes a small set of equivalent transcript word breaks within a source phrase, such as “all right” and “alright.” The text and its guide boundaries stay intact.
+
 # hamr 0.4.9.dev2
 
 - Timed whispers now check the narrator's reporting words when they come out weak. Hamr compares the phrase with the same words in an ordinary take, and can choose another reading when both speech checkers confirm a substantial local drop. The comparison appears in the finished book's `quote_timing` report. [Expressive narration guide](docs/USAGE.md#expressive-narration)
