@@ -39,6 +39,21 @@ def test_corrupt_zip_page_is_held_and_unknown_image_suffix_can_be_read(tmp_path,
     assert document.blocks[-1].issue
 
 
+def test_scan_repair_identity_is_the_same_before_and_after_capture(tmp_path):
+    from audiobook.intake import inspect_saved
+    from audiobook.source_bundle import capture
+
+    page = tmp_path/'page-12.jpg'
+    page.write_bytes(b'corrupt')
+    before = inspect_source(page,offline=True)
+    snapshot_dir = tmp_path/'state'
+    snapshot_dir.mkdir()
+    snapshot,source = capture(page,snapshot_dir,offline=True)
+    after = inspect_saved(snapshot,source)
+    assert before.blocks[0].id==after.blocks[0].id
+    assert after.blocks[0].locator['member']=='page-12.jpg'
+
+
 def test_mets_physical_order_and_alto_binding(tmp_path):
     for name in ('a.png','z.png'):
         (tmp_path/name).write_bytes(img())

@@ -43,7 +43,8 @@ def djvu(path,source,sha,cache,title):
             raise Error('unreadable_djvu','The DjVu decoder could not establish a page inventory.') from exc
 
         for index in range(count):
-            locator = {'format':'scan','page':index+1,'member':path.name,'occurrence':f'djvu-{index+1}'}
+            locator = {'format':'scan','page':index+1,'member':source.member_name or path.name,
+                       'occurrence':f'djvu-{index+1}'}
             entry = dict(locator)
             try:
                 record = read('text',index)

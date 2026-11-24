@@ -42,6 +42,7 @@ class Source:
     route_override: str | None = None
     offline: bool = False
     encoding: str | None = None
+    member_name: str | None = None
 
     def json(self):
         return asdict(self)
@@ -272,6 +273,8 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
     if encoding and source.route!='text':
         raise Error('source_encoding','Use --encoding for a plain text publication.')
+    if source.kind=='file' and source.route in ('scan','djvu') and source.member_name is None:
+        source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
 

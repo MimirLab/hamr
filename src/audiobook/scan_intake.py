@@ -92,7 +92,7 @@ def archive_order(archive,entries,selected):
 @contextmanager
 def sequence(path,source):
     if source.kind=='file':
-        pages = [{'path':path.name,'occurrence':'p000001'}]
+        pages = [{'path':source.member_name or path.name,'occurrence':'p000001'}]
         yield None,pages,lambda item: path.open('rb'),None
         return
     from .archive_intake import containers

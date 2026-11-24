@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev6
+
+- Keep standalone scan page names and repair IDs stable from the reading plan to the saved job.
+
 # hamr 0.4.9.dev5
 
 - Open loose page images as one book and follow natural filename order or an authored manifest. Hamr captures the original pages, resumes in-progress intake, and publishes a portable original with exact member and crop references.
