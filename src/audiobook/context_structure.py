@@ -109,7 +109,7 @@ def inline_reading(block, span, raw):
     return None
 
 
-def observations(block, cells, table_fragments, *, source_digest, reading):
+def observations(block, cells, table_fragments, *, source_digest, reading, source_readings):
     """Use exact spans or named cell locators. Existing source readings still render speech."""
     source=block.source
     spans=block.locator.get('inline_semantics',[])
@@ -138,18 +138,10 @@ def observations(block, cells, table_fragments, *, source_digest, reading):
     for link in block.links:
         if link['kind']=='hyperlink' and not any(span['kind']=='hyperlink' for span in spans):
             add('source_link','hyperlink',{}, {'target':link['href'],'label':link.get('label')})
-    if (equation:=block.locator.get('pdf_equation')) and equation['fields']['notation']==source:
-        fields={**equation['fields'],'native_ranges':block.locator['native_ranges'],
-                'panel_row':block.locator['panel_row'],'panel_column':block.locator['panel_column']}
-        add('pdf_equation_cell','source_equation',{'source_span':[0,len(source)],'source':source},fields,
-            ('CR-N035','equation',fields,('CR-N051',) if fields['value'].get('exponent') else ()))
-    if (inline:=block.locator.get('pdf_inline_formula')) and inline['source']==source:
-        for item in inline['formulas']:
-            start,end=item['span']
-            if source[start:end]==item['source']:
-                fields={'script':item['script'],'reading':item['reading']}
-                add('pdf_inline','superscript',{'source_span':[start,end],'source':item['source']},fields,
-                    ('CR-L030','mathematical_superscript',fields,()))
+    for span,witness in source_readings.paragraph_spans:
+        extent = [span['source_start'],span['source_end']]
+        add(witness.provider,witness.kind,{'source_span':extent,'source':span['source']},witness.fields,
+            witness.selection())
 
     if reading.logical_order:
         directions={unicodedata.bidirectional(c) for c in source} if not source.isascii() else set()
@@ -202,16 +194,14 @@ def observations(block, cells, table_fragments, *, source_digest, reading):
     hidden_cells={tuple(pair) for pair in block.locator.get('table_hidden_cells',())}
     hidden_rows={index for index,row in enumerate(rows) if row and all((index,column) in hidden_cells for column in range(len(row)))}
     cell_ids=block.locator.get('cell_ids',{})
-    pdf_readings={(cell['row'],cell['column']):cell for cell in block.locator.get('pdf_cell_readings',())}
+    cell_evidence={(cell['row'],cell['column']):witness for cell,witness in source_readings.cell_spans}
     for _,_,row,column,header,value in cells:
         original=rows[row][column]
         row_counts[row]=row_counts.get(row,0)+1
-        if selected:=pdf_readings.get((row,column)):
-            fields={**selected['fields'],'header':header,'panel_row':block.locator['panel_row'],
-                    'native_ranges':block.locator['pdf_table_cells'][column]['native_ranges']}
-            related=('CR-N051',) if selected['event_id']=='CR-N034' and fields.get('exponent') else ()
-            add('pdf_table_cell','typed_cell',{'row':row,'column':column,'source':original},fields,
-                (selected['event_id'],selected['kind'],fields,related))
+        if witness:=cell_evidence.get((row,column)):
+            fields={**witness.fields,'header':header}
+            add(witness.provider,witness.kind,{'row':row,'column':column,'source':original},fields,
+                witness.selection(header=header))
         if original.strip() in ('〃','"') and original!=value:
             previous_row=row-1
             while previous_row in hidden_rows:previous_row-=1

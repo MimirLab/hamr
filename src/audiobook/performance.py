@@ -1012,7 +1012,8 @@ def add_gentle_entries(units, by_id, decisions, occurrences, disabled, digest, r
     return count
 
 
-def add_structural_directions(units, by_id, decisions, occurrences, disabled, digest, registry, registry_sha, *, all_formats):
+def add_structural_directions(units, by_id, decisions, occurrences, disabled, digest, registry, registry_sha, *,
+                              all_formats, formula_blocks):
     """Use imported roles to guide complete headings and technical readings."""
     count = 0
     for unit in units:
@@ -1022,11 +1023,11 @@ def add_structural_directions(units, by_id, decisions, occurrences, disabled, di
         block, decision = by_id[owner], decisions[owner]
         if occurrences[owner] != 1 or unit['text'] != normalize_space(decision['spoken']):
             continue
-        has_equation = block.role=='body' and any(
-            span['kind'] in MATH_SPANS for span in block.locator.get('inline_semantics',()))
+        has_formula = (owner in formula_blocks if formula_blocks is not None else
+                       any(span['kind'] in MATH_SPANS for span in block.locator.get('inline_semantics',())))
         if block.role == 'heading':
             recipe, modes = 'heading', ('listen','study','procedure')
-        elif block.role in ('table','equation') or has_equation:
+        elif block.role in ('table','equation') or block.role=='body' and has_formula:
             recipe, modes = 'technical', ('study','procedure')
         else:
             continue
@@ -1043,7 +1044,7 @@ def add_structural_directions(units, by_id, decisions, occurrences, disabled, di
     return count
 
 
-def annotate(plan, document, *, automatic_prose=True, context_version=None, passages=None):
+def annotate(plan, document, *, automatic_prose=True, context_version=None, passages=None, formula_blocks=None):
     """Recognize cues only when the compiled request has one demonstrable owner."""
     mode = plan['policy'].get('performance', 'auto')
     if mode not in MODES:
@@ -1384,7 +1385,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None, pass
         if candidates:
             candidates+=add_gentle_entries(*sources,all_formats=full_delivery)
         if mode=='experimental' or full_delivery:
-            candidates+=add_structural_directions(*sources,all_formats=full_delivery)
+            candidates+=add_structural_directions(*sources,all_formats=full_delivery,formula_blocks=formula_blocks)
         if tuning:
             tunes = [u['performance_candidate'] for u in plan['utterances'] if 'performance_candidate' in u]
             redirects={}

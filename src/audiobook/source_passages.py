@@ -45,6 +45,73 @@ def prepared_paragraph(block, *, unified):
     return spoken_paragraph(block, layout=paginated(block) if unified else None)
 
 
+class SourceReadings:
+    def __init__(self, block):
+        from . import pdf_reading_spans
+
+        self.block = block
+        self.paragraph_spans = tuple(pdf_reading_spans.paragraph(block))
+        self.cell_spans = tuple(pdf_reading_spans.cells(block))
+
+    def binding_issue(self):
+        loc = self.block.locator
+        equation = loc.get('pdf_equation')
+        inline = loc.get('pdf_inline_formula')
+        expected = (bool(equation)+len(inline['formulas']) if inline else bool(equation))
+        if (len(self.paragraph_spans)!=expected or len(self.cell_spans)!=len(loc.get('pdf_cell_readings',()))
+                or inline and not inline['formulas']):
+            return 'An extracted reading no longer matches its source span or table cell. Verify the original.'
+        return None
+
+    def has_formula(self):
+        from .source_math import MATH_SPANS
+
+        return bool(self.paragraph_spans) or any(span['kind'] in MATH_SPANS
+                                                for span in self.block.locator.get('inline_semantics',()))
+
+    def paragraph(self, note_policy, *, modern, contextual, unified, projected):
+        from .epub_semantics import reading
+
+        block = self.block
+        authored = block.locator.get('inline_semantics')
+        if not projected:
+            text = prepared_paragraph(block,unified=unified)
+            if modern and authored:
+                return reading(block,note_policy,with_spans=True)
+            protected = [(0,len(text))] if contextual and block.locator.get('pdf_equation') else None
+            return text,protected
+        extras = [span for span,_ in self.paragraph_spans]
+        if paginated(block):
+            from .pdf_layout import line_wrap_edits
+
+            extras.extend({'kind':'layout_reading','source_start':a,'source_end':b,
+                           'source':block.source[a:b],'reading':value}
+                          for a,b,value in line_wrap_edits(block.source,block.locator.get('line_wrap_joins',())))
+            if block.role=='heading' and block.locator.get('ruled_panel') and block.source[-1:] not in '.!?':
+                end = len(block.source)
+                extras.append({'kind':'layout_reading','source_start':end,'source_end':end,'source':'','reading':'.'})
+        if authored or extras:
+            return reading(block,note_policy,with_spans=True,extra_spans=extras)
+        return block.source,None
+
+    def table(self, note_policy, column_headers, *, projected):
+        from .table_readings import semantic_cells
+
+        if projected:
+            readings,protected,suffix,caption = semantic_cells(
+                self.block,note_policy,projected=[cell for cell,_ in self.cell_spans])
+            if not readings and column_headers is None:
+                readings = self.block.locator.get('ruby_cells',())
+            return readings,protected,suffix,caption
+        if column_headers is not None:
+            return semantic_cells(self.block,note_policy)
+        # Reproduce table plans made before semantic cells owned all resolved readings.
+        readings = [*self.block.locator.get('ruby_cells',()),*self.block.locator.get('pdf_cell_readings',())]
+        protected = {(cell['row'],cell['column']):[(0,len(cell['reading']))]
+                     for cell in self.block.locator.get('pdf_cell_readings',())}
+        return readings,protected,'',''
+
+
 def chapter_layout(document, policy, *, by_source, unified):
     from .pdf_layout import structure_policy
 

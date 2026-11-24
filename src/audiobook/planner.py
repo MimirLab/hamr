@@ -2,8 +2,8 @@ from __future__ import annotations
 import re
 from .core import Document,key,Error,digest
 
-RULES='faithful-19'
-PROSE_SOURCE_RULES=('faithful-18',RULES)
+RULES='faithful-20'
+PROSE_SOURCE_RULES=('faithful-18','faithful-19',RULES)
 CURRENT_DELIVERY_RULES=('faithful-17',*PROSE_SOURCE_RULES)
 PERFORMANCE_RULES=('faithful-16',*CURRENT_DELIVERY_RULES)
 CONTEXTUAL_RULES=('faithful-14','faithful-15',*PERFORMANCE_RULES)
@@ -180,8 +180,9 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         from .contextual import Resolver
         resolver=Resolver(doc,policy,document_policy,aliases or {},unified=unified_source,rule_revision=rule_revision)
     section_defaults={k:v for k,v in policy.items() if k not in ('document','context','context_implementation','context_review','context_review_receipt')}
-    from .source_passages import (SourcePassages, chapter_at, chapter_layout,
+    from .source_passages import (SourcePassages, SourceReadings, chapter_at, chapter_layout,
                                   layout_disputes, prepared_paragraph, split_printed_word)
+    projected_source = rule_revision==RULES
     by_source = rule_revision in SOURCE_STRUCTURE
     document_title,source_chapters=chapter_layout(doc,document_policy,by_source=by_source,unified=unified_source)
     source_positions={b.id:i for i,b in enumerate(doc.blocks)}
@@ -291,6 +292,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             flush()
             for caption,bid in captions:buffer.append('Illustration caption. '+caption);source_ids.append(bid)
             flush();captions=[]
+    formula_blocks = set() if projected_source else None
     for b in doc.blocks:
         block_chapter,block_chapter_id=chapter_at(b,source_positions[b.id],source_chapters,
                                                    by_source=by_source,unified=unified_source)
@@ -300,16 +302,17 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         effective={**section_defaults,**section}
         if 'mode' in section:
             effective={**section_defaults,'code':'speak' if section['mode']=='procedure' else 'companion','references':'speak' if section['mode']=='study' else 'companion',**section}
-        action='speak'; reason='Preserve authored content and qualifiers.'; text=prepared_paragraph(b,unified=unified_source); connector=False;force_pause=False;cells=();prepared_spans=None
+        action='speak'; reason='Preserve authored content and qualifiers.'; connector=False;force_pause=False;cells=()
+        source_readings = SourceReadings(b)
+        source_issue = b.issue
+        if projected_source:
+            source_issue = source_issue or source_readings.binding_issue()
+            if source_readings.has_formula():
+                formula_blocks.add(b.id)
+        note_policy = effective.get('notes','after_paragraph')
+        text,prepared_spans = source_readings.paragraph(note_policy,modern=rule_revision in MODERN,contextual=bool(resolver),
+                                                      unified=unified_source,projected=projected_source)
         table_fragments=[]
-        if resolver and b.locator.get('pdf_equation'):
-            prepared_spans=[(0,len(text))]
-        if rule_revision in MODERN and b.locator.get('inline_semantics'):
-            from .epub_semantics import reading
-            if resolver:
-                text,prepared_spans=reading(b,effective.get('notes','after_paragraph'),with_spans=True)
-            else:
-                text=reading(b,effective.get('notes','after_paragraph'))
         prepared_text=text
         task=b.locator.get('checklist')
         if task and text.startswith(task['marker']):
@@ -318,7 +321,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         if optional_reference: action='companion';reason='Positively identified optional reference material retained in the companion by the selected policy.';text=''
         elif continuous and b.role=='furniture':action='companion';reason='Repeated margin furniture retained in companion.';text=''
         elif b.id in flow_disputes:action='unreadable';reason=flow_disputes[b.id];text=''
-        elif b.issue: action='unreadable'; reason=b.issue; text=''
+        elif source_issue: action='unreadable'; reason=source_issue; text=''
         elif b.role in ('hidden','navigation'):action='companion';reason='Explicit hidden or navigation structure retained in source companion; primary prose continues in spine order.';text=''
         elif b.role=='furniture': action='companion'; reason='Position and repeated page-number sequence identify a printed folio; original text is retained.'; text=''
         elif b.role=='cover': action='companion'; reason='Package-declared cover asset preserved in the original EPUB and source companion.'; text=''
@@ -345,10 +348,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 if rule_revision in SOURCE_STRUCTURE:
                     from .table_readings import rows_for_speech
                     marker=resolver.table_ditto(b,block_chapter,block_chapter_id) if resolver else None
-                    readings=[*b.locator.get('ruby_cells',()),*b.locator.get('pdf_cell_readings',())]
-                    if column_headers is not None:
-                        from .table_readings import semantic_cells
-                        readings,cell_spans,note_suffix,caption=semantic_cells(b,effective.get('notes','after_paragraph'))
+                    readings,cell_spans,note_suffix,caption = source_readings.table(
+                        note_policy,column_headers,projected=projected_source)
                     rows,table_issue=rows_for_speech(rows,table_context,marker=marker,cell_readings=readings,
                                                    header_columns=b.locator.get('header_columns') if resolver else None,
                                                    column_headers=column_headers,excluded=excluded)
@@ -361,15 +362,13 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                         from .contextual import table_view
                         text,cells=table_view(rows,b.locator.get('header_columns'),column_headers=column_headers,caption=caption,excluded=excluded)
                         text+=note_suffix
-                        rendered={(cell['row'],cell['column']) for cell in b.locator.get('pdf_cell_readings',())}
-                        if rendered or column_headers is not None:
+                        if cell_spans or column_headers is not None:
                             prepared_text=text
                             caption_end=len(caption.rstrip())
                             prepared_spans=[(len('Table. ')+a,len('Table. ')+min(b,caption_end))
                                             for a,b in cell_spans.get((-1,0),()) if a<caption_end]
-                            for start,end,row,column,*_ in cells:
-                                if (row,column) in rendered:prepared_spans.append((start,end))
-                                else:prepared_spans.extend((start+a,start+b) for a,b in cell_spans.get((row,column),()))
+                            for start,_,row,column,*_ in cells:
+                                prepared_spans.extend((start+a,start+b) for a,b in cell_spans.get((row,column),()))
                     else:text='Table. '+' '.join('; '.join(f'{h}: {v}' for h,v in zip(headers,row))+'.' for row in rows[1:])
                     reason='Speak every data row with its authored labels where available.' if column_headers is not None else 'Speak every row with explicit header labels; keep exact table in companion.'
         if effective['references']=='companion' and re.search(r'^(bibliography|references|works cited|index)$',block_chapter,re.I):
@@ -381,14 +380,16 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 text=''
             elif 'spoken' in override:
                 text=override['spoken']
-            elif rule_revision not in MODERN or b.issue:
+            elif not projected_source and (rule_revision not in MODERN or b.issue):
                 text=prepared_paragraph(b,unified=unified_source)
+            elif source_issue:
+                text=prepared_text
             if action=='companion' and override.get('announce'):
                 text='The '+override['announce']+' is available in the companion.';connector=True
         if rule_revision in SOURCE_STRUCTURE and action=='speak' and b.id not in overrides:
             from .pronunciation import unresolved
             from .epub_semantics import note_issues
-            hints=unresolved(b)+note_issues(b,effective.get('notes','after_paragraph'))
+            hints=unresolved(b)+note_issues(b,note_policy)
             if hints:action='unreadable';reason=' '.join(hints);text=''
         damaged=None
         if rule_revision in NORMALIZATION_TRACE and text:
@@ -433,7 +434,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         if context_events:
             decisions[-1]['context_events']=context_events
             if any(row['view']['kind']=='prepared_reading' for row in context_events):decisions[-1]['context_input']=text
-        if resolver and (structure:=resolver.structural_evidence(b,cells,table_fragments if action=='companion' else ())):
+        if resolver and (structure:=resolver.structural_evidence(
+                b,cells,table_fragments if action=='companion' else (),source_readings)):
             decisions[-1]['context_structure']=structure
         if damaged:decisions[-1]['source_characters']=damaged
         if (optional_reference or continuous and b.role=='furniture') and b.issue:decisions[-1]['source_warning']=b.issue
@@ -536,7 +538,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         result['review_groups']=source_groups(doc.json(),result)
     if rule_revision in PERFORMANCE_RULES:
         from .performance import annotate
-        annotate(result,doc,automatic_prose=automatic_prose,context_version=performance_context,passages=source_passages)
+        annotate(result,doc,automatic_prose=automatic_prose,context_version=performance_context,
+                 passages=source_passages,formula_blocks=formula_blocks)
     if intake:=doc.metadata.get('intake'):
         source_fields = ('page','member','occurrence','frame','label','route','status',
                          'raw_OCR_reused','reason','location_id','sheet','slide','part')

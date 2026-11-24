@@ -227,9 +227,10 @@ def describe(node,resolve_asset=None,cover_assets=()):
     return source,spans
 
 
-def reading(block,note_policy='after_paragraph', *, with_spans=False):
+def reading(block,note_policy='after_paragraph', *, with_spans=False, extra_spans=()):
     """Use explicit roles; an unclassified superscript is not a guessed power."""
-    source=block.source;edits=[];spans=block.locator.get('inline_semantics',[])
+    source=block.source;edits=[];spans=[*block.locator.get('inline_semantics',()),*extra_spans]
+    layout_edits=set()
     references=[s for s in spans if s['kind']=='note_reference' and not any(h['kind']=='hidden' and h['source_start']<=s['source_start'] and h['source_end']>=s['source_end'] for h in spans)]
     hidden_ranges=[(s['source_start'],s['source_end']) for s in spans if s['kind']=='hidden']
     for span in spans:
@@ -251,7 +252,11 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False):
         elif kind=='task_status' and span.get('checked') is not None:edits.append((a,a,'Checked. ' if span['checked'] else 'Unchecked. '))
         elif kind=='lexicon_hint' and span.get('reading') and not span.get('shadowed_by_inline') and not span.get('protected_overlap'):
             edits.append((a,b,span['reading']))
-        elif kind in MATH_SPANS and span.get('reading'):edits.append((a,b,span['reading']))
+        elif kind in MATH_SPANS or kind in ('typed_reading','layout_reading'):
+            if span.get('reading'):
+                edit = (a,b,span['reading'])
+                edits.append(edit)
+                if kind=='layout_reading':layout_edits.add(edit)
         elif kind=='subscript':edits.append((a,b,' subscript '+span['source']+' '))
     # Outermost explicit math/note roles win over their nested presentation.
     selected=[]
@@ -262,7 +267,7 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False):
     if with_spans:
         shift=0
         for a,b,value in selected:
-            if value:protected.append((a+shift,a+shift+len(value)))
+            if value and (a,b,value) not in layout_edits:protected.append((a+shift,a+shift+len(value)))
             shift+=len(value)-(b-a)
         for span in spans:
             if span['kind']!='literal':continue

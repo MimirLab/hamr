@@ -37,9 +37,7 @@ def line_wrap_readings(text, native_region):
     return joins
 
 
-def apply_line_wraps(text, joins):
-    """Change only the bound occurrence, including in paragraphs with repeats."""
-    spans=[]
+def line_wrap_edits(text, joins):
     for join in joins:
         original=join['original']
         if 'source_span' in join:
@@ -51,8 +49,12 @@ def apply_line_wraps(text, joins):
             b=a+len(original)
         else:
             continue
-        spans.append((a,b,join['spoken']))
-    for a,b,spoken in sorted(spans,reverse=True):
+        yield a,b,join['spoken']
+
+
+def apply_line_wraps(text, joins):
+    """Change only the bound occurrence, including in paragraphs with repeats."""
+    for a,b,spoken in sorted(line_wrap_edits(text,joins),reverse=True):
         text=text[:a]+spoken+text[b:]
     return text
 

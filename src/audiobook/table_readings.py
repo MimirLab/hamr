@@ -11,14 +11,14 @@ def split_cell_fractions(rows, first_data_row=1, *, excluded=()):
             and re.fullmatch(r'[0-9]+',first.strip()) and re.fullmatch(r'/\s*[0-9]+',second.strip())]
 
 
-def semantic_cells(block,note_policy):
+def semantic_cells(block,note_policy, *, projected=()):
     from .core import Block
     from .epub_semantics import reading
 
     readings=[]; protected={}; trailing={}; seen=set(); caption=''
-    headers=set(block.locator.get('table_header_cells',()))
+    headers=set(block.locator.get('table_header_cells') or ())
     excluded={tuple(pair) for pair in block.locator.get('table_hidden_cells',())}
-    entries=list(block.locator.get('table_cell_semantics',()))
+    entries=[*block.locator.get('table_cell_semantics',()),*projected]
     if entry:=block.locator.get('table_caption'):
         entries.insert(0,{'row':-1,'column':0,**entry})
     for cell in entries:

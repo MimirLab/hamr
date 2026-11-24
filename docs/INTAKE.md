@@ -23,6 +23,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 
 Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powers, subscripts, fractions and roots. Hamr preserves each equation in the original and marks ambiguous layouts for source review. Inline equations, ordinary table cells and linked notes can use the same reading.
 
+When a searchable PDF establishes an equation, raised script or scientific table cell from its printed layout, Hamr carries that reading into the same preparation step. The companion retains the exact glyph range and cell location. Source review identifies geometry that leaves the reading unresolved.
+
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
 
 ## Page order, recovery and originals
