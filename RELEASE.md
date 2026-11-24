@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev57
+
+- Compare `50%`, “fifty percent” and “fifty per cent” as the same spoken rate. Preserve a missing unit or changed value. Match plural SHA spellings and equivalent Git terminology during speech checks.
+- Compare “open parentheses” with “open parenthesis” while preserving missing or reversed grouping markers.
+
 # hamr 0.4.9.dev56
 
 - Read explicitly introduced caret equations through the shared math reader. Ordinary text, HTML and native PDF keep the original expression and speak its operators and powers.

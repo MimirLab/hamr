@@ -32,7 +32,24 @@ def test_hash_algorithm_spelling_preserves_variant_and_adjacent_quantities():
     assert c(notation_observation(original,asr.replace('SHA1','SHA two')))!=c(original)
     assert c(original)!=c(asr.replace('512/256','512/224'))
     assert c('Inspect the SHA-1s.')==c('Inspect the SHA1s.')
+    assert c(notation_observation('Inspect the SHA-1s.','Inspect the SHA ones.'))==c('Inspect the SHA-1s.')
+    assert c(notation_observation('Inspect the SHA-1s.','Inspect the SHA one.'))!=c('Inspect the SHA-1s.')
     assert notation_observation('Safer digest','Use SHA one.')=='Use SHA one.'
+
+
+def test_percent_notation_preserves_rate_value_and_change_of_unit():
+    assert c('A fifty percent chance')==c('A 50% chance')==c('A 50 per cent chance')
+    assert c('A fifty percent chance')!=c('A 50 chance')
+    assert c('50%')!=c('5%')
+    assert c('50%')!=c('50 basis points')
+    assert 'percent' not in c('5 % 2') and 'percent' not in c('printf 5%s')
+
+
+def test_spoken_parenthesis_formatting_preserves_group_boundaries():
+    expected = 'Open parenthesis, one plus two, close parenthesis.'
+    assert c(expected)==c('Open parentheses, one plus two, close parentheses.')
+    assert c(expected)!=c('Open parentheses, one plus two.')
+    assert c(expected)!=c('Close parentheses, one plus two, open parentheses.')
 
 
 def test_known_orthographic_compounds_do_not_permit_arbitrary_merges():
@@ -41,6 +58,7 @@ def test_known_orthographic_compounds_do_not_permit_arbitrary_merges():
     assert c('Second textbox')!=c('Second box')
     assert c('Second para')!=c('Second parrot')
     assert c('Minimal DTBook')==c('Minimal DT book')
+    assert c('Reflog Shortnames')==c('Ref Log Short Names')
     assert c('nowhere')!=c('now here')
 
 

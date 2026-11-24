@@ -11,7 +11,7 @@ from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v47'
+POLICY='bounded-english-composed-scale-typed-v48'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -19,7 +19,9 @@ SPECIAL_NEGATIVES={"can't":'can',"won't":'will',"shan't":'shall'}
 SPELLING_VARIANTS={'harbour':'harbor','harbours':'harbors','harboured':'harbored','harbouring':'harboring',
                    'café':'cafe','cafés':'cafes','fulfilment':'fulfillment','fulfilments':'fulfillments'}
 COMPOUND_SPELLINGS={'dustbowl':('dust','bowl'),'mathml':('math','ml'),'dtbook':('dt','book'),
-                    'textbox':('text','box'),'textboxes':('text','boxes')}
+                    'textbox':('text','box'),'textboxes':('text','boxes'),
+                    'shortname':('short','name'),'shortnames':('short','names'),
+                    'reflog':('ref','log'),'reflogs':('ref','logs')}
 ORDINALS={word:i for i,word in enumerate(['zeroth','first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth','eleventh','twelfth','thirteenth','fourteenth','fifteenth','sixteenth','seventeenth','eighteenth','nineteenth','twentieth'])}
 ORDINALS.update(thirtieth=30,fortieth=40,fiftieth=50,sixtieth=60,seventieth=70,eightieth=80,ninetieth=90)
 SCALES={'thousand':1000,'million':10**6,'billion':10**9}
@@ -61,7 +63,10 @@ DOTTED_US = re.compile(r'(?<![\w.])U\.S\.(?!\w)')
 SECONDS_MERIDIEM = re.compile(r'(\bseconds?[ \t]+)([AP])[. \t]+M\.?(?!\w)',re.I)
 SHA_LABEL = re.compile(r'(?<!\w)sha[-‐‑– \t]?(1|2|3(?:-(?:224|256|384|512))?|224|256|384|512(?:/(?:224|256))?)'
                        r'(s?)(?!\w|[-/][0-9])',re.I)
-SPOKEN_SHA_FAMILY = re.compile(r'(?<!\w)SHA[ \t]+(one|two|three)(?!\w|[/-][0-9])')
+SPOKEN_SHA_FAMILY = re.compile(r'(?<!\w)SHA[ \t]+(one|two|three)(s?)(?!\w|[/-][0-9])')
+PRINTED_PERCENT = re.compile(r'(?<=[0-9])[ \t]*%(?![\w%]|[ \t]*[+−-]?[0-9])')
+SPOKEN_PERCENT = re.compile(r'\bper[ \t]+cent\b',re.I)
+SPOKEN_PARENTHESIS = re.compile(r'\b(open|close)[ \t]+parentheses\b',re.I)
 
 
 def isbn_notation(text):
@@ -148,12 +153,12 @@ def notation_observation(expected, observed):
     observed=domain_notation(expected,observed)
     observed=name_observation(expected,observed)
     observed=code_pair_observation(expected,observed)
-    families = {match[1] for match in SHA_LABEL.finditer(expected) if not match[2]}
+    families = {match[1]+match[2].lower() for match in SHA_LABEL.finditer(expected)}
     if families:
         spellings = {'one':'1','two':'2','three':'3'}
 
         def hash_family(match):
-            value = spellings[match[1]]
+            value = spellings[match[1]]+match[2]
             return 'SHA'+value if value in families else match[0]
 
         observed = SPOKEN_SHA_FAMILY.sub(hash_family,observed)
@@ -412,6 +417,8 @@ def comparison_tokens(text):
     text,_,_=expand(text)
     text=SECONDS_MERIDIEM.sub(lambda match:match[1]+match[2]+'M',text)
     text=SHA_LABEL.sub(lambda match:'sha'+match[1].replace('-','_').replace('/','_')+match[2],text)
+    text=SPOKEN_PERCENT.sub('percent',PRINTED_PERCENT.sub(' percent',text))
+    text=SPOKEN_PARENTHESIS.sub(r'\1 parenthesis',text)
     text=text.lower().replace('’',"'").replace('±',' plus or minus ')
     ts=[];end=0
     for match in LEX.finditer(text):
