@@ -126,6 +126,21 @@ def test_archived_abbyy_original_geometry_uses_authored_transcription(tmp_path):
     assert doc.inventory[0]['route']=='supplied_text'
 
 
+def test_legacy_page_xml_polygon_and_multiline_transcription(tmp_path):
+    archive = tmp_path/'proof.zip'
+    side = '''<PcGts xmlns="http://schema.primaresearch.org/PAGE/gts/pagecontent/2010-03-19">
+      <Page imageFilename="page.png" imageWidth="600" imageHeight="400">
+        <TextRegion id="main"><Coords><Point x="10" y="12"/><Point x="340" y="12"/>
+        <Point x="340" y="96"/><Point x="10" y="96"/></Coords>
+        <TextEquiv><Unicode>The whole paragraph
+        remains in order.</Unicode></TextEquiv></TextRegion></Page></PcGts>'''
+    package(archive,{'page.png':img(),'page.page.xml':side})
+    doc = inspect_source(archive,offline=True)
+    assert [block.source for block in doc.blocks]==['The whole paragraph remains in order.']
+    assert doc.inventory[0]['sidecar']['word_count']==6
+    assert doc.inventory[0]['route']=='supplied_text'
+
+
 def test_print_replica_uses_embedded_pdf_and_keeps_original_hash(tmp_path):
     import struct
     from audiobook.core import filehash

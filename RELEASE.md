@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev7
+
+- Read verified PAGE XML transcriptions with either modern coordinate attributes or the earlier point elements. Preserve multiline region text when reading archival sidecars.
+
 # hamr 0.4.9.dev6
 
 - Keep standalone scan page names and repair IDs stable from the reading plan to the saved job.

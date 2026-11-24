@@ -28,10 +28,15 @@ def row(paragraph,line,text,box,index):
             str(right-x),str(bottom-y),'100',text]
 
 
-def point_box(points):
-    if not points:
+def point_box(node):
+    if node is None:
         raise Error('ocr_binding','Transcription has no geometry for a selected line.')
-    pairs = [tuple(map(int,pair.split(','))) for pair in points.split()]
+    if points:=node.get('points'):
+        pairs = [tuple(map(int,pair.split(','))) for pair in points.split()]
+    else:
+        pairs = [(int(item.get('x')),int(item.get('y'))) for item in node if local(item.tag)=='Point']
+    if len(pairs)<3:
+        raise Error('ocr_binding','Transcription has an incomplete region polygon.')
     x,y = zip(*pairs,strict=True)
     return min(x),min(y),max(x),max(y)
 
@@ -91,10 +96,10 @@ def page_xml(root,source,size):
         lines = [n for n in region if local(n.tag)=='TextLine']
         for line_id,line in enumerate(lines or [region],1):
             for index,word in enumerate([n for n in line if local(n.tag)=='Word'] or [line],1):
-                text = text_of(word)
+                text = ' '.join(text_of(word).split())
                 if not text:
                     raise Error('ocr_binding','PAGE XML has missing text in a selected region.')
-                coords = next((n.get('points') for n in word if local(n.tag)=='Coords'),None)
+                coords = next((n for n in word if local(n.tag)=='Coords'),None)
                 result.append(row(paragraph,line_id,text,point_box(coords),index))
     return result
 
@@ -237,7 +242,7 @@ def transcription(data, side, source, size):
     except (ValueError, TypeError, etree.XMLSyntaxError) as exc:
         raise Error('ocr_binding','The sidecar cannot be bound to this image.') from exc
     return words,{'status':'selected','format':kind,'member':side['path'],'sha256':digest(data),
-                  'geometry_checked':True,'word_count':len(words)}
+                  'geometry_checked':True,'word_count':sum(len(word[11].split()) for word in words)}
 
 
 def tsv(rows):
