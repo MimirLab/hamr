@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from .document_intake import (attr, formula_span, name,
                               plain_xml_text, structured_zip, xml)
 from .epub_semantics import uncertainty
+from .source_scripts import prepare as prepare_scripts
 from .source_math import office_math, office_tag, office_text
 from .source_notes import Definition, NoteGraph, note_text
 from .source_numbering import embed_ordered_label
@@ -167,6 +168,7 @@ def read_word(path,builder):
                 span['source_start'] = min(len(text),max(0,span['source_start']-left))
                 span['source_end'] = min(len(text),max(0,span['source_end']-left))
                 span['source'] = text[span['source_start']:span['source_end']]
+            spans = prepare_scripts(text,spans)
             issue = ' '.join(dict.fromkeys(problems)) or uncertainty(spans)
             order = numbering.next(node)
             if order:

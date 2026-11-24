@@ -1,3 +1,9 @@
+# hamr 0.4.9.dev55
+
+- Read styled numeric powers aloud when the surrounding expression establishes the role. AsciiDoc, Markdown, HTML, EPUB, Word, OpenDocument and native PDF pass their source evidence to the same reader. Linked notes still follow their target and uncertain markers appear in source review.
+- Keep adjacent raised digits on their native PDF line when size, position and glyph order identify the base. Original glyph positions remain available in the plan.
+- Keep native PDF text when a verified information icon repeats an adjacent written Note label. The original icon remains recorded with its page coordinates.
+
 # hamr 0.4.9.dev54
 
 - Open AsciiDoc manuscripts and local chapter includes through shared reading preparation. Hamr reads tables, captions, callouts and footnotes, and keeps the included originals recoverable. [AsciiDoc intake](docs/INTAKE.md#asciidoc)

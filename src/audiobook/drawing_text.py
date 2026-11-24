@@ -3,6 +3,7 @@
 from . import table_grid
 from .document_intake import attr, name
 from .epub_semantics import uncertainty
+from .source_scripts import prepare as prepare_scripts
 
 
 DRAWING = frozenset(('http://schemas.openxmlformats.org/drawingml/2006/main',
@@ -55,7 +56,7 @@ def paragraphs(body):
             span['source_end'] = max(0,min(len(text),span['source_end']-left))
             span['source'] = text[span['source_start']:span['source_end']]
         spans = [span for span in spans if span['source']]
-        yield node,text,spans
+        yield node,text,prepare_scripts(text,spans)
 
 
 def cell_role(row,column,first_row,first_col):

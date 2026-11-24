@@ -197,7 +197,7 @@ def inspect_saved(path,source,cache=None,*,title=None):
         directory = Path(__file__).parent
         implementation = {p.name:filehash(p) for p in directory.glob('*.py')
                           if p.name in ('importers.py','pronunciation.py','markdown_notes.py','text_source.py',
-                                        'text_evidence.py','source_math.py','source_notes.py','intake.py','table_grid.py')
+                                        'text_evidence.py','source_math.py','source_notes.py','source_scripts.py','intake.py','table_grid.py')
                           or p.name.startswith(('epub_','pdf_','visual_table_'))}
         identity = key([sha,source.route,source.encoding,IMPORT_REVISION,dependencies,implementation])
         target = cache/(identity+'.json')

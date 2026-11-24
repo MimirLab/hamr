@@ -1,5 +1,23 @@
 """Keep Markdown note definitions and reference occurrences from one AST."""
 
+import re
+
+from .source_scripts import prepare as prepare_scripts
+
+
+SUPERSCRIPT = re.compile(r'<sup>([+−-]?\d+|st|nd|rd|th)</sup>',re.I)
+
+
+def styled_script(state,silent):
+    """Recognize a static script span without enabling arbitrary inline HTML."""
+    match = SUPERSCRIPT.match(state.src,state.pos,state.posMax)
+    if not match:
+        return False
+    if not silent:
+        state.push('styled_script','',0).content = match[1]
+    state.pos = match.end()
+    return True
+
 
 def html_inline(child):
     from bs4 import BeautifulSoup
@@ -67,6 +85,10 @@ def inline(token, inline_sources):
             if child.type == 'code_inline':
                 spans.append({'kind': 'literal', 'source': value,
                               'source_start': position, 'source_end': position + len(value)})
+        elif child.type=='styled_script':
+            value = child.content
+            spans.append({'kind':'superscript','source':value,'source_start':position,
+                          'source_end':position+len(value),'origin':'Markdown inline sup element'})
         elif child.type == 'math_inline':
             from .document_intake import formula_span
             from .tex_math import tex_math
@@ -83,7 +105,8 @@ def inline(token, inline_sources):
             continue
         pieces.append(value)
         position += len(value)
-    return ''.join(pieces), spans
+    source = ''.join(pieces)
+    return source,prepare_scripts(source,spans)
 
 
 def target(token):

@@ -686,14 +686,14 @@ def odt(path,builder,source_file=None):
         with structured_zip(path) as (read,_):
             document = xml(read('content.xml'))
             metadata = read('meta.xml',required=False)
-            lists = next(document.iter(TEXT+'list',TEXT+'numbered-paragraph'),None)
-            styles = read('styles.xml',required=False) if lists is not None else None
+            styled = next(document.iter(TEXT+'span',TEXT+'list',TEXT+'numbered-paragraph'),None)
+            styles = read('styles.xml',required=False) if styled is not None else None
             _odt_body(document,builder,Content(read),xml(metadata) if metadata else None,
                       xml(styles) if styles else None)
 
 
 def _odt_body(document,builder,content,metadata,styles=None):
-    from .odf_content import DRAW, OFFICE
+    from .odf_content import DRAW, OFFICE, Styles
     from .odf_numbering import authored_marks
     from .table_grid import simple_matrix
 
@@ -706,6 +706,7 @@ def _odt_body(document,builder,content,metadata,styles=None):
         raise Error('source_xml','OpenDocument has no document body.')
     declarations = [('styles.xml',styles)] if styles is not None else []
     content.numbering = authored_marks(body,[*declarations,(content.source_file,document)])
+    content.styles = Styles(document,styles)
     if any(name(n)=='changed-region' for n in body.iter()):
         builder.doc.warnings.append('Tracked change records are preserved in the original. The visible body is selected.')
 

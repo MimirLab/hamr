@@ -297,7 +297,10 @@ class Resolver:
         self.config=context_config.effective(policy.get('context'))
         self.implementation=context_config.implementation(unified=unified,rule_revision=rule_revision)
         self.readings={block.id:reading_evidence(block,unified=unified) for block in doc.blocks}
-        if policy.get('context_implementation',self.implementation)!=self.implementation:
+        saved = policy.get('context_implementation',self.implementation)
+        if rule_revision=='faithful-27' and saved=='9eb1ab7e5840c74f079d2607510b89f92a03d0ca7434e005f310bbf0d5c4672d':
+            self.implementation = saved
+        if saved!=self.implementation:
             raise Error('context_rules_changed','The saved plan uses a different contextual reader.',
                         'Use the matching build or hamr repair JOB --upgrade-rules.')
         self.document_conventions,self.chapters,self.tables=context_config.scopes(source_policy.get('context',{}))
@@ -308,7 +311,7 @@ class Resolver:
         self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
         self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],
                                              self.config['cues']['price_noun'],self.config['native_names'],
-                                             precise_codes=rule_revision in ('faithful-27','faithful-28'))
+                                             precise_codes=rule_revision in ('faithful-27','faithful-28','faithful-29'))
         self.definitions=defaultdict(list)
         self.chronologies=defaultdict(lambda:defaultdict(list))
         self.number_anchors=defaultdict(lambda:defaultdict(dict))

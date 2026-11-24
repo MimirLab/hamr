@@ -251,11 +251,13 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None, note_ma
         span['source_start']=max(0,span['source_start']-left)
         span['source_end']=max(0,min(len(source),span['source_end']-left))
         span['source']=source[span['source_start']:span['source_end']]
-    return source,spans
+    from .source_scripts import prepare
+
+    return source,prepare(source,spans)
 
 
 def reading(block,note_policy='after_paragraph', *, with_spans=False, extra_spans=()):
-    """Use explicit roles; an unclassified superscript is not a guessed power."""
+    """Project bound roles without guessing at ambiguous presentation."""
     source=block.source;edits=[];spans=[*block.locator.get('inline_semantics',()),*extra_spans]
     layout_edits=set()
     references=[s for s in spans if s['kind']=='note_reference' and not any(h['kind']=='hidden' and h['source_start']<=s['source_start'] and h['source_end']>=s['source_end'] for h in spans)]

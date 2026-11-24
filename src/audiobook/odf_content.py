@@ -1,5 +1,6 @@
 """Prepare OpenDocument paragraphs and tables for the common planner."""
 
+import re
 from urllib.parse import unquote, urlsplit
 
 from .core import Error, key
@@ -7,12 +8,14 @@ from .document_intake import attr, formula_note, formula_span, join_formulas, na
 from .epub_semantics import uncertainty
 from .source_bundle import safe_name
 from .source_math import MATHML, mathml, mathml_text
+from .source_scripts import prepare as prepare_scripts
 from .table_grid import Grid, count, join_passages
 
 
 OFFICE = '{urn:oasis:names:tc:opendocument:xmlns:office:1.0}'
 DRAW = '{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}'
 TEXT = '{urn:oasis:names:tc:opendocument:xmlns:text:1.0}'
+STYLE = '{urn:oasis:names:tc:opendocument:xmlns:style:1.0}'
 TABLE = '{urn:oasis:names:tc:opendocument:xmlns:table:1.0}'
 MANIFEST = '{urn:oasis:names:tc:opendocument:xmlns:manifest:1.0}'
 XLINK_HREF = '{http://www.w3.org/1999/xlink}href'
@@ -48,12 +51,44 @@ def table_content(node):
             yield child
 
 
+class Styles:
+    def __init__(self,root,external=None):
+        self.nodes = {}
+        for document in (external,root):
+            if document is None:
+                continue
+            for node in document.iter():
+                if node.tag in (STYLE+'style',STYLE+'master-page',STYLE+'page-layout') and (label:=node.get(STYLE+'name')):
+                    self.nodes[node.tag,node.get(STYLE+'family'),label] = node
+
+    def properties(self,family,label,tag):
+        values,seen = {},set()
+        while label:
+            if label in seen:
+                raise Error('source_style','OpenDocument style inheritance is cyclic.')
+            seen.add(label)
+            style = self.nodes.get((STYLE+'style',family,label))
+            if style is None:
+                break
+            if (node:=style.find(STYLE+tag)) is not None:
+                values = dict(node.attrib)|values
+            label = style.get(STYLE+'parent-style-name')
+        return values
+
+    def position(self,label):
+        value = self.properties('text',label,'text-properties').get(STYLE+'text-position','')
+        if match:=re.fullmatch(r'(super|sub|[+\-]?\d+(?:\.\d+)?%)(?:\s+\d+(?:\.\d+)?%)?',value.strip()):
+            return match[1]
+        return None
+
+
 class Content:
-    def __init__(self,read,source_file='content.xml'):
+    def __init__(self,read,source_file='content.xml',*,styles=None):
         self.read = read
         self.source_file = source_file
         self.declared_objects = None
         self.numbering = {}
+        self.styles = styles
 
     def object_formula(self,frame):
         if frame.tag!=DRAW+'frame' or frame.get(TEXT+'anchor-type')!='as-char':
@@ -95,13 +130,22 @@ class Content:
         pieces,spans,links,findings = [],[],[],[]
         offset = 0
 
-        def add(text):
+        scripts = []
+
+        def add(text,script=None):
             nonlocal offset
             if text:
+                start = offset
                 pieces.append(text)
                 offset += len(text)
+                if script:
+                    if scripts and scripts[-1]['kind']==script and scripts[-1]['source_end']==start:
+                        scripts[-1]['source_end'] = offset
+                    else:
+                        scripts.append({'kind':script,'source_start':start,'source_end':offset,
+                                        'origin':'OpenDocument text-position style'})
 
-        def walk(item):
+        def walk(item,script=None):
             tag = name(item)
             if tag in ('tracked-changes','deletion','annotation'):
                 return
@@ -164,11 +208,24 @@ class Content:
                 else:
                     findings.append('OpenDocument image, text frame, or embedded object needs a verified reading.')
                 return
-            add(item.text)
+            if item.tag==TEXT+'span' and self.styles and (label:=item.get(TEXT+'style-name')):
+                try:
+                    position = self.styles.position(label)
+                except Error as error:
+                    findings.append(error.message)
+                    position = None
+                if position is not None:
+                    if position in ('super','sub'):
+                        script = 'superscript' if position=='super' else 'subscript'
+                    else:
+                        rise = float(position[:-1])
+                        script = 'superscript' if rise>0 else 'subscript' if rise<0 else None
+            add(item.text,script)
             for child in item:
-                walk(child)
-                add(child.tail)
+                walk(child,script)
+                add(child.tail,script)
         walk(node)
+        spans.extend(scripts)
         raw = ''.join(pieces)
         left = len(raw)-len(raw.lstrip())
         text = raw.strip()
@@ -178,6 +235,7 @@ class Content:
                     item[part] = min(len(text),max(0,item[part]-left))
         for span in spans:
             span['source'] = text[span['source_start']:span['source_end']]
+        spans = prepare_scripts(text,spans)
         if label:=self.numbering.get(node):
             from .source_numbering import embed_ordered_label
 

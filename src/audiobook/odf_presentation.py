@@ -82,30 +82,7 @@ def selected_shape(frame):
     return next((node for node in frame if node.tag in FRAME_CONTENT),None)
 
 
-class Styles:
-    def __init__(self,root,external):
-        self.nodes = {}
-        for document in (external,root):
-            if document is None:
-                continue
-            for node in document.iter():
-                if node.tag in (STYLE+'style',STYLE+'master-page',STYLE+'page-layout') and (label:=node.get(STYLE+'name')):
-                    self.nodes[node.tag,node.get(STYLE+'family'),label] = node
-
-    def properties(self,family,label,tag):
-        values,seen = {},set()
-        while label:
-            if label in seen:
-                raise Error('source_slide_style','Slide style inheritance is cyclic.')
-            seen.add(label)
-            style = self.nodes.get((STYLE+'style',family,label))
-            if style is None:
-                break
-            if (node:=style.find(STYLE+tag)) is not None:
-                values = dict(node.attrib)|values
-            label = style.get(STYLE+'parent-style-name')
-        return values
-
+class SlideStyles(odf_content.Styles):
     def page_size(self,page):
         master = self.nodes.get((STYLE+'master-page',None,page.get(DRAW+'master-page-name')))
         layout = self.nodes.get((STYLE+'page-layout',None,master.get(STYLE+'page-layout-name'))) if master is not None else None
@@ -134,13 +111,13 @@ class Presentation:
         self.main = self.member(CONTENT_FILE) if flat is None else None
         self.root = xml(self.read(CONTENT_FILE)) if flat is None else flat
         external = self.read('styles.xml',required=False)
-        self.styles = Styles(self.root,xml(external) if external else None)
+        self.styles = SlideStyles(self.root,xml(external) if external else None)
         metadata = self.read('meta.xml',required=False)
         title_node = (xml(metadata) if metadata else self.root).find('.//{http://purl.org/dc/elements/1.1/}title')
         published_title = plain_xml_text(title_node) if title_node is not None else ''
         self.builder = DocumentBuilder('odp',published_title or title,sha)
         self.doc = self.builder.doc
-        self.text = odf_content.Content(self.read)
+        self.text = odf_content.Content(self.read,styles=self.styles)
         self.observer = Observer(cache/'presentation-observations' if cache else None)
 
     def member(self,path,required=True):
@@ -283,7 +260,7 @@ class Presentation:
             path = directory.rstrip('/')+'/'+CONTENT_FILE
             member = self.member(path)
             root = xml(self.read(path))
-            content = odf_content.Content(self.read,path)
+            content = odf_content.Content(self.read,path,styles=odf_content.Styles(root))
         place = loc|{'source_shape_path':loc['xml_path'],'xml_path':root.getroottree().getpath(root)}
         try:
             grid = chart_grid(root,content,place)

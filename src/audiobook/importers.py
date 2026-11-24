@@ -31,6 +31,7 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
     lines=[match[0] for match in physical_lines(text)]
     offsets=list(accumulate(map(len, lines),initial=0))
     md=MarkdownIt('commonmark',{'html':False}).enable('table').use(footnote_plugin,move_to_end=False,always_match_refs=True)
+    md.inline.ruler.before('html_inline','styled_script',markdown_notes.styled_script)
     if configure:
         configure(md)
     env={}
@@ -641,10 +642,13 @@ def epub(data:bytes|Path)->Document:
 def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
     import pypdfium2 as pdfium
     from .pdf_visual import Observer, authored_artifact, bind_captions, merge_regions, regional_images
-    from .pdf_geometry import crop_glyphs,glyph_baseline
+    from .pdf_geometry import crop_glyphs,glyph_baseline,redundant_note_icons
+    from .epub_semantics import uncertainty
+    from .pdf_scripts import raised_digits, spans as script_spans
     from .pdf_tagged_tables import TaggedTables, outer_tables
     from .pdf_tags import line_paragraph, page_tags, paragraph_owners
     from .pdf_textlayer import nonpainting_regions
+    from .source_scripts import prepare as prepare_scripts
     from .text_evidence import suspect_characters
     try: doc=pdfium.PdfDocument(data)
     except Exception: raise Error('unreadable_pdf','PDF is protected, damaged or unsupported.')
@@ -664,7 +668,12 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
         image_objects=[(obj,list(obj.get_bounds())) for obj in page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE])]
         images=[rect for _,rect in image_objects]
         entry={'page':n+1,'size':[w,h],'glyphs':tp.count_chars(),'rotation':page.get_rotation(),'raster_regions':images,'route':'native','native_observation':native}
-        if damaged:=suspect_characters(native):entry['native_character_diagnostics']=damaged
+        redundant = redundant_note_icons(tp,native)
+        skip = {item['native_index'] for item in redundant}
+        if redundant:
+            entry['redundant_note_icons'] = redundant
+        if damaged:=suspect_characters(''.join(' ' if i in skip else c for i,c in enumerate(native)) if skip else native):
+            entry['native_character_diagnostics']=damaged
         box=page.get_bbox();media=page.get_mediabox()
         nonpainting=nonpainting_regions(page,box)
         if nonpainting:entry['nonpainting_text_regions']=nonpainting
@@ -715,6 +724,8 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
             overlays=verified_overlays(page,tp) if entry['native_geometry_qualified'] else []
             if overlays:entry['duplicate_paint_observations']=overlays
             chars,outside,clipped=cached_glyphs if cached_glyphs is not None else crop_glyphs(tp,box)
+            if skip:
+                chars = [glyph for glyph in chars if glyph[2] not in skip]
             visible_native=''.join(ch for ch,_,_ in chars)
             entry.update(excluded_crop_glyphs=outside,visible_native_observation=visible_native,clipped_visible_glyphs=clipped)
             if page.get_rotation()==0:entry['native_geometry_qualified']=True
@@ -749,9 +760,12 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                     entry['native_visual_tables']=[{'rect':part['rect'],'issue':part['issue']} for part in table_segments]
             lines=[]
             authorship = paragraph_owners(tags) if not panels else {}
-            for ch,rect,index in (() if panels else chars):
+            line_glyphs = [] if panels else chars
+            baselines = {index:glyph_baseline(tp,index,box[1],rect[1]) for _,rect,index in line_glyphs}
+            raised = raised_digits(tp,line_glyphs,baselines) if full_geometry and not overlays else {}
+            for ch,rect,index in line_glyphs:
                 l,b,r,t=rect
-                baseline=glyph_baseline(tp,index,box[1],b)
+                baseline=baselines[raised.get(index,index)]
                 # A descender's box reaches below the baseline of its word.
                 target=next((x for x in lines if abs(x['y']-baseline)<3.5),None)
                 if target is None: target={'y':baseline,'chars':[]}; lines.append(target)
@@ -764,17 +778,25 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                     current.append(x); last=x[1]
                 if current: chunks.append(current)
                 for chunk in chunks:
-                    text=''; last=None;previous=None
+                    text=''; last=None;previous=None; scripts=[]
                     for l,r,ch,rect,index in chunk:
                         if ch.isspace():text+=' '
                         else:
                             # PDFium already represents native spaces. Do not
                             # split adjacent digits/initials on side bearings.
                             if previous is not None and index!=previous+1 and last is not None and l-last>2 and not text.endswith(' '):text+=' '
+                            if index in raised:
+                                scripts.append((len(text),len(text)+len(ch),index,raised[index]))
                             text+=ch
                         last=r;previous=index
                     if text.strip():
                         segment = {'text':text.strip(),'rect':[chunk[0][0],min(x[3][1] for x in chunk),chunk[-1][1],max(x[3][3] for x in chunk)],'y':line['y']}
+                        if scripts:
+                            padding = len(text)-len(text.lstrip())
+                            spans = prepare_scripts(segment['text'],script_spans(segment['text'],(
+                                (a-padding,b-padding,index,base) for a,b,index,base in scripts)))
+                            segment['locator'] = {'inline_semantics':spans}
+                            segment['issue'] = uncertainty(spans)
                         if table_tags:
                             segment['table_glyphs'] = {x[4] for x in chunk if x[2].strip()}
                         if authorship and (paragraph := line_paragraph(tp, chunk, authorship)) is not None:
@@ -888,7 +910,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-32'
+IMPORT_REVISION='import-33'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 
