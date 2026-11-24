@@ -65,6 +65,17 @@ def test_cardinal_spellings_match_values_without_changing_critical_values():
     assert c('one or two')==['#1','or','#2']
     assert c('two three')==['#2','#3']
 
+
+def test_spoken_padded_identifiers_allow_exact_asr_digits_without_masking_quantity_changes():
+    from audiobook.speech_compare import notation_observation
+
+    expected = 'Station zero one. Reading zero eight. The quantity was 0.08.'
+    observed = 'Station 01. Reading 08. The quantity was 0.08.'
+    assert c(notation_observation(expected,observed))==c(expected)
+    assert quantities(c(notation_observation(expected,observed.replace('Reading 08','Reading 07'))))!=quantities(c(expected))
+    assert c(notation_observation(expected,observed.replace('Station 01','Station 1'))) != c(expected)
+    assert '01/08' in notation_observation(expected,'The date was 01/08.')
+
 def test_negative_contractions_and_elongated_no_preserve_polarity():
     assert c("don't restart")==c('do not restart')
     assert c("can't restart")==c('cannot restart')

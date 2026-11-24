@@ -3,8 +3,9 @@ import re
 from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-24'
-AUTHORED_LINE_RULES=(RULES,)
+RULES='faithful-25'
+TABLE_PASSAGE_RULES=(RULES,)
+AUTHORED_LINE_RULES=('faithful-24',RULES)
 PROJECTED_SOURCE_RULES=('faithful-20','faithful-21','faithful-22','faithful-23',*AUTHORED_LINE_RULES)
 PROSE_SOURCE_RULES=('faithful-18','faithful-19',*PROJECTED_SOURCE_RULES)
 CURRENT_DELIVERY_RULES=('faithful-17',*PROSE_SOURCE_RULES)
@@ -256,7 +257,9 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             elif protected or continuous and not repetitions:
                 from .continuous import passages
                 from .performance import MARKER,QUOTATION
-                limit=120 if continuous else 65
+                table_passage=(rule_revision in TABLE_PASSAGE_RULES and len(source_ids)==1 and
+                               doc.blocks[source_positions[source_ids[0]]].locator.get('table_grid'))
+                limit=55 if table_passage else 120 if continuous else 65
                 sentence_limit=(160 if rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) else 120) if continuous else limit
                 balance_tail=(rule_revision in CURRENT_DELIVERY_RULES and continuous and len(source_ids)==1
                               and doc.blocks[source_positions[source_ids[0]]].role=='body'
@@ -479,7 +482,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 utterances[-1]['pause_samples']=max(12000,utterances[-1]['pause_samples'])
                 utterances[-1]['sources']=list(dict.fromkeys(utterances[-1]['sources']+[b.id]))
         if text:
-            if preserve_lines:flush()
+            table_passage=rule_revision in TABLE_PASSAGE_RULES and b.locator.get('table_grid') and action=='speak'
+            if preserve_lines or table_passage:flush()
             if not continuous and sum(len(x.split()) for x in buffer)+len(text.split())>65: flush()
             if continuous and buffer and source_ids:
                 previous=doc.blocks[source_positions[source_ids[-1]]]
@@ -490,6 +494,11 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                     buffer.pop();source_ids.pop();flush(hold_tail=rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE));flush_captions();after_source_gap=rule_revision in ('faithful-10','faithful-11',*SOURCE_STRUCTURE);continue
             buffer.append(spoken); source_ids.append(b.id)
             if preserve_lines:flush();continue
+            if table_passage:
+                flush()
+                if continuous and utterances:
+                    utterances[-1]['pause_samples']=8400
+                continue
             if continuous and placement=='standalone':
                 flush()
                 if utterances:utterances[-1]['pause_samples']=8400

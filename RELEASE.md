@@ -2,6 +2,7 @@
 
 - A tagged PDF can use the shared table reader when its tags identify the visible text. Hamr can read merged and nested cells, continue one table across pages, and retain repeated print headings in the companion. Conflicting tags preserve the visible reading or identify the table for source review.
 - Writer/Web OpenDocument packages, including `.oth` files and copies inside ZIPs, open as documents. Their embedded previews stay with the original.
+- Long structured tables use shorter synthesis requests that end at complete sentences. Speech QA matches spoken leading-zero identifiers with the same printed digits and still checks each digit for errors.
 
 # hamr 0.4.9.dev32
 

@@ -142,3 +142,17 @@ def test_writer_web_package_routes_as_text_even_when_it_contains_a_thumbnail(tmp
         doc = inspect_source(path)
         assert doc.format=='odt'
         assert ' '.join(u['text'] for u in plan(doc)['utterances'])==READING
+
+
+def test_long_table_requests_break_on_complete_sentences(tmp_path):
+    source = tmp_path/'register.html'
+    rows = ''.join(f'<tr><td>Station {n:02d}</td><td>The keeper checked the lamp and logged reading {n:02d}.</td></tr>'
+                   for n in range(1,9))
+    source.write_text('<table><thead><tr><th colspan="2">Evening register</th></tr>'
+                      '<tr><th>Station</th><th>Observation</th></tr></thead><tbody>'+rows+'</tbody></table>')
+    doc = inspect_source(source)
+    fresh = plan(doc)
+    old = plan(doc,rule_revision='faithful-24')
+    assert not fresh['issues'] and len(fresh['utterances'])>len(old['utterances'])
+    assert all(len(u['text'].split())<=55 and u['text'].endswith('.') for u in fresh['utterances'])
+    assert ' '.join(u['text'] for u in fresh['utterances'])==old['utterances'][0]['text']

@@ -10,7 +10,7 @@ from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v41'
+POLICY='bounded-english-composed-scale-typed-v42'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -46,6 +46,8 @@ SPOKEN_YEAR=re.compile(r'\b('+YEAR_PREFIX+r')[ -]+('+ '|'.join(YEAR_DECADES)+r'|
 DOMAIN_START=r'(?<![\w@.])'
 DOMAIN_END=r'(?![\w-]|\.[a-z0-9])'
 WWW_DOMAIN=re.compile(DOMAIN_START+r'www\.(?:[a-z0-9-]+\.){1,6}[a-z]{2,20}'+DOMAIN_END,re.I)
+SPOKEN_PADDED_CODE=re.compile(r'\bzero(?:[ \t]+(?:'+'|'.join(SMALL[:10])+r')){1,7}\b',re.I)
+PRINTED_PADDED_CODE=re.compile(r'(?<![\w/.:+−-])0[0-9]{1,7}(?![\w/:-]|\.\d)')
 
 
 def isbn_notation(text):
@@ -107,6 +109,12 @@ def notation_observation(expected, observed):
     observed=spoken_currency_observation(expected,observed)
     observed=contextual_years(expected,observed)
     observed=domain_notation(expected,observed)
+    # Recognizers write spoken identifiers as digits. Keep every leading zero
+    # and only recover a spelling that the planned request actually uses.
+    forms = {''.join(str(SMALL_VALUES[word]) for word in match[0].casefold().split()):match[0]
+             for match in SPOKEN_PADDED_CODE.finditer(expected)}
+    if forms:
+        observed=PRINTED_PADDED_CODE.sub(lambda match:forms.get(match[0],match[0]),observed)
     if 'elapsed time' not in expected.casefold():return observed
 
     def elapsed(match):
