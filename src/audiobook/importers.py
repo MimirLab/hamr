@@ -77,11 +77,19 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
     graph = NoteGraph(notes.get,first_definition=first_note_definition)
     for note in note_blocks:
         note.links = graph.links_for(note.locator.get('inline_semantics',()),follow=False)
-    i=0;chapter_id=None;list_depth=0;quote_depth=0
+    i=0;chapter_id=None;lists=[];quote_depth=0
     while i<len(tokens):
         t=tokens[i]
-        if t.type in ('bullet_list_open','ordered_list_open'):list_depth+=1
-        elif t.type in ('bullet_list_close','ordered_list_close'):list_depth-=1
+        if t.type in ('bullet_list_open','ordered_list_open'):
+            next_number = int(t.attrGet('start') or 1) if t.type=='ordered_list_open' else None
+            lists.append({'next':next_number,'item':None})
+        elif t.type in ('bullet_list_close','ordered_list_close'):
+            lists.pop()
+        elif t.type=='list_item_open' and lists[-1]['next'] is not None:
+            lists[-1]['item'] = lists[-1]['next']
+            lists[-1]['next'] += 1
+        elif t.type=='list_item_close':
+            lists[-1]['item'] = None
         elif t.type=='blockquote_open':quote_depth+=1
         elif t.type=='blockquote_close':quote_depth-=1
         if t.type=='source_container' and (role:=t.meta.get('role')):
@@ -119,7 +127,7 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
             issue='Image has no authored description; verify whether it carries essential content.' if any(c.type=='image' and not c.content.strip() for c in (v.children or [])) else None
             issue = issue or v.meta.get('source_issue') or uncertainty(spans)
             role='heading' if t.type=='heading_open' else 'body'
-            task=re.match(r'^\[([xX ])\]\s+',source) if list_depth and role=='body' else None
+            task=re.match(r'^\[([xX ])\]\s+',source) if lists and role=='body' else None
             if task:loc['checklist']={'checked':task[1].lower()=='x','marker':task[0],'origin':'Explicit Markdown task marker in a list item'}
             if role=='heading':
                 chapter=source
@@ -132,6 +140,9 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
             exact=loc.pop('exact')
             b=block(source,loc,role,chapter,['Markdown AST source range'],issue=issue,links=links)
             b.locator['exact']=exact
+            if lists and role=='body' and source and lists[-1]['item'] is not None:
+                b.locator['ordered_item'] = lists[-1]['item']
+                lists[-1]['item'] = None
             if quote_depth:b.locator['block_quote']=True
             if spans:b.locator['inline_semantics']=spans
             preserve_resources(b.locator,[v])
@@ -327,6 +338,7 @@ def epub(data:bytes|Path)->Document:
     from .epub_semantics import AUDIT_SPANS,EMBEDDED,NON_TEXT,describe,language,uncertainty,hidden,accessible_label,note_container,table_headers
     from .epub_notes import EpubNotes
     from .epub_semantics import noteref
+    from .source_numbering import bind_ordered, html_ordered_items
     notes=EpubNotes(soup,document_reference,lambda path,href:archive_path(posixpath.dirname(path),href)[0],
                     cover_assets,lang[0] if lang else 'en')
     out=[]; inventory=[]; chapter='Opening';linked_targets={}
@@ -340,6 +352,7 @@ def epub(data:bytes|Path)->Document:
             inventory.append({'occurrence':occurrence,'path':loc['path'],'fallback_chain':chain,'disposition':'source review','issue':fallback_issue})
             continue
         s=soup(path); body=s.find('body') or s
+        ordered_items = html_ordered_items(body)
         chapter=chapter_labels.get((path,''),chapter)
         found=0; start=len(out); positions={}; covered=set(); initial_chapter=chapter
         ranks={id(node):rank for rank,node in enumerate(body.descendants)}
@@ -446,6 +459,7 @@ def epub(data:bytes|Path)->Document:
                     table_cells=[r.find_all(['th','td']) for r in node.find_all('tr')]
                     loc['rows']=[[html_text(c).strip() for c in row] for row in table_cells]
             out.append(block(text,loc,role,chapter,['EPUB spine occurrence and DOM element'],issue,links)); found+=1
+            bind_ordered(out[-1],node,ordered_items)
             if node.find_parent('blockquote') is not None:out[-1].locator['block_quote']=True
             if leaves and text==base_text and role in ('body','heading','caption'):
                 loc['text_leaves']=leaves
@@ -507,6 +521,7 @@ def epub(data:bytes|Path)->Document:
                 anchor=next((a.get('id') for a in ancestors if hasattr(a,'get') and a.get('id')),None)
                 loc={'format':'epub','occurrence':occurrence,'path':path,'anchor':anchor,'text_node_rank':first_rank,'exact':raw}
                 b=block(text,loc,role,initial_chapter,['Independent DOM text-occurrence coverage audit','Recovered inline leaves with original whitespace'])
+                bind_ordered(b,container,ordered_items)
                 if leaves and role=='body':loc['text_leaves']=leaves
                 out.append(b); positions[b.id]=first_rank; fallback_ids.add(b.id); found+=1
             pending=[]; container=None; first_rank=None

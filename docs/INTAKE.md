@@ -64,6 +64,10 @@ When a searchable PDF establishes an equation, raised script or scientific table
 
 For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the actual source encoding. The resident CHM decoder runs locally with Bubblewrap. Its tested path uses a readable HTML contents file inside the CHM. Binary-only contents and popup controls without a local HTML target still need qualification.
 
+## Numbered passages
+
+Hamr uses authored ordered-list structure and consecutive printed paragraph labels to keep each number with its passage. A Roman chapter label in a heading sequence stays with the title. The source companion preserves the original numbering, and measurements and dates still use their own readings.
+
 ## Palm Database books
 
 ```sh

@@ -95,7 +95,7 @@ class SourceReadings:
         return bool(self.paragraph_spans) or any(span['kind'] in MATH_SPANS
                                                 for span in self.block.locator.get('inline_semantics',()))
 
-    def paragraph(self, note_policy, *, modern, contextual, unified, projected):
+    def paragraph(self, note_policy, *, modern, contextual, unified, projected, extra_spans=()):
         from .epub_semantics import reading
 
         block = self.block
@@ -106,7 +106,7 @@ class SourceReadings:
                 return reading(block,note_policy,with_spans=True)
             protected = [(0,len(text))] if contextual and block.locator.get('pdf_equation') else None
             return text,protected
-        extras = [span for span,_ in self.paragraph_spans]
+        extras = [*(span for span,_ in self.paragraph_spans),*extra_spans]
         if paginated(block):
             from .pdf_layout import line_wrap_edits
 

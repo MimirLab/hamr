@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev43
+
+- Read ordered-list numbers and repeated printed paragraph labels as part of the narration. Recognized Roman chapter labels stay with their headings, and the original notation remains in the companion. Lists and numbered paragraphs use the same preparation across document readers.
+
 # hamr 0.4.9.dev42
 
 - Read PalmDOC and unencrypted eReader books natively. PalmDOC reads the complete text across record boundaries, including saved books with a reading bookmark. eReader uses shared chapters and notes, with exact record and artwork recovery. [Palm Database books](docs/INTAKE.md#palm-database-books)

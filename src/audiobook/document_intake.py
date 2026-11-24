@@ -184,6 +184,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
     from .importers import html_text
     from .epub_semantics import describe as semantics
     from .source_notes import Definition, NoteGraph, note_text
+    from .source_numbering import bind_ordered, html_ordered_items
 
     soup = BeautifulSoup(data,'html.parser',from_encoding=encoding)
     sphinx = any(item.get('src','').split('?',1)[0].endswith('/documentation_options.js')
@@ -216,6 +217,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
         if len(targets)!=1 or targets[0].name in ('a','h1','h2','h3','h4','h5','h6','span'):
             raise Error('source_topic_fragment','The topic link does not name one bounded HTML region.')
         body = targets[0]
+    ordinals = html_ordered_items(body)
     projected = renderer_controls(body,docutils,sphinx)
     inline_locations = {}
     if source_annotations:
@@ -279,6 +281,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             if label:=reading(block):
                 block.chapter = builder.chapter = label
         preserve_resources(block,node)
+        bind_ordered(block,node,ordinals)
         if block and (node.name == 'blockquote' or node.find_parent('blockquote') is not None):
             block.locator['block_quote'] = True
         if block and role=='note' and node.get('id'):
@@ -314,7 +317,8 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
         if isinstance(node,NavigableString):
             from .epub_semantics import NON_TEXT
             if not isinstance(node,NON_TEXT):
-                builder.add(str(node),where=path)
+                block = builder.add(str(node),where=path)
+                bind_ordered(block,node.parent,ordinals)
             return
         if node.get('id') and (note_container(node) or id(node) in markup.definitions):
             text_node(node,'note',path)

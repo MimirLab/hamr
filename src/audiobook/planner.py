@@ -3,9 +3,10 @@ import re
 from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-25'
-TABLE_PASSAGE_RULES=(RULES,)
-AUTHORED_LINE_RULES=('faithful-24',RULES)
+RULES='faithful-26'
+NUMBERING_RULES=(RULES,)
+TABLE_PASSAGE_RULES=('faithful-25',RULES)
+AUTHORED_LINE_RULES=('faithful-24',*TABLE_PASSAGE_RULES)
 PROJECTED_SOURCE_RULES=('faithful-20','faithful-21','faithful-22','faithful-23',*AUTHORED_LINE_RULES)
 PROSE_SOURCE_RULES=('faithful-18','faithful-19',*PROJECTED_SOURCE_RULES)
 CURRENT_DELIVERY_RULES=('faithful-17',*PROSE_SOURCE_RULES)
@@ -218,6 +219,9 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     flow_disputes=layout_disputes(doc,overrides,expanded=rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE),
                                  margin_numbers=rule_revision in ('faithful-11',*SOURCE_STRUCTURE),
                                  unified=unified_source) if continuous else {}
+    from .source_numbering import collect as source_numbering, split_numbered
+
+    numbered = source_numbering(doc) if rule_revision in NUMBERING_RULES else {}
     original_by_id={b.id:b.source for b in doc.blocks}
     authored_lines={b.id for b in doc.blocks if b.locator.get('authored_line_breaks')}
     table_context=' '.join(b.source for b in doc.blocks) if rule_revision in SOURCE_STRUCTURE else ''
@@ -264,7 +268,14 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 balance_tail=(rule_revision in CURRENT_DELIVERY_RULES and continuous and len(source_ids)==1
                               and doc.blocks[source_positions[source_ids[0]]].role=='body'
                               and not re.search(f'{QUOTATION}|{MARKER}',joined))
-                pieces=passages(joined,max_words=limit,separate_incomplete=continuous and (rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) or anchor=='paragraph'),max_sentence_words=sentence_limit,whole_sentences=whole_sentences,protected=protected,balance_tail=balance_tail)
+                labelled = numbered.get(source_ids[0],()) if len(source_ids)==1 and source_ids[0] not in overrides else ()
+                ranges = split_numbered(joined,labelled) if labelled else [(0,len(joined))]
+                pieces = [piece for start,end in ranges for piece in passages(
+                    joined[start:end],max_words=limit,separate_incomplete=continuous and (
+                        rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) or anchor=='paragraph'),
+                    max_sentence_words=sentence_limit,whole_sentences=whole_sentences,
+                    protected=[(a-start,b-start) for a,b in protected if start<=a and b<=end],
+                    balance_tail=balance_tail)]
             else:pieces=[{'text':part,'boundary':'legacy','over_budget':False} for part in split(joined,rule_revision=rule_revision)]
             for piece in pieces:
                 part=piece['text']
@@ -321,8 +332,13 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             if source_readings.has_formula():
                 formula_blocks.add(b.id)
         note_policy = effective.get('notes','after_paragraph')
+        labels = numbered.get(b.id,()) if b.id not in overrides else ()
+        label_spans = [label.span(b.source) for label in labels]
+        numbered_body = bool(labels) and b.role=='body'
         text,prepared_spans = source_readings.paragraph(note_policy,modern=rule_revision in MODERN,contextual=bool(resolver),
-                                                      unified=unified_source,projected=projected_source)
+                                                      unified=unified_source,projected=projected_source,extra_spans=label_spans)
+        if numbered_body and any(label.start for label in labels):
+            text = text.replace('\r','\n')
         table_fragments=[]
         prepared_text=text
         task=b.locator.get('checklist')
@@ -444,12 +460,13 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             projection,context_events=resolver.prepare(b,text,chapter=block_chapter,chapter_id=block_chapter_id,cells=cells,
                                                        prepared_spans=prepared_spans if text==prepared_text else None)
         spoken=normalize(projection.text if projection else text,{} if explicit_reading else aliases,rule_revision,abbreviation_audit,
-                         preserve_lines=preserve_lines,normalization_audit=normalization_audit,source=b.source,
+                         preserve_lines=preserve_lines or numbered_body,normalization_audit=normalization_audit,source=b.source,
                          literals=() if projection and projection.slots else literals,typed=b.role!='code' and not explicit_reading)
         if projection:
             spoken,context_spans=projection.finish(spoken,abbreviation_audit,normalization_audit)
         decisions.append({'block':b.id,'action':action,'reason':reason,'evidence':b.evidence,'rule':rule_revision,'destination':'source.html#'+b.id,'source':b.source,'spoken':spoken,'connector':connector,'section_policy':effective})
         if rule_revision in SOURCE_STRUCTURE:decisions[-1].update(chapter=block_chapter,chapter_occurrence=block_chapter_id or block_chapter)
+        if label_spans and action=='speak':decisions[-1]['source_numbering']=label_spans
         if normalization_audit:
             decisions[-1]['normalization']=normalization_audit
         if normalization_audit or context_spans:
@@ -486,7 +503,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 utterances[-1]['sources']=list(dict.fromkeys(utterances[-1]['sources']+[b.id]))
         if text:
             table_passage=rule_revision in TABLE_PASSAGE_RULES and b.locator.get('table_grid') and action=='speak'
-            if preserve_lines or table_passage:flush()
+            if preserve_lines or table_passage or numbered_body:flush()
             if not continuous and sum(len(x.split()) for x in buffer)+len(text.split())>65: flush()
             if continuous and buffer and source_ids:
                 previous=doc.blocks[source_positions[source_ids[-1]]]
@@ -497,7 +514,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                     buffer.pop();source_ids.pop();flush(hold_tail=rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE));flush_captions();after_source_gap=rule_revision in ('faithful-10','faithful-11',*SOURCE_STRUCTURE);continue
             buffer.append(spoken); source_ids.append(b.id)
             if preserve_lines:flush();continue
-            if table_passage:
+            if table_passage or numbered_body:
                 flush()
                 if continuous and utterances:
                     utterances[-1]['pause_samples']=8400
