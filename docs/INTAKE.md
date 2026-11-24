@@ -28,6 +28,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | TEI editions | Open the `.tei` or `.xml` edition, its folder, or a ZIP. Hamr reads the main text and keeps witness variants alongside the original. |
 | BITS and NCBI Bookshelf | Open a BITS book or chapter as `.bits`, `.nxml`, or `.xml`. For NCBI Bookshelf, open the source archive or extracted folder to follow its table of contents. |
 | DocBook manuals | Open a `.docbook`, `.dbk`, or `.xml` file, a source folder, or an archive. Hamr follows local chapter includes and reads the authored text, notes, descriptions, and simple tables. |
+| Palm Markup Language | Open `.pml` files, `.pmlz` books, or a ZIP containing loose PML. The built-in reader preserves chapter order, footnotes, and sidebars. [Palm ebook intake](#palm-markup-language) |
 | FictionBook | Open `.fb2` files and ZIPs, or open a FictionBook 3 file, ZIP, or extracted publication. Hamr follows linked notes and preserves verse lines and original assets. |
 | AbiWord | Open `.abw`, `.awt`, gzip-compressed `.zabw` or `.abw.gz`, and bzip2-compressed `.bzabw` or `.abw.bz2`. The reader follows authored chapter styles and keeps linked notes, simple tables, text boxes, and illustration locations. |
 | Jupyter notebooks | Open an `.ipynb` file or a ZIP containing one. The built-in reader follows saved cells and outputs in order. [Notebook intake](#jupyter-notebooks) |
@@ -61,6 +62,16 @@ When a searchable PDF establishes an equation, raised script or scientific table
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
 
 For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the actual source encoding. The resident CHM decoder runs locally with Bubblewrap. Its tested path uses a readable HTML contents file inside the CHM. Binary-only contents and popup controls without a local HTML target still need qualification.
+
+## Palm Markup Language
+
+```sh
+hamr open path/to/book.pmlz
+```
+
+Hamr reads authored chapter headings, linked footnotes and sidebars from `.pml` and `.pmlz`. The default source encoding is Windows-1252. For a file saved in another known encoding, supply `--encoding`.
+
+A `.pmlz` edition can contain multiple text parts in one folder. Parts follow filename order. ZIPs containing separate loose `.pml` books prompt for a book. A loose `.pml` can use its local artwork folder. The companion preserves the original text ranges, note anchors and referenced artwork. Unlabelled illustrations can be reviewed at their original location.
 
 ## PowerPoint presentations
 

@@ -66,6 +66,10 @@ def parse(path,source,sha,cache,title):
         from .presentation_intake import read_pptx
 
         return read_pptx(path,source,sha,title,cache)
+    if source.route=='pml' and source.kind in ('file','zip','tar','libarchive'):
+        from .pml_package import read_pml
+
+        return read_pml(path,source,sha,title)
     if source.route=='odp' and source.kind in ('file','zip','tar','libarchive'):
         from .odf_presentation import read_odp
 
@@ -76,7 +80,7 @@ def parse(path,source,sha,cache,title):
             route = describe(member,format=source.route_override,offline=source.offline,encoding=source.encoding)
             if route.kind in ('zip-member','tar-member','libarchive-member','directory','manifest'):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
-            if route.kind=='file' and route.route=='abiword':
+            if route.kind=='file' and route.route in ('abiword','pml'):
                 route = replace(route,member_name=entry.name)
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
             doc.source_sha256 = sha

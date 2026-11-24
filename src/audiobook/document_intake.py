@@ -97,7 +97,7 @@ class DocumentBuilder:
         if not (text or issue or loc and (loc.get('inline_semantics') or loc.get('table_grid'))):
             return
         ordinal = len(self.doc.blocks)+1
-        if role=='heading' and text:
+        if text and (role=='heading' or loc and loc.get('chapter_marker')):
             self.chapter = text
             self.chapter_id = f'document:{ordinal}'
         location = {'format':self.doc.format,'ordinal':ordinal,'element':where,

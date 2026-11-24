@@ -30,7 +30,7 @@ NATIVE = {
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book', '.bits':'xml-book', '.nxml':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.odp':'odp', '.otp':'odp', '.fodp':'odp',
     '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
-    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
+    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst',
 }
@@ -38,7 +38,7 @@ PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','xml-book'))
+DEPENDENCY_SOURCES = frozenset(('rst','xml-book','pml'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -199,6 +199,7 @@ def directory_members(root):
     from .document_intake import xml_route
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
+    from .pml_package import discover_loose_assets, is_pml
     from .xml_package import SUFFIXES as XML_SUFFIXES, loose_assets, loose_document
 
     declared = set()
@@ -219,6 +220,8 @@ def directory_members(root):
         for filename in files:
             path = here/filename
             relative = path.relative_to(root).as_posix()
+            if (is_pml(filename) and not filename.startswith('.') and not path.is_symlink() and path.is_file()):
+                declared.update((here/asset).relative_to(root).as_posix() for asset in discover_loose_assets(path))
             if (filename.startswith('.') or relative in declared or path.suffix.lower() not in XML_SUFFIXES
                     or path.is_symlink() or not path.is_file()):
                 continue
@@ -292,9 +295,13 @@ def zip_members(archive):
 def zip_source(path, entry, override):
     from .archive_intake import ZipMembers
     from .odf_presentation import MEDIA as ODF_PRESENTATION_TYPES
+    from .pml_package import pmlz_parts
 
     try:
         with ZipMembers(path) as archive:
+            if path.suffix.casefold()=='.pmlz' and override in (None,'pml') and entry is None:
+                pmlz_parts(list(archive.members()))
+                return Source('pml','zip')
             package_route = override if override in PACKAGE_FOLDERS-{'textbundle'} else None
             if path.suffix.casefold()=='.fb3' and override is None:
                 package_route = 'fb3'
@@ -405,9 +412,9 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle','rst'):
-        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword') and source.member_name is None:
+    if encoding and source.route not in ('text','chm','textbundle','rst','pml'):
+        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle, Palm Markup Language or compiled HTML Help.')
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','pml') and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -522,7 +529,7 @@ def _describe(path,entry,format,offline):
     if (suffix in ('.7z','.rar','.cb7','.cbr') or prefix.startswith((b'7z\xbc\xaf\x27\x1c',b'Rar!'))):
         selected = wrapped_source(path,'libarchive',entry,format)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
-    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx','.odp','.otp') or prefix.startswith(b'PK\x03\x04'):
+    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx','.odp','.otp','.pmlz') or prefix.startswith(b'PK\x03\x04'):
         selected = zip_source(path,entry,format or ('scan' if suffix=='.cbz' else None))
         if format and format!=selected.route and selected.kind!='file':
             raise Error('source_format', 'The selected container does not match the requested format.')
@@ -766,6 +773,10 @@ def capture_dependencies(path,target_dir,source):
         from .rst_dependencies import capture_dependencies as rst
 
         return rst(path,target_dir,source)
+    if source.kind=='file' and source.route=='pml':
+        from .pml_package import capture_pml
+
+        return capture_pml(path,target_dir,source)
     if source.kind=='file' and source.route=='xml-book':
         from .xml_package import capture_xml
 

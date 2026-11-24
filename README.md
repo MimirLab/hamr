@@ -109,6 +109,8 @@ Turn a PowerPoint deck into chapters with its slide text and presenter notes. Ha
 
 Open LibreOffice and OpenDocument presentations the same way. Slides, notes, tables, saved chart data, and eligible images use the shared reading pipeline. The built-in reader accepts `.odp`, `.otp`, and `.fodp`. [OpenDocument presentation intake](docs/INTAKE.md#opendocument-presentations)
 
+Open Palm Markup Language books and `.pmlz` archives with the built-in reader. Chapters, footnotes, and sidebars enter the shared narration pipeline. The companion keeps the original text and local artwork. [Palm ebook intake](docs/INTAKE.md#palm-markup-language)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

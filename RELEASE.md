@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev41
+
+- Open Palm Markup Language books and PMLZ archives with the built-in reader. Authored chapters, footnotes, and sidebars use shared narration, while the companion keeps original source locations and images. [Palm ebook intake](docs/INTAKE.md#palm-markup-language)
+
 # hamr 0.4.9.dev40
 
 - Open OpenDocument presentations, templates, and flat XML directly. Hamr follows saved slides and presenter notes, reads authored tables and supported chart data, and uses resident OCR for eligible image-only slides. Recover exact package members and embedded flat XML images. [OpenDocument presentation intake](docs/INTAKE.md#opendocument-presentations)

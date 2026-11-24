@@ -84,6 +84,7 @@ def archive_packages(archive,members,*,textpack=False):
     from .odf_presentation import archive_books as odp_books
     from .opf_intake import archive_books as opf_books
     from .presentation_intake import archive_books as pptx_books
+    from .pml_package import archive_books as pml_books
     from .scrivener_intake import archive_books as scrivener_books
     from .sphinx_intake import archive_books as sphinx_books
     from .textbundle import archive_scopes
@@ -126,8 +127,11 @@ def archive_packages(archive,members,*,textpack=False):
     titles,ncc_members = ncc_books(archive,remaining)
     packages.extend(('daisy202',descriptor,book.title) for book,descriptor in titles)
     remaining = [item for item in remaining if item.index not in ncc_members]
+    books,pml_members = pml_books(archive,remaining)
+    packages.extend(books)
+    remaining = [item for item in remaining if item.index not in pml_members]
     editions,xml_members = xml_books(archive,remaining)
     packages.extend(('xml-book',descriptor,title) for descriptor,title in editions)
     spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in xml_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    return packages,claimed | xps_members | fb3_members | pptx_members | odp_members | owned | project_members | opf_members | ncc_members | xml_members | plain
+    return packages,claimed | xps_members | fb3_members | pptx_members | odp_members | owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain
