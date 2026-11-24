@@ -67,8 +67,12 @@ def member_location(sha,member,role):
 def bind_member_block(block,member,occurrence,sha,records,resolve):
     block.locator.update(member=member.name,archive_entry=member.index,spine_occurrence=occurrence,
                          location_id=key([sha,member.index,occurrence,block.id])[:20])
+    bind_resources(block,lambda ref:records.get(resolve(member.name,ref['href'])))
+
+
+def bind_resources(block,lookup):
     for ref in block.locator.pop('resource_references',[]):
-        asset = records.get(resolve(member.name,ref['href'])) if ref['kind']=='image' else None
+        asset = lookup(ref) if ref['kind']=='image' else None
         if asset and asset['role']=='asset':
             asset['status'] = 'referenced'
             block.links.append({'kind':'source_resource','href':ref['href'],'label':ref.get('label'),

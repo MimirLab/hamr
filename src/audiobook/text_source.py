@@ -10,11 +10,11 @@ def physical_lines(text):
     return re.finditer(r'[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$', text)
 
 
-def plain(data,encoding=None):
+def plain(data,encoding=None,*,fallback='utf-8'):
     from .importers import block
 
     if encoding is None:
-        encoding = 'utf-8'
+        encoding = fallback
         marks = ((codecs.BOM_UTF32_LE,'utf-32'),(codecs.BOM_UTF32_BE,'utf-32'),
                  (codecs.BOM_UTF16_LE,'utf-16'),(codecs.BOM_UTF16_BE,'utf-16'),(codecs.BOM_UTF8,'utf-8-sig'))
         for mark,codec in marks:

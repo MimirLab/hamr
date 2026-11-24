@@ -111,6 +111,8 @@ Open LibreOffice and OpenDocument presentations the same way. Slides, notes, tab
 
 Open Palm Markup Language books and `.pmlz` archives with the built-in reader. Chapters, footnotes, and sidebars enter the shared narration pipeline. The companion keeps the original text and local artwork. [Palm ebook intake](docs/INTAKE.md#palm-markup-language)
 
+Read PalmDOC and unencrypted eReader books directly from recognized `.pdb` or `.prc` files. Hamr preserves text across record boundaries and keeps eReader's embedded notes and pictures in the companion. [Palm Database books](docs/INTAKE.md#palm-database-books)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

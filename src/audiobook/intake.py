@@ -80,7 +80,7 @@ def parse(path,source,sha,cache,title):
             route = describe(member,format=source.route_override,offline=source.offline,encoding=source.encoding)
             if route.kind in ('zip-member','tar-member','libarchive-member','directory','manifest'):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
-            if route.kind=='file' and route.route in ('abiword','pml'):
+            if route.kind=='file' and route.route in ('abiword','pml','palmdoc','ereader'):
                 route = replace(route,member_name=entry.name)
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
             doc.source_sha256 = sha
@@ -98,6 +98,14 @@ def parse(path,source,sha,cache,title):
             return doc
     if source.route=='pdf':
         return ADAPTERS['.pdf'](path,ocr_cache=cache/'pdf-observations' if cache else None)
+    if source.route=='palmdoc':
+        from .palmdoc_intake import read_palmdoc
+
+        return read_palmdoc(path,source,sha,title)
+    if source.route=='ereader':
+        from .ereader_intake import read_ereader
+
+        return read_ereader(path,source,sha,title)
     if source.route=='epub':
         return ADAPTERS['.epub'](path)
     if source.route=='djvu':
@@ -299,6 +307,11 @@ def extract_location(book,location,output):
             from .xml_source import extract
 
             data = extract(xml(bounded_read(staged)),asset)
+        elif asset := loc.get('binary_asset'):
+            from .document_intake import bounded_read
+            from .palm_database import recover
+
+            data = recover(bounded_read(staged),asset)
         if data is not None:
             with staged.open('wb') as stream:
                 stream.write(data)
@@ -313,7 +326,7 @@ def capabilities():
     import platform
     import sys
     from .pdf_ocr import resident_binary
-    from .source_bundle import NATIVE, PACKAGE_FOLDERS
+    from .source_bundle import NATIVE, PACKAGE_FOLDERS, PALM_ROUTES
     from .intake_helpers import CALIBRE_BYTES,CALIBRE_UNPACKED
     from .xps_visual import available as xps_renderer_ready
 
@@ -334,8 +347,9 @@ def capabilities():
                          or os.name=='nt' and x64 and (assets/'mobitool-windows-x86_64.exe').is_file()
                          or bool(shutil.which('mobitool')))},
     }
-    return {'formats':sorted({'scan',*NATIVE.values(),*PACKAGE_FOLDERS}),
+    return {'formats':sorted({'scan',*NATIVE.values(),*PACKAGE_FOLDERS,*PALM_ROUTES}),
             'registered_suffixes':dict(sorted(NATIVE.items())),
+            'identified_sources':{route:['.pdb','.prc'] for route in sorted(PALM_ROUTES|{'mobi'})},
             'source_kinds':['file','directory','page-manifest','archive'],
             'archives':{'zip':'built in','tar':'built in','7z':'local libarchive','rar':'local libarchive'},
             'resident_english_ocr':resident_binary() is not None,'specialist':external,

@@ -30,10 +30,12 @@ NATIVE = {
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book', '.bits':'xml-book', '.nxml':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.odp':'odp', '.otp':'odp', '.fodp':'odp',
     '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
-    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
+    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst',
 }
+PALM_SUFFIXES = frozenset(('.pdb','.prc'))
+PALM_ROUTES = frozenset(('palmdoc','ereader'))
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
@@ -99,8 +101,15 @@ def probe(prefix, name):
         return None
     if suffix in IMAGE_SUFFIXES or image_magic(prefix):
         return 'scan'
-    if prefix[60:68] in (b'BOOKMOBI',b'TEXtREAd'):
+    signature = prefix[60:68]
+    if signature==b'BOOKMOBI':
         return 'mobi'
+    from .palm_database import BOOK_TYPES
+
+    if signature in BOOK_TYPES:
+        return BOOK_TYPES[signature]
+    if suffix in PALM_SUFFIXES:
+        return None
     if prefix.lstrip().startswith(b'{\\rtf'):
         return 'rtf'
     return NATIVE.get(suffix)
@@ -250,6 +259,10 @@ def directory_members(root):
             suffix = source_suffix(path.name)
             if suffix in IMAGE_SUFFIXES:
                 pages.append(relative)
+            elif suffix in PALM_SUFFIXES and not path.is_symlink() and path.is_file():
+                with path.open('rb') as stream:
+                    if route:=probe(stream.read(512),path.name):
+                        other.append((relative,route))
             elif suffix=='.xml' and not path.is_symlink() and path.is_file():
                 with path.open('rb') as stream:
                     if route:=xml_route(stream):
@@ -382,7 +395,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         if suffix=='.xml' and not name.name.startswith('.'):
             with archive.open_member(item) as stream:
                 detected = xml_route(stream)
-        elif (kind=='zip' and not detected or suffix in ('.lrf','.lit')) and not name.name.startswith('.'):
+        elif (kind=='zip' and not detected or suffix in ('.lrf','.lit',*PALM_SUFFIXES)) and not name.name.startswith('.'):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
             detected = probe(prefix,item.name)
@@ -412,9 +425,9 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle','rst','pml'):
-        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle, Palm Markup Language or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','pml') and source.member_name is None:
+    if encoding and source.route not in ('text','chm','textbundle','rst','pml',*PALM_ROUTES):
+        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle, Palm ebooks, Palm Markup Language or compiled HTML Help.')
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','pml',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -436,7 +449,7 @@ def folder_choices(path,route):
 def _describe(path,entry,format,offline):
     if not path.exists():
         raise Error('source_missing', f'Document not found: {path}', 'Check the document path.')
-    routes = {*NATIVE.values(),*PACKAGE_FOLDERS,'scan'}
+    routes = {*NATIVE.values(),*PACKAGE_FOLDERS,*PALM_ROUTES,'scan'}
     if format and format not in routes:
         raise Error('source_format', f'Unknown intake format: {format}.', 'Use hamr agent capabilities to list formats.')
     if path.is_dir():

@@ -29,8 +29,12 @@ BAD_CHARACTERS = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uff
 ENCODINGS = ((codecs.BOM_UTF8,'utf-8-sig'),(codecs.BOM_UTF16_LE,'utf-16'),(codecs.BOM_UTF16_BE,'utf-16'))
 
 
+def encoding_for(data,encoding):
+    return encoding or next((name for bom,name in ENCODINGS if data.startswith(bom)),'cp1252')
+
+
 def decode(data,encoding):
-    requested = encoding or next((name for bom,name in ENCODINGS if data.startswith(bom)),'cp1252')
+    requested = encoding_for(data,encoding)
     try:
         source = data.decode(requested)
     except (UnicodeError,LookupError) as error:

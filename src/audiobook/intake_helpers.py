@@ -272,8 +272,12 @@ def resident_mobi(path,source,sha,cache):
 
     with path.open('rb') as stream:
         header = stream.read(86)
-        if len(header)!=86 or header[60:68] not in (b'BOOKMOBI',b'TEXtREAd'):
-            raise Error('unreadable_mobi','The source does not contain a recognized Kindle or Palm header.')
+        if header[60:68]==b'TEXtREAd':
+            from .palmdoc_intake import read_palmdoc
+
+            return read_palmdoc(path,source,sha,path.stem)
+        if len(header)!=86 or header[60:68]!=b'BOOKMOBI':
+            raise Error('unreadable_mobi','The source does not contain a recognized Kindle header.')
         first = int.from_bytes(header[78:82],'big')
         count = int.from_bytes(header[76:78],'big')
         size = os.fstat(stream.fileno()).st_size

@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev42
+
+- Read PalmDOC and unencrypted eReader books natively. PalmDOC reads the complete text across record boundaries, including saved books with a reading bookmark. eReader uses shared chapters and notes, with exact record and artwork recovery. [Palm Database books](docs/INTAKE.md#palm-database-books)
+
 # hamr 0.4.9.dev41
 
 - Open Palm Markup Language books and PMLZ archives with the built-in reader. Authored chapters, footnotes, and sidebars use shared narration, while the companion keeps original source locations and images. [Palm ebook intake](docs/INTAKE.md#palm-markup-language)
