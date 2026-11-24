@@ -172,7 +172,7 @@ def mark_folios(blocks, inventory):
     candidates = []
     for b in blocks:
         loc = b.locator
-        if loc.get('format') != 'pdf' or 'paragraph' not in loc or not b.source.strip().isdigit():
+        if 'paragraph' not in loc or loc.get('page') not in heights or not b.source.strip().isdigit():
             continue
         page = loc['page'];rect = loc['rect'];height = heights[page]
         if rect[3] < height * .1:

@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev36
+
+- Open text-bearing XPS and OpenXPS packages directly, from an extracted folder, or inside a ZIP. Hamr follows declared pages and page stories, reads table spans, and preserves exact page parts in the companion. Pages with graphics and no text report where a visual reading is needed. [Document intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev35
 
 - Searchable PDFs and scans can read simple borderless tables with aligned headings and repeated numeric or date columns. Detected tables with competing grouped readings appear at their page location in source review. Native PDF extraction caches follow updates to the table reader. [Table intake](docs/INTAKE.md#source-readers)

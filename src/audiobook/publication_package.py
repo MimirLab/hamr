@@ -86,6 +86,7 @@ def archive_packages(archive,members,*,textpack=False):
     from .sphinx_intake import archive_books as sphinx_books
     from .textbundle import archive_scopes
     from .xml_package import archive_books as xml_books
+    from .xps_intake import archive_books as xps_books
 
     books,claimed = scrivener_books(members) if not textpack else ([],set())
     packages = [('scrivener',item,PurePosixPath(item.name).stem) for item in books]
@@ -95,6 +96,9 @@ def archive_packages(archive,members,*,textpack=False):
     if textpack:
         return packages,claimed
     remaining = [item for item in members if item.index not in claimed]
+    editions,xps_members = xps_books(archive,remaining)
+    packages.extend(('xps',descriptor,title) for descriptor,title in editions)
+    remaining = [item for item in remaining if item.index not in xps_members]
     editions,fb3_members = fb3_books(archive,remaining)
     packages.extend(('fb3',descriptor,title) for descriptor,title in editions)
     remaining = [item for item in remaining if item.index not in fb3_members]
@@ -118,4 +122,4 @@ def archive_packages(archive,members,*,textpack=False):
     packages.extend(('xml-book',descriptor,title) for descriptor,title in editions)
     spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in xml_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    return packages,claimed | fb3_members | owned | project_members | opf_members | ncc_members | xml_members | plain
+    return packages,claimed | xps_members | fb3_members | owned | project_members | opf_members | ncc_members | xml_members | plain

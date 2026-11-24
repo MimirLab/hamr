@@ -21,6 +21,7 @@ SIDECAR_SUFFIXES = frozenset(('.xml', '.hocr', '.alto', '.page', '.tsv'))
 SIDECAR_ENDINGS = ('.alto.xml','.page.xml','.abbyy.xml','.hocr','.tsv')
 NATIVE = {
     '.txt':'text', '.text':'text', '.asc':'text', '.nfo':'text', '.md':'markdown', '.markdown':'markdown', '.epub':'epub', '.pdf':'pdf',
+    '.xps':'xps', '.oxps':'xps',
     '.textpack':'textbundle',
     '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt', '.oth':'odt',
     '.abw':'abiword', '.awt':'abiword', '.zabw':'abiword', '.bzabw':'abiword',
@@ -35,7 +36,7 @@ NATIVE = {
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3')) | DESCRIPTOR_FOLDERS
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps')) | DESCRIPTOR_FOLDERS
 DEPENDENCY_SOURCES = frozenset(('rst','xml-book'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
@@ -157,7 +158,10 @@ def relative_file(root, name):
 
 def publication_folder(path):
     from .fictionbook_package import folder_marker as fb3_folder
+    from .xps_intake import folder_marker as xps_folder
 
+    if xps_folder(path):
+        return 'xps'
     if fb3_folder(path):
         return 'fb3'
     if path.suffix.casefold()=='.textbundle':
@@ -286,6 +290,8 @@ def zip_source(path, entry, override):
             package_route = override if override in PACKAGE_FOLDERS-{'textbundle'} else None
             if path.suffix.casefold()=='.fb3' and override is None:
                 package_route = 'fb3'
+            if path.suffix.casefold() in ('.xps','.oxps') and override is None:
+                package_route = 'xps'
             records = zip_members(archive)
             names = {info.filename for _,info in records}
             if 'manifest.json' in names and any(name.startswith('blobs/') for name in names):
@@ -304,7 +310,7 @@ def zip_source(path, entry, override):
                         from .fixed_pages import image_only_fixed
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
-                    if override!='scan' and package_route!='fb3':
+                    if override!='scan' and package_route not in ('fb3','xps'):
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
@@ -503,7 +509,7 @@ def _describe(path,entry,format,offline):
     if (suffix in ('.7z','.rar','.cb7','.cbr') or prefix.startswith((b'7z\xbc\xaf\x27\x1c',b'Rar!'))):
         selected = wrapped_source(path,'libarchive',entry,format)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
-    if suffix in ('.cbz','.zip','.textpack') or prefix.startswith(b'PK\x03\x04'):
+    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps') or prefix.startswith(b'PK\x03\x04'):
         selected = zip_source(path,entry,format or ('scan' if suffix=='.cbz' else None))
         if format and format!=selected.route and selected.kind!='file':
             raise Error('source_format', 'The selected container does not match the requested format.')
@@ -690,7 +696,7 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_sphinx(local,target)
-        elif source.route=='fb3':
+        elif source.route in ('fb3','xps'):
             from .publication_package import capture_folder, folder_files
 
             target = target_dir/'source.zip'

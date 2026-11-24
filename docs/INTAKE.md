@@ -39,6 +39,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 
 Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powers, subscripts, fractions and roots. Hamr preserves each equation in the original and marks ambiguous layouts for source review. Inline equations, ordinary table cells and linked notes can use the same reading.
 
+Open a text-bearing `.xps` or `.oxps` file, its extracted package, or a ZIP containing it. Hamr follows the declared page order and authored page stories. It preserves the original glyph runs, including words split across print runs. Named story cells use the shared table reader. Recovery can return an exact FixedPage member. Pages containing only graphics and glyphs without a Unicode reading can require a visual reading or a source correction. [OpenXPS specification](https://ecma-international.org/publications-and-standards/standards/ecma-388/)
+
 In Word, each editable text box keeps its exact XML location. Unresolved links between boxes and drawings without a readable text story or description may need source review.
 
 Word, OpenDocument, HTML, EPUB and supported tagged PDFs use the same reading for merged and nested table cells. Hamr reads a merged value once, follows nested tables between the surrounding passages, and uses the headers that apply to each value. The companion retains original cell locations and distinguishes a covered position, a missing position, and an authored empty cell. Conflicting geometry or missing authored header targets appear in source review.

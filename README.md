@@ -101,6 +101,8 @@ Merged and nested tables in Word, OpenDocument, HTML, EPUB and supported tagged 
 
 Searchable PDFs and scanned pages can also read tables whose printed grid or repeated alignment establishes the cells and their order. Each cell points back to its place on the original page. [Table intake](docs/INTAKE.md#source-readers)
 
+Text-bearing XPS and OpenXPS packages can open directly or inside ZIPs. Hamr follows the declared pages and authored page stories, and the companion can recover exact page files. [Document intake](docs/INTAKE.md#source-readers)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

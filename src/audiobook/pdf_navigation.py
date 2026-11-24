@@ -1,14 +1,14 @@
 """Use outline coordinates and heading occurrences, never page-only ranges."""
 
 
-def apply(blocks,inventory,entries):
+def apply(blocks,inventory,entries,*,source='PDF',identity='pdf-outline'):
     pages={p['page']:p for p in inventory};mapped=[]
     canonical=lambda text:''.join(c.lower() for c in text if c.isalnum())
     for entry in entries:
         page=pages.get(entry.get('page'));candidates=[]
         if page and page.get('rotation',0)==0 and page.get('native_geometry_qualified',True):
             for i,b in enumerate(blocks):
-                if b.locator.get('page')!=entry['page'] or canonical(b.source)!=canonical(entry['title']):continue
+                if b.role=='furniture' or b.locator.get('page')!=entry['page'] or canonical(b.source)!=canonical(entry['title']):continue
                 rect=b.locator.get('rect');y=entry.get('top')
                 if y is not None:y-=page.get('visible_cropbox',[0,0,0,0])[1]
                 if y is None or rect and rect[1]-14<=y<=rect[3]+14:candidates.append((i,b))
@@ -17,10 +17,10 @@ def apply(blocks,inventory,entries):
     starts={}
     for i,entry,b in sorted(mapped,key=lambda v:(v[0],v[1]['entry'])):
         if i in starts:continue
-        starts[i]=(entry['title'],'pdf-outline:'+str(entry['entry']));b.role='heading'
-        b.evidence.append('PDF outline destination agrees with this unique heading occurrence and qualified geometry')
+        starts[i]=(entry['title'],identity+':'+str(entry['entry']));b.role='heading'
+        b.evidence.append(f'{source} outline destination agrees with this unique heading occurrence and qualified geometry')
     if starts:
-        title='Opening';identity='pdf-outline:prefix'
+        title='Opening';identity=identity+':prefix'
         for i,b in enumerate(blocks):
             if i in starts:title,identity=starts[i]
             b.chapter=title;b.locator['chapter_id']=identity

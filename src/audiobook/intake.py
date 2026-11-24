@@ -58,6 +58,10 @@ def parse(path,source,sha,cache,title):
         from .fictionbook_package import read_fb3
 
         return read_fb3(path,source,sha,title)
+    if source.route=='xps' and source.kind in ('zip','tar','libarchive'):
+        from .xps_intake import read_xps
+
+        return read_xps(path,source,sha,title)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):
