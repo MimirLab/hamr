@@ -74,6 +74,12 @@ def read_rtf(data,builder):
             if '\n' in value:
                 item.locator['authored_line_breaks'] = True
 
+    def paragraph_break():
+        if in_row:
+            glyph('\n')
+        else:
+            paragraph()
+
     while position<len(data):
         char = data[position]
         position += 1
@@ -108,6 +114,12 @@ def read_rtf(data,builder):
             elif symbol in ESCAPED:
                 glyph(ESCAPED[symbol])
                 position += 1
+            elif symbol in ('\r','\n'):
+                # Escaped source line endings represent \par. Ordinary source
+                # line endings are transport whitespace and are ignored.
+                position += 2 if data[position:position+2]==b'\r\n' else 1
+                if not (state.skip or state.hidden):
+                    paragraph_break()
             elif match:=WORD.match(data,position):
                 control = match[1].decode('ascii')
                 number = int(match[2]) if match[2] is not None else None
@@ -160,10 +172,7 @@ def read_rtf(data,builder):
                         cells.clear()
                     in_row = False
                 elif not state.hidden and control in ('par','page','sect'):
-                    if in_row:
-                        glyph('\n')
-                    else:
-                        paragraph()
+                    paragraph_break()
                 elif control in WORDS:
                     glyph(WORDS[control])
             else:

@@ -31,7 +31,7 @@ NATIVE = {
     '.rst':'rst', '.rest':'rst',
 }
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx'))
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -145,6 +145,13 @@ def relative_file(root, name):
 def publication_folder(path):
     if path.suffix.casefold()=='.textbundle':
         return 'textbundle'
+    if path.suffix.casefold()=='.scriv':
+        return 'scrivener'
+    if (path/'Files').is_dir():
+        from .scrivener_intake import folder_binders
+
+        if folder_binders(path):
+            return 'scrivener'
     from .gitbook_intake import CONFIG as GITBOOK_CONFIG, SITE as GITBOOK_SITE, folder_marker
     from .mdbook_intake import folder_book
 
@@ -326,6 +333,20 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     return replace(source,encoding=encoding) if encoding else source
 
 
+def folder_choices(path,route):
+    if route=='gitbook':
+        from .gitbook_intake import folder_choices as space_choices
+
+        return space_choices(path)
+    from .scrivener_intake import folder_binders
+
+    names = folder_binders(path)
+    if not names:
+        raise Error('source_scrivener_binder','This Scrivener project folder has no root .scrivx binder.',
+                    'Open the complete project folder or a backup ZIP.')
+    return [(name,name) for name in names]
+
+
 def _describe(path,entry,format,offline):
     if not path.exists():
         raise Error('source_missing', f'Document not found: {path}', 'Check the document path.')
@@ -339,10 +360,8 @@ def _describe(path,entry,format,offline):
             if format not in (None,route):
                 raise Error('source_format',f'This directory uses the {route} publication format.')
             ordinal = None
-            if route=='gitbook':
-                from .gitbook_intake import folder_choices
-
-                labels = folder_choices(path)
+            if route in ('gitbook','scrivener'):
+                labels = folder_choices(path,route)
                 selected = choose(labels,entry)
                 ordinal = next(number for number,(ident,_) in enumerate(labels,1) if ident==selected)
             return Source(route,'directory',entry=ordinal,offline=offline)
@@ -355,10 +374,8 @@ def _describe(path,entry,format,offline):
         inputs = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])
         selectors = {}
         for name,route in books:
-            if route=='gitbook':
-                from .gitbook_intake import folder_choices
-
-                spaces = folder_choices(relative_path(path,name))
+            if route in ('gitbook','scrivener'):
+                spaces = folder_choices(relative_path(path,name),route)
                 if len(spaces)!=1:
                     for ident,title in spaces:
                         selection = name+'/'+ident
@@ -375,6 +392,18 @@ def _describe(path,entry,format,offline):
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
+    if path.suffix.casefold()=='.scrivx':
+        if format not in (None,'scrivener'):
+            raise Error('source_format','A Scrivener binder requires the Scrivener reader.')
+        if path.parent.is_symlink() or path.parent.is_junction():
+            raise Error('unsafe_source_member','A publication folder must be a real directory.')
+        from .scrivener_intake import folder_binders
+
+        relative_file(path.parent,path.name)
+        names = folder_binders(path.parent)
+        if path.name not in names:
+            raise Error('source_scrivener_binder','Choose the visible root .scrivx binder for this project.')
+        return Source('scrivener','directory',entry=names.index(path.name)+1,offline=offline)
     with path.open('rb') as stream:
         prefix = stream.read(512)
     suffix = path.suffix.lower()
@@ -405,6 +434,8 @@ def _describe(path,entry,format,offline):
 
 def _local_source(path, options, source=None):
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
+        if source.route=='scrivener' and path.is_file():
+            return path.parent
         return relative_path(path,source.member_name) if source.member_name else path
     if path.is_dir() and options.get('entry') not in (None,'pages') and not (path/'pages.hamr.json').exists():
         return relative_file(path,options['entry'])
@@ -555,11 +586,20 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_gitbook(local,target,entry=source.entry)
-        else:
+        elif source.route=='sphinx':
             from .sphinx_intake import capture_sphinx
 
             target = target_dir/'source.zip'
             capture_sphinx(local,target)
+        else:
+            from .scrivener_intake import capture_scrivener, folder_binders
+
+            names = folder_binders(local)
+            if not source.entry or source.entry>len(names):
+                raise Error('source_changed','The selected Scrivener binder disappeared before capture.')
+            binder = path.name if path.is_file() else names[source.entry-1]
+            target = target_dir/'source.zip'
+            capture_scrivener(local,target,binder)
         selected = zip_source(target,None,source.route)
         source = replace(selected,offline=source.offline,encoding=source.encoding)
     elif source.kind in ('directory','manifest'):

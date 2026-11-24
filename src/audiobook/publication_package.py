@@ -68,11 +68,15 @@ def archive_packages(archive,members,*,textpack=False):
     """Use the same publication boundaries for discovery and page sequences."""
     from .gitbook_intake import archive_spaces
     from .mdbook_intake import archive_books
+    from .scrivener_intake import archive_books as scrivener_books
     from .sphinx_intake import archive_books as sphinx_books
     from .textbundle import archive_scopes
 
-    bundles,claimed = archive_scopes(archive,members,explicit=textpack)
-    packages = [('textbundle',item,PurePosixPath(item.name).parent.as_posix()) for item in bundles]
+    books,claimed = scrivener_books(members) if not textpack else ([],set())
+    packages = [('scrivener',item,PurePosixPath(item.name).stem) for item in books]
+    bundles,owned = archive_scopes(archive,[item for item in members if item.index not in claimed],explicit=textpack)
+    packages.extend(('textbundle',item,PurePosixPath(item.name).parent.as_posix()) for item in bundles)
+    claimed |= owned
     if textpack:
         return packages,claimed
     remaining = [item for item in members if item.index not in claimed]

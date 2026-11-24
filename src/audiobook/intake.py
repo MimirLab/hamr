@@ -93,6 +93,10 @@ def parse(path,source,sha,cache,title):
         from .sphinx_intake import read_sphinx
 
         return read_sphinx(path,source,sha,title)
+    if source.route=='scrivener':
+        from .scrivener_intake import read_scrivener
+
+        return read_scrivener(path,source,sha,title)
     if source.route=='rst':
         from .rst_intake import read_rst
 
