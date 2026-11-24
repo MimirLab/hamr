@@ -24,7 +24,7 @@ NATIVE = {
     '.textpack':'textbundle',
     '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt',
     '.abw':'xml-book', '.dbk':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
-    '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book',
+    '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book', '.bits':'xml-book', '.nxml':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
     '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
@@ -174,7 +174,7 @@ def directory_members(root):
     from .document_intake import xml_book_root
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
-    from .xml_package import SUFFIXES as XML_SUFFIXES, assets, loose_document
+    from .xml_package import SUFFIXES as XML_SUFFIXES, loose_assets, loose_document
 
     declared = set()
     pages, other = [], []
@@ -204,7 +204,8 @@ def directory_members(root):
                     raise
                 continue
             if document is not None:
-                declared.update((here/asset).relative_to(root).as_posix() for _,asset in assets(document,filename) if asset)
+                declared.update((here/asset).relative_to(root).as_posix()
+                                for _,asset in loose_assets(path,document) if asset and asset!=filename)
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
                           and name != '__MACOSX' and not (here/name).is_symlink()
                           and not (here/name).is_junction()]

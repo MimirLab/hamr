@@ -42,6 +42,12 @@ class XMLProjection:
     def location(self,node):
         return {'source_file':self.part,'xml_path':self.tree.getpath(node),'lines':[node.sourceline,node.sourceline]}
 
+    def review(self,node,message):
+        origin = self.location(node)
+        return self.element(node,'span',source_issue=message,
+                            reading_span={'kind':'source_review','source':'','issue':message,
+                                          'source_locator':origin})
+
     def element(self,node,tag,*,attributes=None,**evidence):
         result = etree.Element(tag,attrib=attributes or {})
         label = str(len(self.annotations)+1)
@@ -54,7 +60,7 @@ class XMLProjection:
         if language:=node.get(XML_LANG):
             result.set('lang',language)
         location = self.location(node)
-        self.annotations[label] = {**location,'source_element':self.part+':'+location['xml_path'],**evidence}
+        self.annotations[label] = {**location,'source_element':location['source_file']+':'+location['xml_path'],**evidence}
         return result
 
     def children(self,node,result,*,depth,literal=False):

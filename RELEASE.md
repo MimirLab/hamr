@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev26
+
+- Open BITS books, individual book-part XML exports, and NCBI Bookshelf source archives. Hamr reads the declared chapter order, resolves local XML includes, and keeps chapter originals and accompanying renditions in the source companion. [Document intake](docs/INTAKE.md#source-readers)
+- Structured documents accept tables whose row and column spans explicitly say one cell. Actual merged or nested tables still get a source-specific review location.
+
 # hamr 0.4.9.dev25
 
 - Open TEI editions as `.tei` or `.xml` files, source folders or ZIPs. Hamr reads the authored main lemma or normalized form. Competing witness readings stay accessible in the source companion. Notes, illustrations and the original package use the same reading and recovery tools as JATS. [Document intake](docs/INTAKE.md#source-readers)

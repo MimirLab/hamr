@@ -27,7 +27,7 @@ FORMULA_ELEMENTS = frozenset(('math','formula','disp-formula','inline-formula','
 CONTENT_TAGS = frozenset(('p','para','simpara','title','subtitle','h','hd','heading',
                           'li','item','line','v','l','caption','blockquote','epigraph','programlisting'))
 BOOK_ROOTS = frozenset(('FictionBook','book','article','article-set','TEI','teiCorpus','dtbook',
-                        'abiword','section','reference','refentry','docbook'))
+                        'abiword','section','reference','refentry','docbook','book-part-wrapper'))
 
 
 def name(element):
@@ -36,6 +36,10 @@ def name(element):
 
 def attr(element,key):
     return next((value for field,value in element.attrib.items() if field.rsplit('}',1)[-1]==key),None)
+
+
+def multiple_cells(value):
+    return value is not None and re.fullmatch(r'0*1',value.strip()) is None
 
 
 def xml(data):
@@ -312,7 +316,8 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                 return
             headers = [0] if lines and lines[0].find('th',recursive=False) else []
             issue = ('Complex table spans or nesting need a verified reading.' if
-                     node.find('table') or node.find(attrs={'rowspan':True}) or node.find(attrs={'colspan':True}) else None)
+                     node.find('table') or node.find(attrs={'rowspan':multiple_cells}) or
+                     node.find(attrs={'colspan':multiple_cells}) else None)
             rows,entries = [],[]
             for row,line in enumerate(lines):
                 cells = []
@@ -493,7 +498,9 @@ def semantic_xml(root,builder,part):
         if tag in ('table','informaltable'):
             rows,entries = [],[]
             issue = ('Merged or nested cells need a verified reading.' if any(
-                any(attr(x,k) for k in ('rowspan','colspan','morerows','namest','nameend'))
+                any(multiple_cells(attr(x,k)) for k in ('rowspan','colspan')) or
+                any(attr(x,k) for k in ('morerows','namest','nameend')) or
+                name(x) in ('table','informaltable') and x is not node
                 for x in node.iter()) else None)
             for tr in (item for item in node.iter() if name(item) in ('tr','row')):
                 row = []

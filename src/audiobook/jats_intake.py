@@ -32,15 +32,21 @@ def is_jats(root,filename):
 
 
 class Article(XMLProjection):
-    def __init__(self,article,part):
+    def __init__(self,article,part,*,active=None):
         super().__init__(article,part)
         self.article = article
-        nodes = article.xpath('.//fn[not(ancestor::sub-article or ancestor::response)]')
+        nodes = self.in_scope('fn',active)
         self.note_ids = {value for node in nodes if (value:=identifier(node))}
-        references = article.xpath('.//xref[not(ancestor::sub-article or ancestor::response)]')
-        self.cited_notes = {target for node in references for target in self.note_targets(node)}
+        references = self.in_scope('xref',active)
+        self.cited_notes = {self.note_anchor(node,target) for node in references for target in self.note_targets(node)}
         self.definitions = {node:None for node in nodes if identifier(node) and (
-            identifier(node) in self.cited_notes or not node.get('fn-type'))}
+            self.note_anchor(node,identifier(node)) in self.cited_notes or not node.get('fn-type'))}
+
+    def in_scope(self,tag,active):
+        if active is None:
+            return self.article.xpath(f'.//{tag}[not(ancestor::sub-article or ancestor::response)]')
+        return [node for node in active if node.tag==tag and not any(
+            parent.tag in ('sub-article','response') for parent in node.iterancestors())]
 
     def note_targets(self,node):
         targets = (node.get('rid') or '').split()
@@ -49,13 +55,16 @@ class Article(XMLProjection):
             return targets
         return [target for target in targets if target in self.note_ids] if not kind else []
 
+    def note_anchor(self,node,target):
+        return target
+
     def reference(self,node,depth,literal):
         location = self.location(node)
         targets = self.note_targets(node)
         if targets or node.get('ref-type') in NOTE_TYPES:
             result = self.element(node,'span')
             for i,target in enumerate(targets or ['']):
-                attrs = {'role':'doc-noteref','href':'#'+quote(target,safe='') if target else ''}
+                attrs = {'role':'doc-noteref','href':'#'+quote(self.note_anchor(node,target),safe='') if target else ''}
                 marker = self.element(node,'a',attributes=attrs,inline_location=location)
                 marker.attrib.pop('id',None)
                 if i==0:
@@ -139,7 +148,7 @@ class Article(XMLProjection):
             return self.alternate(node)
         if kind in FORMULA_ELEMENTS:
             display = kind not in ('math','inline-formula') or node.get('display')=='block'
-            basis = {'reading_span':xml_formula(node,self.part)}
+            basis = {'reading_span':xml_formula(node,self.location(node)['source_file'])}
             if display:
                 basis['source_role'] = 'equation'
                 if reading:=basis['reading_span']['reading']:
@@ -179,28 +188,32 @@ class Article(XMLProjection):
         element.text = element_text(node)
         return element
 
+    def abstracts(self,meta):
+        abstracts = meta.findall('abstract')
+        primary = [abstract for abstract in abstracts if not abstract.get('abstract-type')]
+        for abstract in abstracts:
+            yield self.alternate(abstract) if primary and abstract not in primary else self.project(abstract)
+        for alternate in meta.findall('trans-abstract'):
+            yield self.alternate(alternate)
+
+    def append_notes(self,body):
+        for note in self.definitions:
+            result = self.element(note,'aside',attributes={'role':'doc-footnote'})
+            result.set('id',self.note_anchor(note,identifier(note)))
+            self.children(note,result,depth=0)
+            body.append(result)
+
     def html(self):
         body = etree.Element('body')
         meta = self.article.find('front/article-meta')
         if meta is not None:
             for title in meta.findall('title-group/article-title')+meta.findall('title-group/subtitle'):
                 body.append(self.project(title))
-            abstracts = meta.findall('abstract')
-            primary = [abstract for abstract in abstracts if not abstract.get('abstract-type')]
-            for abstract in abstracts:
-                if primary and abstract not in primary:
-                    body.append(self.alternate(abstract))
-                else:
-                    body.append(self.project(abstract))
-            for alternate in meta.findall('trans-abstract'):
-                body.append(self.alternate(alternate))
+            body.extend(self.abstracts(meta))
         for section in self.article:
             if name(section) in ('body','back','sub-article','response'):
                 body.append(self.project(section))
-        for note in self.definitions:
-            result = self.element(note,'aside',attributes={'role':'doc-footnote'})
-            self.children(note,result,depth=0)
-            body.append(result)
+        self.append_notes(body)
         return etree.tostring(body,encoding='unicode',method='html')
 
 

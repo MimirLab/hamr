@@ -61,12 +61,6 @@ class Edition(XMLProjection):
             return ''
         return name(node) if etree.QName(node).namespace==self.namespace else ''
 
-    def review(self,node,message):
-        origin = self.location(node)
-        return self.element(node,'span',source_issue=message,
-                            reading_span={'kind':'source_review','source':'','issue':message,
-                                          'source_locator':origin})
-
     def readings(self,node):
         for child in node:
             if self.local(child)=='rdgGrp':
