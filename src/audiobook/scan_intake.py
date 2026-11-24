@@ -272,7 +272,11 @@ def scan(path,source,sha,cache=None,title=None):
                                 loc = {**location(locator,part['locator']['rect'],transform),'chapter_id':chapter_id,
                                        'location_id':key([occurrence,frame,position])[:20],
                                        **{k:v for k,v in part['locator'].items()
-                                          if k in ('ocr_layout','ocr_confidence')}}
+                                          if k in ('ocr_layout','ocr_confidence','table_grid','rows','table_evidence',
+                                                   'ocr_word_indices')}}
+                                for cell in loc.get('table_grid',{}).get('cells',()):
+                                    inner = cell['location']
+                                    cell['location'] = {**location(locator,inner['rect'],transform),**inner}
                                 if part.get('issue'):
                                     evidence['status'] = 'needs_review'
                                 item = block(part['text'],loc,role,chapter,issue=part.get('issue'))

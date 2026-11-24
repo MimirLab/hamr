@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev34
+
+- Searchable PDFs and scanned pages can read tables with a visible grid, including merged cells. The companion keeps each cell's page and glyph or OCR location. Hamr checks possible OCR border characters against a separate crop of the cell. [Table intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev33
 
 - A tagged PDF can use the shared table reader when its tags identify the visible text. Hamr can read merged and nested cells, continue one table across pages, and retain repeated print headings in the companion. Conflicting tags preserve the visible reading or identify the table for source review.

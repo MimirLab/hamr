@@ -636,7 +636,8 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
         box=page.get_bbox();media=page.get_mediabox()
         nonpainting=nonpainting_regions(page,box)
         if nonpainting:entry['nonpainting_text_regions']=nonpainting
-        entry['native_geometry_qualified']=page.get_rotation()==0 and all(abs(a-b)<.01 for a,b in zip(box,(0,0,w,h))) and all(abs(a-b)<.01 for a,b in zip(box,media))
+        full_geometry=page.get_rotation()==0 and all(abs(a-b)<.01 for a,b in zip(box,(0,0,w,h))) and all(abs(a-b)<.01 for a,b in zip(box,media))
+        entry['native_geometry_qualified']=full_geometry
         entry['visible_cropbox']=list(box)
         inventory.append(entry)
         chapter=f'Page {n+1}'
@@ -701,6 +702,19 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                 visible_native=''.join(ch for ch,_,_ in chars)
                 entry['route']='native_ruled_panels'
                 entry['table_source_glyphs']=len(claimed)
+            elif full_geometry and not (table_tags or content_images or clipped or overlays):
+                from .visual_table_intake import native_parts
+
+                tables=native_parts(page,tp,chars,n+1,w,h)
+                if tables:
+                    claimed=set().union(*(indices for indices,_ in tables))
+                    chars=[glyph for glyph in chars if glyph[2] not in claimed]
+                    visible_native=''.join(ch for ch,_,_ in chars)
+                    for _,table in tables:
+                        rect=table['locator']['rect']
+                        table_segments.append({**table,'rect':rect,'y':rect[3]})
+                    entry['table_source_glyphs']=len(claimed)
+                    entry['native_visual_tables']=[{'rect':part['rect'],'issue':part['issue']} for part in table_segments]
             lines=[]
             authorship = paragraph_owners(tags) if not panels else {}
             for ch,rect,index in (() if panels else chars):

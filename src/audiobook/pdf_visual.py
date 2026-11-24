@@ -204,6 +204,7 @@ class Observer:
         locator = {'format':format, 'page':page_number, 'rect':rect}
         evidence = {'rect':rect, 'scale':scale, 'native_observation':native,
                     'coordinate_space':'rendered_page_points' if format=='pdf' else 'oriented_pixels'}
+        read_table_crop = None
         try:
             image = load_image()
             if not native.strip() and all(lo==hi for lo,hi in ImageStat.Stat(image).extrema):
@@ -248,18 +249,17 @@ class Observer:
                     words, selected, reused = alternate_words, alternate, retry_reused
             if words and selected and len(selected)==4:
                 binary, env, recipe, reusable = selected
-                line_recipe = {**recipe,'page_segmentation':7}
-                line_scope = {**self.scope,'view':'dialogue_initial'}
-
-                def read_line(view):
+                def read_crop(view, segmentation, label):
+                    crop_recipe = {**recipe,'page_segmentation':segmentation}
+                    crop_scope = {**self.scope,'view':label}
                     stream = io.BytesIO()
                     view.save(stream,format='PNG')
                     line_png = stream.getvalue()
                     if offline:
-                        saved = offline_observation(line_png,self.cache,line_scope)
-                        return read_words(saved[0],view.size) if saved and saved[1]==line_recipe else []
+                        saved = offline_observation(line_png,self.cache,crop_scope)
+                        return read_words(saved[0],view.size) if saved and saved[1]==crop_recipe else []
                     try:
-                        result,_ = observe(line_png,(binary,env,line_recipe,reusable),self.cache,line_scope)
+                        result,_ = observe(line_png,(binary,env,crop_recipe,reusable),self.cache,crop_scope)
                         return read_words(result,view.size)
                     except Error as exc:
                         if exc.code not in ('ocr_contract','ocr_size'):
@@ -268,7 +268,8 @@ class Observer:
                     except (subprocess.SubprocessError,OSError):
                         return []
 
-                corrections = recheck_dialogue_initials(image,words,read_line)
+                read_table_crop = lambda view: read_crop(view,6,'table_rule_glyph')
+                corrections = recheck_dialogue_initials(image,words,lambda view: read_crop(view,7,'dialogue_initial'))
                 corrections += recheck_pipe_pronouns(image,words)
                 if corrections:
                     evidence['ocr_rechecks'] = corrections
@@ -296,6 +297,13 @@ class Observer:
         width,height = entry['size']
         parts = paragraphs(words,page_number,height,region=rect if regional else None,
                            width=None if regional else width, scale=scale, format=format)
+        if not native.strip() and words:
+            from .visual_table_intake import visual_ocr_parts
+
+            if projected := visual_ocr_parts(image,words,page_number,None if regional else width,height,
+                                             format=format,scale=scale,region=rect if regional else None,
+                                             read_crop=read_table_crop):
+                parts = projected
         geometry = entry['native_geometry_qualified']
         source_reader = glyph_reader(textpage) if geometry and native.strip() else lambda rect: ''
         critical_localization = localize(parts,native,text,source_reader,geometry)
