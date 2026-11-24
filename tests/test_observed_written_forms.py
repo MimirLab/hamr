@@ -1,5 +1,5 @@
 import pytest
-from audiobook.speech_compare import comparison_tokens as c,quantities
+from audiobook.speech_compare import comparison_tokens as c,notation_observation,quantities
 from audiobook.pipeline import critical,corroborated
 
 
@@ -48,3 +48,26 @@ def test_corroboration_requires_the_same_quantity_or_marker_dispute():
     second='Set five cups beside eight tablespoons and wait ten hours.'
     assert not corroborated(expected,first,second)
     assert 'math_or_unit' in corroborated(expected,first,first)
+
+
+@pytest.mark.parametrize('expected,observed',[
+    ('The President\u0313s phone rang.',"The President's phone rang."),
+    ('It landed at eight thirteen and fifteen seconds A M EDT.',
+     'It landed at eight thirteen and fifteen seconds AM EDT.'),
+    ('It landed at eight thirteen and fifteen seconds A M EDT.',
+     'It landed at 813 and 15 seconds AM EDT.'),
+    ('A U.S. astronaut opened the gate.','A US astronaut opened the gate.'),
+    ('The café opened for order fulfilment.','The cafe opened for order fulfillment.'),
+])
+def test_observed_punctuation_and_spelling_keep_the_same_words(expected,observed):
+    assert c(expected)==c(notation_observation(expected,observed))
+
+
+@pytest.mark.parametrize('expected,observed',[
+    ('A U.S. astronaut opened the gate.','A us astronaut opened the gate.'),
+    ('The President\u0313s phone rang.','The Presidents phoned.'),
+    ('The clock reads thirteen seconds A M EDT.','The clock reads thirteen seconds PM EDT.'),
+    ('The caretaker said the door was locked.','The caretaker said the door was unlocked.'),
+])
+def test_equivalent_written_forms_preserve_disputed_words_and_am_pm(expected,observed):
+    assert c(expected)!=c(notation_observation(expected,observed))

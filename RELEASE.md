@@ -2,6 +2,7 @@
 
 - Read automatic list labels in OpenDocument Writer and Flat OpenDocument text. Hamr follows saved item starts and explicit continuation links and uses the same spoken labels as Word and HTML.
 - Read RTF’s saved list marker when its declared type and displayed text agree. The plan retains the original byte range. An unresolved numbered item appears in source review.
+- Treat equivalent legacy apostrophes, initials, and clock spellings as the same spoken words during verification. Preserve changes in meaning and the original recognition record.
 
 # hamr 0.4.9.dev50
 

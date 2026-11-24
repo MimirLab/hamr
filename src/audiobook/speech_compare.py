@@ -11,12 +11,13 @@ from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v45'
+POLICY='bounded-english-composed-scale-typed-v46'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
 SPECIAL_NEGATIVES={"can't":'can',"won't":'will',"shan't":'shall'}
-SPELLING_VARIANTS={'harbour':'harbor','harbours':'harbors','harboured':'harbored','harbouring':'harboring'}
+SPELLING_VARIANTS={'harbour':'harbor','harbours':'harbors','harboured':'harbored','harbouring':'harboring',
+                   'café':'cafe','cafés':'cafes','fulfilment':'fulfillment','fulfilments':'fulfillments'}
 COMPOUND_SPELLINGS={'dustbowl':('dust','bowl'),'mathml':('math','ml'),'dtbook':('dt','book'),
                     'textbox':('text','box'),'textboxes':('text','boxes')}
 ORDINALS={word:i for i,word in enumerate(['zeroth','first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth','eleventh','twelfth','thirteenth','fourteenth','fifteenth','sixteenth','seventeenth','eighteenth','nineteenth','twentieth'])}
@@ -55,6 +56,9 @@ SPOKEN_CODE_PAIR=re.compile(
     rf'({SPOKEN_DIGIT}(?: {SPOKEN_DIGIT}){{1,7}}), (and|or) '
     rf'({SPOKEN_DIGIT}(?: {SPOKEN_DIGIT}){{1,7}})\b')
 NAME_OBSERVATIONS = ((re.compile(r'\bSymPy\b'),re.compile(r'\bsimpy\b',re.I)),)
+LEGACY_POSSESSIVE = re.compile(r"(?<=[A-Za-z])\u0313(?=[sS](?!\w))")
+DOTTED_US = re.compile(r'(?<![\w.])U\.S\.(?!\w)')
+SECONDS_MERIDIEM = re.compile(r'(\bseconds?[ \t]+)([AP])[. \t]+M\.?(?!\w)',re.I)
 
 
 def isbn_notation(text):
@@ -141,6 +145,11 @@ def notation_observation(expected, observed):
     observed=domain_notation(expected,observed)
     observed=name_observation(expected,observed)
     observed=code_pair_observation(expected,observed)
+    # Uppercase initials are a written equivalent at the same occurrence.
+    # The lowercase pronoun remains different even in matching context.
+    us = {word_context(expected,*match.span()) for match in DOTTED_US.finditer(expected)}
+    if us:
+        observed = re.sub(r'\bUS\b',lambda match:'U.S.' if word_context(observed,*match.span()) in us else match[0],observed)
     # Recognizers write spoken identifiers as digits. Keep every leading zero
     # and only recover a spelling that the planned request actually uses.
     forms = {''.join(str(SMALL_VALUES[word]) for word in match[0].casefold().split()):match[0]
@@ -385,9 +394,11 @@ def comparison_tokens(text):
         value = roman(match[2])
         return match[1]+str(value) if value is not None else match[0]
 
+    text=LEGACY_POSSESSIVE.sub("'",text)
     text=AMENDMENT_LABEL.sub(amendment,text)
     text=comparison_text(LITERAL_DIGIT_RUN.sub(literal_digit_run,isbn_notation(text)))
     text,_,_=expand(text)
+    text=SECONDS_MERIDIEM.sub(lambda match:match[1]+match[2]+'M',text)
     text=text.lower().replace('’',"'").replace('±',' plus or minus ')
     ts=[];end=0
     for match in LEX.finditer(text):
