@@ -31,6 +31,8 @@ for archive in zlib-1.4.tar.gz libxml2-2.15.4.tar.xz librevenge_0.0.6.orig.tar.b
                libwpd_0.10.3.orig.tar.xz libmwaw_0.3.23.orig.tar.xz libodfgen_0.1.9.orig.tar.xz; do
     tar -xf "$archives/$archive"
 done
+# Preserve file kinds and original table-span coordinates across conversion.
+patch -d libmwaw-0.3.23 -p1 --batch --fuzz=0 < "$tools_dir/intake_legacy_office_libmwaw.patch"
 export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig"
 export CFLAGS="-O2 -ffile-prefix-map=$build=/build"
 export CXXFLAGS="$CFLAGS"

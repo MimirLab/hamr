@@ -66,10 +66,26 @@ def odt(path,body):
         archive.writestr('mimetype','application/vnd.oasis.opendocument.text')
         archive.writestr('content.xml','<office:document-content '
                          'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+                         'xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" '
                          'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" '
                          'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">'
                          f'<office:body><office:text>{body}</office:text></office:body></office:document-content>')
     return path
+
+
+def test_anchored_writer_frame_reads_one_editable_story_and_its_table(tmp_path):
+    body = ('<text:p>The keeper <draw:frame text:anchor-type="as-char"><draw:text-box>'
+            '<text:p>The following readings were verified.</text:p>'+odt_table()+
+            '</draw:text-box><draw:image/></draw:frame> closed the ledger.</text:p>'
+            '<text:p>She put out the lamp.</text:p>')
+    document = inspect_source(odt(tmp_path/'framed.odt',body))
+    result = plan(document)
+    assert not result['issues']
+    joined = ' '.join(unit['text'] for unit in result['utterances'])
+    assert joined==('The keeper closed the ledger. The following readings were verified. '+READING+
+                    ' She put out the lamp.')
+    assert any('/draw:frame/draw:text-box/table:table' in block.locator['element']
+               for block in document.blocks)
 
 
 def test_table_origins_headers_and_nesting_match_in_four_readers_and_zip(tmp_path):

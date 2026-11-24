@@ -384,7 +384,8 @@ def capabilities():
     }
     return {'formats':sorted({'scan',*NATIVE.values(),*PACKAGE_FOLDERS,*PALM_ROUTES}),
             'registered_suffixes':dict(sorted(NATIVE.items())),
-            'identified_sources':{route:['.pdb','.prc'] for route in sorted(PALM_ROUTES|{'mobi'})},
+            'identified_sources':{**{route:['.pdb','.prc'] for route in sorted(PALM_ROUTES|{'mobi'})},
+                                  'classic-mac':['.cwk','.hqx']},
             'source_kinds':['file','directory','page-manifest','archive'],
             'archives':{'zip':'built in','tar':'built in','7z':'local libarchive','rar':'local libarchive'},
             'resident_english_ocr':resident_binary() is not None,'specialist':external,

@@ -22,6 +22,8 @@ TEXT_MEDIA = frozenset((
     'application/vnd.oasis.opendocument.text-template',
     'application/vnd.oasis.opendocument.text-web',
 ))
+TEXT_BOX_CONTENT = frozenset((TEXT+'p',TEXT+'h',TEXT+'list',TEXT+'numbered-paragraph',
+                              TEXT+'section',TABLE+'table'))
 
 
 def flat_text(root):
@@ -89,7 +91,7 @@ class Content:
                 return root,member
         raise Error('source_formula','The OpenDocument formula has no readable bound MathML member.')
 
-    def paragraph(self,node, *, in_note=False, body=False):
+    def paragraph(self,node, *, in_note=False, body=False, stories=None):
         pieces,spans,links,findings = [],[],[],[]
         offset = 0
 
@@ -134,6 +136,14 @@ class Content:
             is_visual = tag in ('image','object','object-ole','frame')
             formula = (item,self.source_file) if item.tag==MATH_ROOT else None
             if tag=='frame':
+                if stories is not None and item.tag==DRAW+'frame':
+                    boxes = item.findall(DRAW+'text-box')
+                    if len(boxes)>1:
+                        findings.append('An OpenDocument frame has more than one saved text story.')
+                        return
+                    if boxes and any(child.tag in TEXT_BOX_CONTENT for child in boxes[0]):
+                        stories.append(boxes[0])
+                        return
                 try:
                     formula = self.object_formula(item)
                 except Error as error:

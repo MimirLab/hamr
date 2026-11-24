@@ -11,7 +11,7 @@ from .intake_helpers import convert, legacy_document
 
 
 ASSET = Path(__file__).with_name('intake_resident')/'legacy-office-linux-x86_64'
-ASSET_SHA256 = 'c3545fdb2e6583010b50f67ff1a69df2a2e0a4379353a0ef5b9d610f085b8bb3'
+ASSET_SHA256 = 'f677c407de3e25d6f63a285ad5bbb6fb843d386aaf132e9150168088baf3e4ae'
 EXIT_ERRORS = {
     3: ('protected_source','This WordPerfect document needs a password.',
         'Open it with the password and save a readable local copy.'),

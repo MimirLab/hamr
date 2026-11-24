@@ -1,0 +1,42 @@
+--- a/src/lib/ClarisWksDocument.cxx
++++ b/src/lib/ClarisWksDocument.cxx
+@@ -730,5 +730,2 @@
+     header->reset(MWAWDocument::MWAW_T_CLARISWORKS, vers, kind);
+-    // changeme: draw files are actually converted in text document
+-    if (type == 0)
+-      header->setKind(MWAWDocument::MWAW_K_TEXT);
+   }
+--- a/src/lib/MWAWListener.hxx
++++ b/src/lib/MWAWListener.hxx
+@@ -156,2 +156,3 @@
+   virtual void addEmptyTableCell(MWAWVec2i const &pos, MWAWVec2i span=MWAWVec2i(1,1)) = 0;
++  virtual void addCoveredTableCell(MWAWVec2i const &) {}
+
+--- a/src/lib/MWAWTextListener.hxx
++++ b/src/lib/MWAWTextListener.hxx
+@@ -204,2 +204,3 @@
+   void addEmptyTableCell(MWAWVec2i const &pos, MWAWVec2i span=MWAWVec2i(1,1)) final;
++  void addCoveredTableCell(MWAWVec2i const &pos) final;
+
+--- a/src/lib/MWAWTable.cxx
++++ b/src/lib/MWAWTable.cxx
+@@ -486,2 +486,4 @@
+         listener->addEmptyTableCell(MWAWVec2i(int(c), int(r)));
++      else if (id == -2)
++        listener->addCoveredTableCell(MWAWVec2i(int(c), int(r)));
+       if (id < 0) continue;
+--- a/src/lib/MWAWTextListener.cxx
++++ b/src/lib/MWAWTextListener.cxx
+@@ -1842,2 +1842,12 @@
+
++void MWAWTextListener::addCoveredTableCell(MWAWVec2i const &pos)
++{
++  if (!m_ps->m_isTableRowOpened || m_ps->m_isTableCellOpened)
++    return;
++  librevenge::RVNGPropertyList props;
++  props.insert("librevenge:column", pos[0]);
++  props.insert("librevenge:row", pos[1]);
++  m_documentInterface->insertCoveredTableCell(props);
++}
++
+ void MWAWTextListener::openTableCell(MWAWCell const &cell)

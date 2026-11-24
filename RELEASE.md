@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev52
+
+- Open tested ClarisWorks word processing and WriteNow documents with the bundled Linux reader. They pass through the same text preparation as OpenDocument. Hamr recognizes extensionless originals and retains the source in the companion. [Classic Mac intake](docs/INTAKE.md#classic-mac-writing-documents)
+- Read editable text stories and their tables from OpenDocument text frames. Preserve the source positions of merged cells during classic Macintosh conversion.
+
 # hamr 0.4.9.dev51
 
 - Read automatic list labels in OpenDocument Writer and Flat OpenDocument text. Hamr follows saved item starts and explicit continuation links and uses the same spoken labels as Word and HTML.

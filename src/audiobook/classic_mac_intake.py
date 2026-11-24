@@ -18,7 +18,11 @@ from .source_bundle import relative_file, stamp
 BINHEX = b'(This file must be converted with BinHex 4.0)'
 APPLEDOUBLE = b'\0\x05\x16\x07\0\x02\0\0'
 APPLESINGLE = b'\0\x05\x16\0\0\x02\0\0'
-FINDER_TYPES = frozenset((b'TEXTNISI', b'WORDMACA', b'MW2DMWII', b'MWPdMWPR'))
+FINDER_TYPES = frozenset((
+    b'TEXTNISI', b'WORDMACA', b'MW2DMWII', b'MWPdMWPR',
+    b'CWWPBOBO', b'CWW2BOBO', b'sWPPBOBO', b'nX^dnX^n', b'nX^2nX^n',
+))
+CLARISWORKS_KIND_OFFSETS = (242,248,248,256,268,278)
 BINHEX_ALPHABET = b"""!"#$%&'()*+,-012345689@ABCDEFGHIJKLMNPQRSTUVXYZ[`abcdefhijklmpqr"""
 BASE64_ALPHABET = b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
 
@@ -27,6 +31,12 @@ def matches_header(prefix):
     if prefix.startswith((BINHEX, APPLESINGLE)):
         return True
     if prefix.startswith(b'\0\x04\0\x04') and prefix[221:223]==b'MP':
+        return True
+    if prefix[4:8]==b'BOBO' and 1<=prefix[0]<=len(CLARISWORKS_KIND_OFFSETS):
+        offset = CLARISWORKS_KIND_OFFSETS[prefix[0]-1]
+        return prefix[offset:offset+1]==b'\x01'
+    if len(prefix)>=28 and (prefix.startswith(b'WriteNow\0\x02') or
+            prefix.startswith(b'\0'*8) and all(prefix[i] in (4,0x44) for i in (8,12,16,20))):
         return True
     if len(prefix)>=40 and prefix.startswith(b'\0\x06'):
         paragraphs, headers, footers = struct.unpack_from('>hhh',prefix,2)

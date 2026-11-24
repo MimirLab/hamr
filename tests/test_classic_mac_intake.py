@@ -7,7 +7,9 @@ from zipfile import ZipFile
 
 import pytest
 
-from audiobook.classic_mac_intake import BASE64_ALPHABET, BINHEX, BINHEX_ALPHABET, fork_metadata, verified_binhex
+from audiobook.classic_mac_intake import (
+    BASE64_ALPHABET, BINHEX, BINHEX_ALPHABET, fork_metadata, matches_header, verified_binhex,
+)
 from audiobook.core import Error
 from audiobook.source_bundle import capture, describe
 
@@ -62,6 +64,38 @@ def test_ordinary_text_with_unrelated_mac_metadata_stays_text(tmp_path):
         archive.writestr('Book.txt','An ordinary text file.')
         archive.writestr('__MACOSX/._Book.txt',apple_double(b'TEXTttxt'))
     assert describe(path).route=='text'
+
+
+@pytest.mark.parametrize(('version','kind_offset'),[(1,242),(2,248),(3,248),(4,256),(5,268),(6,278)])
+def test_claris_works_only_probes_word_processing(version,kind_offset):
+    header = bytearray(512)
+    header[0] = version
+    header[4:8] = b'BOBO'
+    header[kind_offset] = 1
+    assert matches_header(bytes(header))
+    assert not matches_header(header[:kind_offset])
+    for kind in (0,2,3,4,5):
+        header[kind_offset] = kind
+        assert not matches_header(bytes(header))
+
+
+def test_writenow_prefix_requires_a_known_version_or_complete_early_record_pattern():
+    late = b'WriteNow\0\x02'+b'\0'*18
+    early = b'\0'*8+b'\x04\0\x0a\x40\x44\0\x02\x1f'+b'\x04\0\x02\x2d'*3
+    assert matches_header(late)
+    assert matches_header(early)
+    assert not matches_header(late[:10])
+    assert not matches_header(late[:9]+b'\x03'+late[10:])
+    assert not matches_header(early[:20]+b'\0'*8)
+
+
+def test_classic_mac_writing_is_discovered_from_raw_zip_without_filename_hint(tmp_path):
+    path = tmp_path/'Story.zip'
+    with ZipFile(path,'w') as archive:
+        archive.writestr('Shelf/Story',b'WriteNow\0\x02'+b'\0'*18)
+        archive.writestr('Shelf/Chart.cwk',b'\x01\0\0\0BOBO'+b'\0'*234+b'\x02')
+    source = describe(path)
+    assert (source.route,source.kind,source.entry)==('classic-mac','zip-member',1)
 
 
 def test_appledouble_entries_cannot_overlap_or_claim_the_data_fork():

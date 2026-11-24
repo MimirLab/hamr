@@ -693,7 +693,7 @@ def odt(path,builder,source_file=None):
 
 
 def _odt_body(document,builder,content,metadata,styles=None):
-    from .odf_content import OFFICE
+    from .odf_content import DRAW, OFFICE
     from .odf_numbering import authored_marks
     from .table_grid import simple_matrix
 
@@ -712,8 +712,9 @@ def _odt_body(document,builder,content,metadata,styles=None):
     def visit(node):
         tag = name(node)
         loc = content.source_file+':'+node.getroottree().getpath(node)
-        if tag in ('p','h') or node.tag==MATH_ROOT:
-            text,spans,links,issue = content.paragraph(node,body=True)
+        if tag in ('p','h') or node.tag in (MATH_ROOT,DRAW+'frame'):
+            stories = []
+            text,spans,links,issue = content.paragraph(node,body=True,stories=stories)
             item = builder.add(text,'heading' if tag=='h' else 'body',loc,
                                loc={'inline_semantics':[span for span in spans if span['kind']!='line_break']},
                                links=links,issue=issue)
@@ -722,6 +723,8 @@ def _odt_body(document,builder,content,metadata,styles=None):
                 item.locator.update(ordered_item=value,ordered_marker=marker)
             if item and any(span['kind']=='line_break' and span['source_end']>span['source_start'] for span in spans):
                 item.locator['authored_line_breaks'] = True
+            for story in stories:
+                visit(story)
         elif tag=='table':
             grid = content.table(node)
             if matrix:=simple_matrix(grid):

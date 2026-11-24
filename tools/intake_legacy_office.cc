@@ -82,7 +82,9 @@ int main(int argc, char **argv) {
                 kind != MWAWDocument::MWAW_K_TEXT ||
                 (type != MWAWDocument::MWAW_T_MACWRITE &&
                  type != MWAWDocument::MWAW_T_MACWRITEPRO &&
-                 type != MWAWDocument::MWAW_T_NISUSWRITER)) {
+                 type != MWAWDocument::MWAW_T_NISUSWRITER &&
+                 type != MWAWDocument::MWAW_T_CLARISWORKS &&
+                 type != MWAWDocument::MWAW_T_WRITENOW)) {
                 return 4;
             }
         } else {

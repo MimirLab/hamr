@@ -428,7 +428,8 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         if suffix=='.xml' and not name.name.startswith('.'):
             with archive.open_member(item) as stream:
                 detected = xml_route(stream)
-        elif (kind=='zip' and not detected or suffix in ('.hqx','.lrf','.lit',*PALM_SUFFIXES)) and not name.name.startswith('.'):
+        elif (not name.name.startswith('.') and
+              (kind=='zip' and not detected or suffix in ('.cwk','.hqx','.lrf','.lit',*PALM_SUFFIXES))):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
             detected = probe(prefix,item.name)

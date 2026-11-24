@@ -49,7 +49,10 @@ https://zlib.net/fossils/zlib-1.4.tar.gz
 
 The source and complete link instructions ship in tools/intake_legacy_office.cc
 and tools/build_intake_legacy_office.sh. The script verifies the exact source
-archive digests before compiling. Build using sh tools/build_intake_legacy_office.sh
+archive digests before compiling. The libmwaw patch in
+tools/intake_legacy_office_libmwaw.patch preserves the original ClarisWorks
+file kind and sends positions covered by authored table spans to OpenDocument.
+Build using sh tools/build_intake_legacy_office.sh
 SOURCE_ARCHIVES NEW_BUILD_DIRECTORY OUTPUT. The Document Liberation
 libraries are distributed under their MPL 2.0 terms. See LICENSE.wordperfect, LICENSE.classic-mac,
 and LICENSE.gpl3 for the bundled library notices. The release linked the Arch
