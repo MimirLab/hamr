@@ -23,6 +23,8 @@ PRIVATE_TEXT = (
 ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock', 'install.sh',
               'install.ps1', 'tools/inspect_gguf.py', 'tools/compare_breeze.py', 'tools/mix_hoppou.py',
               'tools/build_timing_name_spellings.py',
+              'tools/build_intake_ocr.sh', 'tools/build_intake_ocr_windows.sh', 'tools/build_intake_mobi.sh',
+              'tools/intake_djvu.cc', 'docs/INTAKE.md',
               'tools/performance_review.py', 'tools/master_cast_gallery.py', 'docs/ENGINES.md',
               'PKG-INFO', '.gitignore', 'AGENTS.md', 'tools/check_release.py',
               'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md', 'docs/listen/manifest.json',
@@ -30,6 +32,21 @@ ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock',
               'docs/demo/lantern.md', 'docs/demo/lantern-plain.mp3', 'docs/demo/lantern-expressive.mp3',
               'docs/man/hamr.1', 'docs/man/audiobook.1'}
 TIMING_NAME_ASSETS = {'audiobook/timing_name_spellings.json', 'audiobook/timing_name_spellings_LICENSE.txt'}
+
+
+INTAKE_ASSETS = {
+    'audiobook/ocr_resident/eng.traineddata':'7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2',
+    'audiobook/ocr_resident/tesseract-linux-x86_64':'31414b49ddaa2b2cb1d33c888b25cb06e1b6e70d1f0e1ed00d4b7a1f721f326a',
+    'audiobook/ocr_resident/tesseract-windows-x86_64.exe':'fc95332f7f8c2e472635e40669ac4767b366225bbff5bd30489c16c008c5c95d',
+    'audiobook/intake_resident/mobitool-linux-x86_64':'05567860bd98a8393621183ba977c9e3c4d8abbb4747045711501a1d70bd8b34',
+    'audiobook/intake_resident/mobitool-windows-x86_64.exe':'1e63bece58cf2a71f7626c6025cba4c3c20973bce912978df47ebd7e5fe22dce',
+    'audiobook/intake_resident/djvu-linux-x86_64':'dc0f35ae2e2170bc3a2b4c0e7c2a16abe8608c79cc0aa6bd794ae3bb20e0f357',
+}
+INTAKE_NOTICES = {
+    *('audiobook/ocr_resident/'+name for name in ('LICENSE.eng','LICENSE.leptonica','LICENSE.libpng',
+                'LICENSE.tesseract','LICENSE.zlib','LICENSE.windows-libpng','LICENSE.windows-zlib','SOURCES.txt')),
+    *('audiobook/intake_resident/'+name for name in ('LICENSE.djvu','LICENSE.libmobi','LICENSE.gpl3','SOURCES.txt')),
+}
 
 
 def read_archive(path):
@@ -81,12 +98,18 @@ def audit(path, version):
                                        or re.fullmatch(r'docs/listen/[a-z0-9-]+\.mp3', name)
                                        or name == 'fixtures/technical.md')
         if not (allowed_runtime or runtime in TIMING_NAME_ASSETS or allowed_metadata or allowed_source
-                or allowed_preview or allowed_manual):
+                or allowed_preview or allowed_manual or runtime in INTAKE_ASSETS or runtime in INTAKE_NOTICES):
             raise ReleaseError(f'Unexpected release file: {name}')
-        if not name.endswith('/reference.wav'):
+        if not name.endswith('/reference.wav') and runtime not in INTAKE_ASSETS:
             for pattern in PRIVATE_TEXT:
                 if pattern.search(data):
                     raise ReleaseError(f'Private path or key pattern found in {name}')
+    if package+'audiobook/source_bundle.py' in files:
+        if not {package+name for name in INTAKE_NOTICES} <= files.keys():
+            raise ReleaseError('Missing a resident intake notice.')
+        for name,sha in INTAKE_ASSETS.items():
+            if hashlib.sha256(files.get(package+name,b'')).hexdigest()!=sha:
+                raise ReleaseError(f'Missing or changed resident intake asset: {name}')
     if package + 'audiobook/book_flow.py' in files:
         manual = f'hamr-{version}.data/data/share/man/man1/' if wheel else 'docs/man/'
         required = {manual + 'hamr.1', manual + 'audiobook.1',

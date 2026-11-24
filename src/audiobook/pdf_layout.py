@@ -102,17 +102,17 @@ def adjacent_native_lines(left, right):
     return abs(ax - bx) <= max_indent * height and .85 * height <= advance <= 1.75 * height
 
 
-def paragraphs(words, page, height, page_issue=None, *, region=None, width=None):
+def paragraphs(words, page, height, page_issue=None, *, region=None, width=None, scale=2, format='pdf'):
     origin_left, origin_top = (region[0], region[3]) if region else (0, height)
     groups = OrderedDict()
     for word in words:
         groups.setdefault(tuple(word[1:4]), []).append(word)
 
     def rectangle(group):
-        left = min(int(x[6]) for x in group) / 2
-        top = min(int(x[7]) for x in group) / 2
-        right = max(int(x[6]) + int(x[8]) for x in group) / 2
-        bottom = max(int(x[7]) + int(x[9]) for x in group) / 2
+        left = min(int(x[6]) for x in group) / scale
+        top = min(int(x[7]) for x in group) / scale
+        right = max(int(x[6]) + int(x[8]) for x in group) / scale
+        bottom = max(int(x[7]) + int(x[9]) for x in group) / scale
         return [origin_left+left, origin_top-bottom, origin_left+right, origin_top-top]
 
     layout = None
@@ -125,7 +125,7 @@ def paragraphs(words, page, height, page_issue=None, *, region=None, width=None)
             for line in lines.values():
                 left, right = [], []
                 for word in line:
-                    coordinate = origin_left + int(word[6]) / 2
+                    coordinate = origin_left + int(word[6]) / scale
                     (left if coordinate < width / 2 else right).append(word)
                 if left and right and rectangle(right)[0] - rectangle(left)[2] >= 18:
                     line_parts.extend((identity, side, rectangle(side)) for side in (left, right))
@@ -157,7 +157,7 @@ def paragraphs(words, page, height, page_issue=None, *, region=None, width=None)
             issue = 'Low-confidence numeric OCR requires verification.'
         if page_issue and page_issue.startswith('Native and visual'):
             issue = page_issue
-        locator = {'format': 'pdf', 'page': page, 'rect': rectangle(group),
+        locator = {'format': format, 'page': page, 'rect': rectangle(group),
                    'paragraph': index, 'ocr_confidence': confidence}
         if layout:
             locator['ocr_layout'] = layout
@@ -185,7 +185,7 @@ def mark_folios(blocks, inventory):
 
 def spoken_paragraph(block):
     text = block.source
-    if block.locator.get('format') == 'pdf':
+    if block.locator.get('format') in ('pdf','scan'):
         if block.role=='heading' and block.locator.get('ruled_panel') and text[-1:] not in '.!?':
             return text+'.'
         equation = block.locator.get('pdf_equation')
@@ -202,8 +202,8 @@ def structure_policy(doc, document_policy,by_source=False):
     structure = document_policy.get('structure')
     if not structure:
         return None, {}
-    if doc.format != 'pdf' or not isinstance(structure, dict):
-        raise Error('document_structure', 'Verified page structure is supported only for PDF.')
+    if doc.format not in ('pdf','scan') or not isinstance(structure, dict):
+        raise Error('document_structure', 'Verified page structure requires a paginated source.')
     by_id = {b.id: b for b in doc.blocks}
     def verified(item):
         return isinstance(item, dict) and item.get('verified') is True and isinstance(item.get('reason'), str) and bool(item['reason'].strip())

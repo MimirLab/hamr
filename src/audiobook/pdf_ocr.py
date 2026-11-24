@@ -14,10 +14,46 @@ from .platform_support import close_windows_job, spawn_owned
 MAX_RESPONSE = 4 * 1024 * 1024
 
 
+RESIDENT = Path(__file__).with_name('ocr_resident')
+
+
+LINUX_OCR_SHA256 = '31414b49ddaa2b2cb1d33c888b25cb06e1b6e70d1f0e1ed00d4b7a1f721f326a'
+WINDOWS_OCR_SHA256 = 'fc95332f7f8c2e472635e40669ac4767b366225bbff5bd30489c16c008c5c95d'
+
+
+def resident_binary():
+    import platform
+    if platform.machine().lower() not in ('x86_64','amd64'):
+        return None
+    if sys.platform.startswith('linux'):
+        libc,version = platform.libc_ver()
+        if libc!='glibc' or not version or tuple(map(int,version.split('.')[:2]))<(2,34):
+            return None
+        target = RESIDENT/'tesseract-linux-x86_64'
+        checksum = LINUX_OCR_SHA256
+    elif os.name=='nt':
+        target = RESIDENT/'tesseract-windows-x86_64.exe'
+        checksum = WINDOWS_OCR_SHA256
+    else:
+        return None
+    if target.is_file() and os.access(target,os.X_OK):
+        if filehash(target)!=checksum:
+            raise Error('asset_integrity','Bundled OCR runtime failed its checksum.')
+        return target
+    return None
+
+
 def tesseract_binary():
     root = Path(os.environ.get('AUDIOBOOK_OCR_ROOT', Path.home() / '.local/share/audiobook-tools/ocr'))
-    binary = Path(shutil.which('tesseract') or root / 'usr/bin/tesseract')
-    return binary, root
+    local = root/'usr/bin/tesseract'
+    if 'AUDIOBOOK_OCR_ROOT' in os.environ:
+        return local, root
+    builtin = resident_binary()
+    if builtin:
+        return builtin, root
+    if installed := shutil.which('tesseract'):
+        return Path(installed), root
+    return local, root
 
 
 def system_libraries(binary,env):
@@ -59,22 +95,28 @@ def run_tesseract(args, *, input, env):
 def configuration(tessdata=None):
     binary, root = tesseract_binary()
     if not binary.is_file():
-        raise Error('missing_ocr', 'Raster PDF page needs Tesseract.',
-                    'Install Tesseract, run hamr setup --ocr-only, and reimport the source.')
+        raise Error('missing_ocr', 'Raster pages need a compatible Tesseract runtime.',
+                    'Install a compatible local Tesseract runtime, then resume the saved source.')
     env = os.environ.copy()
     env['OMP_THREAD_LIMIT'] = '2'
     private = binary.is_relative_to(root)
     if private:
         env['LD_LIBRARY_PATH'] = str(root / 'usr/lib')
         env['TESSDATA_PREFIX'] = str(root / 'usr/share/tessdata')
-    if tessdata is not None:
-        env['TESSDATA_PREFIX'] = str(tessdata)
+    if tessdata is not None or binary.parent==RESIDENT:
+        env['TESSDATA_PREFIX'] = str(tessdata or RESIDENT)
     candidates = [Path(env['TESSDATA_PREFIX']) / 'eng.traineddata'] if env.get('TESSDATA_PREFIX') else []
     if not candidates:
         candidates = [Path('/usr/share/tessdata/eng.traineddata'),
                    Path('/usr/share/tesseract-ocr/5/tessdata/eng.traineddata')]
     model = next((p for p in candidates if p.is_file()), None)
-    if tessdata is not None and model is None:
+    if model is None and tessdata is None and (RESIDENT/'eng.traineddata').is_file():
+        from .ocr_setup import MODEL_SHA256
+        model = RESIDENT/'eng.traineddata'
+        if filehash(model)!=MODEL_SHA256:
+            raise Error('asset_integrity','Bundled English OCR model failed its checksum.')
+        env['TESSDATA_PREFIX'] = str(RESIDENT)
+    if (tessdata is not None or binary.parent==RESIDENT) and model is None:
         raise Error('missing_ocr_data','Managed English OCR data is missing.', 'Run hamr setup --ocr-only.')
     libraries = {str(p.relative_to(root)):filehash(p)
                  for p in sorted((root/'usr/lib').glob('*.so*')) if p.is_file()} if private else {}
@@ -92,7 +134,7 @@ def configuration(tessdata=None):
     if system: identity['system_library_sha256'] = system
     # Without the actual model/library identity, a system OCR installation can
     # still run, but must not inherit observations from a different environment.
-    reusable = bool(libraries or system) and model is not None
+    reusable = bool(libraries or system or binary.parent==RESIDENT) and model is not None
     return binary, env, identity, reusable
 
 

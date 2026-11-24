@@ -1,0 +1,20 @@
+Tesseract 5.5.1 (Apache-2.0) and Leptonica 1.87.0 (BSD-2-Clause).
+Source archives and SHA-256:
+https://codeload.github.com/tesseract-ocr/tesseract/tar.gz/refs/tags/5.5.1
+a7a3f2a7420cb6a6a94d80c24163e183cf1d2f1bed2df3bbc397c81808a57237
+https://codeload.github.com/DanBloomberg/leptonica/tar.gz/refs/tags/1.87.0
+fa2b40c5caea96d1bb93a97486262aed8731b69ce25a84a6bf5d25323e33f631
+
+English tessdata_fast 4.1.0 (Apache-2.0):
+https://github.com/tesseract-ocr/tessdata_fast/tree/4.1.0
+7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2
+
+Linux x86-64 uses GLIBC 2.34 or later. The build includes static PNG and zlib
+from Ubuntu 22.04 (libpng 1.6.37, zlib 1.2.11). The Windows x64 worker
+statically includes libpng 1.6.59 and zlib 1.3.2.
+https://github.com/pnggroup/libpng/tree/v1.6.59
+https://zlib.net/fossils/zlib-1.3.2.tar.gz
+
+Both workers take PNG input from Hamr's own raster pipeline. The Windows
+source build adjusts the case of the WinSock import library in Tesseract's
+CMake file. See the build commands shipped in the source distribution.

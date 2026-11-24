@@ -47,6 +47,7 @@ def doctor(store):
     from .checks_setup import configured, speech_advice
     from .installation import command, inspect as inspect_installation
     from .ocr_setup import describe as describe_ocr
+    from .intake import capabilities as describe_intake
     from .asr_fluid import advice as speech_diagnostic
     from .wash_setup import describe as describe_washing
     host=inspect_host();advice=advise(host,loadjson(CATALOG))
@@ -57,7 +58,7 @@ def doctor(store):
     installation,installation_issues=inspect_installation()
     if not dependencies['mpv']:
         issues.append({'code':'missing_player','executable':'mpv','action':'Install mpv to use hamr playback commands.'})
-    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'speech_diagnostic':speech_diagnostic(store,host),'speech_verifier':speech_advice(store,host),'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,'ocr':describe_ocr(store,host),'voice_preparation':describe_washing(store,host),**advice}
+    return {'schema_version':1,'issues':issues+installation_issues,'os':platform.platform(),'arch':host['arch'],'gpus':host['gpus'],'ram_available_kib':(host['ram_available_bytes'] or 0)//1024,'disk_free':shutil.disk_usage(store.root).free,'dependencies':dependencies,'private_ocr':str(Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract') if (Path.home()/'.local/share/audiobook-tools/ocr/usr/bin/tesseract').exists() else None,'setup':(store.root/'settings.json').exists(),'speech_checks_ready':configured(store) is not None,'speech_diagnostic':speech_diagnostic(store,host),'speech_verifier':speech_advice(store,host),'installation':installation,'state':str(store.root),'automatic_profile':None,'qualification':'Recommendations are advisory; setup validates model startup before activation.','hardware':host,'ocr':describe_ocr(store,host),'intake':describe_intake(),'voice_preparation':describe_washing(store,host),**advice}
 
 def bound_partial(dst,wanted):
     part=dst.with_suffix(dst.suffix+'.part'); identity=part.with_suffix(part.suffix+'.json')

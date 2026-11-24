@@ -8,6 +8,7 @@ from pathlib import Path
 from .core import Block,Document,Error,RATE,Store,atomic,digest,dumps,fault,filehash,key,loadjson,syncdir,syncfile,writejson
 from .importers import inspect,cached_inspect,IMPORT_REVISION
 from .planner import plan,RULES
+from .source_bundle import capture, copy_snapshot, original_name
 from .backend import Engine,validate_pcm,validate_request
 from .cast import resolve_voice
 from . import mastering,mastering_continuity,performance,quote_timing
@@ -31,31 +32,110 @@ def rename_new(src,dst):
 def document(j):
     d=j['document']; return Document(d['title'],d['format'],d['source_sha256'],[Block(**b) for b in d['blocks']],d['language'],d['inventory'],d['warnings'],d.get('metadata',{}))
 
-def create(store,source,voice=None,policy=None,output=None,aliases=None,label=None,parallel=1,*,context_reviewer=None,mastering_mode=mastering.DEFAULT):
+def create(store,source,voice=None,policy=None,output=None,aliases=None,label=None,parallel=1,*,
+           context_reviewer=None,mastering_mode=mastering.DEFAULT,source_options=None,announce=False,
+           preview_sha=None):
+    from .intake import inspect_saved
+
     if mastering_mode not in mastering.MODES:
         raise Error('mastering_mode', 'Choose natural or off for mastering.')
-    source=Path(source).absolute()
-    jid=uuid.uuid4().hex[:16]; path=store.root/'jobs'/jid; path.mkdir(mode=0o700)
+    source = Path(source).absolute()
+    saved_voice = resolve_voice(store,voice) if voice else None
+    jid = uuid.uuid4().hex[:16]
+    path = store.root/'jobs'/jid
+    path.mkdir(mode=0o700)
+    committed = False
     try:
-        with source.open('rb') as f: data=f.read(200*1024*1024+1)
-        if len(data)>200*1024*1024: raise Error('input_limit','Input exceeds 200 MiB.')
-        snapshot=path/('source'+source.suffix.lower()); atomic(snapshot,data); snapshot.chmod(0o400)
-        doc=cached_inspect(snapshot,store.root/'extractions'); p=plan(doc,policy,aliases,context_reviewer=context_reviewer)
-        if p.get('document_title'):doc.title=p['document_title']
-        saved_voice=resolve_voice(store,voice) if voice else None
-        j={'schema_version':1,'id':jid,'status':'queued','revision':1,'snapshot':str(snapshot),'source_name':source.name,'publication_label':label,'document':doc.json(),'plan':p,'voice':saved_voice,'backend':loadjson(store.root/'settings.json') if (store.root/'settings.json').exists() else None,'output_parent':str(Path(output or Path.home()/'Audiobooks').absolute()),'clips':{},'repairs':[],'error':None,'created':time.time(),'speech_contract':2,'audio_gate':True}
-        j['mastering']=mastering_mode
-        j['mastering_contract']=2
+        snapshot, selection = capture(source,path,**(source_options or {}))
+        sha = filehash(snapshot)
+        if preview_sha and sha!=preview_sha:
+            raise Error('source_changed', 'The source changed after the plan preview.',
+                        'Repeat the open command to review the new source.')
+        backend = loadjson(store.root/'settings.json') if (store.root/'settings.json').exists() else None
         if parallel!=1:
-            if type(parallel) is not int or not 1<=parallel<=4: raise Error('parallel_limit','Choose one to four concurrent streams.')
-            if j['backend'] is None: raise Error('setup_required','Configure a backend before selecting concurrent streams.')
-            if j['backend']['settings'].get('text_encoder')=='cpu': raise Error('parallel_limit','Concurrent CPU text encoding is not qualified.')
-            j['backend']['settings']={**j['backend']['settings'],'parallel':parallel}
-        performance.bind(p,j['backend'],saved_voice)
-        quote_timing.bind(store,j)
-        writejson(path/'plan.json',p); store.save(j); return summary(store,j)
+            if type(parallel) is not int or not 1<=parallel<=4:
+                raise Error('parallel_limit','Choose one to four concurrent streams.')
+            if backend is None:
+                raise Error('setup_required','Configure a backend before selecting concurrent streams.')
+            if backend['settings'].get('text_encoder')=='cpu':
+                raise Error('parallel_limit','Concurrent CPU text encoding is not qualified.')
+            backend['settings'] = {**backend['settings'],'parallel':parallel}
+        j = {'schema_version':1,'id':jid,'status':'queued','revision':1,'snapshot':str(snapshot),
+             'source_name':source.name,'publication_label':label,'voice':saved_voice,'backend':backend,
+             'output_parent':str(Path(output or Path.home()/'Audiobooks').absolute()),
+             'clips':{},'repairs':[],'error':None,'created':time.time(),'speech_contract':2,
+             'audio_gate':True,'mastering':mastering_mode,'mastering_contract':2}
+        expanded = selection.kind!='file' or selection.route not in ('epub','pdf','markdown','text') or selection.route_override
+        if expanded:
+            pending = {'issues':[],'utterances':[],'aliases':aliases or {},'policy':policy or {},
+                       'rule_revision':RULES,'chapters':[],'estimated_minutes':0,
+                       'plan_sha256':key({'pending_import':sha})}
+            j.update(source_selection=selection.json(),
+                     intake={'state':'pending','policy':policy,'aliases':aliases,'context_reviewer':context_reviewer},
+                     document=Document(source.stem,selection.route,sha,[]).json(),plan=pending)
+            with store.lock():
+                store.save(j)
+            committed = True
+            if announce:
+                import sys
+                from .installation import command
+                print(f'{jid}: original source saved. If interrupted, run:\n'+command(store.root,'resume',jid),
+                      file=sys.stderr,flush=True)
+            fault('after_source_snapshot')
+            return finish_intake(store,jid)
+        doc = (inspect_saved(snapshot,selection,store.root/'extractions') if selection.offline
+               else cached_inspect(snapshot,store.root/'extractions'))
+        finalize_intake(store,j,doc,policy,aliases,context_reviewer)
+        committed = True
+        return summary(store,j)
     except BaseException:
-        store.safe_remove(path); raise
+        if not committed:
+            store.safe_remove(path)
+        raise
+
+
+def finalize_intake(store,job,doc,policy,aliases,context_reviewer):
+    p = plan(doc,policy,aliases,context_reviewer=context_reviewer)
+    if p.get('document_title'):
+        doc.title = p['document_title']
+    performance.bind(p,job['backend'],job['voice'])
+    job.update(document=doc.json(),plan=p)
+    quote_timing.bind(store,job)
+    writejson(store.path(job)/'plan.json',p)
+    store.save(job)
+
+
+def finish_intake(store,jid):
+    from .intake import inspect_saved
+    from .installation import command
+
+    with store.lock('intake-'+jid), store.lock():
+        job = store.get(jid)
+        intake = job.get('intake',{})
+        if intake.get('state')!='pending' or job['status']=='cancelled':
+            return summary(store,job)
+        snapshot = Path(job['snapshot'])
+        try:
+            if filehash(snapshot)!=job['document']['source_sha256']:
+                raise Error('snapshot_changed','The saved source snapshot has changed.')
+            doc = inspect_saved(snapshot,job['source_selection'],store.root/'extractions',
+                                title=Path(job['source_name']).stem)
+            missing = next((item for item in doc.inventory if
+                            item.get('error_code') in ('missing_ocr','missing_ocr_data')),None)
+            if missing:
+                raise Error(missing['error_code'], 'Raster OCR is unavailable for the saved scan. '+missing['reason'])
+            if not any(b.source.strip() and b.role not in ('cover','furniture') for b in doc.blocks) and not any(b.issue for b in doc.blocks):
+                raise Error('empty_document','The selected book has no narratable text.')
+            job['intake'] = {'state':'complete','route':job['source_selection']['route']}
+            job.update(status='queued',error=None)
+            finalize_intake(store,job,doc,intake['policy'],intake['aliases'],intake['context_reviewer'])
+        except Error as exc:
+            job.update(intake=intake,status='needs_review',error={
+                'code':exc.code,'message':exc.message,
+                'action':' '.join(filter(None,(exc.action,command(store.root,'resume',jid))))})
+            store.save(job)
+        return summary(store,job)
+
 
 def bind_speech(store,job):
     if job['backend'] is None:
@@ -108,7 +188,7 @@ def publication_manifest(path,j):
     if path.is_symlink(): return None
     try:
         m=loadjson(path/'manifest.json')
-        required={'book.m4b','companion.json','companion.vtt','source.html','report.json','original'+Path(j['snapshot']).suffix}
+        required={'book.m4b','companion.json','companion.vtt','source.html','report.json',original_name(j['snapshot'],j.get('source_selection'))}
         if not isinstance(m,dict) or not isinstance(m.get('files'),dict) or not required<=set(m['files']):return None
         if m['job']==j['id'] and m['revision']==j['revision'] and m['plan_sha256']==j['plan']['plan_sha256']:
             return m
@@ -163,6 +243,8 @@ def speech_check_status(job):
 
 def review_error(store,j):
     error=j['error']
+    if j.get('intake',{}).get('state')=='pending' and error:
+        return error
     code=(error or {}).get('code')
     jid=j['id']
     if code in ('speech_qa_review','listening_review') or (not code and j.get('audio_review')):
@@ -249,6 +331,8 @@ def summary(store,j):
     checked = {k:valid_clip(store,k) for k in set(j['clips'].values())}
     result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(r is not None for r in checked.values()),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
     result['mastering']=j.get('mastering','off')
+    if intake:=j.get('intake'):
+        result['intake'] = {'state':intake['state'],'route':j['source_selection']['route']}
     if delivery:=performance.status(j):
         def selection(utterance):
             receipt = checked.get(j['clips'].get(utterance)) or {}
@@ -334,6 +418,10 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
            *, record_run_metrics=None):
     if max_new_takes is not None and (type(max_new_takes) is not int or not 1<=max_new_takes<=4096):
         raise Error('render_budget','Choose one to4096 new takes per render batch.')
+    if store.get(jid).get('intake',{}).get('state')=='pending':
+        result = finish_intake(store,jid)
+        if result['status']=='needs_review':
+            return result
     with store.lock():
         j=store.get(jid)
         if j['status']=='cancelled': raise Error('cancelled','Job was cancelled.','Repair or create a new job to render it.')
@@ -460,7 +548,7 @@ def publish(store,j,*,record_run_metrics=None):
         except (OSError,ValueError): raise Error('unowned_stage','Existing output staging directory lacks an ownership receipt.')
         if marker!={'job':j['id'],'revision':j['revision']}: raise Error('unowned_stage','Output staging directory belongs to another job.')
         # Only known leaf artifacts; never recursive deletion of destination-controlled contents.
-        allowed={'owner.json','book.m4b','companion.json','companion.vtt','source.html','report.json','chapters.ffmeta','encode.log','manifest.json','original'+Path(j['snapshot']).suffix}
+        allowed={'owner.json','book.m4b','companion.json','companion.vtt','source.html','report.json','chapters.ffmeta','encode.log','manifest.json',original_name(j['snapshot'],j.get('source_selection'))}
         if any(p.name not in allowed or p.is_symlink() or not p.is_file() for p in stage.iterdir()): raise Error('unsafe_stage','Unexpected content in staging; move it aside before resuming.')
         for p in stage.iterdir(): p.unlink()
         stage.rmdir()
@@ -547,11 +635,15 @@ def publish(store,j,*,record_run_metrics=None):
         raise Error(exc.code,exc.message+' Checked narration is retained.',
                     f'Rebuild and check the output from the saved speech.\n{retry}') from exc
     actual=float(probe['format']['duration'])
-    original='original'+Path(j['snapshot']).suffix
-    shutil.copyfile(j['snapshot'],stage/original)
+    original=original_name(j['snapshot'],j.get('source_selection'))
+    copy_snapshot(Path(j['snapshot']),stage/original)
     if filehash(stage/original)!=j['document']['source_sha256']: raise Error('source_copy','Publication source copy differs from the immutable input.')
     source_links=[{'source_block':b['id'],**link} for b in j['document']['blocks'] for link in b.get('links',[]) if link.get('destinations')]
-    writejson(stage/'companion.json',{'schema_version':1,'original_source':original,'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'sample_rate':RATE,'samples':total,'chapters':chapters,'segments':rows,'decisions':j['plan']['decisions'],'source_inventory':j['document']['inventory'],'source_metadata':j['document'].get('metadata',{}),'source_links':source_links})
+    source_locations = {b['locator']['location_id']:b['locator'] for b in j['document']['blocks']
+                        if b['locator'].get('location_id')}
+    writejson(stage/'companion.json',{'schema_version':1,'original_source':original,'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'sample_rate':RATE,'samples':total,'chapters':chapters,'segments':rows,'decisions':j['plan']['decisions'],'source_inventory':j['document']['inventory'],'source_metadata':j['document'].get('metadata',{}),'source_links':source_links,
+        **({'source_locations':source_locations,'source_kind':j.get('source_selection',{}).get('kind','file')}
+           if source_locations else {})})
     def ts(sec):
         ms=round(sec*1000); return f'{ms//3600000:02}:{ms//60000%60:02}:{ms//1000%60:02}.{ms%1000:03}'
     vtt='WEBVTT\n\n'+'\n\n'.join(f'{r["id"]}\n{ts(r["start"])} --> {ts(r["end"])}\n{html.escape(r["text"],quote=False)}\n{r["destination"]}' for r in rows)+'\n'
@@ -573,7 +665,13 @@ def publish(store,j,*,record_run_metrics=None):
     if j['document']['format']=='pdf':source+='<p>Scanned text can contain reading errors. Open the original page to check a number, table or diagram.</p>'
     for b in j['document']['blocks']:
         original_link=original+(f'#page={b["locator"]["page"]}' if b['locator'].get('format')=='pdf' else '')
-        source+=f'<p><a href="{original_link}">Original source location</a></p>'
+        if location_id:=b['locator'].get('location_id'):
+            member = html.escape(b['locator'].get('member',''))
+            page = b['locator'].get('page')
+            description = f'Page {page} · {member}' if page else member
+            source += f'<p><a href="{original}">{description}</a> · Source location <code>{location_id}</code></p>'
+        else:
+            source+=f'<p><a href="{original_link}">Original source location</a></p>'
         source+=f'<section id="{b["id"]}"><h2>{html.escape(b["chapter"])}</h2><a href="book.m4b#t={pointers[b["id"]]:.3f}">Listen near {ts(pointers[b["id"]])}</a><p>{html.escape(dumps(b["locator"]))}</p><pre style="white-space:pre-wrap">{html.escape(b["locator"].get("exact",b["source"]))}</pre>'
         if b.get('issue'):source+='<p>Uncertainty in the scanned text: '+html.escape(b['issue'])+'</p>'
         for link in b.get('links',[]):
@@ -642,7 +740,13 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             from .media import merge_overrides
             j['metadata_overrides']=merge_overrides(j.get('metadata_overrides',{}),metadata)
         if reimport:
-            previous_doc=doc; fresh=cached_inspect(Path(j['snapshot']),store.root/'extractions')
+            previous_doc = doc
+            if selection:=j.get('source_selection'):
+                from .intake import inspect_saved
+                fresh = inspect_saved(Path(j['snapshot']),selection,store.root/'extractions',
+                                      title=Path(j['source_name']).stem)
+            else:
+                fresh = cached_inspect(Path(j['snapshot']),store.root/'extractions')
             if fresh.source_sha256!=previous_doc.source_sha256: raise Error('snapshot_changed','Reimport source identity differs from the saved revision.')
             from .source_rebase import rebase
             selected={take_selection(u):u for u in j['plan']['utterances'] if take_selection(u) in takes}

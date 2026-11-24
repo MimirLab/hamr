@@ -4,7 +4,7 @@ import shutil
 import subprocess
 
 from .core import Error, atomic, digest, loadjson, writejson
-from .pdf_ocr import configuration, tesseract_binary
+from .pdf_ocr import RESIDENT, configuration, tesseract_binary
 
 PROFILE = 'tesseract-fast'
 MODEL_SHA256 = '7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2'
@@ -32,13 +32,14 @@ def describe(store, host):
     binary, _ = tesseract_binary()
     managed = english_data(store.root) is not None
     ready = binary.is_file()
+    built_in = (RESIDENT/'eng.traineddata').is_file()
     available = host['ram_available_bytes']
     reason = ('The installed Tesseract can run English OCR without a graphics device.' if ready else
               'Install the Tesseract executable for this operating system before OCR setup.')
     return {
-        'ready': ready and managed, 'local_engine': str(binary) if ready else None,
-        'recommended_profile': PROFILE if ready else None, 'active_profile': PROFILE if ready and managed else None,
-        'device': 'cpu', 'languages': ['en'], 'download_bytes': 0 if managed else MODEL_BYTES+NOTICE_BYTES,
+        'ready': ready and (managed or built_in), 'local_engine': str(binary) if ready else None,
+        'recommended_profile': PROFILE if ready else None, 'active_profile': PROFILE if ready and (managed or built_in) else None,
+        'device': 'cpu', 'languages': ['en'], 'download_bytes': 0 if managed or built_in else MODEL_BYTES+NOTICE_BYTES,
         'available_ram_bytes': available, 'reason': reason,
         'action': 'hamr setup --ocr-only' if ready else 'Install Tesseract, then run hamr setup --ocr-only.',
     }
@@ -62,7 +63,9 @@ def provision(store, progress, cache=None, profile='auto', *, activate=True):
         raise Error('unsafe_path', 'OCR assets must use the owned Hamr directory.')
     required = (("eng.traineddata",MODEL_BYTES,MODEL_SHA256,"English scanned-PDF model"),
                 ('LICENSE',NOTICE_BYTES,NOTICE_SHA256,'English OCR model license'))
-    needed = sum(size if cache and (Path(cache)/name).is_file() and not (directory/name).exists()
+    bundled = {'eng.traineddata':RESIDENT/'eng.traineddata','LICENSE':RESIDENT/'LICENSE.eng'}
+    needed = sum(size if (cache and (Path(cache)/name).is_file() or bundled[name].is_file())
+                 and not (directory/name).exists()
                  else remaining_bytes(UPSTREAM+name,directory/name,expected,size)
                  for name,size,expected,_ in required)
     if needed and shutil.disk_usage(directory).free < needed+32*1024**2:
@@ -71,14 +74,13 @@ def provision(store, progress, cache=None, profile='auto', *, activate=True):
         target = directory/name
         if target.is_symlink():
             raise Error('unsafe_path', 'OCR assets must be regular, local files.')
-        if cache and not target.exists():
-            src = Path(cache)/name
-            if src.is_file():
-                if src.stat().st_size != size:
-                    raise Error('asset_integrity',f'The supplied OCR asset differs from the pinned file: {name}.')
-                data = src.read_bytes()
-                if digest(data) != expected:
-                    raise Error('asset_integrity',f'The supplied OCR asset differs from the pinned file: {name}.')
+        if not target.exists():
+            supplied = Path(cache)/name if cache else bundled[name]
+            source = supplied if supplied.is_file() else bundled[name]
+            if source.is_file():
+                data = source.read_bytes()
+                if len(data)!=size or digest(data)!=expected:
+                    raise Error('asset_integrity', f'The supplied OCR asset differs from the pinned file: {name}.')
                 atomic(target,data)
         acquire(UPSTREAM+name,target,expected,size,progress=progress,label=label)
     binary, env, identity, _ = configuration(directory)

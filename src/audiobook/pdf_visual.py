@@ -193,15 +193,19 @@ class Observer:
         self.scope = None
 
     def read(self, page, textpage, entry, rect, native='', *, regional=False):
+        return self.read_raster(lambda: raster(page, rect), textpage, entry, rect, native, regional=regional)
+
+    def read_raster(self, load_image, textpage, entry, rect, native='', *, regional=False,
+                    format='pdf', scale=SCALE):
         from .pdf_ocr import configuration, observe, offline_observation
         from .pdf_words import localize_words
 
         page_number = entry['page']
-        locator = {'format':'pdf', 'page':page_number, 'rect':rect}
-        evidence = {'rect':rect, 'scale':SCALE, 'native_observation':native,
-                    'coordinate_space':'rendered_page_points'}
+        locator = {'format':format, 'page':page_number, 'rect':rect}
+        evidence = {'rect':rect, 'scale':scale, 'native_observation':native,
+                    'coordinate_space':'rendered_page_points' if format=='pdf' else 'oriented_pixels'}
         try:
-            image = raster(page, rect)
+            image = load_image()
             if not native.strip() and all(lo==hi for lo,hi in ImageStat.Stat(image).extrema):
                 evidence['status'] = 'verified_blank'
                 return [], evidence
@@ -272,7 +276,7 @@ class Observer:
                 evidence['offline_checkpoint'] = True
             if self.cache:
                 status = 'saved observation reused' if reused else 'observation recorded'
-                print(f'PDF OCR · page {page_number} · {status}.', file=sys.stderr, flush=True)
+                print(f'{"PDF" if format=="pdf" else "Image"} OCR · page {page_number} · {status}.', file=sys.stderr, flush=True)
         except Error as exc:
             issue = ' '.join(filter(None,(exc.message,exc.action)))
             evidence.update(status='unresolved', error_code=exc.code, reason=issue)
@@ -291,7 +295,7 @@ class Observer:
         critical = disputes(native,text)
         width,height = entry['size']
         parts = paragraphs(words,page_number,height,region=rect if regional else None,
-                           width=None if regional else width)
+                           width=None if regional else width, scale=scale, format=format)
         geometry = entry['native_geometry_qualified']
         source_reader = glyph_reader(textpage) if geometry and native.strip() else lambda rect: ''
         critical_localization = localize(parts,native,text,source_reader,geometry)

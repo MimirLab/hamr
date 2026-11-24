@@ -56,10 +56,13 @@ def capabilities(parser):
     from .performance import RULES_FILE
     from .wash_setup import PROFILES
 
-    formats = ['epub', 'markdown', 'pdf', 'text']
+    from .intake import capabilities as intake_capabilities
+
+    intake = intake_capabilities()
+    formats = intake['formats']
     rules = loadjson(RULES_FILE)
     return {'schema_version': 1, 'hamr_version': __version__,
-            'formats': formats, 'languages': ['en'],
+            'formats': formats, 'languages': ['en'], 'intake': intake,
             'cli': schema(parser), 'operator_guide': ['hamr', 'agent', 'guide'],
             'expressive_narration': {'default_mode':'auto', 'formats':formats, 'flag':'--performance',
                                      'plain_mode':'off', 'details':'plan.utterances[].performance',
@@ -173,6 +176,8 @@ def snapshot(root, job, *, content=False, verify=False):
                 result[name] = {k: progress[k] for k in fields if k in progress}
         except (OSError, ValueError, KeyError, TypeError):
             pass
+    if intake:=job.get('intake'):
+        result['intake'] = {'state':intake['state'],'route':job.get('source_selection',{}).get('route')}
     if content:
         result['plan'] = job['plan']
     if delivery:=performance_status(job):

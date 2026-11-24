@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from lxml import etree
 from markdown_it import MarkdownIt
 from mdit_py_plugins.footnote import footnote_plugin
-from .core import Block,Document,Error,digest,run
+from .core import Block,Document,Error,digest,filehash,run
 from .text_source import physical_lines, plain
 
 MAX_INPUT=200*1024*1024
@@ -154,10 +154,10 @@ def document_reference(document_path,href):
     if not u.path and not u.scheme and not u.netloc:return document_path,unquote(u.fragment)
     return archive_path(posixpath.dirname(document_path),href)
 
-def epub(data:bytes)->Document:
+def epub(data:bytes|Path)->Document:
     from .epub_obfuscation import font_references, verify_font_manifest
 
-    try: z=zipfile.ZipFile(io.BytesIO(data))
+    try: z=zipfile.ZipFile(io.BytesIO(data) if isinstance(data,bytes) else data)
     except zipfile.BadZipFile: raise Error('unreadable_epub','Invalid EPUB ZIP container.')
     info=z.infolist()
     if len(info)>10000 or sum(x.file_size for x in info)>MAX_INPUT: raise Error('archive_limit','EPUB exceeds decoded size or entry limit.')
@@ -506,9 +506,9 @@ def epub(data:bytes)->Document:
     if nav_records:inventory.append({'kind':'navigation','entries':nav_records,'purpose':'Chapter view only; primary source order remains the spine occurrence order.'})
     if fonts:inventory.append({'kind':'font_obfuscation','resources':sorted(fonts),'disposition':'Font bytes retained in the original EPUB; narration uses the text resources.'})
     if any(b.role=='placeholder' for b in out):warnings.append('This source edition contains illustration placeholders; no visual relationship is inferred from them.')
-    return Document(title[0] if title else 'Book','epub',digest(data),out,lang[0] if lang else 'en',inventory=inventory,warnings=warnings,metadata=metadata)
+    return Document(title[0] if title else 'Book','epub',digest(data) if isinstance(data,bytes) else filehash(data),out,lang[0] if lang else 'en',inventory=inventory,warnings=warnings,metadata=metadata)
 
-def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
+def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
     import pypdfium2 as pdfium
     from .pdf_visual import Observer, authored_artifact, bind_captions, merge_regions, regional_images
     from .pdf_geometry import crop_glyphs,glyph_baseline
@@ -524,7 +524,6 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
         top=position[1] if mode==1 and len(position)>1 else position[0] if mode in (3,6) and position else None
         outlines.append({'entry':index,'title':item.get_title(),'depth':item.level,'page':page_index+1 if page_index is not None else None,'view_mode':mode,'view_position':position,'top':top})
     for n,page in enumerate(doc):
-        if n>=2000: raise Error('page_limit','PDF exceeds 2000-page import limit.')
         tp=page.get_textpage(); native=tp.get_text_range(); w,h=page.get_size()
         # Independently inventory image objects, including raster beside hidden/selectable text.
         image_objects=[(obj,list(obj.get_bounds())) for obj in page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE])]
@@ -714,46 +713,25 @@ def pdf(data:bytes,ocr_cache:Path|None=None,ocr_config=None)->Document:
         if inventory:inventory[0]['source_outlines']=outlines
     warnings=['PDF semantic tags and complex layout are not yet generally qualified.']
     if any(e.get('status')=='unresolved' for e in outlines):warnings.append('Some PDF outline destinations lack a unique matching heading or qualified coordinates. All prose remains in source order; chapter navigation needs review.')
-    return Document('PDF document','pdf',digest(data),out,inventory=inventory,warnings=warnings)
+    return Document('PDF document','pdf',digest(data) if isinstance(data,bytes) else filehash(data),out,inventory=inventory,warnings=warnings)
 
 ADAPTERS={'.md':markdown,'.markdown':markdown,'.epub':epub,'.pdf':pdf,'.txt':plain}
 
 def input_adapter(path):
     adapter=ADAPTERS.get(path.suffix.lower())
-    if not adapter: raise Error('unsupported_format','Supported input formats: EPUB, Markdown, PDF, plain text (.txt).')
+    if not adapter:
+        raise Error('unsupported_format','Use a supported format listed by hamr agent capabilities.')
     return adapter
 
-def inspect(path:Path)->Document:
-    if path.stat().st_size>MAX_INPUT: raise Error('input_limit','Input exceeds 200 MiB limit.')
-    with path.open('rb') as f: data=f.read(MAX_INPUT+1)
-    if len(data)>MAX_INPUT: raise Error('input_limit','Input exceeds 200 MiB limit.')
-    d=input_adapter(path)(data)
-    if not d.blocks: raise Error('empty_document','Document contains no narratable material.')
-    return d
 
-IMPORT_REVISION='import-27'
+def inspect(path:Path)->Document:
+    from .intake import inspect_source
+
+    return inspect_source(path)
+
+
+IMPORT_REVISION='import-28'
 def cached_inspect(path:Path,cache:Path)->Document:
-    from .core import atomic,key,loadjson,writejson,filehash
-    import importlib.metadata
-    if path.stat().st_size>MAX_INPUT: raise Error('input_limit','Input exceeds 200 MiB.')
-    with path.open('rb') as f: data=f.read(MAX_INPUT+1)
-    if len(data)>MAX_INPUT: raise Error('input_limit','Input exceeds 200 MiB.')
-    dependencies={name:importlib.metadata.version(name) for name in ['beautifulsoup4','lxml','markdown-it-py','mdit-py-plugins','pypdfium2','Pillow','tinycss2','webencodings']}
-    implementation={p.name:filehash(p) for p in Path(__file__).parent.glob('*.py') if p.name in ('importers.py','pronunciation.py','markdown_notes.py','text_source.py','text_evidence.py') or p.name.startswith(('epub_','pdf_'))}
-    identity=key({'source':digest(data),'extension':path.suffix.lower(),'import_revision':IMPORT_REVISION,'dependencies':dependencies,'implementation':implementation})
-    target=cache/(identity+'.json')
-    if target.is_symlink(): raise Error('unsafe_path','Extraction cache entry cannot be a symlink.')
-    if target.exists():
-        envelope=loadjson(target); payload=envelope['document']
-        if envelope['document_sha256']==key(payload) and payload['source_sha256']==digest(data):
-            return Document(payload['title'],payload['format'],payload['source_sha256'],[Block(**b) for b in payload['blocks']],payload['language'],payload['inventory'],payload['warnings'],payload.get('metadata',{}))
-    # Import from the immutable bytes we just identified, never reread the mutable path.
-    adapter=input_adapter(path)
-    doc=adapter(data,ocr_cache=cache/'pdf-observations') if path.suffix.lower()=='.pdf' else adapter(data)
-    if not doc.blocks: raise Error('empty_document','Document contains no narratable material.')
-    payload=doc.json()
-    visual=[observation for page in doc.inventory if isinstance(page,dict)
-            for observation in page.get('visual_observations',[])]
-    if all(observation['status']=='verified_blank' for observation in visual):
-        writejson(target,{'document_sha256':key(payload),'document':payload,'import_revision':IMPORT_REVISION,'dependencies':dependencies,'implementation':implementation})
-    return doc
+    from .intake import inspect_source
+
+    return inspect_source(path,cache)

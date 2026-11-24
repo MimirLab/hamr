@@ -82,7 +82,12 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
     if batch_rest_seconds and not resident:raise Error('pipeline_budget','Batch rest requires a resident engine.')
     if type(overlap_batch_rest) is not bool or (overlap_batch_rest and not (resident and batch_rest_seconds)):
         raise Error('pipeline_budget','Overlapping CPU review with rest requires resident mode and a positive batch rest.')
-    path=store.path(store.get(jid))/'pipeline.json'
+    job = store.get(jid)
+    if job.get('intake',{}).get('state')=='pending':
+        result = jobs.finish_intake(store,jid)
+        if result['status']=='needs_review':
+            return result
+    path=store.path(job)/'pipeline.json'
     started = time.monotonic()
     generated = retries = 0
     existing_clips = None

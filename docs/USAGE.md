@@ -421,6 +421,10 @@ PCM clips and receipts are promoted together. M4B time derives from 64-bit final
 
 Ready output is `~/Audiobooks/JOB-rREV/`: `book.m4b`, `source.html`, `companion.json`, `companion.vtt`, `report.json`, `manifest.json`. The HTML contains exact lookup text and source locators; source identity points to the retained immutable snapshot in app state. Segment times are precise; word-level forced alignment is not implemented. AAC decode padding differs from source PCM; verified container offsets use PCM chapter boundaries with a 2 ms tolerance.
 
+## Document intake
+
+Use the same `hamr open` command for one document, a folder of page images, or a supported publication inside an archive. The [intake guide](INTAKE.md) covers resident readers, the rare-format helper, page order, and portable originals.
+
 ## PDF and OCR
 
 English OCR is available in the ordinary book workflow after `hamr setup --ocr-only` with Tesseract installed. An installed Linux build resumed after an OCR interruption and published a verified two-page scan as a chaptered M4B. [Qualification and scope](../RELEASE.md#scanned-and-mixed-pdfs)

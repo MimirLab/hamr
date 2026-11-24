@@ -293,7 +293,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         block_chapter_id=b.locator.get('chapter_id')
         if rule_revision in SOURCE_STRUCTURE and b.locator.get('format')=='pdf' and not pdf_chapters and block_chapter_id is None:
             block_chapter='Opening';block_chapter_id='pdf:unclassified'
-        if b.locator.get('format')=='pdf':
+        if b.locator.get('format') in ('pdf','scan'):
             if rule_revision in SOURCE_STRUCTURE and pdf_chapters:block_chapter='Opening';block_chapter_id='pdf:opening'
             for start,title in pdf_chapters.items():
                 if start<=(source_positions[b.id] if rule_revision in SOURCE_STRUCTURE else b.locator['page']):
@@ -532,5 +532,11 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     if rule_revision in PERFORMANCE_RULES:
         from .performance import annotate
         annotate(result,doc,automatic_prose=automatic_prose,context_version=delivery_context)
+    if intake:=doc.metadata.get('intake'):
+        source_fields = ('page','member','occurrence','frame','label','route','status',
+                         'raw_OCR_reused','reason','location_id','sheet','slide','part')
+        result['intake'] = {**intake,'language':doc.language,'units':[
+            {field:item[field] for field in source_fields if field in item}
+            for item in doc.inventory if isinstance(item,dict)]}
     result['plan_sha256']=key(result)
     return result

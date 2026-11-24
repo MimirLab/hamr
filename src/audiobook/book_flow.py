@@ -10,14 +10,9 @@ from .core import Error, run
 from .installation import command
 
 
-def check_source(source):
-    from .importers import input_adapter
-    if source.is_dir():
-        raise Error('source_is_directory', f'Choose a file inside {source}.',
-                    'Example: hamr open "Folder/My book.epub".')
-    if not source.is_file():
-        raise Error('source_missing', f'Document not found: {source}', 'Check the document path.')
-    input_adapter(source)
+def check_source(source, **options):
+    from .source_bundle import describe
+    return describe(source,**options)
 
 
 def preflight(store, voice, output, play):
@@ -44,6 +39,11 @@ def finish_book(store, jid, *, output=None, announce=False):
             return result
     if job['status'] == 'cancelled':
         raise Error('cancelled', 'This job was cancelled.', 'Repair the job or create a new one.')
+    if job.get('intake',{}).get('state')=='pending':
+        result = jobs.finish_intake(store,jid)
+        if result['status']=='needs_review':
+            return result
+        job = store.get(jid)
     if not job.get('voice'):
         raise Error('voice_required', 'The saved job needs a narrator.',
                     f'Run hamr repair {jid} --voice cast:nigel-thornberry.')

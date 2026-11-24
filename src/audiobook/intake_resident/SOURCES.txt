@@ -1,0 +1,15 @@
+libmobi 0.12 (LGPL-3.0-or-later), separate executable with encryption support disabled:
+https://codeload.github.com/bfabiszewski/libmobi/tar.gz/refs/tags/v0.12
+SHA-256 78826d161c02ce93ff1cd62838b4d749df754f52185474b82e4093badf4689c1
+Build with tools/build_intake_mobi.sh against the unmodified sources at that link.
+The corresponding GPLv3 text used by the LGPL:
+https://www.gnu.org/licenses/gpl-3.0.txt
+
+DjVuLibre 3.5.30.1 (GPL-2.0-or-later), separate Hamr DjVu worker:
+https://deb.debian.org/debian/pool/main/d/djvulibre/djvulibre_3.5.30.1.orig.tar.xz
+SHA-256 e38eae20427fa7b17787482f1dd00e88b173913d59f5f8bc5175ee40a02872f2
+The corresponding Hamr worker source is tools/intake_djvu.cc. Build DjVuLibre
+with --disable-shared --enable-static --disable-desktopfiles --disable-xmltools.
+Compile the worker with -O2 -static-libgcc -static-libstdc++ and link the
+resulting libdjvulibre.a with -pthread. The Linux builds bind stock glibc
+and process original files locally.

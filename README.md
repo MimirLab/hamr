@@ -85,11 +85,15 @@ e6ff67e457854bb6 · ready · Ravens in Winter
 
 ## What hamr can do
 
+### Scans and archives
+
+Open a folder of JPG, PNG or TIFF page images directly, or point Hamr at the ZIP the book arrived in. The page preview shows the order. Completed books carry a portable copy of their original pages and the companion points back to each one. [Scan folders, archives and other document formats](docs/INTAKE.md)
+
 ### Scanned and mixed PDFs (OCR)
 
 An old scan or a page with a scanned inset can become part of the same book as searchable text. Hamr uses the PDF’s native text where it can and runs local English OCR where it needs the page image. It follows simple two-column layouts and can keep a figure crop, its recognized labels, and the author's caption together in the companion.
 
-A stray “T” at the start of a quote can be re-read against two larger crops. When both crops agree on “I” and the surrounding words, Hamr can use that reading. Unresolved findings point back to the page, and completed OCR work survives an interruption. Install Tesseract and run `hamr setup --ocr-only` once, then open the PDF as you would an EPUB. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr)
+A stray “T” at the start of a quote can be re-read against two larger crops. When both crops agree on “I” and the surrounding words, Hamr can use that reading. Unresolved findings point back to the page, and completed OCR work survives an interruption. On Linux x86-64 and Windows x64, the package includes the English OCR runtime and model. Open the PDF as you would an EPUB. [PDF and OCR guide](docs/USAGE.md#pdf-and-ocr)
 
 ### Contextual reading and book structure
 

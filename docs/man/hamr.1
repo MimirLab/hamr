@@ -134,6 +134,19 @@ is supplied. Published output is kept.
 .TP
 .BI "completion " SHELL
 Print completion for Bash, Zsh or Fish.
+.SH DOCUMENT INTAKE
+An image directory or ZIP of loose page images is one book. The plan follows
+the order in a page manifest or sorts filenames naturally. An archive
+containing several books presents entry IDs. Use \fB\-\-entry ID\fR to select
+one supported publication.
+.PP
+Use \fB\-\-offline\fR with \fBopen\fR, \fBplan\fR, or \fBqueue\fR to
+use resident or already installed readers only. Use \fBresume JOB\fR to
+continue a saved intake.
+.PP
+.B hamr source BOOK_DIRECTORY LOCATION_ID --output FILE
+recovers an original member from a finished book folder. Copy the original
+bundle and the companion together when moving a book.
 .SH CONTEXT REVIEW
 Ambiguous readings use the automatic policy by default.
 Use

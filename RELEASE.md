@@ -1,3 +1,9 @@
+# hamr 0.4.9.dev5
+
+- Open loose page images as one book and follow natural filename order or an authored manifest. Hamr captures the original pages, resumes in-progress intake, and publishes a portable original with exact member and crop references.
+- Open raw ZIP and TAR archives when their selected contents have a readable route. Resident readers also cover selected modern documents, archival page formats and structured publications. The [intake guide](docs/INTAKE.md) lists the routes and their boundaries.
+- The Linux x86-64 and Windows x64 packages include the English OCR model and worker. Linux also carries compact Kindle and DjVu workers. The larger legacy ebook converter is installed into Hamr on first use, with a download size and progress display.
+
 # hamr 0.4.9.dev4
 
 - A description after a quotation can guide the words it describes. When a narrator reports that a speaker's voice has softened, Hamr can read the preceding quotation more gently and return to the usual voice for the attribution. Tagged PDF paragraphs keep the lead-in together when it belongs to the same paragraph.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hamr"
-version = "0.4.9.dev4"
+version = "0.4.9.dev5"
 description = "hamr: local audiobooks with recoverable jobs, character voices and source provenance"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -38,22 +38,28 @@ packages = ["src/audiobook", "src/hamr"]
 artifacts = [
     "/src/audiobook/cast_assets/*/voice.json",
     "/src/audiobook/cast_assets/*/reference.wav",
+    "/src/audiobook/ocr_resident/*",
+    "/src/audiobook/intake_resident/*",
 ]
 
 [tool.hatch.build.targets.sdist]
 only-include = [
     "src/audiobook", "src/hamr", "tools/check_release.py", "tools/inspect_gguf.py", "tools/compare_breeze.py", "tools/mix_hoppou.py",
     "tools/build_timing_name_spellings.py",
+    "tools/build_intake_ocr.sh", "tools/build_intake_ocr_windows.sh", "tools/build_intake_mobi.sh",
+    "tools/intake_djvu.cc",
     "tools/performance_review.py", "tools/master_cast_gallery.py",
     "tests", "fixtures/technical.md", ".gitignore",
     "README.md", "RELEASE.md", "AGENTS.md", "LICENSE", "pyproject.toml", "uv.lock", "install.sh", "install.ps1",
-    "docs/USAGE.md", "docs/CAST.md", "docs/ARTWORK.md", "docs/ENGINES.md", "docs/listen", "docs/man",
+    "docs/USAGE.md", "docs/INTAKE.md", "docs/CAST.md", "docs/ARTWORK.md", "docs/ENGINES.md", "docs/listen", "docs/man",
     "docs/art/hamr-storyforge.png", "docs/art/hamr-listener.png",
     "docs/demo/lantern.md", "docs/demo/lantern-plain.mp3", "docs/demo/lantern-expressive.mp3",
 ]
 artifacts = [
     "/src/audiobook/cast_assets/*/voice.json",
     "/src/audiobook/cast_assets/*/reference.wav",
+    "/src/audiobook/ocr_resident/*",
+    "/src/audiobook/intake_resident/*",
 ]
 
 [tool.hatch.build.targets.wheel.force-include]

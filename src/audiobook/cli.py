@@ -174,6 +174,9 @@ def choose_backend(store, json_mode, *, automatic=False, advanced=False, include
         print('Please enter a listed number or model ID, or q to cancel.')
 
 def add_source(p):
+    p.add_argument('--entry',help='Publication ID when a directory or archive contains more than one book')
+    p.add_argument('--format',dest='source_format',help='Reader to use for an ambiguous file type')
+    p.add_argument('--offline',action='store_true',help='Use only installed source readers and OCR assets')
     p.add_argument('--document-policy',type=Path,help='Source-hash-bound verified companion decisions as JSON'); p.add_argument('source',type=Path); p.add_argument('--mode',choices=['listen','study','procedure'],default=None); p.add_argument('--profile',dest='listening_profile',help='Saved listening defaults created with hamr profile'); p.add_argument('--section',action='append',default=[],help='Exact chapter=listen|study|procedure'); p.add_argument('--tables',choices=['speak','companion'],default=None); p.add_argument('--code',choices=['speak','companion'],default=None); p.add_argument('--references',choices=['speak','companion'],default=None); p.add_argument('--notes',choices=['after_paragraph','inline','companion'],default=None)
     p.add_argument('--chapters',help='Source chapter occurrences, e.g.5,2-3,2; original order is retained. Use all to reset.')
     p.add_argument('--context',type=Path,help='Context cue weights, conventions and review mode as JSON')
@@ -252,6 +255,8 @@ def parser():
         if name=='open':
             q.add_argument('--yes',action='store_true')
             q.add_argument('--play',action='store_true',help='Play the M4B after publication')
+    q=sub('source','Recover an exact original member from a finished book')
+    q.add_argument('book',type=Path); q.add_argument('location'); q.add_argument('--output',type=Path,required=True)
     for name in ['render','resume']:
         q=sub(name,'Render, check and publish a saved book'); q.add_argument('job'); q.add_argument('--output',type=Path);q.add_argument('--no-synthesis',action='store_true',help='Assemble only verified, already checked takes; never start the speech backend');q.add_argument('--max-new-takes',type=int,help='Use a manual render batch with this limit; resume normally to check and publish')
     q=sub('run','Run the durable speech/CPU-QA/review/publication pipeline');q.add_argument('job');q.add_argument('--asr-python',type=Path);q.add_argument('--asr-model',type=Path);q.add_argument('--second-model',type=Path);q.add_argument('--batch-takes',type=int,default=1);q.add_argument('--max-retakes',type=int,default=8);q.add_argument('--max-new-takes',type=int);q.add_argument('--prepare-clear',action='store_true',help='Prepare accounted speech while source issues still hold publication');q.add_argument('--resident',action='store_true',help='Retain the owned model across render batches, CPU review and batch rests');q.add_argument('--batch-rest-seconds',type=float,default=0,help='Pause new generation between resident batches while retaining the model')
@@ -369,7 +374,7 @@ def main(argv=None):
 
 def emit_error(error, json_mode):
     if json_mode:
-        emit({'schema_version':1,'error':{'code':error.code,'message':error.message,'action':error.action}},True)
+        emit({'schema_version':1,'error':{'code':error.code,'message':error.message,'action':error.action, **({'candidates':error.candidates} if hasattr(error,'candidates') else {})}},True)
     else:
         print(f'hamr: {error.message}', file=sys.stderr)
         if error.action: print(error.action, file=sys.stderr)
@@ -525,18 +530,30 @@ def dispatch(argv=None):
                 elif result.get('profile'):
                     print('To make a book, replace the example filename with your document:')
                     print(command(s.root,'open','My book.epub','--voice','cast:nigel-thornberry'))
+        elif a.command=='source':
+            from .intake import extract_location
+            emit(extract_location(a.book,a.location,a.output),jm)
         elif a.command=='plan':
-            from .book_flow import check_source
-            check_source(a.source)
-            emit(plan(cached_inspect(a.source,s.root/'extractions'),policy(a),a.aliases,context_reviewer=a.context_review_endpoint),True)
+            from .intake import inspect_source
+            doc=inspect_source(a.source,s.root/'extractions',entry=a.entry,format=a.source_format,offline=a.offline)
+            result = plan(doc,policy(a),a.aliases,context_reviewer=a.context_review_endpoint)
+            emit(result,True)
         elif a.command in ('queue','open'):
             from .book_flow import check_source, finish_book, play_output, preflight
-            check_source(a.source)
+            from .intake import inspect_source
+            source_options = {'entry':a.entry,'format':a.source_format,'offline':a.offline}
+            check_source(a.source,**source_options)
+            preview_sha = None
             voice=a.voice or preference(s).get('voice')
             if a.command=='open': preflight(s,voice,a.output,a.play)
             if a.command=='open' and not a.yes:
                 if jm or not sys.stdin.isatty(): raise Error('confirmation_required','Headless open requires --yes with explicit/saved settings.','Use plan to inspect, then open --yes or queue.')
-                doc=cached_inspect(a.source,s.root/'extractions')
+                doc = inspect_source(a.source,s.root/'extractions',**source_options)
+                preview_sha = doc.source_sha256
+                if doc.format=='scan':
+                    pages = doc.inventory
+                    order = ', '.join(f'{row["page"]}: {row["member"]}' for row in pages[:8])
+                    print(f'{len(pages)} source pages · {order}'+(' …' if len(pages)>8 else ''),file=sys.stderr)
                 while True:
                     p=plan(doc,policy(a),a.aliases); counts={role:sum(b.role==role for b in doc.blocks) for role in ['table','code','note','figure']}
                     print(f'{doc.title} · {len(p["chapters"])} chapters · about {p["estimated_minutes"]} minutes\nRecommended: {p["policy"]["mode"]}. Narrator: {voice or "not selected"}.',file=sys.stderr)
@@ -555,8 +572,9 @@ def dispatch(argv=None):
                     if answer not in ('y','yes'): return 0
                     break
             result=create(s,a.source,voice,policy(a),a.output,a.aliases,label=a.label,parallel=a.parallel,
-                          context_reviewer=a.context_review_endpoint,mastering_mode=a.mastering)
-            if a.command=='open': result=finish_book(s,result['job'],announce=not jm)
+                          context_reviewer=a.context_review_endpoint,mastering_mode=a.mastering,
+                          source_options=source_options,announce=not jm,preview_sha=preview_sha)
+            if a.command=='open' and result['status']!='needs_review': result=finish_book(s,result['job'],announce=not jm)
             if not jm: emit(result)
             if a.command=='open' and a.play and result['status']=='ready': play_output(result,quiet=jm)
             if jm: emit(result,True)
