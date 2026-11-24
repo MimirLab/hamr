@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev25
+
+- Open TEI editions as `.tei` or `.xml` files, source folders or ZIPs. Hamr reads the authored main lemma or normalized form. Competing witness readings stay accessible in the source companion. Notes, illustrations and the original package use the same reading and recovery tools as JATS. [Document intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev24
 
 - JATS articles read their title, primary abstract, body, and linked footnotes in order. Figures use authored descriptions, and tables with a text rendition read its cells once. Open a `.jats` or `.xml` file, the containing folder, or a source ZIP. The companion preserves the original article and declared local assets. [Document intake](docs/INTAKE.md#source-readers)

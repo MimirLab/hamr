@@ -172,9 +172,9 @@ def publication_folder(path):
 
 def directory_members(root):
     from .document_intake import xml_book_root
-    from .jats_intake import SUFFIXES as JATS_SUFFIXES, assets, loose_article
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
+    from .xml_package import SUFFIXES as XML_SUFFIXES, assets, loose_document
 
     declared = set()
     pages, other = [], []
@@ -194,17 +194,17 @@ def directory_members(root):
         for filename in files:
             path = here/filename
             relative = path.relative_to(root).as_posix()
-            if (filename.startswith('.') or relative in declared or path.suffix.lower() not in JATS_SUFFIXES
+            if (filename.startswith('.') or relative in declared or path.suffix.lower() not in XML_SUFFIXES
                     or path.is_symlink() or not path.is_file()):
                 continue
             try:
-                article = loose_article(path)
+                document = loose_document(path)
             except Error as exc:
                 if exc.code not in ('source_xml','source_structure_size'):
                     raise
                 continue
-            if article is not None:
-                declared.update((here/asset).relative_to(root).as_posix() for _,_,asset in assets(article,filename) if asset)
+            if document is not None:
+                declared.update((here/asset).relative_to(root).as_posix() for _,asset in assets(document,filename) if asset)
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
                           and name != '__MACOSX' and not (here/name).is_symlink()
                           and not (here/name).is_junction()]
@@ -721,9 +721,9 @@ def capture_dependencies(path,target_dir,source):
 
         return rst(path,target_dir,source)
     if source.kind=='file' and source.route=='xml-book':
-        from .jats_intake import capture_jats
+        from .xml_package import capture_xml
 
-        return capture_jats(path,target_dir,source)
+        return capture_xml(path,target_dir,source)
 
 
 def original_name(snapshot,source):

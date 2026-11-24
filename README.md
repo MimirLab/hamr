@@ -89,7 +89,7 @@ e6ff67e457854bb6 · ready · Ravens in Winter
 
 Open a folder of JPG, PNG or TIFF page images directly, or point Hamr at the ZIP the book arrived in. The page preview shows the order. Completed books carry a portable copy of their original pages and the companion points back to each one. [Scan folders, archives and other document formats](docs/INTAKE.md)
 
-Hamr also opens NIMAS textbooks, text-bearing DAISY packages, and JATS research articles. It follows their authored order, reads linked notes where they belong, and keeps the original package files available in the companion. [Structured document readers](docs/INTAKE.md#source-readers)
+Hamr also opens NIMAS textbooks, text-bearing DAISY packages, JATS research articles, and TEI editions. It follows their authored order, reads linked notes where they belong, and keeps the original package files available in the companion. [Structured document readers](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)
 

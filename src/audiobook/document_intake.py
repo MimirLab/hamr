@@ -239,12 +239,15 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                     span['source_locator'] = location
         return source,spans
 
+    def source_issue(spans):
+        return next((span['issue'] for span in spans if span['kind']=='source_review'),None) or uncertainty(spans)
+
     def text_node(node,role,where):
         source,spans = annotated_semantics(node,note_body=role=='note')
         spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
                  collect_links and span['kind']=='hyperlink']
         local_notes(spans)
-        issue = uncertainty(spans)
+        issue = source_issue(spans)
         block = builder.add(source,role,where,loc={'anchor':node.get('id'),'inline_semantics':spans,
                             'exact':str(node)},issue=None if role=='note' else issue)
         if block and role=='heading' and projected and any(id(child) in projected for child in node.find_all(True)):
@@ -321,7 +324,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                         spans = []
                     if semantic or any(span['kind']=='note_reference' for span in spans):
                         local_notes(spans)
-                        issue = issue or uncertainty(spans)
+                        issue = issue or source_issue(spans)
                         entries.append(cell_semantics(row,column,source,spans))
                     else:
                         source = html_text(cell).strip()
@@ -940,15 +943,15 @@ def read_document(path,source,sha,cache,title):
             html_read(data,builder)
         elif route in ('xml-book','fb2'):
             from .dtbook_intake import is_dtbook, read_dtbook
-            from .jats_intake import is_jats, read_jats
+            from .xml_package import read_projected
 
             root = xml(data)
             if name(root) not in BOOK_ROOTS:
                 raise Error('unsupported_format', f'No book reader is available for XML root {name(root)!r}.')
-            if is_dtbook(root) or is_jats(root,source.member_name or path.name):
-                part = source.member_name or PurePosixPath(title).name+path.suffix
-                (read_dtbook if is_dtbook(root) else read_jats)(root,builder,part)
-            else:
+            part = source.member_name or PurePosixPath(title).name+path.suffix
+            if is_dtbook(root):
+                read_dtbook(root,builder,part)
+            elif not read_projected(root,builder,part):
                 semantic_xml(root,builder,path.name)
         elif route in ('tcr','amigaguide'):
             from .compact_documents import read_guide, read_tcr

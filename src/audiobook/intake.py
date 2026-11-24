@@ -50,9 +50,9 @@ def parse(path,source,sha,cache,title):
 
         return read_rst_archive(path,source,sha)
     if source.route=='xml-book' and source.kind in ('zip','tar','libarchive'):
-        from .jats_intake import read_jats_archive
+        from .xml_package import read_xml_archive
 
-        return read_jats_archive(path,source,sha,title)
+        return read_xml_archive(path,source,sha,title)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):

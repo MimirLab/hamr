@@ -1,20 +1,13 @@
 """Prepare authored JATS structure for the ordinary document reading pipeline."""
 
-import re
-from collections import defaultdict
-from dataclasses import replace
 from pathlib import PurePosixPath
 from urllib.parse import quote
 
 from lxml import etree
 
-from .core import Error
-from .document_intake import (DocumentBuilder, FORMULA_ELEMENTS, MAX_STRUCTURE, XLINK_HREF, XML_LANG,
-                              bounded_read, html_read, name, plain_xml_text, xml, xml_formula, xml_root)
+from .document_intake import FORMULA_ELEMENTS, XLINK_HREF, XML_LANG, html_read, name, plain_xml_text, xml_formula
+from .xml_projection import XML_SPACE, XMLProjection, append_text, element_text, identifier
 
-XML_ID = '{http://www.w3.org/XML/1998/namespace}id'
-XML_SPACE = '{http://www.w3.org/XML/1998/namespace}space'
-LAYOUT_SPACE = re.compile(r'[ \t\r\n]+')
 NOTE_TYPES = frozenset(('fn','table-fn'))
 HTML = frozenset(('p','table','thead','tbody','tfoot','tr','th','td','sup','sub','br','pre'))
 FORMATTING = {'bold':'strong','italic':'em','monospace':'code','code':'code','preformat':'pre',
@@ -24,9 +17,7 @@ CONTAINERS = frozenset(('body','abstract','back','sec','ack','app','app-group','
                        'disp-quote','fig-group','table-wrap-group','verse-group','statement','glossary'))
 METADATA = frozenset(('object-id','article-id','kwd-group','funding-group','permissions','processing-meta',
                      'journal-meta','col','colgroup','related-article','related-object'))
-LOCATOR_ATTRIBUTES = ('id','headers','scope','rowspan','colspan')
 ASSET_TYPES = frozenset(('graphic','inline-graphic','media','supplementary-material','inline-supplementary-material'))
-SUFFIXES = ('.xml','.jats')
 
 
 def is_jats(root,filename):
@@ -40,32 +31,10 @@ def is_jats(root,filename):
         any(article.find('front/article-meta') is not None or article.get('dtd-version') for article in articles))
 
 
-def identifier(node):
-    return node.get('id') or node.get(XML_ID)
-
-
-def element_text(node):
-    return ' '.join(plain_xml_text(node).split())
-
-
-def normal_text(text,literal=False):
-    return text if literal or text is None else LAYOUT_SPACE.sub(' ',text)
-
-
-def append_text(parent,text):
-    if text:
-        if len(parent):
-            parent[-1].tail = (parent[-1].tail or '')+text
-        else:
-            parent.text = (parent.text or '')+text
-
-
-class Article:
+class Article(XMLProjection):
     def __init__(self,article,part):
+        super().__init__(article,part)
         self.article = article
-        self.part = part
-        self.tree = article.getroottree()
-        self.annotations = {}
         nodes = article.xpath('.//fn[not(ancestor::sub-article or ancestor::response)]')
         self.note_ids = {value for node in nodes if (value:=identifier(node))}
         references = article.xpath('.//xref[not(ancestor::sub-article or ancestor::response)]')
@@ -79,37 +48,6 @@ class Article:
         if kind in NOTE_TYPES:
             return targets
         return [target for target in targets if target in self.note_ids] if not kind else []
-
-    def location(self,node):
-        path = self.tree.getpath(node)
-        return {'source_file':self.part,'xml_path':path,'lines':[node.sourceline,node.sourceline]}
-
-    def element(self,node,tag,*,attributes=None,**evidence):
-        result = etree.Element(tag,attrib=attributes or {})
-        label = str(len(self.annotations)+1)
-        result.set('data-hamr-node',label)
-        for field in LOCATOR_ATTRIBUTES:
-            if value:=node.get(field):
-                result.set(field,value)
-        if anchor:=identifier(node):
-            result.set('id',anchor)
-        if language:=node.get(XML_LANG):
-            result.set('lang',language)
-        location = self.location(node)
-        self.annotations[label] = {**location,'source_element':self.part+':'+location['xml_path'],**evidence}
-        return result
-
-    def children(self,node,result,*,depth,literal=False):
-        result.text = normal_text(node.text,literal)
-        for child in node:
-            if isinstance(child,etree._Entity):
-                raise Error('source_xml',f'An unresolved XML entity occurs in {self.part} at line {child.sourceline}.',
-                            'Open an edition with the entities expanded in its source.')
-            projected = self.project(child,depth=depth,literal=literal) if name(child) else None
-            if projected is not None:
-                result.append(projected)
-            append_text(result,normal_text(child.tail,literal))
-        return result
 
     def reference(self,node,depth,literal):
         location = self.location(node)
@@ -287,9 +225,6 @@ def read_jats(root,builder,part,*,collect_resources=False):
         article = Article(node,part)
         html_read(article.html(),builder,metadata=False,where=part,collect_resources=collect_resources,
                   source_annotations=article.annotations)
-    if not collect_resources:
-        doc.inventory.extend({**asset_reference(node,href,part),'status':'unavailable'}
-                             for node,href,_ in assets(root,part))
 
 
 def author_name(author):
@@ -305,131 +240,7 @@ def author_name(author):
                     if (child:=node.find(field)) is not None and element_text(child))
 
 
-def assets(root,part):
-    from .opf_intake import target
-
+def asset_links(root):
     for node in root.iter():
         if name(node) in ASSET_TYPES and (href:=node.get(XLINK_HREF)):
-            yield node,href,target(part,href)
-
-
-def asset_reference(node,href,part):
-    return {'kind':'jats_asset','href':href,'member':part,'xml_path':node.getroottree().getpath(node),
-            'line':node.sourceline}
-
-
-def candidate(stream,filename):
-    return PurePosixPath(filename).suffix.lower() in SUFFIXES and xml_root(stream) in ('article','article-set')
-
-
-def loose_article(path):
-    with path.open('rb') as stream:
-        if not candidate(stream,path.name):
-            return None
-    root = xml(bounded_read(path))
-    return root if is_jats(root,path.name) else None
-
-
-def declared_files(path,root):
-    from .source_bundle import relative_file, stamp
-
-    result = {path.name:stamp(path.stat())}
-    for _,_,target in assets(root,path.name):
-        if target and target not in result:
-            try:
-                result[target] = stamp(relative_file(path.parent,target).stat())
-            except Error as exc:
-                if exc.code!='source_member_missing':
-                    raise
-    return result
-
-
-def capture_jats(path,target_dir,source):
-    from .publication_package import capture_folder
-    from .source_bundle import relative_file, stamp
-
-    before = stamp(path.stat())
-    root = loose_article(path)
-    if root is None:
-        return None
-    anchor = relative_file(path.parent,path.name)
-    listed = declared_files(anchor,root)
-    if listed[path.name]!=before:
-        raise Error('source_changed','The selected JATS article changed before capture.')
-    if len(listed)==1:
-        return None
-    output = target_dir/'source.zip'
-
-    def verify(_):
-        # Publication capture checks every current member stamp, then checks
-        # whether an authored dependency appeared or disappeared.
-        return declared_files(anchor,root)
-
-    capture_folder(path.parent,output,lambda:listed,verify=verify,include_root=False)
-    return output,replace(source,kind='zip',entry=sorted(listed).index(path.name)+1,member_name=None)
-
-
-def archive_books(archive,members):
-    from .publication_package import member_bytes
-
-    by_name = defaultdict(list)
-    for member in members:
-        by_name[member.name].append(member)
-    books,claimed = [],set()
-    for member in members:
-        if (member.size is not None and member.size>MAX_STRUCTURE
-                or PurePosixPath(member.name).suffix.lower() not in SUFFIXES):
-            continue
-        with archive.open_member(member) as stream:
-            if not candidate(stream,member.name):
-                continue
-        try:
-            root = xml(member_bytes(archive,member,MAX_STRUCTURE))
-        except Error as exc:
-            if exc.code not in ('source_xml','source_structure_size'):
-                raise
-            continue
-        if not is_jats(root,member.name):
-            continue
-        title = root.find('front/article-meta/title-group/article-title')
-        books.append((member,element_text(title) if title is not None else member.name))
-        claimed.add(member.index)
-        for _,_,path in assets(root,member.name):
-            claimed.update(asset.index for asset in by_name.get(path,()))
-    return books,claimed
-
-
-def read_jats_archive(path,source,sha,title):
-    from .archive_intake import containers
-    from .opf_intake import target
-    from .publication_package import bind_member_block, member_bytes, member_location
-
-    with containers(path,source.kind) as archive:
-        members = list(archive.members())
-        text = next((item for item in members if item.index==source.entry),None)
-        if text is None:
-            raise Error('source_member_missing','The saved JATS article is missing from the source archive.')
-        root = xml(member_bytes(archive,text,MAX_STRUCTURE))
-        if not is_jats(root,text.name):
-            raise Error('source_xml','The selected source archive member does not identify a JATS article.')
-        builder = DocumentBuilder('xml-book',title,sha)
-        read_jats(root,builder,text.name,collect_resources=True)
-        doc = builder.doc
-        by_name = defaultdict(list)
-        for member in members:
-            by_name[member.name].append(member)
-        records = {text.name:{**member_location(sha,text,'text'),'status':'represented'}}
-        for node,href,asset_path in assets(root,text.name):
-            matched = by_name.get(asset_path,())
-            reference = asset_reference(node,href,text.name)
-            if len(matched)==1 and asset_path!=text.name:
-                member, = matched
-                record = records.setdefault(asset_path,{**member_location(sha,member,'asset'),'status':'preserved'})
-                record.setdefault('authored_references',[]).append(reference)
-            else:
-                doc.inventory.append({**reference,'status':'ambiguous' if len(matched)>1 else 'unavailable'})
-        for ordinal,block in enumerate(doc.blocks,1):
-            bind_member_block(block,text,ordinal,sha,records,target)
-        doc.metadata['source_resources'] = list(records.values())
-        doc.inventory.extend(records.values())
-        return doc
+            yield node,href

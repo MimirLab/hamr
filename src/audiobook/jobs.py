@@ -696,6 +696,20 @@ def publish(store,j,*,record_run_metrics=None):
         elif j['document']['format']=='pdf' and decision['action']=='speak' and ' '.join(decision['spoken'].split())!=' '.join(b['source'].split()):
             source+='<details><summary>Reading used in the audiobook</summary><pre style="white-space:pre-wrap">'+html.escape(decision['spoken'])+'</pre><p>'+html.escape(decision['reason'])+'</p></details>'
         source+='</section>'
+    variants = [item for item in j['document']['inventory']
+                if isinstance(item,dict) and item.get('kind')=='text_variant']
+    if variants:
+        source+='<h2>Text variants</h2>'
+        for variant in variants:
+            label = html.escape(variant['source_file']+' · line '+str(variant['lines'][0]))
+            source+=f'<details><summary>{label}</summary><ul>'
+            for reading in variant['readings']:
+                witnesses = ' '.join(reading['witnesses'])
+                qualifier = 'Read in this edition' if reading['selected'] else 'Alternate reading'
+                detail = html.escape(qualifier+(' · '+witnesses if witnesses else ''))
+                value = html.escape(reading['text'])
+                source+=f'<li><strong>{detail}</strong> {value}</li>'
+            source+='</ul></details>'
     if resources:
         source+='<h2>Original package files</h2><ul>'
         for resource in resources:
