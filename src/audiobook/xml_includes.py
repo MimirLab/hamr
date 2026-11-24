@@ -51,6 +51,7 @@ class XMLIncludes:
         self.owners = {root:part}
         self.bindings = {}
         self.references = []
+        self.alternates = []
         self.active = {}
         self.load = load
         self.missing = set()
@@ -59,6 +60,12 @@ class XMLIncludes:
 
     def owner(self,node):
         return self.owners[node.getroottree().getroot()]
+
+    def project(self,projection,node,*,depth,literal):
+        binding = self.bindings[node]
+        if binding.problem:
+            return projection.review(node,binding.problem)
+        return projection.project(binding.node,depth=depth,literal=literal)
 
     def document(self,part):
         if part in self.roots:

@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev27
+
+- Open DocBook 4 and 5 manuals, chapters, and reference entries as XML files, source folders, or ZIPs. Hamr follows local XML includes and reads authored headings, footnotes, figure descriptions, and simple CALS tables. The source companion retains the chapter and illustration files. [Document intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev26
 
 - Open BITS books, individual book-part XML exports, and NCBI Bookshelf source archives. Hamr reads the declared chapter order, resolves local XML includes, and keeps chapter originals and accompanying renditions in the source companion. [Document intake](docs/INTAKE.md#source-readers)

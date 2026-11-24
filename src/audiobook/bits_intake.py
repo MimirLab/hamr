@@ -52,7 +52,6 @@ class BookIncludes(XMLIncludes):
     def __init__(self,root,part,load=None):
         super().__init__(root,part,load)
         self.contents = {}
-        self.alternates = []
         if layout:=bookshelf_toc(root):
             toc,identity = layout
             represented = self.bind_contents(toc,identity,part)
@@ -139,23 +138,18 @@ def publication_label(root,includes=None):
 
 class Book(Article):
     def __init__(self,root,part,includes):
-        self.includes = includes
         self.note_owners = defaultdict(set)
         if len(includes.roots)>1:
             for node in self.in_scope('fn',includes.active):
                 if target:=identifier(node):
                     self.note_owners[target].add(includes.owner(node))
-        super().__init__(root,part,active=includes.active)
+        super().__init__(root,part,active=includes.active,includes=includes)
 
     def note_anchor(self,node,target):
         owners = self.note_owners.get(target,())
         if len(owners)<=1:
             return target
         return key([self.includes.owner(node),target])[:24]
-
-    def location(self,node):
-        return {'source_file':self.includes.owner(node),
-                'xml_path':node.getroottree().getpath(node),'lines':[node.sourceline,node.sourceline]}
 
     def headings(self,meta,depth):
         if meta is None:
@@ -187,10 +181,7 @@ class Book(Article):
     def project(self,node,*,depth=0,literal=False):
         kind = name(node)
         if node.tag==INCLUDE:
-            binding = self.includes.bindings[node]
-            if binding.problem:
-                return self.review(node,binding.problem)
-            return self.project(binding.node,depth=depth,literal=literal)
+            return self.includes.project(self,node,depth=depth,literal=literal)
         if node.tag==FALLBACK or kind in BOOK_STRUCTURE or kind=='named-book-part-body':
             return self.children(node,self.element(node,'div'),depth=depth,literal=literal)
         if kind in PARTS | NAMED_PARTS:

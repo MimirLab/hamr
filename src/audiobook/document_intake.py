@@ -49,7 +49,7 @@ def xml(data):
         raise Error('source_xml', 'The selected structured document has unreadable XML.') from exc
 
 
-def xml_root(stream):
+def xml_start(stream):
     parser = etree.XMLPullParser(events=('start',),load_dtd=False,no_network=True,resolve_entities=False)
     for _ in range(16):
         data = stream.read(4096)
@@ -60,12 +60,20 @@ def xml_root(stream):
         except etree.XMLSyntaxError:
             break
         for _,element in parser.read_events():
-            return name(element)
+            return element
     return None
 
 
+def xml_root(stream):
+    element = xml_start(stream)
+    return name(element) if element is not None else None
+
+
 def xml_book_root(stream):
-    return xml_root(stream) in BOOK_ROOTS
+    from .docbook_intake import is_docbook
+
+    element = xml_start(stream)
+    return element is not None and (name(element) in BOOK_ROOTS or is_docbook(element,''))
 
 
 def bounded_read(path):
@@ -953,12 +961,12 @@ def read_document(path,source,sha,cache,title):
             from .xml_package import read_projected
 
             root = xml(data)
-            if name(root) not in BOOK_ROOTS:
-                raise Error('unsupported_format', f'No book reader is available for XML root {name(root)!r}.')
             part = source.member_name or PurePosixPath(title).name+path.suffix
             if is_dtbook(root):
                 read_dtbook(root,builder,part)
             elif not read_projected(root,builder,part):
+                if name(root) not in BOOK_ROOTS:
+                    raise Error('unsupported_format', f'No book reader is available for XML root {name(root)!r}.')
                 semantic_xml(root,builder,path.name)
         elif route in ('tcr','amigaguide'):
             from .compact_documents import read_guide, read_tcr

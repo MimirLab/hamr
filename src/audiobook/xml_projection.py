@@ -34,13 +34,24 @@ def append_text(parent,text):
 
 
 class XMLProjection:
-    def __init__(self,root,part):
+    def __init__(self,root,part,*,includes=None):
         self.part = part
         self.tree = root.getroottree()
         self.annotations = {}
+        self.includes = includes
 
     def location(self,node):
-        return {'source_file':self.part,'xml_path':self.tree.getpath(node),'lines':[node.sourceline,node.sourceline]}
+        parent = node.getparent() if isinstance(node,etree._Entity) else node
+        if self.includes is not None:
+            part = self.includes.owner(node)
+        else:
+            part = self.part
+        result = {'source_file':part,'xml_path':parent.getroottree().getpath(parent),
+                  'lines':[node.sourceline,node.sourceline]}
+        if parent is not node:
+            result['xml_entity'] = node.name
+            result['entity_child'] = parent.index(node)+1
+        return result
 
     def review(self,node,message):
         origin = self.location(node)
@@ -66,11 +77,18 @@ class XMLProjection:
     def children(self,node,result,*,depth,literal=False):
         result.text = normal_text(node.text,literal)
         for child in node:
-            if isinstance(child,etree._Entity):
-                raise Error('source_xml',f'An unresolved XML entity occurs in {self.part} at line {child.sourceline}.',
-                            'Open an edition with the entities expanded in its source.')
-            projected = self.project(child,depth=depth,literal=literal) if name(child) else None
+            projected = self.child(child,depth=depth,literal=literal)
             if projected is not None:
                 result.append(projected)
             append_text(result,normal_text(child.tail,literal))
         return result
+
+    def child(self,node,*,depth,literal):
+        if isinstance(node,etree._Entity):
+            return self.entity(node)
+        return self.project(node,depth=depth,literal=literal) if name(node) else None
+
+    def entity(self,node):
+        origin = self.location(node)
+        raise Error('source_xml',f'An unresolved XML entity occurs in {origin["source_file"]} at line {node.sourceline}.',
+                    'Open an edition with the entities expanded in its source.')

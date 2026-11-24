@@ -1,66 +1,79 @@
 """Shared archive, folder and original-resource handling for scoped XML editions."""
 
 from collections import defaultdict
-from dataclasses import replace
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 
 from .core import Error
-from .document_intake import DocumentBuilder, MAX_STRUCTURE, bounded_read, name, xml, xml_root
+from .document_intake import DocumentBuilder, MAX_STRUCTURE, bounded_read, name, xml, xml_start
 from .xml_projection import element_text
 
-SUFFIXES = ('.xml','.nxml','.jats','.tei','.bits')
+SUFFIXES = ('.xml','.nxml','.jats','.tei','.bits','.dbk','.docbook')
 ROOTS = ('article','article-set','TEI','teiCorpus','book','book-part-wrapper')
 XML_DEPENDENCIES = frozenset(('xml_include','xml_chapter'))
 
 
-def reader_for(root,part):
-    from .bits_intake import asset_links as bits_assets, is_bits, read_bits
-    from .jats_intake import asset_links as jats_assets, is_jats, read_jats
-    from .tei_intake import asset_links as tei_assets, is_tei, read_tei
+@dataclass(frozen=True)
+class Reader:
+    kind: str
+    read: Callable
+    links: Callable
+    bind: Callable | None = None
+    label: Callable | None = None
 
-    if is_bits(root):
-        return 'bits',read_bits,bits_assets
-    if is_jats(root,part):
-        return 'jats',read_jats,jats_assets
-    if is_tei(root):
-        return 'tei',read_tei,tei_assets
+
+def reader_for(root,part):
+    from . import bits_intake, docbook_intake, jats_intake, tei_intake
+    from .xml_includes import XMLIncludes
+
+    if bits_intake.is_bits(root):
+        return Reader('bits',bits_intake.read_bits,bits_intake.asset_links,bits_intake.BookIncludes,
+                      bits_intake.publication_label)
+    if jats_intake.is_jats(root,part):
+        return Reader('jats',jats_intake.read_jats,jats_intake.asset_links)
+    if tei_intake.is_tei(root):
+        return Reader('tei',tei_intake.read_tei,tei_intake.asset_links)
+    if docbook_intake.is_docbook(root,part):
+        return Reader('docbook',docbook_intake.read_docbook,docbook_intake.asset_links,XMLIncludes,
+                      docbook_intake.publication_label)
     return None
 
 
 def include_graph(root,part,load=None):
-    from .bits_intake import BookIncludes, is_bits
-
-    return BookIncludes(root,part,load) if is_bits(root) else None
+    if (reader:=reader_for(root,part)) is not None and reader.bind is not None:
+        return reader.bind(root,part,load)
+    return None
 
 
 def assets(root,part,includes=None):
     from .opf_intake import target
     from .xml_includes import local_target
 
-    kind,_,links = reader_for(root,part)
+    reader = reader_for(root,part)
     if includes is not None:
         yield from includes.references
         for path in includes.alternates:
             yield {'kind':'xml_alternate','member':part,'href':path},path
     roots = includes.roots if includes is not None else {part:root}
     for owner,source in roots.items():
-        for node,href in links(source):
+        for node,href in reader.links(source):
             if includes is not None and node not in includes.active:
                 continue
-            reference = {'kind':kind+'_asset','href':href,'member':owner,
+            reference = {'kind':reader.kind+'_asset','href':href,'member':owner,
                          'xml_path':node.getroottree().getpath(node),'line':node.sourceline}
             yield reference,local_target(owner,node,href) if includes is not None else target(owner,href)
 
 
 def read_projected(root,builder,part,*,includes=None,collect_resources=False):
-    schema = reader_for(root,part)
-    if schema is None:
+    reader = reader_for(root,part)
+    if reader is None:
         return False
     options = {'collect_resources':collect_resources}
-    if schema[0]=='bits':
-        includes = includes if includes is not None else include_graph(root,part)
+    if reader.bind is not None:
+        includes = includes if includes is not None else reader.bind(root,part)
         options['includes'] = includes
-    schema[1](root,builder,part,**options)
+    reader.read(root,builder,part,**options)
     if not collect_resources:
         builder.doc.inventory.extend({'status':'unavailable',**item} for item,_ in assets(root,part,includes)
                                      if item['kind']!='xml_alternate')
@@ -68,10 +81,8 @@ def read_projected(root,builder,part,*,includes=None,collect_resources=False):
 
 
 def publication_label(root,part,includes=None):
-    from .bits_intake import is_bits, publication_label as bits_label
-
-    if is_bits(root):
-        return bits_label(root,includes) or part
+    if (reader:=reader_for(root,part)) is not None and reader.label is not None:
+        return reader.label(root,includes) or part
     if name(root) in ('TEI','teiCorpus'):
         title = root.find('{*}teiHeader/{*}fileDesc/{*}titleStmt/{*}title')
     else:
@@ -80,7 +91,12 @@ def publication_label(root,part,includes=None):
 
 
 def candidate(stream,filename):
-    return PurePosixPath(filename).suffix.lower() in SUFFIXES and xml_root(stream) in ROOTS
+    from .docbook_intake import is_docbook
+
+    if PurePosixPath(filename).suffix.lower() not in SUFFIXES:
+        return False
+    root = xml_start(stream)
+    return root is not None and (name(root) in ROOTS or is_docbook(root,filename))
 
 
 def loose_document(path):

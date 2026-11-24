@@ -32,8 +32,8 @@ def is_jats(root,filename):
 
 
 class Article(XMLProjection):
-    def __init__(self,article,part,*,active=None):
-        super().__init__(article,part)
+    def __init__(self,article,part,*,active=None,includes=None):
+        super().__init__(article,part,includes=includes)
         self.article = article
         nodes = self.in_scope('fn',active)
         self.note_ids = {value for node in nodes if (value:=identifier(node))}
