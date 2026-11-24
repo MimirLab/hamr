@@ -81,6 +81,10 @@ def parse(path,source,sha,cache,title):
         from .textbundle import read_textbundle
 
         return read_textbundle(path,source,sha,title)
+    if source.route=='mdbook':
+        from .mdbook_intake import read_mdbook
+
+        return read_mdbook(path,source,sha,title)
     if source.route=='scan':
         from .scan_intake import scan
 
@@ -232,7 +236,7 @@ def capabilities():
     import platform
     import sys
     from .pdf_ocr import resident_binary
-    from .source_bundle import NATIVE
+    from .source_bundle import NATIVE, PACKAGE_FOLDERS
     from .intake_helpers import CALIBRE_BYTES,CALIBRE_UNPACKED
 
     arch = platform.machine().lower()
@@ -251,7 +255,7 @@ def capabilities():
                          or os.name=='nt' and x64 and (assets/'mobitool-windows-x86_64.exe').is_file()
                          or bool(shutil.which('mobitool')))},
     }
-    return {'formats':sorted({'scan',*NATIVE.values()}),
+    return {'formats':sorted({'scan',*NATIVE.values(),*PACKAGE_FOLDERS}),
             'registered_suffixes':dict(sorted(NATIVE.items())),
             'source_kinds':['file','directory','page-manifest','archive'],
             'archives':{'zip':'built in','tar':'built in','7z':'local libarchive','rar':'local libarchive'},

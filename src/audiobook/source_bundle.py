@@ -30,6 +30,7 @@ NATIVE = {
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
 }
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -140,6 +141,14 @@ def relative_file(root, name):
     return path
 
 
+def publication_folder(path):
+    if path.suffix.casefold()=='.textbundle':
+        return 'textbundle'
+    from .mdbook_intake import folder_book
+
+    return 'mdbook' if folder_book(path) is not None else None
+
+
 def directory_members(root):
     pages, other = [], []
     for folder, directories, files in os.walk(root, followlinks=False):
@@ -147,8 +156,8 @@ def directory_members(root):
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
                           and name != '__MACOSX' and not (here/name).is_symlink()
                           and not (here/name).is_junction()]
-        packages = [name for name in directories if Path(name).suffix.casefold()=='.textbundle']
-        other.extend(((here/name).relative_to(root).as_posix(),'textbundle') for name in packages)
+        packages = {name:route for name in directories if (route:=publication_folder(here/name))}
+        other.extend(((here/name).relative_to(root).as_posix(),route) for name,route in packages.items())
         directories[:] = [name for name in directories if name not in packages]
         for name in files:
             if name.startswith('.'):
@@ -223,7 +232,8 @@ def zip_source(path, entry, override):
                     if override!='scan':
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
-                                        textpack=path.suffix.casefold()=='.textpack' or override=='textbundle')
+                                        textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
+                                        mdbook_only=override=='mdbook')
     except BadZipFile as exc:
         raise Error('unreadable_archive', 'The ZIP archive could not be read.') from exc
 
@@ -235,20 +245,19 @@ def wrapped_source(path,kind,entry):
         return archive_publications(archive,kind,entry,scan_only=path.suffix.lower() in ('.cb7','.cbr','.cbt'))
 
 
-def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False):
+def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,mdbook_only=False):
+    from .publication_package import archive_packages
     from .scan_intake import bounded
 
     members = [item for item in archive.members() if not item.name.startswith('__MACOSX/')]
-    from .textbundle import archive_scopes
-
-    packages,claimed = archive_scopes(archive,members,explicit=textpack)
+    packages,claimed = archive_packages(archive,members,textpack=textpack)
     if textpack and scan_only:
         raise Error('source_format','The selected publication is a TextPack.')
     if textpack and not packages:
         raise Error('source_textbundle','The TextPack has no info.json descriptor next to its text payload.')
     manifests, images, documents = [], [], []
     for item in members:
-        if textpack or item.index in claimed:
+        if textpack or mdbook_only or item.index in claimed:
             continue
         name = PurePosixPath(item.name)
         basename, suffix = name.name.casefold(),name.suffix.lower()
@@ -288,10 +297,10 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False):
         if (images or manifests) and PurePosixPath(item.name).stem.casefold() in ('readme','metadata','license'):
             continue
         candidates[str(item.index)] = (item.name,Source(route,kind+'-member',item.index))
-    for descriptor in packages if not scan_only else ():
-        name = PurePosixPath(descriptor.name).parent.as_posix()
-        candidates['bundle:'+str(descriptor.index)] = (name if name!='.' else 'TextBundle',
-                                                      Source('textbundle',kind,descriptor.index))
+    for route,descriptor,name in packages if not scan_only else ():
+        if not mdbook_only or route=='mdbook':
+            label = name if name!='.' else 'TextBundle'
+            candidates['bundle:'+str(descriptor.index)] = (label,Source(route,kind,descriptor.index))
     selected = choose([(ident,name) for ident,(name,_) in candidates.items()],entry)
     return candidates[selected][1]
 
@@ -308,16 +317,16 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
 def _describe(path,entry,format,offline):
     if not path.exists():
         raise Error('source_missing', f'Document not found: {path}', 'Check the document path.')
-    routes = {*NATIVE.values(),'scan'}
+    routes = {*NATIVE.values(),*PACKAGE_FOLDERS,'scan'}
     if format and format not in routes:
         raise Error('source_format', f'Unknown intake format: {format}.', 'Use hamr agent capabilities to list formats.')
     if path.is_dir():
         if path.is_symlink() or path.is_junction():
             raise Error('unsafe_source_member', 'A publication folder must be a real directory.')
-        if path.suffix.casefold()=='.textbundle':
-            if format not in (None,'textbundle'):
-                raise Error('source_format','This directory is a TextBundle package.')
-            return Source('textbundle','directory',offline=offline)
+        if route:=publication_folder(path):
+            if format not in (None,route):
+                raise Error('source_format',f'This directory uses the {route} publication format.')
+            return Source(route,'directory',offline=offline)
         manifest = path/'pages.hamr.json'
         if manifest.exists():
             relative_file(path,manifest.name)
@@ -327,11 +336,10 @@ def _describe(path,entry,format,offline):
         inputs = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])
         inputs.extend((name,name) for name,_ in books)
         selection = choose(inputs,entry)
-        if any(name==selection and route=='textbundle' for name,route in books):
-            nested = _describe(relative_path(path,selection),None,format,offline)
-            return replace(nested,member_name=selection)
         if selection!='pages':
-            return describe(relative_file(path,selection),format=format,offline=offline)
+            selected = relative_path(path,selection)
+            result = describe(selected,format=format,offline=offline)
+            return replace(result,member_name=selection) if result.kind=='directory' else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
@@ -364,7 +372,7 @@ def _describe(path,entry,format,offline):
 
 
 def _local_source(path, options, source=None):
-    if source and source.kind=='directory' and source.route=='textbundle':
+    if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         return relative_path(path,source.member_name) if source.member_name else path
     if path.is_dir() and options.get('entry') not in (None,'pages') and not (path/'pages.hamr.json').exists():
         return relative_file(path,options['entry'])
@@ -499,12 +507,18 @@ def make_bundle(path,kind,target):
 def capture(path,target_dir,**options):
     source = describe(path,**options)
     local = _local_source(path,options,source)
-    if source.kind=='directory' and source.route=='textbundle':
-        from .textbundle import capture_textbundle
+    if source.kind=='directory' and source.route in PACKAGE_FOLDERS:
+        if source.route=='textbundle':
+            from .textbundle import capture_textbundle
 
-        target = target_dir/'source.textpack'
-        capture_textbundle(local,target)
-        selected = zip_source(target,None,'textbundle')
+            target = target_dir/'source.textpack'
+            capture_textbundle(local,target)
+        else:
+            from .mdbook_intake import capture_mdbook
+
+            target = target_dir/'source.zip'
+            capture_mdbook(local,target,container=path)
+        selected = zip_source(target,None,source.route)
         source = replace(selected,offline=source.offline,encoding=source.encoding)
     elif source.kind in ('directory','manifest'):
         target = target_dir/'source.hamr.zip'

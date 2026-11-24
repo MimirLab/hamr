@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hamr"
-version = "0.4.9.dev13"
+version = "0.4.9.dev14"
 description = "hamr: local audiobooks with recoverable jobs, character voices and source provenance"
 readme = "README.md"
 requires-python = ">=3.12"

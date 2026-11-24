@@ -118,9 +118,9 @@ def sequence(path,source):
                 title,pages = archive_order(archive,entries,source.entry)
                 yield title,pages,member,None
                 return
-            from .textbundle import archive_scopes
+            from .publication_package import archive_packages
 
-            _,claimed = archive_scopes(archive,entries)
+            _,claimed = archive_packages(archive,entries)
             image_names = []
             for item in entries:
                 if item.name.startswith('__MACOSX/') or item.index in claimed:

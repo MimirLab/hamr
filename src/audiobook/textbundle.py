@@ -1,17 +1,14 @@
 """Read a descriptor-selected text payload and preserve its original resources."""
 
 import json
-import os
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 import posixpath
-import shutil
-import stat
 from urllib.parse import unquote, urlsplit
-from zipfile import ZIP_STORED, ZipFile, ZipInfo
 
 from .archive_intake import containers
 from .core import Error, key
-from .source_bundle import MAX_MANIFEST, copy_stream, relative_file, safe_name, stamp
+from .publication_package import capture_folder, folder_files, member_bytes, member_location
+from .source_bundle import MAX_MANIFEST, safe_name
 
 MARKDOWN = 'net.daringfireball.markdown'
 KNOWN_TYPES = {
@@ -34,16 +31,6 @@ def package_members(descriptor,members):
 def document_members(descriptor,members):
     return [member for member in members if posixpath.dirname(member.name)==posixpath.dirname(descriptor.name)
             and PurePosixPath(member.name).name.startswith('text.')]
-
-
-def read_member(archive,member,limit):
-    if member.size is not None and member.size>limit:
-        raise Error('source_structure_size',f'TextBundle member exceeds its reading budget: {member.name}.')
-    with archive.open_member(member) as stream:
-        data = stream.read(limit+1)
-    if len(data)>limit:
-        raise Error('source_structure_size',f'TextBundle member exceeds its reading budget: {member.name}.')
-    return data
 
 
 def archive_descriptors(archive,members,*,explicit=False):
@@ -69,7 +56,7 @@ def archive_descriptors(archive,members,*,explicit=False):
         if descriptor.size is None or descriptor.size>MAX_MANIFEST:
             continue
         try:
-            metadata = json.loads(read_member(archive,descriptor,MAX_MANIFEST))
+            metadata = json.loads(member_bytes(archive,descriptor,MAX_MANIFEST))
         except (UnicodeError,ValueError):
             continue
         if isinstance(metadata,dict) and type(metadata.get('version')) is int and metadata['version'] in (1,2):
@@ -86,45 +73,14 @@ def archive_scopes(archive,members,*,explicit=False):
     return descriptors,claimed
 
 
-def folder_files(root):
-    result = {}
-
-    def fail(error):
-        raise error
-
-    for path,dirs,files in os.walk(root,onerror=fail,followlinks=False):
-        here = Path(path)
-        for name in dirs:
-            child = here/name
-            if child.is_symlink() or child.is_junction():
-                raise Error('unsafe_source_member','A TextBundle directory entry follows a link.')
-        for name in files:
-            relative = (here/name).relative_to(root).as_posix()
-            child = relative_file(root,relative)
-            result[relative] = stamp(child.stat())
-    return result
-
-
 def capture_textbundle(root,target):
-    """Freeze folder members as one deterministic, portable TextPack."""
-    listed = folder_files(root)
-    if 'info.json' not in listed:
-        raise Error('source_textbundle','The TextBundle folder has no info.json descriptor.')
-    budget = sum(value[2]+1024 for value in listed.values())
-    if shutil.disk_usage(target.parent).free<budget:
-        raise Error('disk_space',f'Need at least {budget:,} bytes to save the original TextBundle.')
-    with ZipFile(target,'x',compression=ZIP_STORED,allowZip64=True) as archive:
-        for name,before in sorted(listed.items()):
-            source = relative_file(root,name)
-            if stamp(source.stat())!=before:
-                raise Error('source_changed',f'TextBundle member changed during capture: {name}.')
-            record = ZipInfo(safe_name(root.name+'/'+name))
-            record.create_system = 3
-            record.external_attr = (stat.S_IFREG|0o400)<<16
-            with archive.open(record,'w',force_zip64=True) as destination:
-                copy_stream(source,destination)
-        if folder_files(root)!=listed:
-            raise Error('source_changed','TextBundle members changed during capture.')
+    def files():
+        listed = folder_files(root)
+        if 'info.json' not in listed:
+            raise Error('source_textbundle','The TextBundle folder has no info.json descriptor.')
+        return listed
+
+    capture_folder(root,target,files)
 
 
 def declaration(raw,body):
@@ -176,11 +132,6 @@ def text_document(raw,route,encoding,title,sha):
     return builder.doc
 
 
-def locator(sha,member,role):
-    return {'member':member.name,'archive_entry':member.index,'size':member.size,'role':role,
-            'location_id':key([sha,member.index,member.name])[:20]}
-
-
 def asset_target(href,base):
     try:
         url = urlsplit(href)
@@ -202,8 +153,8 @@ def bind_resources(document,members,descriptor,body,sha):
         if member.index==body.index:
             continue
         kind = 'descriptor' if member.index==descriptor.index else 'asset' if member.name.startswith(prefix) else 'other'
-        resources[member.name] = {**locator(sha,member,kind),'status':'preserved'}
-    body_location = locator(sha,body,'text')
+        resources[member.name] = {**member_location(sha,member,kind),'status':'preserved'}
+    body_location = member_location(sha,body,'text')
     for block in document.blocks:
         block.locator.update(member=body.name,archive_entry=body.index,
                              location_id=key([sha,body.index,block.id])[:20])
@@ -241,10 +192,10 @@ def read_textbundle(path,source,sha,title):
         if len(bodies)!=1:
             raise Error('source_textbundle','The bundle must contain exactly one text.* file beside info.json.')
         body, = bodies
-        version,declared,route,encoding = declaration(read_member(archive,descriptor,MAX_MANIFEST),body)
+        version,declared,route,encoding = declaration(member_bytes(archive,descriptor,MAX_MANIFEST),body)
         limit = MAX_INPUT if route in ('markdown','text') else MAX_STRUCTURE
         package_name = PurePosixPath(descriptor.name).parent.stem or title
-        document = text_document(read_member(archive,body,limit),route,source.encoding or encoding,package_name,sha)
+        document = text_document(member_bytes(archive,body,limit),route,source.encoding or encoding,package_name,sha)
     document.source_sha256 = sha
     document.metadata['textbundle'] = {'version':version,'type':declared,'text_member':body.name,
                                        'descriptor':descriptor.name}
