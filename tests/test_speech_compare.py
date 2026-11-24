@@ -25,6 +25,19 @@ def test_known_orthographic_compounds_do_not_permit_arbitrary_merges():
     assert c('Dust Bowl and MathML')==c('dustbowl and Math ML')
     assert c('nowhere')!=c('now here')
 
+
+def test_domain_formatting_recovers_exact_digits_without_swallowing_quantities():
+    from audiobook.speech_compare import notation_observation
+
+    expected = 'The credit is www.example007.com. The count is six.'
+    observed = 'The credit is WWW example 007.com. The count is six.'
+    assert c(notation_observation(expected,observed))==c(expected)
+    observed = 'The credit is WWW dot example 007 dot com. The count is six.'
+    assert c(notation_observation(expected,observed))==c(expected)
+    assert notation_observation(expected,observed.replace('007','07'))==observed.replace('007','07')
+    assert notation_observation(expected,observed.replace('007','008'))==observed.replace('007','008')
+    assert notation_observation(expected,observed.replace('example 007','example and 007'))==observed.replace('example 007','example and 007')
+
 def test_cardinal_spellings_match_values_without_changing_critical_values():
     assert c('TWO')==c('2.')
     assert c('fifty-seven and four')==c('57 and 4')

@@ -9,7 +9,7 @@ import re,unicodedata
 from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v37'
+POLICY='bounded-english-composed-scale-typed-v38'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -40,6 +40,9 @@ YEAR_DECADES=('twenties','thirties','forties','fifties','sixties','seventies','e
 YEAR_ONES='|'.join(SMALL[1:10])
 YEAR_TAIL='|'.join(SMALL[10:20])+r'|(?:'+ '|'.join(YEAR_TENS)+r')(?:[ -]+(?:'+YEAR_ONES+r'))?|oh[ -]+(?:'+YEAR_ONES+r')'
 SPOKEN_YEAR=re.compile(r'\b('+YEAR_PREFIX+r')[ -]+('+ '|'.join(YEAR_DECADES)+r'|'+YEAR_TAIL+r')\b',re.I)
+DOMAIN_START=r'(?<![\w@.])'
+DOMAIN_END=r'(?![\w-]|\.[a-z0-9])'
+WWW_DOMAIN=re.compile(DOMAIN_START+r'www\.(?:[a-z0-9-]+\.){1,6}[a-z]{2,20}'+DOMAIN_END,re.I)
 
 
 def isbn_notation(text):
@@ -85,10 +88,22 @@ def contextual_years(expected,observed):
     return SPOKEN_YEAR.sub(year,observed)
 
 
+def domain_notation(expected,observed):
+    separator = r'(?:\s*\.\s*|\s+(?:dot\s+)?)'
+    for spelling in dict.fromkeys(WWW_DOMAIN.findall(expected)):
+        # Recognizers sometimes separate the letters and digits inside a domain
+        # label. Recover precisely the printed spelling, including leading zeros.
+        labels = [r'\s*'.join(map(re.escape,re.findall(r'[a-z]+|[0-9]+|-',label,re.I)))
+                  for label in spelling.split('.')]
+        observed = re.sub(DOMAIN_START+separator.join(labels)+DOMAIN_END,lambda _:spelling,observed,flags=re.I)
+    return observed
+
+
 def notation_observation(expected, observed):
     """Resolve ASR formatting that represents the chosen spoken reading."""
     observed=spoken_currency_observation(expected,observed)
     observed=contextual_years(expected,observed)
+    observed=domain_notation(expected,observed)
     if 'elapsed time' not in expected.casefold():return observed
 
     def elapsed(match):

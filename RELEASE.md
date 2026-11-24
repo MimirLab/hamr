@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev22
+
+- Read text-bearing DAISY 3 through the package OPF and SMIL sequence. The companion can recover exact text, synchronization and existing media files. Repeated passages in the authored order are preserved.
+- Speech verification recognizes equivalent ISBN and web address formatting, paired year readings in matching contexts, and the spelling variants for Dust Bowl and MathML. The report keeps the original ASR transcript and continues to compare actual numeric values and identifier digits.
+
 # hamr 0.4.9.dev21
 
 - Open a NIMAS textbook ZIP, source folder or `.opf` and follow its declared DTBook reading order. Recover the exact XML, package descriptor and illustrations from the finished companion.
