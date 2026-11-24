@@ -326,8 +326,8 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle'):
-        raise Error('source_encoding','Use --encoding for plain text, TextBundle or compiled HTML Help.')
+    if encoding and source.route not in ('text','chm','textbundle','rst'):
+        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle or compiled HTML Help.')
     if source.kind=='file' and source.route in ('scan','djvu') and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
@@ -570,7 +570,14 @@ def make_bundle(path,kind,target):
 def capture(path,target_dir,**options):
     source = describe(path,**options)
     local = _local_source(path,options,source)
-    if source.kind=='directory' and source.route in PACKAGE_FOLDERS:
+    prepared = None
+    if source.kind=='file' and source.route=='rst':
+        from .rst_dependencies import capture_dependencies
+
+        prepared = capture_dependencies(local,target_dir,source)
+    if prepared:
+        target,source = prepared
+    elif source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if source.route=='textbundle':
             from .textbundle import capture_textbundle
 
@@ -625,6 +632,12 @@ def preview(path,cache,**options):
     if source.kind in ('directory','manifest'):
         with tempfile.TemporaryDirectory(prefix='source-preview-',dir=cache) as directory:
             yield capture(path,Path(directory),**options)
+    elif source.kind=='file' and source.route=='rst':
+        from .rst_dependencies import capture_dependencies
+
+        local = _local_source(path,options,source)
+        with tempfile.TemporaryDirectory(prefix='source-preview-',dir=cache) as directory:
+            yield capture_dependencies(local,Path(directory),source) or (local,source)
     else:
         yield _local_source(path,options,source),source
 

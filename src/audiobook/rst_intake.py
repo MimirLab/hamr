@@ -8,7 +8,7 @@ from threading import Lock
 
 from docutils import nodes, statemachine
 from docutils.core import publish_parts
-from docutils.parsers.rst import Directive, directives, roles
+from docutils.parsers.rst import Directive, DirectiveError, directives, roles
 from docutils.parsers.rst.directives.misc import Include
 from docutils.utils import unescape
 from docutils.writers.html5_polyglot import HTMLTranslator, Writer
@@ -25,12 +25,22 @@ class SnapshotInclude(Include):
     option_spec = {name:value for name,value in Include.option_spec.items() if name!='parser'}
 
     def run(self):
+        current,line = self.state_machine.get_source_and_line(self.lineno)
+        try:
+            return self.read_include(current)
+        except DirectiveError as exc:
+            message = self.state_machine.reporter.system_message(exc.level,exc.msg,source=current,line=line)
+            message.source,message.line = current,line
+            message += nodes.literal_block(self.block_text,self.block_text)
+            return [message]
+
+    def read_include(self,current):
         self.settings = self.state.document.settings
         self.tab_width = self.options.get('tab-width',self.settings.tab_width)
-        current, _ = self.state_machine.get_source_and_line(self.lineno)
         requested = directives.path(self.arguments[0])
         try:
-            source,text = self.settings.hamr_files.read(current,requested,self.options.get('encoding','utf-8-sig'))
+            source,text = self.settings.hamr_files.read(current,requested,
+                                                        self.options.get('encoding',self.settings.input_encoding))
         except (Error, UnicodeError, LookupError) as exc:
             raise self.error(str(exc)) from exc
         start,end = slice(self.options.get('start-line'),self.options.get('end-line')).indices(len(text.splitlines()))[:2]
@@ -81,6 +91,8 @@ class SourceFiles:
         self.available = 4*MAX_STRUCTURE
 
     def read(self,current,name,encoding):
+        if self.available<0:
+            raise Error('source_structure_size','Expanded includes exceed this document’s reading limit.')
         if name.startswith('<') and name.endswith('>'):
             filename = name[1:-1]
             if not re.fullmatch(r'[a-z][a-z0-9_-]*\.txt',filename):
@@ -196,7 +208,8 @@ class LocatedWriter(Writer):
         self.translator_class = LocatedHtml
 
 
-def rst_blocks(text,source,sha,*,title='',include=None,sphinx=False,language='en',preamble='',postamble='',config=''):
+def rst_blocks(text,source,sha,*,title='',include=None,sphinx=False,language='en',preamble='',postamble='',config='',
+               encoding='utf-8-sig'):
     annotations = {}
     leading = preamble.rstrip()+'\n\n' if preamble else ''
     ending = '\n\n'+postamble if postamble else ''
@@ -206,7 +219,7 @@ def rst_blocks(text,source,sha,*,title='',include=None,sphinx=False,language='en
                 'embed_stylesheet':False,'stylesheet_path':[],'syntax_highlight':'none',
                 'halt_level':5,'report_level':2,'warning_stream':io.StringIO(),
                 'doctitle_xform':not sphinx,'sectsubtitle_xform':False,
-                'math_output':'MathML','language_code':language,'smart_quotes':sphinx,
+                'math_output':'MathML','language_code':language,'smart_quotes':sphinx,'input_encoding':encoding,
                 'hamr_annotations':annotations,'hamr_files':SourceFiles(include)}
     try:
         # Docutils keeps locally defined roles and registered directives in process state.
@@ -250,14 +263,22 @@ def rst_blocks(text,source,sha,*,title='',include=None,sphinx=False,language='en
     return builder.doc
 
 
-def read_rst(path,source,sha,title):
+def decode_rst(raw,encoding):
     try:
-        text = bounded_read(path).decode(source.encoding or 'utf-8-sig')
+        return raw.decode(encoding or 'utf-8-sig')
     except (UnicodeError,LookupError) as exc:
         raise Error('text_encoding','The reStructuredText source does not decode with the selected encoding.') from exc
-    doc = rst_blocks(text,Path(title).name+path.suffix,sha)
+
+
+def rst_document(text,name,sha,title,*,include=None,encoding=None):
+    doc = rst_blocks(text,name,sha,include=include,encoding=encoding or 'utf-8-sig')
     if doc.title=='Book':
         doc.title = title
     for block in doc.blocks:
         block.locator.pop('resource_references',None)
     return doc
+
+
+def read_rst(path,source,sha,title):
+    return rst_document(decode_rst(bounded_read(path),source.encoding),Path(title).name+path.suffix,
+                        sha,title,encoding=source.encoding)

@@ -30,7 +30,7 @@ def folder_files(root, *, exclude=()):
     return result
 
 
-def capture_folder(root,target,files,*,verify=None):
+def capture_folder(root,target,files,*,verify=None,include_root=True):
     listed = files()
     budget = sum(value[2]+1024 for value in listed.values())
     if shutil.disk_usage(target.parent).free<budget:
@@ -40,7 +40,7 @@ def capture_folder(root,target,files,*,verify=None):
             source = relative_file(root,name)
             if stamp(source.stat())!=before:
                 raise Error('source_changed',f'Publication member changed during capture: {name}.')
-            record = ZipInfo(safe_name(root.name+'/'+name))
+            record = ZipInfo(safe_name(root.name+'/'+name if include_root else name))
             record.create_system = 3
             record.external_attr = (stat.S_IFREG|0o400)<<16
             with archive.open(record,'w',force_zip64=True) as destination:

@@ -45,6 +45,10 @@ def materialized_member(path,kind,index,work):
 def parse(path,source,sha,cache,title):
     from .importers import ADAPTERS, MAX_INPUT, markdown, plain
 
+    if source.route=='rst' and source.kind.endswith('-member'):
+        from .rst_dependencies import read_rst_archive
+
+        return read_rst_archive(path,source,sha)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):
@@ -169,7 +173,7 @@ def inspect_source(path,cache=None,**options):
     path = Path(path).absolute()
     if cache is None:
         source = describe(path,**options)
-        if source.kind not in ('manifest','directory'):
+        if source.kind not in ('manifest','directory') and (source.kind,source.route)!=('file','rst'):
             from .source_bundle import _local_source
             return inspect_saved(_local_source(path,options,source),source,title=path.stem)
         with tempfile.TemporaryDirectory(prefix='hamr-source-') as temp:

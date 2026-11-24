@@ -254,7 +254,7 @@ class SphinxPublication:
             text = member_bytes(self.archive,member,32*1024*1024).decode(self.book.encoding)
             prepared = rst_blocks(text,member.name,self.doc.source_sha256,include=self.include,sphinx=True,
                                   language=self.book.language,preamble=self.book.preamble,
-                                  postamble=self.book.postamble,config=self.book.config)
+                                  postamble=self.book.postamble,config=self.book.config,encoding=self.book.encoding)
         except (Error,UnicodeError,LookupError) as exc:
             self.chapter_failure(row,f'Cannot read {member.name}: {exc}')
             return
