@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev23
+
+- Open text-bearing DAISY 2.02 from a source folder, ZIP, NCC document or component SMIL. Hamr reads synchronized HTML in the authored order, applies the standard footnote settings, and keeps original source files available in the companion. Missing text cues identify the exact SMIL member and line. [Document intake](docs/INTAKE.md)
+
 # hamr 0.4.9.dev22
 
 - Read text-bearing DAISY 3 through the package OPF and SMIL sequence. The companion can recover exact text, synchronization and existing media files. Repeated passages in the authored order are preserved.

@@ -1,4 +1,4 @@
-"""Bind DAISY playback order to exact ranges in the shared DTBook reading."""
+"""Bind SMIL playback order to exact ranges in the shared document reading."""
 
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass, field
@@ -14,6 +14,7 @@ from .publication_package import member_bytes
 from .source_math import MATH_SPANS
 
 SMIL_TYPES = frozenset(('application/smil','application/smil+xml'))
+HTML_TYPE = 'application/xhtml+xml'
 PUNCTUATION = re.compile(r'''[\s.,!?;:()[\]“”‘’"'–—-]*''')
 STRUCTURAL_FIELDS = {'ordinal','chapter_id','element','location_id','inline_semantics'}
 ATOMIC_SPANS = frozenset((*MATH_SPANS,'pronunciation_hint','note_reference','object_label'))
@@ -86,7 +87,34 @@ def read_daisy3(archive,package,descriptor,by_name,builder,records,scoped_issue,
     if not package.spine:
         scoped_issue('The DAISY package has no authored SMIL order.',1)
         return
+
+    def tracks():
+        for ident in package.spine:
+            items = package.manifest.get(ident,())
+            choices = by_name.get(items[0].target,()) if len(items)==1 and items[0].media in SMIL_TYPES else ()
+            yield ((choices[0],None) if len(choices)==1 else
+                   (None,f'DAISY spine entry {ident!r} needs one local SMIL member.'))
+
+    read_synchronized(archive,tracks(),by_name,builder,records,scoped_issue,bind_reading)
+
+
+def smil_body(raw):
+    root = xml(raw)
+    if name(root)!='smil':
+        return root,None
+    return root,next((node for node in root if name(node)=='body'),None)
+
+
+def audio_without_text(node):
+    if name(node)!='par':
+        return False
+    descendants = {name(child) for child in node.iterdescendants()}
+    return 'audio' in descendants and not descendants.intersection({'par','text'})
+
+
+def read_synchronized(archive,tracks,by_name,builder,records,scoped_issue,bind_reading,*,html_reader=None):
     cached,notes,matched = OrderedDict(),{},{}
+    note_cues = defaultdict(list)
     pending = None
     sequence = 0
 
@@ -109,32 +137,37 @@ def read_daisy3(archive,package,descriptor,by_name,builder,records,scoped_issue,
         record.locator.update(member=smil.name,archive_entry=smil.index,
                               location_id=key([builder.doc.source_sha256,smil.index,record.id])[:20])
 
-    for ordinal,ident in enumerate(package.spine,1):
-        items = package.manifest.get(ident,())
-        choices = by_name.get(items[0].target,()) if len(items)==1 and items[0].media in SMIL_TYPES else ()
-        if len(choices)!=1:
+    for ordinal,(smil,problem) in enumerate(tracks,1):
+        if problem:
             flush()
-            scoped_issue(f'DAISY spine entry {ident!r} needs one local SMIL member.',ordinal)
+            scoped_issue(problem,ordinal)
             continue
-        smil, = choices
         try:
-            root = xml(member_bytes(archive,smil,MAX_STRUCTURE))
+            root,body = smil_body(member_bytes(archive,smil,MAX_STRUCTURE))
         except Error as exc:
             issue(smil,None,f'Cannot read {smil.name}: {exc}')
             continue
-        body = next((node for node in root if name(node)=='body'),None)
-        if name(root)!='smil' or body is None:
+        if body is None:
             issue(smil,root,'This SMIL member has no authored playback body.')
             continue
         text_cues = [node for node in body.iter() if name(node)=='text']
         if not text_cues:
             issue(smil,body,'This SMIL member contains no text references.')
+            continue
+        if html_reader is not None:
+            text_cues = [node for node in body.iter() if name(node)=='text' or audio_without_text(node)]
         for node in text_cues:
+            if name(node)=='par':
+                issue(smil,node,'This DAISY audio segment has no synchronized text.')
+                continue
             href = node.get('src','')
             filename = target(smil.name,href)
             paths = by_name.get(filename,())
-            if len(paths)!=1 or records.get(filename,{}).get('media_type')!=DTBOOK:
-                issue(smil,node,f'DAISY text cue {href!r} needs one declared local DTBook member.')
+            media = records.get(filename,{}).get('media_type')
+            supported = media==DTBOOK or html_reader is not None and media==HTML_TYPE
+            if len(paths)!=1 or not supported:
+                label = 'readable text' if html_reader else 'DTBook'
+                issue(smil,node,f'DAISY text cue {href!r} needs one declared local {label} member.')
                 continue
             if any(name(parent)=='switch' for parent in node.iterancestors()):
                 issue(smil,node,'An authored SMIL switch has alternate text branches and needs a verified selection.')
@@ -143,7 +176,11 @@ def read_daisy3(archive,package,descriptor,by_name,builder,records,scoped_issue,
             if filename not in cached:
                 document = DocumentBuilder(builder.doc.format,builder.doc.title,builder.doc.source_sha256)
                 try:
-                    read_dtbook(xml(member_bytes(archive,member,MAX_STRUCTURE)),document,filename,collect_resources=True)
+                    data = member_bytes(archive,member,MAX_STRUCTURE)
+                    if media==DTBOOK:
+                        read_dtbook(xml(data),document,filename,collect_resources=True)
+                    else:
+                        html_reader(data,document,filename)
                 except Error as exc:
                     issue(smil,node,f'Cannot read {filename}: {exc}')
                     continue
@@ -162,6 +199,9 @@ def read_daisy3(archive,package,descriptor,by_name,builder,records,scoped_issue,
             for block,start,end in ranges:
                 cue = {'member':smil.name,'archive_entry':smil.index,'line':node.sourceline,'href':href,
                        'spine_occurrence':ordinal}
+                if html_reader is not None and block.role=='note':
+                    note_cues[member.index,block.id].append(cue)
+                    continue
                 current = Passage(member,block,start,end,[cue])
                 if pending is not None and pending.extend(current):
                     continue
@@ -172,12 +212,18 @@ def read_daisy3(archive,package,descriptor,by_name,builder,records,scoped_issue,
     for member,definitions in notes.items():
         for original in definitions:
             if (member.index,original.id) not in matched:
-                pending = Passage(member,original,0,len(original.source))
+                pending = Passage(member,original,0,len(original.source),note_cues.get((member.index,original.id),[]))
                 flush()
     for block in builder.doc.blocks:
         index = block.locator['archive_entry']
+        def destination(href):
+            prefix = 'source.html#'
+            if href.startswith(prefix):
+                ident = href.removeprefix(prefix)
+                return prefix+matched.get((index,ident),ident)
+            return href
         for link in block.links:
-            if destinations:=link.get('destinations'):
-                link['destinations'] = [
-                    'source.html#'+matched.get((index,part.split('#',1)[1]),part.split('#',1)[1])
-                    if part.startswith('source.html#b') else part for part in destinations]
+            if href:=link.get('destination'):
+                link['destination'] = destination(href)
+            if targets:=link.get('destinations'):
+                link['destinations'] = [destination(href) for href in targets]

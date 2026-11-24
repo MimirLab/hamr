@@ -13,7 +13,7 @@ from .core import Error, key
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, XML_LANG, attr, name, xml
 from .dtbook_intake import read_dtbook
 from .importers import document_reference
-from .publication_package import capture_folder, member_bytes, member_location
+from .publication_package import bind_member_block, capture_folder, member_bytes, member_location
 from .source_bundle import relative_file, safe_name, stamp
 
 OEB = 'http://openebook.org/namespaces/oeb-package/1.0/'
@@ -195,16 +195,7 @@ def read_opf(path,source,sha,title):
                                  location_id=key([sha,descriptor.index,block.id])[:20])
 
         def bind_reading(block,body,occurrence):
-            block.locator.update(member=body.name,archive_entry=body.index,spine_occurrence=occurrence,
-                                 location_id=key([sha,body.index,occurrence,block.id])[:20])
-            for ref in block.locator.pop('resource_references',[]):
-                if ref['kind']!='image':
-                    continue
-                asset = records.get(target(body.name,ref['href']))
-                if asset and asset['role']=='asset':
-                    asset['status'] = 'referenced'
-                    block.links.append({'kind':'source_resource','href':ref['href'],'label':ref.get('label'),
-                                        'destinations':['source.html#resource-'+asset['location_id']]})
+            bind_member_block(block,body,occurrence,sha,records,target)
 
         for item in parsed.resources():
             if item.target==descriptor.name:

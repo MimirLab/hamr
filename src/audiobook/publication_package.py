@@ -64,10 +64,22 @@ def member_location(sha,member,role):
             'location_id':key([sha,member.index,member.name])[:20]}
 
 
+def bind_member_block(block,member,occurrence,sha,records,resolve):
+    block.locator.update(member=member.name,archive_entry=member.index,spine_occurrence=occurrence,
+                         location_id=key([sha,member.index,occurrence,block.id])[:20])
+    for ref in block.locator.pop('resource_references',[]):
+        asset = records.get(resolve(member.name,ref['href'])) if ref['kind']=='image' else None
+        if asset and asset['role']=='asset':
+            asset['status'] = 'referenced'
+            block.links.append({'kind':'source_resource','href':ref['href'],'label':ref.get('label'),
+                                'destinations':['source.html#resource-'+asset['location_id']]})
+
+
 def archive_packages(archive,members,*,textpack=False):
     """Use the same publication boundaries for discovery and page sequences."""
     from .gitbook_intake import archive_spaces
     from .mdbook_intake import archive_books
+    from .ncc_intake import archive_books as ncc_books
     from .opf_intake import archive_books as opf_books
     from .scrivener_intake import archive_books as scrivener_books
     from .sphinx_intake import archive_books as sphinx_books
@@ -93,6 +105,9 @@ def archive_packages(archive,members,*,textpack=False):
     remaining = [item for item in remaining if item.index not in project_members]
     editions,opf_members = opf_books(archive,remaining)
     packages.extend((book.route,descriptor,book.title) for book,descriptor in editions)
-    spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in opf_members],declared=False)
+    remaining = [item for item in remaining if item.index not in opf_members]
+    titles,ncc_members = ncc_books(archive,remaining)
+    packages.extend(('daisy202',descriptor,book.title) for book,descriptor in titles)
+    spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in ncc_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    return packages,claimed | owned | project_members | opf_members | plain
+    return packages,claimed | owned | project_members | opf_members | ncc_members | plain

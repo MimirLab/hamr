@@ -105,6 +105,10 @@ def parse(path,source,sha,cache,title):
         from .opf_intake import read_opf
 
         return read_opf(path,source,sha,title)
+    if source.route=='daisy202':
+        from .ncc_intake import read_daisy202
+
+        return read_daisy202(path,source,sha)
     if source.route=='rst':
         from .rst_intake import read_rst
 
