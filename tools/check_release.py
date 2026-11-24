@@ -47,12 +47,14 @@ INTAKE_ASSETS = {
     'audiobook/intake_resident/chm-linux-x86_64':'a604e6b43866ed96ebd485061bd1c7e0be018a69d56c5907da738bf83ec85672',
     'audiobook/intake_resident/legacy-office-linux-x86_64':'f677c407de3e25d6f63a285ad5bbb6fb843d386aaf132e9150168088baf3e4ae',
     'audiobook/intake_resident/xps-renderer-linux-x86_64.tar.xz':'46e0fb5bb0be2764113111f62aa7d25529187f840618a2c9f283fc01fa474dc0',
+    'audiobook/intake_resident/asciidoctor-4.3.0.js.gz':'500fa2c42995d2b814ea29395c5b90778fe4a569ecef61d43136e9432b006b9a',
 }
 INTAKE_NOTICES = {
     *('audiobook/ocr_resident/'+name for name in ('LICENSE.eng','LICENSE.leptonica','LICENSE.libpng',
                 'LICENSE.tesseract','LICENSE.zlib','LICENSE.windows-libpng','LICENSE.windows-zlib','SOURCES.txt')),
     *('audiobook/intake_resident/'+name for name in (
-        'LICENSE.djvu','LICENSE.libmobi','LICENSE.gpl3','LICENSE.chmlib','LICENSE.wordperfect','LICENSE.classic-mac','SOURCES.txt')),
+        'LICENSE.djvu','LICENSE.libmobi','LICENSE.gpl3','LICENSE.chmlib','LICENSE.wordperfect','LICENSE.classic-mac',
+        'LICENSE.asciidoctor-js','asciidoc_bridge.js','SOURCES.txt')),
 }
 
 

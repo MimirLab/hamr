@@ -19,6 +19,10 @@ RST_INCLUDE = re.compile(r'\binclude\s*::',re.I)
 
 
 def adapter(route):
+    if route=='asciidoc':
+        from .asciidoc_intake import DEPENDENCIES, asciidoc_document, decode_asciidoc
+
+        return decode_asciidoc,asciidoc_document,DEPENDENCIES
     if route=='rst':
         from .rst_intake import decode_rst, rst_document
 

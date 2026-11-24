@@ -25,6 +25,7 @@ Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RT
 | GitBook folders and archives | Hamr follows the configured home page and summary, including section and nested page order. Each local space in a site can be opened as its own book. |
 | reStructuredText and Sphinx projects | Hamr reads paragraphs, notes, equations and local includes in `.rst` documents. Open a Sphinx source folder or archive to follow its declared page order. A built single-file HTML export also works. |
 | Org mode | Open an `.org` file, a folder, or a ZIP. Hamr follows selected headings, notes, lists, tables and local includes. [Org mode intake](#org-mode) |
+| AsciiDoc | Open an `.adoc`, `.asciidoc` or recognized `.asc` book, including from a folder or archive. [AsciiDoc intake](#asciidoc) |
 | Scrivener projects and backups | Open the `.scriv` folder, its root `.scrivx` file, or the backup ZIP. Hamr reads the manuscript’s RTF documents in Draft binder order, using the binder labels for chapter navigation. |
 | DTBook and NIMAS | Open DTBook XML, a NIMAS source folder or `.opf`, or the original ZIP. Hamr follows the package's declared reading order. Printed page numbers and the marked table of contents stay in the companion. |
 | Text-bearing DAISY 3 | Open a DAISY 3 folder, `.opf` or ZIP. Hamr reads the DTBook passages in declared SMIL order. Keep the existing audio and synchronization files with the original package. |
@@ -100,6 +101,16 @@ hamr open ~/Documents/Manuscript.org --voice cast:james-burke --output ~/Audiobo
 The built-in reader follows the saved outline, export tags, linked footnotes, tables, and numbered lists. Local `#+INCLUDE` arguments can select a line range, an exact headline, or a custom ID. Keep includes and setup files next to or below the manuscript, or open a ZIP of their common parent. If Hamr lists several manuscripts, choose the main file from that list. A finished book can recover the complete included file, even when it reads only a range of its lines.
 
 Hamr reads saved text and applies supported static macros. Source code uses the ordinary companion policy. A generated passage that needs a macro or selector the reader cannot resolve appears in source review. For editions that depend on arbitrary Emacs Lisp or author-specific export hooks, open the author's rendered HTML or EPUB edition. [Org include files](https://orgmode.org/manual/Include-Files.html)
+
+## AsciiDoc
+
+```sh
+hamr open ~/Documents/Manuscript.adoc --voice cast:james-burke --output ~/Audiobooks
+```
+
+The bundled parser follows the manuscript's local attributes, conditionals, includes, notes, tables, captions, and callout explanations. For a loose manuscript, keep local include files beside it or below it. Use an archive of the common parent if it includes files from sibling folders. If the archive contains several eligible manuscripts, choose the main file from Hamr's list. The companion can recover the complete original included files after the book is moved.
+
+Hamr recognizes `.asc` when it finds clear AsciiDoc source syntax. For an older file with an ambiguous header, use `--format asciidoc`. The parser runs locally. Unavailable includes appear in source review with their location. Open the author's rendered HTML or EPUB when the edition depends on remote includes or custom extensions. [AsciiDoc includes](https://docs.asciidoctor.org/asciidoc/latest/directives/include/)
 
 ## Numbered passages
 

@@ -34,7 +34,7 @@ NATIVE = {
     '.wpd':'wordperfect', '.wp':'wordperfect', '.wp4':'wordperfect', '.wp5':'wordperfect', '.wp6':'wordperfect',
     '.hqx':'classic-mac',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
-    '.rst':'rst', '.rest':'rst', '.org':'org',
+    '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
 PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
@@ -42,7 +42,7 @@ PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','org','xml-book','pml','classic-mac'))
+DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','xml-book','pml','classic-mac'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -129,6 +129,11 @@ def probe(prefix, name):
         return 'classic-mac'
     if suffix=='.hqx':
         return None
+    if suffix=='.asc':
+        from .asciidoc_intake import matches_asc
+
+        if matches_asc(prefix):
+            return 'asciidoc'
     return NATIVE.get(suffix)
 
 
@@ -289,11 +294,14 @@ def directory_members(root):
                 route = NATIVE.get(suffix)
                 if route in (None,'classic-mac','text'):
                     with path.open('rb') as stream:
-                        classic = matches_header(stream.read(512))
+                        prefix = stream.read(512)
+                    classic = matches_header(prefix)
                     if classic or loose_fork(path):
                         route = 'classic-mac'
                     elif route=='classic-mac':
                         route = None
+                    elif suffix=='.asc':
+                        route = probe(prefix,path.name)
                 if route:
                     other.append((relative,route))
     return sorted(pages,key=natural), sorted(other,key=lambda row:natural(row[0]))
@@ -429,7 +437,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
             with archive.open_member(item) as stream:
                 detected = xml_route(stream)
         elif (not name.name.startswith('.') and
-              (kind=='zip' and not detected or suffix in ('.cwk','.hqx','.lrf','.lit',*PALM_SUFFIXES))):
+              (kind=='zip' and not detected or suffix in ('.asc','.cwk','.hqx','.lrf','.lit',*PALM_SUFFIXES))):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
             detected = probe(prefix,item.name)
@@ -459,9 +467,9 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle','rst','org','pml','rocket',*PALM_ROUTES):
-        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, Org, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','org','pml',*PALM_ROUTES) and source.member_name is None:
+    if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','pml','rocket',*PALM_ROUTES):
+        raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks or compiled HTML Help.')
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','org','asciidoc','pml',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -821,7 +829,7 @@ def preview(path,cache,**options):
 
 
 def capture_dependencies(path,target_dir,source):
-    if source.kind=='file' and source.route in ('rst','org'):
+    if source.kind=='file' and source.route in ('rst','org','asciidoc'):
         from .linked_text_intake import capture_dependencies as linked
 
         return linked(path,target_dir,source)

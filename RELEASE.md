@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev54
+
+- Open AsciiDoc manuscripts and local chapter includes through shared reading preparation. Hamr reads tables, captions, callouts and footnotes, and keeps the included originals recoverable. [AsciiDoc intake](docs/INTAKE.md#asciidoc)
+
 # hamr 0.4.9.dev53
 
 - Open Org manuscripts from a file, folder, or archive. The built-in reader follows the authored export selection, notes, tables, lists and local includes through shared reading preparation. Complete included files remain recoverable. [Org mode intake](docs/INTAKE.md#org-mode)

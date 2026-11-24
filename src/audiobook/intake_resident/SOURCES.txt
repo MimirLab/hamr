@@ -62,3 +62,11 @@ https://github.com/bminor/glibc/tree/1848099f063e99d4ffecbd7667766d54862398b9
 https://gitlab.archlinux.org/archlinux/packaging/packages/glibc
 https://github.com/gcc-mirror/gcc/tree/d564253eb6c859e266d3cae18e82fb4db9a88316
 https://gitlab.archlinux.org/archlinux/packaging/packages/gcc
+
+Asciidoctor.js 4.3.0 (MIT), browser module executed by QuickJS-NG:
+https://registry.npmjs.org/@asciidoctor/core/-/core-4.3.0.tgz
+Archive SHA-256 abefd5cd47520ab9c0f0d1a71a8090e0f79935ea3273563314b0fde552d5d677
+The asset contains package/build/browser/index.js compressed with gzip -n -9.
+Uncompressed SHA-256 8b261f07ecc753448bda64d2656a1adc606c9d2b05c660115f7305756cea610d
+Corresponding source: https://github.com/asciidoctor/asciidoctor.js/tree/v4.3.0
+See LICENSE.asciidoctor-js. The host interface is in asciidoc_bridge.js.
