@@ -45,19 +45,23 @@ def xml(data):
         raise Error('source_xml', 'The selected structured document has unreadable XML.') from exc
 
 
-def xml_book_root(stream):
+def xml_root(stream):
     parser = etree.XMLPullParser(events=('start',),load_dtd=False,no_network=True,resolve_entities=False)
     for _ in range(16):
         data = stream.read(4096)
         if not data:
-            return False
+            return None
         try:
             parser.feed(data)
         except etree.XMLSyntaxError:
             break
         for _,element in parser.read_events():
-            return name(element) in BOOK_ROOTS
-    return False
+            return name(element)
+    return None
+
+
+def xml_book_root(stream):
+    return xml_root(stream) in BOOK_ROOTS
 
 
 def bounded_read(path):
@@ -193,6 +197,14 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             raise Error('source_topic_fragment','The topic link does not name one bounded HTML region.')
         body = targets[0]
     projected = renderer_controls(body,docutils,sphinx)
+    inline_locations = {}
+    if source_annotations:
+        for node in body.find_all(attrs={'data-hamr-node':True}):
+            annotation = source_annotations.get(node['data-hamr-node'],{})
+            if span:=annotation.get('reading_span'):
+                projected[id(node)] = span
+            if location:=annotation.get('inline_location'):
+                inline_locations[id(node)] = location
     notes = {}
     atomic = {'p','h1','h2','h3','h4','h5','h6','table','pre','img','svg','math','figcaption','dt','dd','li',
               'blockquote','address','caption'}
@@ -216,8 +228,19 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             if span['kind']=='note_reference' and (span.get('href') or '').startswith('#'):
                 span['target_href'] = unquote(span['href'])
 
+    def annotated_semantics(node,*,note_body=False):
+        source,spans = semantics(node,note_markup=markup,note_body=note_body,projected=projected)
+        if inline_locations:
+            markers = [(tag.get('href') or '',inline_locations[id(tag)])
+                       for tag in node.find_all('a') if id(tag) in inline_locations]
+            notes = [span for span in spans if span['kind']=='note_reference']
+            if len(markers)==len(notes) and all(href==span['href'] for (href,_),span in zip(markers,notes)):
+                for (_,location),span in zip(markers,notes):
+                    span['source_locator'] = location
+        return source,spans
+
     def text_node(node,role,where):
-        source,spans = semantics(node,note_markup=markup,note_body=role=='note',projected=projected)
+        source,spans = annotated_semantics(node,note_body=role=='note')
         spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
                  collect_links and span['kind']=='hyperlink']
         local_notes(spans)
@@ -239,18 +262,25 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
     def visit(node,path):
         annotation = source_annotations.get(node.get('data-hamr-node')) if (
             source_annotations and not isinstance(node,NavigableString)) else None
+        if annotation:
+            path = annotation.get('source_element',path)
         if annotation and annotation.get('source_control'):
             builder.add(node.get_text(' ',strip=True),'navigation',path,loc=annotation)
             return
         if annotation and (issue:=annotation.get('source_issue')):
-            builder.add('','unreadable',path,loc=annotation,issue=issue)
+            item = builder.add('','unreadable',path,loc=annotation,issue=issue)
+            preserve_resources(item,node)
             return
         first = len(builder.doc.blocks)
-        visit_content(node,path)
+        if annotation and (role:=annotation.get('source_role')):
+            text_node(node,role,path)
+        else:
+            visit_content(node,path)
         if annotation:
             for item in builder.doc.blocks[first:]:
                 for field,value in annotation.items():
-                    item.locator.setdefault(field,value)
+                    if field not in ('source_role','reading_span','source_element','inline_location'):
+                        item.locator.setdefault(field,value)
 
     def visit_content(node,path):
         if isinstance(node,NavigableString):
@@ -284,12 +314,12 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             for row,line in enumerate(lines):
                 cells = []
                 for column,cell in enumerate(line.find_all(['th','td'],recursive=False)):
-                    math = cell.find('math')
-                    if math or cell.find('a'):
-                        source,spans = semantics(cell,note_markup=markup,projected=projected)
+                    semantic = cell.find('math') or any(id(tag) in projected for tag in cell.find_all(True))
+                    if semantic or cell.find('a'):
+                        source,spans = annotated_semantics(cell)
                     else:
                         spans = []
-                    if math or any(span['kind']=='note_reference' for span in spans):
+                    if semantic or any(span['kind']=='note_reference' for span in spans):
                         local_notes(spans)
                         issue = issue or uncertainty(spans)
                         entries.append(cell_semantics(row,column,source,spans))
@@ -910,13 +940,14 @@ def read_document(path,source,sha,cache,title):
             html_read(data,builder)
         elif route in ('xml-book','fb2'):
             from .dtbook_intake import is_dtbook, read_dtbook
+            from .jats_intake import is_jats, read_jats
 
             root = xml(data)
             if name(root) not in BOOK_ROOTS:
                 raise Error('unsupported_format', f'No book reader is available for XML root {name(root)!r}.')
-            if is_dtbook(root):
+            if is_dtbook(root) or is_jats(root,source.member_name or path.name):
                 part = source.member_name or PurePosixPath(title).name+path.suffix
-                read_dtbook(root,builder,part)
+                (read_dtbook if is_dtbook(root) else read_jats)(root,builder,part)
             else:
                 semantic_xml(root,builder,path.name)
         elif route in ('tcr','amigaguide'):

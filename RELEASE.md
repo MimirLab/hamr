@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev24
+
+- JATS articles read their title, primary abstract, body, and linked footnotes in order. Figures use authored descriptions, and tables with a text rendition read its cells once. Open a `.jats` or `.xml` file, the containing folder, or a source ZIP. The companion preserves the original article and declared local assets. [Document intake](docs/INTAKE.md#source-readers)
+- A verified block replacement becomes the reading for that occurrence. A missing note or formula in the original passage can stay visible in the source companion while the supplied reading proceeds.
+
 # hamr 0.4.9.dev23
 
 - Open text-bearing DAISY 2.02 from a source folder, ZIP, NCC document or component SMIL. Hamr reads synchronized HTML in the authored order, applies the standard footnote settings, and keeps original source files available in the companion. Missing text cues identify the exact SMIL member and line. [Document intake](docs/INTAKE.md)

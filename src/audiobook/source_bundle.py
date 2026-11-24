@@ -34,6 +34,7 @@ PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener')) | DESCRIPTOR_FOLDERS
+DEPENDENCY_SOURCES = frozenset(('rst','xml-book'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -171,6 +172,7 @@ def publication_folder(path):
 
 def directory_members(root):
     from .document_intake import xml_book_root
+    from .jats_intake import SUFFIXES as JATS_SUFFIXES, assets, loose_article
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
 
@@ -189,6 +191,20 @@ def directory_members(root):
             for book,descriptor in folder_books(here,descriptors):
                 other.append(((here/descriptor.name).relative_to(root).as_posix(),'daisy202'))
                 declared.update((here/item.name).relative_to(root).as_posix() for item in book.resources)
+        for filename in files:
+            path = here/filename
+            relative = path.relative_to(root).as_posix()
+            if (filename.startswith('.') or relative in declared or path.suffix.lower() not in JATS_SUFFIXES
+                    or path.is_symlink() or not path.is_file()):
+                continue
+            try:
+                article = loose_article(path)
+            except Error as exc:
+                if exc.code not in ('source_xml','source_structure_size'):
+                    raise
+                continue
+            if article is not None:
+                declared.update((here/asset).relative_to(root).as_posix() for _,_,asset in assets(article,filename) if asset)
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
                           and name != '__MACOSX' and not (here/name).is_symlink()
                           and not (here/name).is_junction()]
@@ -345,7 +361,8 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
     for route,descriptor,name in packages if not scan_only else ():
         if not package_route or route==package_route:
             label = name if name!='.' else 'TextBundle'
-            candidates['bundle:'+str(descriptor.index)] = (label,Source(route,kind,descriptor.index))
+            ident = str(descriptor.index) if route=='xml-book' else 'bundle:'+str(descriptor.index)
+            candidates[ident] = (label,Source(route,kind,descriptor.index))
     selected = choose([(ident,name) for ident,(name,_) in candidates.items()],entry)
     return candidates[selected][1]
 
@@ -621,11 +638,7 @@ def make_bundle(path,kind,target):
 def capture(path,target_dir,**options):
     source = describe(path,**options)
     local = _local_source(path,options,source)
-    prepared = None
-    if source.kind=='file' and source.route=='rst':
-        from .rst_dependencies import capture_dependencies
-
-        prepared = capture_dependencies(local,target_dir,source)
+    prepared = capture_dependencies(local,target_dir,source)
     if prepared:
         target,source = prepared
     elif source.kind=='directory' and source.route in DESCRIPTOR_FOLDERS:
@@ -694,14 +707,23 @@ def preview(path,cache,**options):
     if source.kind in ('directory','manifest'):
         with tempfile.TemporaryDirectory(prefix='source-preview-',dir=cache) as directory:
             yield capture(path,Path(directory),**options)
-    elif source.kind=='file' and source.route=='rst':
-        from .rst_dependencies import capture_dependencies
-
+    elif source.kind=='file' and source.route in DEPENDENCY_SOURCES:
         local = _local_source(path,options,source)
         with tempfile.TemporaryDirectory(prefix='source-preview-',dir=cache) as directory:
             yield capture_dependencies(local,Path(directory),source) or (local,source)
     else:
         yield _local_source(path,options,source),source
+
+
+def capture_dependencies(path,target_dir,source):
+    if source.kind=='file' and source.route=='rst':
+        from .rst_dependencies import capture_dependencies as rst
+
+        return rst(path,target_dir,source)
+    if source.kind=='file' and source.route=='xml-book':
+        from .jats_intake import capture_jats
+
+        return capture_jats(path,target_dir,source)
 
 
 def original_name(snapshot,source):

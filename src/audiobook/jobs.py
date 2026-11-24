@@ -794,7 +794,8 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             matches=[b for b in doc.blocks if b.id==block_id]
             if not matches: raise Error('unknown_block','Block ID does not belong to this source revision.')
             b=matches[0]; old=b.source; b.source=text; b.issue=None; b.evidence.append('User-verified replacement for this exact source occurrence')
-            j['repairs'].append({'block':block_id,'original':old,'replacement':text,'source_sha256':doc.source_sha256})
+            j['repairs'].append({'kind':'verified_reading','block':block_id,'original':old,
+                                 'replacement':text,'source_sha256':doc.source_sha256})
         if voice: j['voice']=resolve_voice(store,voice)
         if target:
             identity=take_selection(target); takes[identity]=target.get('seed',42)+1
@@ -843,6 +844,7 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         replan=(reimport or upgrade_rules or any(value is not None for value in (
             alias,block_id,voice,retake,document_policy,chapters,context,context_review,context_reviewer,performance_mode)))
         if replan:
+            bind_verified_readings(selected_policy,j['repairs'],doc.source_sha256,block_id)
             j['document']=doc.json(); j['plan']=plan(doc,selected_policy,aliases,rule_revision=revision,
                                                    context_reviewer=context_reviewer,automatic_prose=automatic_prose,
                                                    delivery_context=delivery_context)
@@ -874,6 +876,28 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         j.pop('progress',None)  # A repaired plan must not display the prior run as complete.
         j.pop('failed_take',None)  # Position IDs from the former plan are stale.
         writejson(store.path(j)/'plan.json',j['plan']); store.save(j); return summary(store,j)
+
+
+def bind_verified_readings(policy,repairs,source_sha256,current):
+    """Keep the full replacement reading independent of original inline evidence."""
+    edits = {edit['block']:edit for edit in repairs if 'block' in edit}
+    document_policy = policy.get('document',{})
+    if not isinstance(document_policy,dict) or not isinstance(document_policy.get('blocks',{}),dict):
+        return  # The planner will report the original policy validation error.
+    blocks = dict(document_policy.get('blocks',{}))
+    reason = 'User-verified replacement reading.'
+    for block,edit in edits.items():
+        spoken = edit['replacement']
+        if edit.get('kind')!='verified_reading':
+            continue
+        if spoken.strip() and (block==current or block not in blocks):
+            blocks[block] = {'action':'speak','verified':True,'reason':reason,
+                             'expected_source_sha256':digest(spoken.encode()),'spoken':spoken}
+        elif block==current and not spoken.strip() and isinstance(blocks.get(block),dict):
+            if blocks[block].get('reason')==reason and blocks[block].get('spoken')==edit['original']:
+                del blocks[block]
+    if blocks!=document_policy.get('blocks',{}):
+        policy['document'] = {'source_sha256':source_sha256,**document_policy,'blocks':blocks}
 
 
 def cleanup(store,purge_job=None,apply=False):

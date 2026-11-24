@@ -78,6 +78,7 @@ def bind_member_block(block,member,occurrence,sha,records,resolve):
 def archive_packages(archive,members,*,textpack=False):
     """Use the same publication boundaries for discovery and page sequences."""
     from .gitbook_intake import archive_spaces
+    from .jats_intake import archive_books as jats_books
     from .mdbook_intake import archive_books
     from .ncc_intake import archive_books as ncc_books
     from .opf_intake import archive_books as opf_books
@@ -108,6 +109,9 @@ def archive_packages(archive,members,*,textpack=False):
     remaining = [item for item in remaining if item.index not in opf_members]
     titles,ncc_members = ncc_books(archive,remaining)
     packages.extend(('daisy202',descriptor,book.title) for book,descriptor in titles)
-    spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in ncc_members],declared=False)
+    remaining = [item for item in remaining if item.index not in ncc_members]
+    articles,jats_members = jats_books(archive,remaining)
+    packages.extend(('xml-book',descriptor,title) for descriptor,title in articles)
+    spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in jats_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    return packages,claimed | owned | project_members | opf_members | ncc_members | plain
+    return packages,claimed | owned | project_members | opf_members | ncc_members | jats_members | plain

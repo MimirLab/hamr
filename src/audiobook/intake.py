@@ -7,7 +7,7 @@ import shutil
 import tempfile
 
 from .core import Block, Document, Error, filehash, key, loadjson, writejson
-from .source_bundle import CHUNK, OPF_FOLDERS, Source, describe, preview, stamp
+from .source_bundle import CHUNK, DEPENDENCY_SOURCES, OPF_FOLDERS, Source, describe, preview, stamp
 
 
 def payload_document(payload):
@@ -49,6 +49,10 @@ def parse(path,source,sha,cache,title):
         from .rst_dependencies import read_rst_archive
 
         return read_rst_archive(path,source,sha)
+    if source.route=='xml-book' and source.kind in ('zip','tar','libarchive'):
+        from .jats_intake import read_jats_archive
+
+        return read_jats_archive(path,source,sha,title)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):
@@ -181,7 +185,7 @@ def inspect_source(path,cache=None,**options):
     path = Path(path).absolute()
     if cache is None:
         source = describe(path,**options)
-        if source.kind not in ('manifest','directory') and (source.kind,source.route)!=('file','rst'):
+        if source.kind not in ('manifest','directory') and not (source.kind=='file' and source.route in DEPENDENCY_SOURCES):
             from .source_bundle import _local_source
             return inspect_saved(_local_source(path,options,source),source,title=path.stem)
         with tempfile.TemporaryDirectory(prefix='hamr-source-') as temp:
