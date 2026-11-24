@@ -33,7 +33,7 @@ NATIVE = {
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener')) | DESCRIPTOR_FOLDERS
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3')) | DESCRIPTOR_FOLDERS
 DEPENDENCY_SOURCES = frozenset(('rst','xml-book'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
@@ -146,6 +146,10 @@ def relative_file(root, name):
 
 
 def publication_folder(path):
+    from .fictionbook_package import folder_marker as fb3_folder
+
+    if fb3_folder(path):
+        return 'fb3'
     if path.suffix.casefold()=='.textbundle':
         return 'textbundle'
     if path.suffix.casefold()=='.scriv':
@@ -269,6 +273,9 @@ def zip_source(path, entry, override):
 
     try:
         with ZipMembers(path) as archive:
+            package_route = override if override in PACKAGE_FOLDERS-{'textbundle'} else None
+            if path.suffix.casefold()=='.fb3' and override is None:
+                package_route = 'fb3'
             records = zip_members(archive)
             names = {info.filename for _,info in records}
             if 'manifest.json' in names and any(name.startswith('blobs/') for name in names):
@@ -281,18 +288,17 @@ def zip_source(path, entry, override):
                 ('xl/workbook.xml' in names,'xlsx'),
                 ('ppt/presentation.xml' in names,'pptx'),
                 (media==b'application/vnd.oasis.opendocument.text','odt'),
-                ('[Content_Types].xml' in names and any(n.endswith('fb3-body.xml') for n in names),'fb3'),
             ):
                 if predicate:
                     if route=='epub' and 'META-INF/container.xml' in names:
                         from .fixed_pages import image_only_fixed
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
-                    if override!='scan':
+                    if override!='scan' and package_route!='fb3':
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
-                                        package_route=override if override in PACKAGE_FOLDERS-{'textbundle'} else None)
+                                        package_route=package_route)
     except BadZipFile as exc:
         raise Error('unreadable_archive', 'The ZIP archive could not be read.') from exc
 
@@ -674,6 +680,11 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_sphinx(local,target)
+        elif source.route=='fb3':
+            from .publication_package import capture_folder, folder_files
+
+            target = target_dir/'source.zip'
+            capture_folder(local,target,lambda:folder_files(local),include_root=False)
         else:
             from .scrivener_intake import capture_scrivener, folder_binders
 

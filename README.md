@@ -91,6 +91,8 @@ Open a folder of JPG, PNG or TIFF page images directly, or point Hamr at the ZIP
 
 Hamr also opens NIMAS textbooks, text-bearing DAISY packages, JATS research articles, TEI editions, BITS books from NCBI Bookshelf, and DocBook manuals. It follows their authored order, reads linked notes where they belong, and keeps the original package files available in the companion. [Structured document readers](docs/INTAKE.md#source-readers)
 
+FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
+
 ### Scanned and mixed PDFs (OCR)
 
 An old scan or a page with a scanned inset can become part of the same book as searchable text. Hamr uses the PDF’s native text where it can and runs local English OCR where it needs the page image. It follows simple two-column layouts and can keep a figure crop, its recognized labels, and the author's caption together in the companion.

@@ -5,6 +5,32 @@ from enum import IntEnum
 import re
 
 
+def chapter_label(title):
+    encoded = title.encode('utf-8')
+    # The QuickTime chapter track stores text length in an unsigned 16-bit field.
+    if len(encoded) <= 65535:
+        return title
+    prefix = encoded[:252].decode('utf-8',errors='ignore').rstrip()
+    return prefix+'…'
+
+
+def prepare_navigation(document):
+    from .core import key
+
+    labels = {}
+    for block in document.blocks:
+        if block.chapter not in labels:
+            label = chapter_label(block.chapter)
+            identity = 'heading:'+key(block.chapter)[:20] if label!=block.chapter else None
+            labels[block.chapter] = label,identity
+        label,identity = labels[block.chapter]
+        if identity:
+            # The authored heading remains in its original source block.
+            block.chapter = label
+            if not block.locator.get('chapter_id'):
+                block.locator['chapter_id'] = identity
+
+
 class Continuation(IntEnum):
     NONE = 0
     PAGE = 1

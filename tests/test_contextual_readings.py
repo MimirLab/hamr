@@ -587,6 +587,19 @@ def test_email_and_path_keep_exact_identifier_boundaries():
     assert 'quantity' in critical('The distance is 3.20 pm.','The distance is three twenty P M.')
 
 
+def test_long_unbroken_text_preserves_a_following_email():
+    from audiobook.abbreviations import PROTECTED
+    from audiobook.context_lexical import OPAQUE
+    from audiobook.planner import normalize
+
+    token='x'*25000
+    email='voice+desk@example.org'
+    text=f'{token}. Email {email} for details.'
+    assert [match[0] for match in PROTECTED.finditer(text)]==[email]
+    assert [match[0] for match in OPAQUE.finditer(text)]==[email]
+    assert normalize(text)==f'{token}. Email voice+desk at example dot org for details.'
+
+
 def test_epub_markup_records_author_roles_with_exact_source_spans():
     from audiobook.importers import epub
     from test_upstream_epub import book

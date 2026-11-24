@@ -269,7 +269,7 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
         if block and (node.name == 'blockquote' or node.find_parent('blockquote') is not None):
             block.locator['block_quote'] = True
         if block and role=='note' and node.get('id'):
-            value = note_text(block,terminal=id(node) in markup.definitions)
+            value = note_text(block,terminal=id(node) in markup.definitions or node.get('role')=='doc-footnote')
             if issue:
                 block.locator['note_issue'] = issue
             notes.setdefault('#'+node['id'],[]).append(Definition(block,value,issue))
@@ -441,15 +441,12 @@ def xml_formula(node, part):
 
 
 def semantic_xml(root,builder,part):
-    fmt = builder.doc.format
     title_node = next((item for item in root.iter() if name(item) in ('book-title','article-title','doctitle')),None)
     if title_node is not None and plain_xml_text(title_node):
         builder.doc.title = plain_xml_text(title_node)
     if language:=root.get(XML_LANG):
         builder.doc.language = language
-    if fmt in ('fb2','fb3'):
-        children = [n for n in root if name(n) in ('body','fb3-body')] or [root]
-    elif name(root) in ('TEI','teiCorpus'):
+    if name(root) in ('TEI','teiCorpus'):
         children = [n for n in root if name(n) in ('text','TEI')]
     elif name(root) in ('article','article-set'):
         children = [n for n in root if name(n) in ('front','body','back','article')]
@@ -936,13 +933,6 @@ def read_document(path,source,sha,cache,title):
     elif route in ('xlsx','pptx'):
         from .structured_intake import read_pptx, read_xlsx
         (read_xlsx if route=='xlsx' else read_pptx)(path,builder)
-    elif route=='fb3':
-        with structured_zip(path) as (read,index):
-            candidates = [n for n in index if n.endswith('fb3-body.xml')]
-            if len(candidates)!=1:
-                raise Error('source_selection','FB3 requires one authored body part.')
-            body, = candidates
-            semantic_xml(xml(read(body)),builder,body)
     elif route=='mobi':
         from .intake_helpers import resident_mobi
         return resident_mobi(path,source,sha,cache)
@@ -958,12 +948,15 @@ def read_document(path,source,sha,cache,title):
             html_read(data,builder)
         elif route in ('xml-book','fb2'):
             from .dtbook_intake import is_dtbook, read_dtbook
+            from .fictionbook_intake import read_fictionbook
             from .xml_package import read_projected
 
             root = xml(data)
             part = source.member_name or PurePosixPath(title).name+path.suffix
             if is_dtbook(root):
                 read_dtbook(root,builder,part)
+            elif name(root)=='FictionBook':
+                read_fictionbook(root,builder,part)
             elif not read_projected(root,builder,part):
                 if name(root) not in BOOK_ROOTS:
                     raise Error('unsupported_format', f'No book reader is available for XML root {name(root)!r}.')

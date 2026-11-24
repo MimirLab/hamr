@@ -267,6 +267,9 @@ def reading(block,note_policy='after_paragraph', *, with_spans=False, extra_span
             note=next((link for link in block.links if link.get('kind')=='note' and link.get('source_start')==a and
                        link.get('reference_href',span.get('href'))==span.get('href')),None)
             value=' Note. '+note.get('reading',note['text'])+' End note. ' if note and not note.get('reference_only') and kind=='note_reference' and note_policy=='inline' else ''
+            if kind=='note_reference' and not value and (punctuation:=re.match(r'[ \t]*[.!?,;:]',source[b:])):
+                a=len(source[:a].rstrip(' \t'))
+                b+=len(punctuation[0])-1
             edits.append((a,b,value))
         elif kind=='pagebreak':edits.append((a,b,' '))
         elif kind=='object_label':

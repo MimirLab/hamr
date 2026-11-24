@@ -3,11 +3,12 @@ import re
 import unicodedata
 
 from . import boundaries
+from .abbreviations import EMAIL_HEAD
 from .context_candidate import Candidate, Component, literal
 from .linguistic import LIGATURES, VOCAL_MARKER, spoken_vocal_marker
 from .spoken_forms import identifier
 
-EMAIL = r"[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}"
+EMAIL = EMAIL_HEAD+r'[\w-]+(?:\.[\w-]+)*\.[A-Za-z]{2,}'
 PATH = r'(?<![\w)])(?:\.{0,2}/|[A-Za-z]:\\)[^\s<>"“”]+?(?=$|[\s<>"“”]|[,.!?;:](?=$|\s))'
 FILENAME = r'[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?:md|txt|pdf|epub|csv|json|toml|py|html|yaml|wav|m4b|zip)'
 OPAQUE_PATTERNS = {'email':('CR-L035',EMAIL),'path':('CR-L036',PATH)}

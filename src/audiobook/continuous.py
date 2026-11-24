@@ -6,7 +6,43 @@ from .boundaries import sentence_spans,safe_cut
 
 EXTENDED_SENTENCE_WORDS = 220
 EXTENDED_SENTENCE_BYTES = 1400
+AUTHORED_LINE_WORDS = 160
+AUTHORED_LINE_BYTES = 1000
 SENTENCE_END = re.compile(r'[.!?]["”’\')\]]*$')
+
+
+def authored_line_ranges(lines):
+    """Group long lineated text without cutting an authored line."""
+    start = words = size = 0
+    for end,line in enumerate(lines,1):
+        count,encoded = len(line.split()),len(line.encode())
+        if end>start+1 and (words+count>AUTHORED_LINE_WORDS or size+1+encoded>AUTHORED_LINE_BYTES):
+            yield start,end-1
+            start,words,size = end-1,0,0
+        size += encoded+(end>start+1)
+        words += count
+    if start<len(lines):
+        yield start,len(lines)
+
+
+def authored_passages(text,protected=()):
+    """Use real line breaks in overlong verse and keep protected readings intact."""
+    spans = []
+    start = end = 0
+    for line in text.splitlines(keepends=True):
+        end += len(line)
+        if not any(first<end<last for first,last in protected):
+            spans.append(text[start:end])
+            start = end
+    if start<len(text):
+        spans.append(text[start:])
+    chunks = [span.removesuffix('\n') for span in spans]
+    for first,last in authored_line_ranges(chunks):
+        passage = ''.join(spans[first:last]).removesuffix('\n')
+        if not passage.strip():
+            continue
+        yield {'text':passage,'boundary':'authored_lines',
+               'over_budget':len(passage.split())>AUTHORED_LINE_WORDS or len(passage.encode())>AUTHORED_LINE_BYTES}
 
 
 def fits_extended_sentence(text):

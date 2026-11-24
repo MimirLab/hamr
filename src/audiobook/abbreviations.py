@@ -26,7 +26,11 @@ PHRASES = {'e.g': 'for example', 'i.e': 'that is', 'etc': 'et cetera',
 WORDS = set(TITLES) | set(LABELS) | set(UNITS) | set(PHRASES) | {
     'st', 'mt', 'jr', 'sr', 'a.m', 'p.m', 'inc', 'ltd', 'dept', 'approx'}
 TOKEN = r'(?<![\w.@/])(?:' + '|'.join(re.escape(x) for x in sorted(WORDS, key=len, reverse=True)) + r')\.(?![\w./@-])'
-PROTECTED = re.compile(r'\b(?:https?://|www\.)\S+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|edu)\b\S*', re.I)
+# Try the local part once at the start of a run, including long non-email tokens.
+EMAIL_LOCAL = r'(?<![\w.+-])[\w.+-]++'
+EMAIL_HEAD = EMAIL_LOCAL+'@'
+PROTECTED = re.compile(r'\b(?:https?://|www\.)\S+|'+EMAIL_HEAD+
+                       r'[\w.-]+\.[A-Za-z]{2,}|\b[\w-]+(?:\.[\w-]+)*\.(?:com|org|net|edu)\b\S*',re.I)
 NAME = re.compile(r'''\s*[\[\]().{}“”"'’]*([^\W\d_])''')
 ADDRESS = re.compile(r"\b\d+\s+(?:[A-Z][\w’'-]*\s+){1,5}$")
 NUMBER_BEFORE = re.compile(r'(?<!\w)[+-]?\d+(?:[.,:/]\d+)*\s*$')

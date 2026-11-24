@@ -520,14 +520,23 @@ def render(store,jid,output=None,allow_synthesis=True,max_new_takes=None,engine_
 
 
 def timeline(utterances,receipts,edits=None):
+    from .source_passages import chapter_label
+
     pos=0; rows=[]; chapters=[]
+    chapter_key=None
     edits=edits or {}
     for u,r in zip(utterances,receipts,strict=True):
         edit=edits.get(u['id'],{})
         if 'pause_samples' in edit:
             u={**u,'pause_samples':edit['pause_samples'],'planned_pause_samples':u['pause_samples']}
-        if not chapters or (chapters[-1]['title'],chapters[-1].get('chapter_id'))!=(u['chapter'],u.get('chapter_id')):
-            chapters.append({'title':u['chapter'],'start_sample':pos,**({'chapter_id':u['chapter_id']} if u.get('chapter_id') is not None else {})})
+        occurrence=(u['chapter'],u.get('chapter_id'))
+        if chapter_key!=occurrence:
+            chapter_key=occurrence
+            title,identity=occurrence
+            chapter={'title':chapter_label(title),'start_sample':pos}
+            if identity is not None:
+                chapter['chapter_id']=identity
+            chapters.append(chapter)
         end=pos+r['samples']; rows.append({**u,'start_sample':pos,'end_sample':end,'start':pos/RATE,'end':end/RATE,'destination':'source.html#'+u['sources'][0]})
         pos=end+u['pause_samples']
     for i,c in enumerate(chapters): c['end_sample']=chapters[i+1]['start_sample'] if i+1<len(chapters) else pos

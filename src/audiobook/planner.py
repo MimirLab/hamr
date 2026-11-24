@@ -1,9 +1,11 @@
 from __future__ import annotations
 import re
+from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-23'
-PROJECTED_SOURCE_RULES=('faithful-20','faithful-21','faithful-22',RULES)
+RULES='faithful-24'
+AUTHORED_LINE_RULES=(RULES,)
+PROJECTED_SOURCE_RULES=('faithful-20','faithful-21','faithful-22','faithful-23',*AUTHORED_LINE_RULES)
 PROSE_SOURCE_RULES=('faithful-18','faithful-19',*PROJECTED_SOURCE_RULES)
 CURRENT_DELIVERY_RULES=('faithful-17',*PROSE_SOURCE_RULES)
 PERFORMANCE_RULES=('faithful-16',*CURRENT_DELIVERY_RULES)
@@ -60,7 +62,7 @@ def normalize(text,aliases=None,rule_revision=RULES,abbreviation_audit=None,pres
         # values in the spoken line, with ordinary aside punctuation instead.
         text=COUNT_RE.sub(lambda m:', '+(count_words(int(m[1])) if m[1].isdigit() else m[1])+',',text)
         text=re.sub(r'(?<!\S)#{2,}!([^\s:]+)(?=:|\s+signed (?:in|out))',lambda m:m[1].replace('_',' '),text)
-        text=re.sub(r'([\w.+-]+)@([\w.-]+\.[A-Za-z]{2,})',lambda m:m[1]+' at '+m[2].replace('.',' dot '),text)
+        text=re.sub('('+EMAIL_LOCAL+r')@([\w.-]+\.[A-Za-z]{2,})',lambda m:m[1]+' at '+m[2].replace('.',' dot '),text)
         text=re.sub(r'\s+,',',',text)
         text=re.sub(r',\s*([.!?;:])',r'\1',text)
     if rule_revision in SOURCE_STRUCTURE:
@@ -245,7 +247,12 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 for m,n in repetitions:
                     ts=m[0].split();repeated_units.update(' '.join(ts[i:i+n]) for i in range(0,len(ts),n))
             if rule_revision in SOURCE_STRUCTURE and len(source_ids)==1 and source_ids[0] in authored_lines:
-                pieces=[{'text':joined,'boundary':'authored_lines','over_budget':len(joined.split())>160 or len(joined.encode())>1000}]
+                if rule_revision in AUTHORED_LINE_RULES:
+                    from .continuous import authored_passages
+
+                    pieces=list(authored_passages(joined,protected))
+                else:
+                    pieces=[{'text':joined,'boundary':'authored_lines','over_budget':len(joined.split())>160 or len(joined.encode())>1000}]
             elif protected or continuous and not repetitions:
                 from .continuous import passages
                 from .performance import MARKER,QUOTATION

@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev28
+
+- Open FictionBook 3 files, ZIPs, or extracted books. Hamr follows the package’s declared text and illustration links and keeps the original files in the companion. FictionBook 2 uses the same section, note, and verse preparation. Long stanzas split at their authored line breaks when a single request is too large. [Document intake](docs/INTAKE.md#source-readers)
+- A heading that exceeds the M4B chapter-track limit gets a shortened navigation label. Its full wording stays in the source companion. Long unbroken words also pass through preparation without repeated email scans.
+
 # hamr 0.4.9.dev27
 
 - Open DocBook 4 and 5 manuals, chapters, and reference entries as XML files, source folders, or ZIPs. Hamr follows local XML includes and reads authored headings, footnotes, figure descriptions, and simple CALS tables. The source companion retains the chapter and illustration files. [Document intake](docs/INTAKE.md#source-readers)

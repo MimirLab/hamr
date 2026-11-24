@@ -77,6 +77,7 @@ def bind_member_block(block,member,occurrence,sha,records,resolve):
 
 def archive_packages(archive,members,*,textpack=False):
     """Use the same publication boundaries for discovery and page sequences."""
+    from .fictionbook_package import archive_books as fb3_books
     from .gitbook_intake import archive_spaces
     from .mdbook_intake import archive_books
     from .ncc_intake import archive_books as ncc_books
@@ -94,6 +95,9 @@ def archive_packages(archive,members,*,textpack=False):
     if textpack:
         return packages,claimed
     remaining = [item for item in members if item.index not in claimed]
+    editions,fb3_members = fb3_books(archive,remaining)
+    packages.extend(('fb3',descriptor,title) for descriptor,title in editions)
+    remaining = [item for item in remaining if item.index not in fb3_members]
     spaces,owned = archive_spaces(archive,remaining)
     packages.extend(('gitbook',item,book.title or book.root or 'GitBook') for book,item in spaces)
     claimed |= owned
@@ -114,4 +118,4 @@ def archive_packages(archive,members,*,textpack=False):
     packages.extend(('xml-book',descriptor,title) for descriptor,title in editions)
     spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in xml_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    return packages,claimed | owned | project_members | opf_members | ncc_members | xml_members | plain
+    return packages,claimed | fb3_members | owned | project_members | opf_members | ncc_members | xml_members | plain

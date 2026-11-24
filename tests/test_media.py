@@ -39,6 +39,28 @@ def test_all_chapters_and_long_utf8_title_survive_actual_muxing(tmp_path,count):
     assert result['metrics']['clips_rendered']==0
 
 
+def test_oversized_source_headings_have_playable_navigation_and_exact_source(tmp_path):
+    first='A source heading '+('界'*22000)+' first'
+    second='A source heading '+('界'*22000)+' second'
+    source=tmp_path/'long-headings.md'
+    source.write_text(f'# {first}\n\nThe first passage.\n\n# {second}\n\nThe second passage.',encoding='utf-8')
+    store, job=prepared(tmp_path,source)
+    assert [row['source'] for row in job['document']['blocks'] if row['role']=='heading']==[first,second]
+    assert len({u['chapter_id'] for u in job['plan']['utterances']})==2
+    assert len(job['plan']['chapters'])==2
+    # Resolve each over-budget heading explicitly before publication.
+    headings={row['id']:{'action':'companion','verified':True,'reason':'Keep the full heading in the source.'}
+              for row in job['document']['blocks'] if row['role']=='heading'}
+    repair(store,job['id'],document_policy={'source_sha256':job['document']['source_sha256'],'blocks':headings})
+    assert [u['text'] for u in store.get(job['id'])['plan']['utterances']]==['The first passage.','The second passage.']
+    path=Path(render(store,job['id'],allow_synthesis=False)['output'])
+    companion=json.loads((path/'companion.json').read_text())
+    probe=verify_container(path/'book.m4b',companion['chapters'],companion['samples'])
+    assert len(probe['chapters'])==2
+    assert all(c['tags']['title'].endswith('…') and len(c['tags']['title'].encode())<=255 for c in probe['chapters'])
+    assert first in (path/'source.html').read_text(encoding='utf-8') and second in (path/'source.html').read_text(encoding='utf-8')
+
+
 def metadata_source(path):
     png=io.BytesIO();Image.new('RGB',(12,12),'blue').save(png,'PNG');cover=png.getvalue()
     with zipfile.ZipFile(path,'w') as z:

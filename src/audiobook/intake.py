@@ -53,6 +53,10 @@ def parse(path,source,sha,cache,title):
         from .xml_package import read_xml_archive
 
         return read_xml_archive(path,source,sha,title)
+    if source.route=='fb3' and source.kind in ('file','zip','tar','libarchive'):
+        from .fictionbook_package import read_fb3
+
+        return read_fb3(path,source,sha,title)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):
@@ -134,6 +138,7 @@ def parse(path,source,sha,cache,title):
 
 def inspect_saved(path,source,cache=None,*,title=None):
     from .importers import IMPORT_REVISION
+    from .source_passages import prepare_navigation
 
     path = Path(path)
     source = Source(**source) if isinstance(source,dict) else source
@@ -170,6 +175,7 @@ def inspect_saved(path,source,cache=None,*,title=None):
                     'Repeat from the original stable file or a saved Hamr source bundle.')
     if not doc.blocks:
         raise Error('empty_document','Document contains no narratable material.')
+    prepare_navigation(doc)
     visual = [observation for page in doc.inventory if isinstance(page,dict)
               for observation in page.get('visual_observations',[])]
     if target and all(observation['status']=='verified_blank' for observation in visual):
