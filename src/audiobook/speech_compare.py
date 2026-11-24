@@ -9,13 +9,13 @@ import re,unicodedata
 from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 
-POLICY='bounded-english-composed-scale-typed-v38'
+POLICY='bounded-english-composed-scale-typed-v39'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
 SPECIAL_NEGATIVES={"can't":'can',"won't":'will',"shan't":'shall'}
 SPELLING_VARIANTS={'harbour':'harbor','harbours':'harbors','harboured':'harbored','harbouring':'harboring'}
-COMPOUND_SPELLINGS={'dustbowl':('dust','bowl'),'mathml':('math','ml')}
+COMPOUND_SPELLINGS={'dustbowl':('dust','bowl'),'mathml':('math','ml'),'dtbook':('dt','book')}
 ORDINALS={word:i for i,word in enumerate(['zeroth','first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth','eleventh','twelfth','thirteenth','fourteenth','fifteenth','sixteenth','seventeenth','eighteenth','nineteenth','twentieth'])}
 ORDINALS.update(thirtieth=30,fortieth=40,fiftieth=50,sixtieth=60,seventieth=70,eightieth=80,ninetieth=90)
 SCALES={'thousand':1000,'million':10**6,'billion':10**9}

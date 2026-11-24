@@ -23,6 +23,7 @@ def test_book_identifier_formatting_preserves_each_digit_and_distinct_counts():
 
 def test_known_orthographic_compounds_do_not_permit_arbitrary_merges():
     assert c('Dust Bowl and MathML')==c('dustbowl and Math ML')
+    assert c('Minimal DTBook')==c('Minimal DT book')
     assert c('nowhere')!=c('now here')
 
 

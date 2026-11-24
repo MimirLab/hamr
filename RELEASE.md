@@ -1,7 +1,7 @@
 # hamr 0.4.9.dev22
 
 - Read text-bearing DAISY 3 through the package OPF and SMIL sequence. The companion can recover exact text, synchronization and existing media files. Repeated passages in the authored order are preserved.
-- Speech verification recognizes equivalent ISBN and web address formatting, paired year readings in matching contexts, and the spelling variants for Dust Bowl and MathML. The report keeps the original ASR transcript and continues to compare actual numeric values and identifier digits.
+- Speech verification recognizes equivalent ISBN and web address formatting, paired year readings in matching contexts, and spelling variants such as Dust Bowl, MathML and DTBook. The report keeps the original ASR transcript and continues to compare actual numeric values and identifier digits.
 
 # hamr 0.4.9.dev21
 
