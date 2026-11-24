@@ -27,6 +27,16 @@ def test_known_orthographic_compounds_do_not_permit_arbitrary_merges():
     assert c('nowhere')!=c('now here')
 
 
+def test_printed_roman_amendment_labels_match_the_spoken_number():
+    ref = 'Article the fifth [Amendment III]'
+    assert c(ref)==c('Article the fifth, Amendment three.')
+    assert quantities(c(ref))!=quantities(c('Article the fifth, Amendment four.'))
+    assert c('Article the second [Amendment XXVII - Ratified 1992]')==c(
+        'Article the second, Amendment twenty seven, ratified 1992.')
+    assert c('The amendment I wrote')!=c('The amendment one wrote')
+    assert c('[Amendment IIII]')!=c('[Amendment four]')
+
+
 def test_domain_formatting_recovers_exact_digits_without_swallowing_quantities():
     from audiobook.speech_compare import notation_observation
 

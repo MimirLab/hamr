@@ -8,8 +8,9 @@ from calendar import monthrange
 import re,unicodedata
 from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
+from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v39'
+POLICY='bounded-english-composed-scale-typed-v40'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -33,6 +34,7 @@ GLUED_DOLLAR=re.compile(rf'(?<=[^\W\d_])\$[ \t]*{PRINTED_AMOUNT}(?!\w|[.,][0-9]|
 DOLLAR_BEFORE_YEN=re.compile(rf'(?<![\w$£€¥])\$[ \t]*({PRINTED_AMOUNT})(?=[ \t]+yen\b)',re.I)
 ELAPSED_PAIR=re.compile(r'(\belapsed?[ \t]+time[ \t]*[:,]?[ \t]+)([0-9]{1,3})[.:]([0-5][0-9])(?!\w|[.:][0-9])',re.I)
 ISBN=re.compile(r'\bisbn(?:-1[03])?[\s:]+((?:[0-9][ -]?){9,12}[0-9x])(?!\w|[ -][0-9])',re.I)
+AMENDMENT_LABEL=re.compile(r'([\[(](?i:amendment)[ \t]+)([IVXLCDM]{1,15})(?=[ \t]*(?:[\])]|[-–—][ \t]+))')
 YEAR_TEXT=re.compile(r'(?<!\w)(?:1[1-9]|20)\d{2}s?(?!\w)',re.I)
 YEAR_PREFIX='|'.join(SMALL[11:20]+['twenty'])
 YEAR_TENS=('twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety')
@@ -338,6 +340,11 @@ def money_tokens(tokens):
 def comparison_tokens(text):
     from .abbreviations import expand
     from .linguistic import comparison_text
+    def amendment(match):
+        value = roman(match[2])
+        return match[1]+str(value) if value is not None else match[0]
+
+    text=AMENDMENT_LABEL.sub(amendment,text)
     text=comparison_text(LITERAL_DIGIT_RUN.sub(literal_digit_run,isbn_notation(text)))
     text,_,_=expand(text)
     text=text.lower().replace('’',"'").replace('±',' plus or minus ')

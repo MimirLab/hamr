@@ -19,6 +19,7 @@ def payload_document(payload):
 @contextmanager
 def materialized_member(path,kind,index,work):
     from .archive_intake import containers
+    from .source_bundle import source_suffix
 
     with containers(path,kind) as archive, tempfile.TemporaryDirectory(prefix='intake-member-',dir=work) as temp:
         entry = next((member for member in archive.members() if member.index==index),None)
@@ -26,7 +27,7 @@ def materialized_member(path,kind,index,work):
             raise Error('source_member_missing', f'Archive member {index} is unavailable.')
         folder = Path(temp)
         # No member pathname is ever used as a destination.
-        suffix = Path(entry.name).suffix
+        suffix = source_suffix(entry.name)
         output = folder/('member'+suffix if len(suffix)<16 and suffix.isascii() else 'member')
         remaining = shutil.disk_usage(folder).free
         if entry.size is not None and entry.size>remaining:
@@ -63,6 +64,8 @@ def parse(path,source,sha,cache,title):
             route = describe(member,format=source.route_override,offline=source.offline,encoding=source.encoding)
             if route.kind in ('zip-member','tar-member','libarchive-member','directory','manifest'):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
+            if route.kind=='file' and route.route=='abiword':
+                route = replace(route,member_name=entry.name)
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
             doc.source_sha256 = sha
             def bind_location(location):

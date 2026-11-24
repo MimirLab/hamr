@@ -23,7 +23,9 @@ NATIVE = {
     '.txt':'text', '.text':'text', '.asc':'text', '.nfo':'text', '.md':'markdown', '.markdown':'markdown', '.epub':'epub', '.pdf':'pdf',
     '.textpack':'textbundle',
     '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt',
-    '.abw':'xml-book', '.dbk':'xml-book', '.docbook':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
+    '.abw':'abiword', '.awt':'abiword', '.zabw':'abiword', '.bzabw':'abiword',
+    '.abw.gz':'abiword', '.abw.bz2':'abiword',
+    '.dbk':'xml-book', '.docbook':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book', '.bits':'xml-book', '.nxml':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
     '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.prc':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
@@ -60,6 +62,14 @@ def natural(name):
                  for part in re.split(r'([0-9]+)', folded)), folded, name
 
 
+def source_suffix(name):
+    filename = Path(name).name.lower()
+    for compound in ('.abw.gz','.abw.bz2'):
+        if filename.endswith(compound):
+            return compound
+    return Path(filename).suffix
+
+
 def image_magic(prefix):
     return (prefix.startswith((b'\xff\xd8\xff', b'\x89PNG\r\n\x1a\n', b'II*\0', b'MM\0*',
                                b'II+\0', b'MM\0+', b'GIF87a', b'GIF89a',
@@ -68,7 +78,7 @@ def image_magic(prefix):
 
 
 def probe(prefix, name):
-    suffix = Path(name).suffix.lower()
+    suffix = source_suffix(name)
     if prefix.startswith(b'AT&TFORM') and prefix[12:16] in (b'DJVU',b'DJVM'):
         return 'djvu'
     if prefix.startswith(b'ITSF') and len(prefix)>=8 and int.from_bytes(prefix[4:8],'little') in (2,3):
@@ -223,7 +233,7 @@ def directory_members(root):
             relative = path.relative_to(root).as_posix()
             if relative in declared:
                 continue
-            suffix = path.suffix.lower()
+            suffix = source_suffix(path.name)
             if suffix in IMAGE_SUFFIXES:
                 pages.append(relative)
             elif suffix=='.xml' and not path.is_symlink() and path.is_file():
@@ -327,7 +337,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         if textpack or package_route or item.index in claimed:
             continue
         name = PurePosixPath(item.name)
-        basename, suffix = name.name.casefold(),name.suffix.lower()
+        basename, suffix = name.name.casefold(),source_suffix(name.name)
         is_manifest = basename in ('pages.hamr.json','mets.xml') or suffix=='.mets'
         if basename=='manifest.json' and item.size is not None and item.size<=MAX_MANIFEST:
             with archive.open_member(item) as stream:
@@ -378,7 +388,7 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
     if encoding and source.route not in ('text','chm','textbundle','rst'):
         raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu') and source.member_name is None:
+    if source.kind=='file' and source.route in ('scan','djvu','abiword') and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -701,9 +711,9 @@ def capture(path,target_dir,**options):
         make_bundle(path,source.kind,target)
         source = Source('scan','bundle',offline=source.offline)
     else:
-        suffix = local.suffix.lower()
+        suffix = source_suffix(local.name)
         # Preserve legacy snapshot names while giving misnamed inputs a safe suffix.
-        suffix = suffix if re.fullmatch(r'\.[a-z0-9]{1,16}',suffix) else '.bin'
+        suffix = suffix if suffix in NATIVE or re.fullmatch(r'\.[a-z0-9]{1,16}',suffix) else '.bin'
         target = target_dir/('source'+suffix)
         copy_snapshot(local,target)
     with target.open('r+b') as stream:
@@ -739,4 +749,7 @@ def capture_dependencies(path,target_dir,source):
 
 
 def original_name(snapshot,source):
-    return 'original.hamr.zip' if source and source.get('kind')=='bundle' else 'original'+Path(snapshot).suffix
+    if source and source.get('kind')=='bundle':
+        return 'original.hamr.zip'
+    suffix = source_suffix(snapshot) if source and source.get('route')=='abiword' else Path(snapshot).suffix
+    return 'original'+suffix

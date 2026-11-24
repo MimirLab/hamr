@@ -27,7 +27,7 @@ FORMULA_ELEMENTS = frozenset(('math','formula','disp-formula','inline-formula','
 CONTENT_TAGS = frozenset(('p','para','simpara','title','subtitle','h','hd','heading',
                           'li','item','line','v','l','caption','blockquote','epigraph','programlisting'))
 BOOK_ROOTS = frozenset(('FictionBook','book','article','article-set','TEI','teiCorpus','dtbook',
-                        'abiword','section','reference','refentry','docbook','book-part-wrapper'))
+                        'abiword','awml','section','reference','refentry','docbook','book-part-wrapper'))
 
 
 def name(element):
@@ -930,6 +930,10 @@ def read_document(path,source,sha,cache,title):
         docx(path,builder)
     elif route=='odt':
         odt(path,builder)
+    elif route=='abiword':
+        from .abiword_intake import read_abiword, read_xml
+
+        read_abiword(read_xml(path),builder,source.member_name or path.name)
     elif route in ('xlsx','pptx'):
         from .structured_intake import read_pptx, read_xlsx
         (read_xlsx if route=='xlsx' else read_pptx)(path,builder)
@@ -947,6 +951,7 @@ def read_document(path,source,sha,cache,title):
         if route=='html':
             html_read(data,builder)
         elif route in ('xml-book','fb2'):
+            from .abiword_intake import ROOTS as ABIWORD_ROOTS, read_abiword
             from .dtbook_intake import is_dtbook, read_dtbook
             from .fictionbook_intake import read_fictionbook
             from .xml_package import read_projected
@@ -957,6 +962,8 @@ def read_document(path,source,sha,cache,title):
                 read_dtbook(root,builder,part)
             elif name(root)=='FictionBook':
                 read_fictionbook(root,builder,part)
+            elif root.tag in ABIWORD_ROOTS:
+                read_abiword(root,builder,part)
             elif not read_projected(root,builder,part):
                 if name(root) not in BOOK_ROOTS:
                     raise Error('unsupported_format', f'No book reader is available for XML root {name(root)!r}.')

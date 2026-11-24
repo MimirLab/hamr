@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev29
+
+- Open AbiWord documents, templates and compressed copies directly or inside an archive. The resident reader follows chapter styles, notes, table coordinates, text boxes and line breaks. Page headers and footers stay in the companion, and unsaved field values appear at their source locations. [Document intake](docs/INTAKE.md#source-readers)
+- Speech verification compares explicit amendment labels in square brackets or parentheses by value, so a spoken “Amendment three” can verify a printed “Amendment III.”
+
 # hamr 0.4.9.dev28
 
 - Open FictionBook 3 files, ZIPs, or extracted books. Hamr follows the package’s declared text and illustration links and keeps the original files in the companion. FictionBook 2 uses the same section, note, and verse preparation. Long stanzas split at their authored line breaks when a single request is too large. [Document intake](docs/INTAKE.md#source-readers)
