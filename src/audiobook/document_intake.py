@@ -4,13 +4,14 @@ import csv
 from email import policy
 from email.parser import BytesParser
 import io
+from itertools import zip_longest
 import json
 from pathlib import PurePosixPath
 import re
 from urllib.parse import unquote, urlsplit
 from zipfile import BadZipFile, ZipFile
 
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, Tag
 from lxml import etree
 
 from .core import Block, Document, Error, key
@@ -176,17 +177,54 @@ def renderer_controls(body,docutils,sphinx):
                       'evidence':'Renderer navigation or note label'} for node in controls}
 
 
-def html_read(data,builder, *, where='html', metadata=True, fragment=None, encoding=None, collect_links=False,
+def html_too_deep(root):
+    nodes = [(root,0)]
+    while nodes:
+        node,depth = nodes.pop()
+        if depth>=128:
+            return True
+        nodes.extend((child,depth+1) for child in node.children if isinstance(child,Tag))
+    return False
+
+
+def html_reference_evidence(soup):
+    fields = ('id','name','href','src','alt','aria-label','role','colspan','rowspan')
+    for tag in soup.find_all(True):
+        facts = tuple((field,tag[field]) for field in fields if field in tag.attrs)
+        if facts or tag.name in ('img','svg','math','audio','video'):
+            yield tag.name,facts
+
+
+def html_tree(data,encoding):
+    soup = BeautifulSoup(data,'html.parser',from_encoding=encoding)
+    if not html_too_deep(soup):
+        return soup,False
+    recovered = BeautifulSoup(data,'lxml',from_encoding=encoding or soup.original_encoding)
+    original_words = (word for piece in soup.stripped_strings for word in piece.split())
+    recovered_words = (word for piece in recovered.stripped_strings for word in piece.split())
+    references = zip_longest(html_reference_evidence(soup),html_reference_evidence(recovered))
+    if (html_too_deep(recovered) or any(a!=b for a,b in zip_longest(original_words,recovered_words))
+            or any(a!=b for a,b in references)):
+        raise Error('source_html_structure','Deeply nested HTML could not be repaired without losing or moving text.',
+                    'Open a repaired HTML or EPUB export with the original reading order.')
+    return recovered,True
+
+
+def html_read(data,builder, *, where='html', part=None, metadata=True, fragment=None, encoding=None, collect_links=False,
               collect_resources=False, source_annotations=None, docutils=False):
     from urllib.parse import unquote
     from .epub_semantics import AUDIT_SPANS, hidden, note_container, reading, uncertainty
+    from .html_navigation import illustration_titles, linked_contents
     from .html_notes import RenderedNotes
     from .importers import html_text
     from .epub_semantics import describe as semantics
     from .source_notes import Definition, NoteGraph, note_text
     from .source_numbering import bind_ordered, html_ordered_items
 
-    soup = BeautifulSoup(data,'html.parser',from_encoding=encoding)
+    soup,recovered = html_tree(data,encoding)
+    if recovered:
+        builder.doc.inventory.append({'kind':'html_structure_recovered','element':where,
+                                      'basis':'HTML recovery preserved the parsed words and references in order'})
     sphinx = any(item.get('src','').split('?',1)[0].endswith('/documentation_options.js')
                  or item.get('id')=='documentation_options' for item in soup.find_all('script'))
     for node in soup.find_all(['script','style','template','noscript']):
@@ -217,6 +255,9 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
         if len(targets)!=1 or targets[0].name in ('a','h1','h2','h3','h4','h5','h6','span'):
             raise Error('source_topic_fragment','The topic link does not name one bounded HTML region.')
         body = targets[0]
+    contents = linked_contents(body,part or where)
+    illustrations,illustration_index = illustration_titles(body,part or where)
+    contents.update(illustration_index)
     ordinals = html_ordered_items(body)
     projected = renderer_controls(body,docutils,sphinx)
     inline_locations = {}
@@ -251,7 +292,16 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                 span['target_href'] = unquote(span['href'])
 
     def annotated_semantics(node,*,note_body=False,children=None):
-        source,spans = semantics(node,note_markup=markup,note_body=note_body,projected=projected,children=children)
+        source,spans = semantics(node,resolve_asset=illustrations.get if illustrations else None,
+                                 note_markup=markup,note_body=note_body,projected=projected,children=children)
+        for span in spans:
+            if span['kind']=='object_label' and (caption:=span.get('image_resource')):
+                span['image_resource'] = caption['image']
+                if span['issue']:
+                    label = caption['title']
+                    if not re.search(r'''[.!?]["'”’\)\]]*$''',label):
+                        label += '.'
+                    span.update(description_source=caption,reading='' if source else label,issue=None)
         if inline_locations:
             from bs4 import Tag
 
@@ -271,12 +321,17 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
 
     def text_node(node,role,where):
         source,spans = annotated_semantics(node,note_body=role=='note')
+        if role=='body' and not source and any(span.get('description_source') for span in spans):
+            role = 'caption'
         spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
                  collect_links and span['kind']=='hyperlink']
         local_notes(spans)
         issue = source_issue(spans)
-        block = builder.add(source,role,where,loc={'anchor':node.get('id'),'inline_semantics':spans,
-                            'exact':str(node)},issue=None if role=='note' else issue)
+        loc = {'anchor':node.get('id'),'inline_semantics':spans,'exact':str(node)}
+        names = [tag['name'] for tag in node.find_all('a',attrs={'name':True}) if tag['name']]
+        if names:
+            loc['container_anchors'] = list(dict.fromkeys(names))
+        block = builder.add(source,role,where,loc=loc,issue=None if role=='note' else issue)
         if block and role=='heading' and projected and any(id(child) in projected for child in node.find_all(True)):
             if label:=reading(block):
                 block.chapter = builder.chapter = label
@@ -312,6 +367,12 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
                 for field,value in annotation.items():
                     if field not in ('source_role','reading_span','source_element','inline_location'):
                         item.locator.setdefault(field,value)
+        if first<len(builder.doc.blocks) and not isinstance(node,NavigableString):
+            anchor = node.get('id') or (node.get('name') if node.name=='a' else None)
+            block = builder.doc.blocks[first]
+            if anchor and anchor!=block.locator.get('anchor') and not any(
+                    span['kind']=='anchor' and span['id']==anchor for span in block.locator.get('inline_semantics',())):
+                block.locator.setdefault('container_anchors',[]).append(anchor)
 
     def visit_content(node,path):
         if isinstance(node,NavigableString):
@@ -319,6 +380,11 @@ def html_read(data,builder, *, where='html', metadata=True, fragment=None, encod
             if not isinstance(node,NON_TEXT):
                 block = builder.add(str(node),where=path)
                 bind_ordered(block,node.parent,ordinals)
+            return
+        if node.name in ('head','title','meta','link'):
+            return
+        if id(node) in contents:
+            text_node(node,'navigation',path)
             return
         if node.get('id') and (note_container(node) or id(node) in markup.definitions):
             text_node(node,'note',path)
@@ -705,7 +771,7 @@ def read_document(path,source,sha,cache,title):
     else:
         data = bounded_read(path)
         if route=='html':
-            html_read(data,builder)
+            html_read(data,builder,part=source.member_name or (title+path.suffix if title else path.name))
         elif route in ('xml-book','fb2'):
             from .abiword_intake import ROOTS as ABIWORD_ROOTS, read_abiword
             from .dtbook_intake import is_dtbook, read_dtbook

@@ -30,7 +30,7 @@ NATIVE = {
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book', '.bits':'xml-book', '.nxml':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.odp':'odp', '.otp':'odp', '.fodp':'odp',
     '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
-    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.mobi':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
+    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.rb':'rocket', '.mobi':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst',
 }
@@ -88,6 +88,10 @@ def probe(prefix, name):
     if prefix.startswith(b'ITSF') and len(prefix)>=8 and int.from_bytes(prefix[4:8],'little') in (2,3):
         return 'chm'
     if suffix=='.chm':
+        return None
+    if prefix.startswith(b'\xb0\x0c\xb0\x0c'):
+        return 'rocket'
+    if suffix=='.rb':
         return None
     if prefix.lstrip().startswith(b'%PDF-'):
         return 'pdf'
@@ -425,8 +429,8 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle','rst','pml',*PALM_ROUTES):
-        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle, Palm ebooks, Palm Markup Language or compiled HTML Help.')
+    if encoding and source.route not in ('text','chm','textbundle','rst','pml','rocket',*PALM_ROUTES):
+        raise Error('source_encoding','Use --encoding for plain text, reStructuredText, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks or compiled HTML Help.')
     if source.kind=='file' and source.route in ('scan','djvu','abiword','pml',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source

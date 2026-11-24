@@ -113,6 +113,8 @@ Open Palm Markup Language books and `.pmlz` archives with the built-in reader. C
 
 Read PalmDOC, Weasel Reader zTXT, and unencrypted eReader books directly from recognized `.pdb` or `.prc` files. Hamr preserves text across record boundaries and keeps embedded pictures and reader records available in the companion. [Palm Database books](docs/INTAKE.md#palm-database-books)
 
+Open a Rocket eBook (`.rb`) with the built-in reader. Hamr starts at the book’s declared first page, reads its chapters through the same HTML pipeline, and keeps the embedded artwork recoverable. [Rocket eBooks](docs/INTAKE.md#rocket-ebooks)
+
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 
 ### Scanned and mixed PDFs (OCR)

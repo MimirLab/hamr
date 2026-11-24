@@ -2,8 +2,10 @@
 
 import os
 from pathlib import Path, PurePosixPath
+import posixpath
 import shutil
 import stat
+from urllib.parse import unquote, urlsplit
 from zipfile import ZIP_STORED, ZipFile, ZipInfo
 
 from .core import Error, key
@@ -77,6 +79,45 @@ def bind_resources(block,lookup):
             asset['status'] = 'referenced'
             block.links.append({'kind':'source_resource','href':ref['href'],'label':ref.get('label'),
                                 'destinations':['source.html#resource-'+asset['location_id']]})
+
+
+def local_target(reference,base):
+    if not reference:
+        return None
+    try:
+        url = urlsplit(reference.replace('\\','/'))
+        if url.scheme or url.netloc or url.query:
+            return None
+        path = unquote(url.path)
+        target = (posixpath.normpath(posixpath.join(posixpath.dirname(base),path)) if path and not path.startswith('/')
+                  else path.removeprefix('/') or base)
+        return safe_name(target),unquote(url.fragment)
+    except (ValueError,Error):
+        return None
+
+
+def bind_topic_links(builder,links):
+    owners = {}
+    anchors = {}
+    for block in builder.doc.blocks:
+        location = block.locator
+        if 'topic_entry' not in location:
+            continue
+        ordinal = location['topic_entry']
+        owners.setdefault(ordinal,[]).append(block)
+        ids = {span['id'] for span in location.get('inline_semantics',()) if span['kind']=='anchor'}
+        ids.update(location.get('container_anchors',()))
+        if location.get('anchor'):
+            ids.add(location['anchor'])
+        for anchor in ids:
+            anchors.setdefault((ordinal,anchor),[]).append(block)
+    for block,span,ordinal,anchor in links:
+        targets = anchors.get((ordinal,anchor),()) if anchor else owners.get(ordinal,())
+        if targets:
+            target = next((item for item in targets if
+                           item.locator['occurrence']==block.locator['occurrence']),targets[0])
+            block.links.append({'kind':'hyperlink','href':span['href'],'label':span['source'],
+                                'source_start':span['source_start'],'destinations':['source.html#'+target.id]})
 
 
 def archive_packages(archive,members,*,textpack=False):

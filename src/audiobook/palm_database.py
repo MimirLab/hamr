@@ -4,7 +4,8 @@ import codecs
 from struct import Struct
 import zlib
 
-from .core import Error, digest, key
+from .binary_source import byte_asset
+from .core import Error, key
 from .document_intake import MAX_STRUCTURE
 
 
@@ -51,7 +52,7 @@ class Database:
         return {'role':role,'palm_record':index,'name':name,'byte_range':[start,end],
                 'resource_label':name or f'Palm record {index}',
                 'location_id':key([self.sha,index,start,end])[:20],
-                'binary_asset':{'offset':start,'length':end-start,'sha256':digest(self.data[start:end])}}
+                'binary_asset':byte_asset(self.data,start,end)}
 
 
 def decompress_palm(data,limit):
@@ -163,14 +164,3 @@ def plain_record_book(database,chunks,source,filename,title,route):
         locator['palm_records'] = locations.overlaps(locator['start'],locator['end'])
     document.metadata['source_resources'] = [database.asset(index,'palm_text_record') for index,_ in chunks]
     return document
-
-
-def recover(data,asset):
-    offset,length = asset.get('offset'),asset.get('length')
-    if (type(offset) is not int or type(length) is not int or offset<0 or length<0
-            or length>MAX_PALM_RECORD or offset+length>len(data)):
-        raise Error('source_location','The Palm asset byte range is outside its original document.')
-    payload = data[offset:offset+length]
-    if digest(payload)!=asset.get('sha256'):
-        raise Error('snapshot_changed','The Palm asset does not match its recorded identity.')
-    return payload

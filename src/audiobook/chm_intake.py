@@ -4,19 +4,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 import platform
-import posixpath
 import shutil
 import struct
 import sys
 import tempfile
-from urllib.parse import unquote, urlsplit
 
 from bs4 import BeautifulSoup
 
 from .core import Error, digest, filehash
 from .document_intake import MAX_STRUCTURE, DocumentBuilder, html_read
 from .intake_helpers import convert
-from .source_bundle import safe_name
+from .publication_package import bind_topic_links, local_target
 
 READER_SHA256 = 'a604e6b43866ed96ebd485061bd1c7e0be018a69d56c5907da738bf83ec85672'
 TOPIC_SUFFIXES = {'.htm','.html','.xhtml'}
@@ -117,21 +115,6 @@ def system_records(data,encoding):
     return strings
 
 
-def local_target(reference,base):
-    if not reference:
-        return None
-    try:
-        url = urlsplit(reference.replace('\\','/'))
-        if url.scheme or url.netloc or url.query:
-            return None
-        path = unquote(url.path)
-        target = (posixpath.normpath(posixpath.join(posixpath.dirname(base),path)) if path and not path.startswith('/')
-                  else path.removeprefix('/') or base)
-        return safe_name(target),unquote(url.fragment)
-    except (ValueError,Error):
-        return None
-
-
 def sitemap(raw,encoding):
     soup = BeautifulSoup(raw,'html.parser',from_encoding=encoding)
     for item in soup.find_all('object'):
@@ -206,7 +189,7 @@ def topic_links(reader, builder):
             name,anchor = target
             if PurePosixPath(name).suffix.casefold() not in TOPIC_SUFFIXES or not (member:=reader.find(name)):
                 continue
-            links.append((block,span,member,anchor))
+            links.append((block,span,member.ordinal,anchor))
             if member.ordinal in listed or member.ordinal in auxiliary:
                 continue
             row = {'occurrence':f'linked-{member.ordinal}','member':member.name,'topic_entry':member.ordinal,
@@ -214,28 +197,6 @@ def topic_links(reader, builder):
             auxiliary[member.ordinal] = {'member':member,'record':row,'anchor':None}
             builder.doc.inventory.append(row)
     return links,list(auxiliary.values())
-
-
-def bind_links(builder,links):
-    owners = {}
-    for block in builder.doc.blocks:
-        location = block.locator
-        if 'topic_entry' in location:
-            owners.setdefault(location['topic_entry'],[]).append(block)
-    for block,span,member,anchor in links:
-        targets = owners.get(member.ordinal,())
-        if anchor:
-            targets = [item for item in targets if item.locator.get('anchor')==anchor or any(
-                child['kind']=='anchor' and child.get('id')==anchor for child in item.locator.get('inline_semantics',()))]
-        same = [item for item in targets if item.locator['occurrence']==block.locator['occurrence']]
-        if same:
-            targets = same
-        elif targets:
-            occurrence = targets[0].locator['occurrence']
-            targets = [item for item in targets if item.locator['occurrence']==occurrence]
-        if targets:
-            block.links.append({'kind':'hyperlink','href':span['href'],'label':span['source'],
-                                'source_start':span['source_start'],'destinations':['source.html#'+targets[0].id]})
 
 
 def ordered_document(reader,builder,encoding):
@@ -291,7 +252,7 @@ def ordered_document(reader,builder,encoding):
         raise Error('source_chm_contents','The compiled help contents has no linked topics.')
     links, auxiliary = topic_links(reader,builder)
     import_topics(reader,builder,auxiliary,encoding,auxiliary=True)
-    bind_links(builder,links)
+    bind_topic_links(builder,links)
     represented = {row.get('topic_entry') for row in builder.doc.inventory}
     for member in reader.members:
         if member.ordinal not in represented and PurePosixPath(member.name).suffix.casefold() in TOPIC_SUFFIXES:

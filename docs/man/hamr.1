@@ -1,4 +1,4 @@
-.TH HAMR 1 "2026-11-24" "hamr 0.4.9.dev44" "User Commands"
+.TH HAMR 1 "2026-11-24" "hamr 0.4.9.dev45" "User Commands"
 .SH NAME
 hamr \- turn EPUB, PDF, Markdown and plain-text documents into local audiobooks
 .SH SYNOPSIS
@@ -172,6 +172,10 @@ record header open from recognized .pdb and .prc files. PalmDOC and zTXT
 read the entire text stream. The companion keeps zTXT reader marks and
 annotations. eReader follows its Palm markup, linked notes, and saved
 pictures. Source recovery can return an original ebook record or embedded PNG.
+.PP
+Unprotected Rocket eBooks (.rb) start at the declared body. A complete menu or
+continuation links can establish chapter order. The companion retains the
+embedded HTML and images for source recovery.
 .PP
 Palm Markup Language (.pml and .pmlz) follows authored chapters and links
 footnotes and sidebars to the passages that cite them. The companion retains

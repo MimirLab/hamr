@@ -1,3 +1,10 @@
+# hamr 0.4.9.dev45
+
+- Open unprotected Rocket eBooks through the built-in HTML pipeline. Preserve the declared first page, original chapter and image records, and linked source locations in the companion. [Rocket eBook intake](docs/INTAKE.md#rocket-ebooks)
+- Keep verified legacy HTML contents lists and misplaced document metadata out of the spoken chapter text. Links to named HTML anchors resolve to their source passages.
+- Recover legacy HTML with deeply nested unclosed paragraphs when an independent parse preserves every word in order.
+- Reuse authored illustration titles from verified local index links. Inline image titles stay in the companion so surrounding sentences remain continuous.
+
 # hamr 0.4.9.dev44
 
 - Read Weasel Reader zTXT books directly or from archives. The built-in reader handles both serial and random-access compression and preserves the original text, reader bookmarks, and annotations. Weasel Reader books use the same narration preparation as ordinary text. [Palm Database books](docs/INTAKE.md#palm-database-books)

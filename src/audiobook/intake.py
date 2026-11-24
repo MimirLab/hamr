@@ -110,6 +110,10 @@ def parse(path,source,sha,cache,title):
         from .ztxt_intake import read_ztxt
 
         return read_ztxt(path,source,sha,title)
+    if source.route=='rocket':
+        from .rocket_intake import read_rocket
+
+        return read_rocket(path,source,sha,title)
     if source.route=='epub':
         return ADAPTERS['.epub'](path)
     if source.route=='djvu':
@@ -312,8 +316,8 @@ def extract_location(book,location,output):
 
             data = extract(xml(bounded_read(staged)),asset)
         elif asset := loc.get('binary_asset'):
+            from .binary_source import recover
             from .document_intake import bounded_read
-            from .palm_database import recover
 
             data = recover(bounded_read(staged),asset)
         if data is not None:
