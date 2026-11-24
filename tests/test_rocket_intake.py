@@ -75,6 +75,22 @@ def test_rocket_preserves_sound_siblings_when_one_record_has_invalid_compression
     assert error.value.code=='protected_source'
 
 
+def test_rocket_binds_only_unique_case_insensitive_artwork_match(tmp_path):
+    info = ('book.info',b'BODY=page.html\n',2)
+    page = ('page.html',b'<p><img src="Spacer.png" alt="Divider"></p>',0)
+    asset = ('spacer.png',b'original image bytes',0)
+    source = tmp_path/'picture.rb'
+    source.write_bytes(publication([info,page,asset]))
+    doc = inspect_source(source)
+    record = next(item for item in doc.metadata['source_resources'] if item['name']=='spacer.png')
+    link, = doc.blocks[0].links
+    assert record['status']=='referenced'
+    assert link['href']=='Spacer.png'
+    assert link['destinations']==['source.html#resource-'+record['location_id']]
+    source.write_bytes(publication([info,page,asset,('SPACER.PNG',b'another image',0)]))
+    assert not inspect_source(source).blocks[0].links
+
+
 def test_shared_html_prefers_body_and_retains_only_verified_contents_as_navigation(tmp_path):
     path = Path(tmp_path)/'contents.html'
     path.write_text('''<html><body><head><title>Test publication</title></head>

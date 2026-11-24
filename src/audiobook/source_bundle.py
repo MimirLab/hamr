@@ -30,7 +30,7 @@ NATIVE = {
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book', '.bits':'xml-book', '.nxml':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.odp':'odp', '.otp':'odp', '.fodp':'odp',
     '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
-    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.rb':'rocket', '.mobi':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
+    '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.rb':'rocket', '.snb':'snb', '.mobi':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy', '.wpd':'office-legacy',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst',
 }
@@ -91,7 +91,9 @@ def probe(prefix, name):
         return None
     if prefix.startswith(b'\xb0\x0c\xb0\x0c'):
         return 'rocket'
-    if suffix=='.rb':
+    if prefix.startswith(b'SNBP000B'):
+        return 'snb'
+    if suffix in ('.rb','.snb'):
         return None
     if prefix.lstrip().startswith(b'%PDF-'):
         return 'pdf'

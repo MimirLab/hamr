@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev46
+
+- Open Shanda Bambook ebooks through the shared narration pipeline. Follow the authored chapter directory and retain exact embedded chapter files and artwork. [Bambook intake](docs/INTAKE.md#bambook-ebooks)
+- Bind Rocket eBook artwork when its reference differs only by letter case and identifies one embedded file.
+
 # hamr 0.4.9.dev45
 
 - Open unprotected Rocket eBooks through the built-in HTML pipeline. Preserve the declared first page, original chapter and image records, and linked source locations in the companion. [Rocket eBook intake](docs/INTAKE.md#rocket-ebooks)

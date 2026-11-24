@@ -30,6 +30,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | DocBook manuals | Open a `.docbook`, `.dbk`, or `.xml` file, a source folder, or an archive. Hamr follows local chapter includes and reads the authored text, notes, descriptions, and simple tables. |
 | Palm Database books | Open recognized PalmDOC, Weasel Reader zTXT, and unencrypted eReader books in `.pdb`, `.prc`, or an archive. [Palm Database intake](#palm-database-books) |
 | Rocket eBooks | Open unprotected Rocket eBook version 2 (`.rb`) directly or inside an archive. [Rocket eBook intake](#rocket-ebooks) |
+| Shanda Bambook ebooks | Open readable Shanda Bambook `.snb` books directly or inside an archive. [Bambook intake](#bambook-ebooks) |
 | Palm Markup Language | Open `.pml` files, `.pmlz` books, or a ZIP containing loose PML. The built-in reader preserves chapter order, footnotes, and sidebars. [Palm ebook intake](#palm-markup-language) |
 | FictionBook | Open `.fb2` files and ZIPs, or open a FictionBook 3 file, ZIP, or extracted publication. Hamr follows linked notes and preserves verse lines and original assets. |
 | AbiWord | Open `.abw`, `.awt`, gzip-compressed `.zabw` or `.abw.gz`, and bzip2-compressed `.bzabw` or `.abw.bz2`. The reader follows authored chapter styles and keeps linked notes, simple tables, text boxes, and illustration locations. |
@@ -90,6 +91,16 @@ hamr open path/to/book.rb
 Hamr starts at the declared body and follows a complete authored menu or unambiguous continuation links when available. It uses the saved directory order for the remaining cases. The source companion keeps the original book and can recover its embedded HTML, images, and index records. Supply `--encoding` if you know the book uses a specific older text encoding.
 
 Legacy HTML contents lists with verified local links stay in the companion. Hamr can use a title from an illustration index when its link identifies the exact image. Titles for inline pictures stay with the source so the narration can read the surrounding sentence continuously. Images without an authored description appear at their source location for review. For a protected edition, open a readable export.
+
+## Bambook ebooks
+
+```sh
+hamr open path/to/book.snb
+```
+
+Hamr follows the book’s chapter directory, including repeated entries and explicitly hidden titles. It reads through raw and compressed text blocks and keeps exact chapter records and illustrations in the source companion. A missing chapter appears at its position in the reading plan.
+
+Samsung S Note files also use the `.snb` extension. For those, export to a readable PDF or another supported document format.
 
 ## Palm Markup Language
 

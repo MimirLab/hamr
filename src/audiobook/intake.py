@@ -114,6 +114,10 @@ def parse(path,source,sha,cache,title):
         from .rocket_intake import read_rocket
 
         return read_rocket(path,source,sha,title)
+    if source.route=='snb':
+        from .snb_intake import read_snb
+
+        return read_snb(path,sha,title)
     if source.route=='epub':
         return ADAPTERS['.epub'](path)
     if source.route=='djvu':
@@ -320,6 +324,12 @@ def extract_location(book,location,output):
             from .document_intake import bounded_read
 
             data = recover(bounded_read(staged),asset)
+        elif member := loc.get('snb_member'):
+            from .snb_container import recover
+
+            destination = Path(directory)/'decoded-member'
+            recover(staged,destination,member)
+            staged = destination
         if data is not None:
             with staged.open('wb') as stream:
                 stream.write(data)

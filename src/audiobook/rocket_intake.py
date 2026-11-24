@@ -190,6 +190,10 @@ def read_rocket(path,source,sha,title):
     raw,problems = {},{}
     remaining = MAX_STRUCTURE
     resources = {}
+    folded_names = {}
+    for name in members:
+        folded = name.casefold()
+        folded_names[folded] = name if folded not in folded_names else None
     view = memoryview(data)
     for name,member in members.items():
         suffix = PurePosixPath(name).suffix.casefold()
@@ -222,7 +226,8 @@ def read_rocket(path,source,sha,title):
         record = resources[name]
         def image(reference):
             if target:=local_target(reference['href'],name):
-                return resources.get(target[0])
+                path = target[0]
+                return resources.get(path if path in resources else folded_names.get(path.casefold()))
             return None
 
         start = len(doc.blocks)
