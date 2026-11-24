@@ -14,7 +14,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | PDF, EPUB, Markdown and plain text | The ordinary Hamr readers preserve the original source, planned narration and companion. Searchable PDFs retain native structure. For a known legacy text encoding, pass `--encoding windows-1252` or the actual encoding of the file. |
 | Loose scans, individual images, TIFF and CBZ | The shared raster reader handles supported JPEG, PNG and TIFF page images, expands frames, and preserves crops and ordering. English OCR and its runtime are in the Linux x86-64 and Windows x64 packages. |
 | Supplied OCR and ordered archives | Local hOCR, ALTO, PAGE XML, TSV and selected ABBYY XML sidecars can supply text for a scan. ABBYY XML uses one text page with original unrotated coordinates. A physical METS map or a local IIIF Presentation 3 sequence can name the pages. Binding and dimensions are checked before reuse. |
-| HTML, ODT and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. Selected complex objects that require a verified reading appear in source review. |
+| HTML, OpenDocument and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. Writer/Web OpenDocument files use the same reader, including `.oth` packages. Selected complex objects that require a verified reading appear in source review. |
 | Word documents (DOCX) | Read editable DrawingML and VML text boxes in the selected Word compatibility branch. Hamr reads each story after its anchor paragraph and follows linked frames in their authored order. Visible revisions, notes, equations and simple tables use the shared preparation step. |
 | TextBundle folders and TextPack archives | Hamr opens the descriptor's text payload and preserves its companion files. Version 1 uses Markdown. Version 2 can declare Markdown, plain text, HTML, or RTF. |
 | mdBook folders and archives | Hamr follows the chapter links in the source directory's `SUMMARY.md` and reads included local material through the Markdown reader. A draft link stays in the companion. |
@@ -41,7 +41,9 @@ Authored equations in EPUB, HTML, Word and OpenDocument share a reading for powe
 
 In Word, each editable text box keeps its exact XML location. Unresolved links between boxes and drawings without a readable text story or description may need source review.
 
-Word, OpenDocument, HTML and EPUB use the same reading for supported merged and nested table cells. Hamr reads a merged value once, follows nested tables between the surrounding passages, and uses the headers that apply to each value. The companion retains original cell locations and distinguishes a covered position, a missing position, and an authored empty cell. Conflicting geometry or missing authored header targets appear in source review. Printed table geometry still depends on the source PDF or scan.
+Word, OpenDocument, HTML, EPUB and supported tagged PDFs use the same reading for merged and nested table cells. Hamr reads a merged value once, follows nested tables between the surrounding passages, and uses the headers that apply to each value. The companion retains original cell locations and distinguishes a covered position, a missing position, and an authored empty cell. Conflicting geometry or missing authored header targets appear in source review.
+
+In a tagged PDF, Hamr matches table tags to visible text, follows the same table across pages, and keeps verified repeated print headers in the companion. Each reconstructed cell retains its original page and glyph ranges. When ownership cannot be established, the plan reports that it used the visible reading. Untagged PDFs and scans still depend on the layout and text available in the source.
 
 Structured XML such as JATS can supply the same readings through one authored MathML rendition. Hamr keeps the other renditions in the original article.
 

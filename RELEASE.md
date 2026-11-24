@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev33
+
+- A tagged PDF can use the shared table reader when its tags identify the visible text. Hamr can read merged and nested cells, continue one table across pages, and retain repeated print headings in the companion. Conflicting tags preserve the visible reading or identify the table for source review.
+- Writer/Web OpenDocument packages, including `.oth` files and copies inside ZIPs, open as documents. Their embedded previews stay with the original.
+
 # hamr 0.4.9.dev32
 
 - Word, OpenDocument, HTML and EPUB read merged and nested table cells through one shared model. Grouped headers, cell notes, nested reading order and original locations stay attached to the facts they describe. [Document intake](docs/INTAKE.md#source-readers)

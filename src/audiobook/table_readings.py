@@ -103,33 +103,46 @@ class GridNarration:
         from collections import defaultdict
 
         self.append('Table. ')
-        if grid['caption']:
+        if grid['caption'] and not grid['caption'].get('after'):
             self.sentence(*self.notes.read(grid['caption'],heading=True))
         origins = [cell for cell in grid['cells'] if not cell.get('hidden')]
-        headers = [cell for cell in origins if cell['role']=='column']
+        headers = [cell for cell in origins if cell['role'] in ('column','both')]
+        row_headers = [cell for cell in origins if cell['role'] in ('row','both')]
         by_id = {cell['id']:cell for cell in origins if cell.get('id')}
         assigned = {}
         used = set()
+        titles = {id(cell) for cell in headers if cell['columns']==grid['width'] and cell['columns']>1
+                  and any(child['row']>cell['row'] for child in headers)}
         # Index the authored columns once. A value that spans distinct columns
         # only inherits a header covering the full span.
         by_column = defaultdict(list)
+        by_row = defaultdict(list)
         for header in headers:
             for column in range(header['column'],header['column']+header['columns']):
                 by_column[column].append(header)
+        for header in row_headers:
+            by_row[header['row']].append(header)
+        active_rows = []
+        current_row = -1
         for cell in origins:
+            if cell['row']!=current_row:
+                current_row = cell['row']
+                active_rows = [header for header in active_rows if header['row']+header['rows']>current_row]
+                active_rows.extend(by_row[current_row])
             if cell['role']!='data' or not cell['parts']:
                 continue
             refs = cell.get('headers')
             if refs:
                 path = [by_id[ref] for ref in dict.fromkeys(refs) if ref in by_id]
             else:
-                path = [header for header in by_column[cell['column']] if self.owns_column(header,cell)]
+                path = [header for header in active_rows if header['column']+header['columns']<=cell['column']]
+                path.extend(header for header in by_column[cell['column']] if self.owns_column(header,cell))
             assigned[id(cell)] = path
             used.update(id(header) for header in path)
 
         spoken_headers = {}
         for cell in origins:
-            if cell['role'] in ('column','row'):
+            if cell['role'] in ('column','row','both'):
                 prepared = [self.notes.read(part,heading=True) for part in cell['parts'] if 'table' not in part]
                 if len(prepared)==1:
                     spoken_headers[id(cell)] = prepared[0]
@@ -139,7 +152,7 @@ class GridNarration:
         previous_labels = ()
         previous_values, row_values = {},{}
         for cell in origins:
-            if cell['role']=='column' and id(cell) in used:
+            if cell['role']=='column' and id(cell) in used and id(cell) not in titles:
                 # A header reused as a label still owns any nested story.
                 for part in cell['parts']:
                     if 'table' in part:
@@ -157,21 +170,25 @@ class GridNarration:
                         break
                     common += 1
             before = self.offset
-            self.cell(cell,path,spoken_headers,common,previous_values,row_values)
+            self.cell(cell,path,spoken_headers,common,previous_values,row_values,titles)
             if before!=self.offset:
                 previous_labels = path
             previous_row = cell['row']
+        if grid['caption'] and grid['caption'].get('after'):
+            self.sentence(*self.notes.read(grid['caption'],heading=True))
 
-    def cell(self,cell,path,headers,common,previous,row_values):
+    def cell(self,cell,path,headers,common,previous,row_values,titles):
         labels = [(header,*headers[id(header)]) for header in path
                   if id(header) in headers and headers[id(header)][0]]
         if not cell['parts']:
             return
+        display = [(h,text,protected) for h,text,protected in labels[common:]
+                   if id(h) not in titles and (h['role'] not in ('row','both') or h['row']!=cell['row'])]
         label_written = False
         for part in cell['parts']:
             if 'table' in part:
-                if labels[common:] and not label_written:
-                    self.sentence(', '.join(text for _,text,_ in labels[common:]))
+                if display and not label_written:
+                    self.sentence(', '.join(text for _,text,_ in display))
                     label_written = True
                 self.table(part['table'])
                 continue
@@ -190,21 +207,24 @@ class GridNarration:
                 value,spans,antecedent = prior
             if len(cell['parts'])==1 and cell['role']=='data':
                 row_values[identity] = value,spans,antecedent or source_location
-            if labels[common:] and not label_written:
-                for index,(_,text,protected) in enumerate(labels[common:]):
+            if display and not label_written:
+                if len(display)==1 and re.match(re.escape(display[0][1])+r'\b',value,re.I):
+                    display = []
+                for index,(_,text,protected) in enumerate(display):
                     self.append(', ' if index else '')
                     self.append(text,protected)
-                self.append(': ')
+                if display:
+                    self.append(': ')
                 label_written = True
             source = {'location':source_location,'source':part['source'],
-                      'header_path':[{'label':text,'row':h['row'],'column':h['column'],
+                      'header_path':[{'label':text,'row':h['row'],'column':h['column'],'role':h['role'],
                                       'location':h['location'],**({'id':h['id']} if 'id' in h else {})}
                                      for h,text,_ in labels]}
             if part.get('source_members'):
                 source['source_members'] = part['source_members']
             if antecedent:
                 source['inherited_from'] = antecedent
-            leaf = labels[-1][1] if labels else ''
+            leaf = next((label for h,label,_ in reversed(labels) if h['role']!='row'),labels[-1][1] if labels else '')
             self.views.append((self.offset,self.offset+len(value),cell['row'],cell['column'],leaf,value,source))
             self.sentence(value,spans)
 

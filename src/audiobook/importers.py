@@ -610,12 +610,15 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
     import pypdfium2 as pdfium
     from .pdf_visual import Observer, authored_artifact, bind_captions, merge_regions, regional_images
     from .pdf_geometry import crop_glyphs,glyph_baseline
+    from .pdf_tagged_tables import TaggedTables, outer_tables
+    from .pdf_tags import line_paragraph, page_tags, paragraph_owners
     from .pdf_textlayer import nonpainting_regions
     from .text_evidence import suspect_characters
     try: doc=pdfium.PdfDocument(data)
     except Exception: raise Error('unreadable_pdf','PDF is protected, damaged or unsupported.')
     out=[]; inventory=[];outlines=[]
     visual=Observer(ocr_cache,ocr_config)
+    tagged=TaggedTables()
     for index,item in enumerate(doc.get_toc()):
         destination=item.get_dest();page_index=destination.get_index() if destination else None
         mode,position=destination.get_view() if destination else (0,[])
@@ -623,6 +626,8 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
         outlines.append({'entry':index,'title':item.get_title(),'depth':item.level,'page':page_index+1 if page_index is not None else None,'view_mode':mode,'view_position':position,'top':top})
     for n,page in enumerate(doc):
         tp=page.get_textpage(); native=tp.get_text_range(); w,h=page.get_size()
+        tags=page_tags(page,n+1)
+        table_tags=list(outer_tables(tags))
         # Independently inventory image objects, including raster beside hidden/selectable text.
         image_objects=[(obj,list(obj.get_bounds())) for obj in page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE])]
         images=[rect for _,rect in image_objects]
@@ -659,6 +664,8 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
             crops=regional_images(content_images,cached_glyphs[0],w,h)
         first_block=len(out)
         if crops is None and (content_images or nonpainting or damaged or not native.strip()):
+            if table_tags:
+                tagged.observe(page,tp,tags,table_tags,(),entry,admitted=False)
             entry['ocr_admission']=[reason for condition,reason in ((content_images,'raster content regions'),
                 (nonpainting,'nonpainting text layer'),(damaged,'native character mapping'),(not native.strip(),'no native text')) if condition]
             parts, observation=visual.read(page,tp,entry,[0,0,w,h],native)
@@ -672,7 +679,6 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
         else:
             # Build glyph lines, then use a large central gutter only with bilateral evidence.
             from .pdf_overlays import verified_overlays
-            from .pdf_tags import line_paragraph, paragraph_owners
             overlays=verified_overlays(page,tp) if entry['native_geometry_qualified'] else []
             if overlays:entry['duplicate_paint_observations']=overlays
             chars,outside,clipped=cached_glyphs if cached_glyphs is not None else crop_glyphs(tp,box)
@@ -696,7 +702,7 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                 entry['route']='native_ruled_panels'
                 entry['table_source_glyphs']=len(claimed)
             lines=[]
-            authorship = paragraph_owners(page) if not panels else {}
+            authorship = paragraph_owners(tags) if not panels else {}
             for ch,rect,index in (() if panels else chars):
                 l,b,r,t=rect
                 baseline=glyph_baseline(tp,index,box[1],b)
@@ -723,6 +729,8 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                         last=r;previous=index
                     if text.strip():
                         segment = {'text':text.strip(),'rect':[chunk[0][0],min(x[3][1] for x in chunk),chunk[-1][1],max(x[3][3] for x in chunk)],'y':line['y']}
+                        if table_tags:
+                            segment['table_glyphs'] = {x[4] for x in chunk if x[2].strip()}
                         if authorship and (paragraph := line_paragraph(tp, chunk, authorship)) is not None:
                             segment['tagged_paragraph'] = paragraph
                         segments.append(segment)
@@ -744,6 +752,8 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
             if clipped:issue='A meaningful glyph crosses the visible CropBox edge; verify the original source before narration.'
             if page.get_rotation()!=0:issue='Rotated native PDF text needs a verified visible reading and order; this geometry path is not qualified.'
             entry['glyph_character_coverage']='exact' if not issue else 'disputed'
+            artifacts = (tagged.observe(page,tp,tags,table_tags,chars,entry,admitted=not panels and not issue)
+                         if table_tags else set())
             if table_segments:
                 segments=sorted(segments+table_segments,key=lambda s:(-s['y'],s.get('ordered_group',s['rect'][0])))
             for idx,s in enumerate(segments):
@@ -754,6 +764,8 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                     if any(x1>l and x0<r and y1>b and y0<t for x0,y0,x1,y1 in (m['rect'] for m in marks)):
                         local_issue='A raster mark overlaps this native line. Verify the original before speech.'
                 out.append(block(s['text'],locator,s.get('role','body'),chapter,['PDF glyph geometry',entry['route'],'Native whitespace and punctuation retained'],local_issue))
+                if indices:=s.get('table_glyphs'):
+                    tagged.line(n+1,out[-1].id,indices,artifacts is not None and indices<=artifacts)
                 if local_issue:continue
                 if 'tagged_paragraph' in s:
                     locator['tagged_paragraph'] = s['tagged_paragraph']
@@ -784,6 +796,7 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
             out[first_block:]=merge_regions(blocks,w)
         tp.close(); page.close()
     doc.close()
+    out=tagged.project(out,block)
     from .pdf_layout import mark_folios
     mark_folios(out,inventory)
     from .pdf_references import mark_indexes
@@ -809,7 +822,9 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
     if outlines:
         outline_navigation(out,inventory,outlines)
         if inventory:inventory[0]['source_outlines']=outlines
-    warnings=['PDF semantic tags and complex layout are not yet generally qualified.']
+    warnings=[]
+    if any(e.get('status')=='geometry_fallback' for p in inventory for e in p.get('tagged_table_observations',())):
+        warnings.append('Some PDF table tags could not be bound to the visible content. The visible reading and original remain available.')
     if any(e.get('status')=='unresolved' for e in outlines):warnings.append('Some PDF outline destinations lack a unique matching heading or qualified coordinates. All prose remains in source order; chapter navigation needs review.')
     return Document('PDF document','pdf',digest(data) if isinstance(data,bytes) else filehash(data),out,inventory=inventory,warnings=warnings)
 
@@ -828,7 +843,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-30'
+IMPORT_REVISION='import-31'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 

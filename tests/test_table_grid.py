@@ -126,3 +126,19 @@ def test_grid_omission_and_empty_origin_remain_distinct(tmp_path):
     assert [(c['row'],c['column'],len(c['parts'])) for c in grid['cells']]==[(0,1,1),(1,0,0),(1,1,1)]
     assert [unit['text'] for unit in plan(doc)['utterances']]==[
         'Table. The next cell is present. The earlier cell is explicitly empty.']
+
+
+def test_writer_web_package_routes_as_text_even_when_it_contains_a_thumbnail(tmp_path):
+    original = odt(tmp_path/'watch.odt',odt_table())
+    web = tmp_path/'watch.oth'
+    with ZipFile(original) as source, ZipFile(web,'w') as package_file:
+        package_file.writestr('mimetype','application/vnd.oasis.opendocument.text-web')
+        package_file.writestr('content.xml',source.read('content.xml'))
+        package_file.writestr('Thumbnails/thumbnail.png',b'\x89PNG\r\n\x1a\n')
+    zipped = tmp_path/'raw.zip'
+    with ZipFile(zipped,'w') as outer:
+        outer.write(web,'edition/watch.oth')
+    for path in (web,zipped):
+        doc = inspect_source(path)
+        assert doc.format=='odt'
+        assert ' '.join(u['text'] for u in plan(doc)['utterances'])==READING

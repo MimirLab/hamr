@@ -22,7 +22,7 @@ SIDECAR_ENDINGS = ('.alto.xml','.page.xml','.abbyy.xml','.hocr','.tsv')
 NATIVE = {
     '.txt':'text', '.text':'text', '.asc':'text', '.nfo':'text', '.md':'markdown', '.markdown':'markdown', '.epub':'epub', '.pdf':'pdf',
     '.textpack':'textbundle',
-    '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt',
+    '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt', '.oth':'odt',
     '.abw':'abiword', '.awt':'abiword', '.zabw':'abiword', '.bzabw':'abiword',
     '.abw.gz':'abiword', '.abw.bz2':'abiword',
     '.dbk':'xml-book', '.docbook':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
@@ -297,7 +297,7 @@ def zip_source(path, entry, override):
                 ('word/document.xml' in names,'docx'),
                 ('xl/workbook.xml' in names,'xlsx'),
                 ('ppt/presentation.xml' in names,'pptx'),
-                (media==b'application/vnd.oasis.opendocument.text','odt'),
+                (media in (b'application/vnd.oasis.opendocument.text',b'application/vnd.oasis.opendocument.text-web'),'odt'),
             ):
                 if predicate:
                     if route=='epub' and 'META-INF/container.xml' in names:

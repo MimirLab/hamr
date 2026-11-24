@@ -120,7 +120,7 @@ class Grid:
 def source_text(grid):
     rows = [' | '.join(values) for values in source_rows(grid)]
     if grid.get('caption'):
-        rows.insert(0,grid['caption']['source'])
+        rows.insert(len(rows) if grid['caption'].get('after') else 0,grid['caption']['source'])
     return '\n'.join(rows).strip(' |\n')
 
 
@@ -148,8 +148,9 @@ def join_passages(parts):
 
 
 def passages(grid, *, visible=True):
-    if grid.get('caption'):
-        yield grid['caption']
+    caption = grid.get('caption')
+    if caption and not caption.get('after'):
+        yield caption
     for cell in grid['cells']:
         if visible and cell.get('hidden'):
             continue
@@ -158,6 +159,8 @@ def passages(grid, *, visible=True):
                 yield from passages(part['table'],visible=visible)
             else:
                 yield part
+    if caption and caption.get('after'):
+        yield caption
 
 
 def simple_matrix(grid):
@@ -170,7 +173,7 @@ def simple_matrix(grid):
         row,column = cell['row'],cell['column']
         parts = cell['parts']
         if (column!=len(rows[row]) or cell['columns']!=1 or cell['rows']!=1 or
-                cell['role']=='row' or (cell['role']=='column' and row) or cell.get('headers') or
+                cell['role'] in ('row','both') or (cell['role']=='column' and row) or cell.get('headers') or
                 cell.get('hidden') or len(parts)>1 or parts and 'table' in parts[0]):
             return None
         if cell['role']=='column':

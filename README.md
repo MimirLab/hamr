@@ -97,7 +97,7 @@ Rich-text documents keep authored chapter outlines, notes and readable text boxe
 
 Word documents can read editable text boxes in their authored story order. Their text, notes and equations go through the same narration preparation as the body. Hamr keeps the original Word file in the companion. [Word intake](docs/INTAKE.md#source-readers)
 
-Merged and nested tables in Word, OpenDocument, HTML and EPUB can read with their authored headers and original cell order. A cell spanning several rows stays one source occurrence, and nested text stays where the author put it. [Table intake](docs/INTAKE.md#source-readers)
+Merged and nested tables in Word, OpenDocument, HTML, EPUB and supported tagged PDFs can read with their authored headers and original cell order. Hamr can join a tagged table across pages, keeping one copy of each value and skipping repeated print headings. [Table intake](docs/INTAKE.md#source-readers)
 
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)
 

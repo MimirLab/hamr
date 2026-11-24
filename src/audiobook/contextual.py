@@ -109,7 +109,9 @@ class Evidence:
         if self.header_source and column<len(header_ids) and header_ids[column]:
             self.header_source['id']=header_ids[column]
         if header_path is not None:
-            self.header_source = {'block':table_id,**header_path[-1]} if header_path else None
+            leaf = next((entry for entry in reversed(header_path) if entry.get('role')!='row'),
+                        header_path[-1] if header_path else None)
+            self.header_source = {'block':table_id,**leaf} if leaf else None
         self.header_by_id=header_by_id
         self.inferred_order = next(iter(anchors)) if len(anchors)==1 and len({row['surface'].strip() for row in next(iter(anchors.values()))})>=2 else None
         self.settings = {}
