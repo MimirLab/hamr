@@ -237,8 +237,15 @@ def manuscript(archive,members,binder,sha,title):
         except (Error,UnicodeError) as exc:
             chapter_issue(builder,row,resources[body.index],chapter_label,str(exc))
             continue
+        identifiers = {item.id:'b'+key([body.name,occurrence,item.id])[:16] for item in content.doc.blocks}
+        destinations = {'source.html#'+old:'source.html#'+new for old,new in identifiers.items()}
         for item in content.doc.blocks:
-            item.id = 'b'+key([body.name,occurrence,item.id])[:16]
+            for link in item.links:
+                if link.get('destination') in destinations:
+                    link['destination'] = destinations[link['destination']]
+                if 'destinations' in link:
+                    link['destinations'] = [destinations.get(target,target) for target in link['destinations']]
+            item.id = identifiers[item.id]
             item.chapter = chapter_label
             item.locator.update(member=body.name,archive_entry=body.index,binder_item=ident,
                                 chapter_id=chapter_id,location_id=key([sha,body.index,item.id])[:20])

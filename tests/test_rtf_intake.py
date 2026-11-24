@@ -1,0 +1,140 @@
+from pathlib import Path
+from zipfile import ZipFile
+
+from bs4 import BeautifulSoup
+import pytest
+
+from audiobook.core import Error
+from audiobook.intake import inspect_source
+from audiobook.jobs import render
+from audiobook.planner import plan
+
+
+def source(tmp_path,body):
+    path = tmp_path/'edition.rtf'
+    path.write_bytes(b'{\\rtf1\\ansi\\ansicpg1252 '+body+b'}')
+    return path
+
+
+def test_rtf_reads_outline_inheritance_and_an_explicit_body_override(tmp_path):
+    raw = br'''{\stylesheet{\s1\outlinelevel0 Heading;}{\s2\sbasedon1 Custom;}
+{\*\cs4\outlinelevel1 Inline styling;}{\s3\sbasedon4 Cycle;}{\s4\sbasedon3 Cycle;}}
+{\pard\s2 Before dawn}\par
+\pard\s1\outlinelevel9 The keeper crossed at dawn.\par
+{\*\unrecognized {\footnote Do not read this.}Ignore this control.}
+\pard\s3 The gates opened.\par
+\pard\outlinelevel0 At noon\par
+\pard The ferry left.\line The fog lifted.\par'''
+    result = plan(inspect_source(source(tmp_path,raw)))
+    assert not result['issues']
+    assert result['chapters']==['Before dawn','At noon']
+    assert [unit['text'] for unit in result['utterances']]==[
+        'Before dawn','The keeper crossed at dawn.','The gates opened.',
+        'At noon','The ferry left.\nThe fog lifted.']
+
+
+def test_rtf_notes_keep_exact_anchors_and_visible_unicode(tmp_path):
+    raw = (br'\pard The caf\uc1\u233\'3f had closed\chftn{\*\footnote'
+           br' \chftn It shut just after dawn\par The keeper still had the key.}.'
+           br'\par The ferry left\chftn{\footnote\ftnalt\chftn The tide was rising.}.\par'
+           br'{\footer Page furniture{\footnote An ignored footer note.}}')
+    path = source(tmp_path,raw)
+    doc = inspect_source(path)
+    result = plan(doc)
+    assert not result['issues']
+    assert [unit['text'] for unit in result['utterances']]==[
+        'The café had closed. Note. It shut just after dawn. The keeper still had the key. End note.',
+        'The ferry left. Note. The tide was rising. End note.']
+    notes = [block for block in doc.blocks if block.role=='note']
+    assert [block.locator['note_kind'] for block in notes]==['footnote','endnote']
+    for note in notes:
+        start,end = note.locator['byte_range']
+        assert path.read_bytes()[start:end].startswith(br'\footnote')
+    body = [block for block in doc.blocks if block.role=='body']
+    assert all(block.links[0]['destination']=='source.html#'+note.id for block,note in zip(body,notes,strict=True))
+    first, = body[0].locator['inline_semantics']
+    assert first['source_start']==first['source_end']==len('The café had closed')
+    companion = plan(doc,{'notes':'companion'})
+    assert 'End note.' not in ' '.join(unit['text'] for unit in companion['utterances'])
+
+
+def test_rtf_holds_missing_note_and_preserves_known_cell_reading(tmp_path):
+    raw = (br'\pard The lost record\chftn is not available.\par'
+           br'\pard The other page survived.\par'
+           br'\trowd\cellx500\cellx1000\intbl Gate\chftn'
+           br'{\*\footnote\chftn The gate was checked.}\cell Count\cell\row\pard')
+    doc = inspect_source(source(tmp_path,raw))
+    p = plan(doc)
+    issue, = p['issues']
+    assert 'note' in issue['reason'].lower()
+    assert [u['text'] for u in p['utterances']][0]=='The other page survived.'
+    table, = [block for block in doc.blocks if block.role=='table']
+    entry, = table.locator['table_cell_semantics']
+    assert (entry['row'],entry['column'],entry['source'])==(0,0,'Gate')
+    assert entry['notes'][0]['reading']=='The gate was checked.'
+    assert 'The gate was checked.' in ' '.join(unit['text'] for unit in p['utterances'])
+
+
+def test_rtf_ignores_binary_delimiters_and_resets_fallback_at_the_group(tmp_path):
+    raw = br'\uc2\u233 \bin3 {\}Z\par{\uc1\u241} page\par'
+    result = plan(inspect_source(source(tmp_path,raw)))
+    assert [row['text'] for row in result['utterances']]==['é ñ page']
+    with pytest.raises(Error,match='binary object is truncated'):
+        inspect_source(source(tmp_path,br' text\bin50 a'))
+
+
+def test_hidden_paragraph_mark_separates_visible_text(tmp_path):
+    raw = br'C {\v\par}{D}{\v\par}{\v Private words\par}{E}\par'
+    doc = inspect_source(source(tmp_path,raw))
+    assert [block.source for block in doc.blocks]==['C','D','E']
+
+
+def test_rtf_reads_author_text_shape_but_keeps_shape_properties_out(tmp_path):
+    raw = (br'\pard Before dawn.\par {\shp{\*\shpinst\shpleft0\shpright4000'
+           br'{\sp{\sn displayName}{\sv Internal shape name}}'
+           br'{\shptxt \pard The frame has text\chftn'
+           br'{\*\footnote\chftn It stays with its anchor.}.}}}'
+           br'\pard At noon.\par')
+    book = plan(inspect_source(source(tmp_path,raw)))
+    assert not book['issues']
+    assert [p['text'] for p in book['utterances']]==[
+        'Before dawn.','The frame has text. Note. It stays with its anchor. End note.','At noon.']
+
+
+def test_rtf_uses_declared_font_encodings_in_body_and_notes(tmp_path):
+    raw = (br'{\fonttbl{\f0\fcharset0 Main;}{\f1\fcharset204 Cyrillic;}'
+           br'{\f2\fcharset0\cpg1251 Explicit;}}'
+           br'\pard \f0 Before.\par {\f1 '+ 'Основной текст'.encode('cp1251')+
+           br'\chftn{\footnote\chftn \f2 '+'Текст сноски'.encode('cp1251')+
+           br'.}.}\par\f0 After.\par')
+    doc = inspect_source(source(tmp_path,raw))
+    assert [block.source for block in doc.blocks]==['Before.','Основной текст.','After.','Текст сноски.']
+    note = next(b for b in doc.blocks if b.role=='note')
+    assert doc.blocks[1].links[0]['destination']=='source.html#'+note.id
+
+
+def test_scrivener_rebinds_each_note_to_its_own_companion_block(tmp_path):
+    from test_media import prepared
+    from test_scrivener_intake import body,document,item,write
+
+    book = tmp_path/'Harbor.scriv'
+    write(book,'Harbor.scrivx',document(item('Text',1,'First')+item('Text',2,'Second')))
+    raw = br'{\rtf1\ansi A gate\chftn{\*\footnote\chftn The gate was checked.} opened.\par}'
+    write(book,body(1),raw)
+    write(book,body(2),raw)
+    package = tmp_path/'export.zip'
+    with ZipFile(package,'w') as z:
+        for p in book.rglob('*'):
+            if p.is_file():
+                z.write(p,book.name+'/'+p.relative_to(book).as_posix())
+    doc = inspect_source(package)
+    paragraphs = [block for block in doc.blocks if block.role=='body']
+    notes = [block for block in doc.blocks if block.role=='note']
+    assert [block.links[0]['destination'] for block in paragraphs]==['source.html#'+block.id for block in notes]
+    assert len({block.id for block in notes})==2
+    store,job = prepared(tmp_path,package)
+    output = Path(render(store,job['id'],allow_synthesis=False)['output'])
+    page = BeautifulSoup((output/'source.html').read_text(),'html.parser')
+    for block in notes:
+        assert page.find(id=block.id)
+        assert page.find('a',href='#'+block.id) or page.find('a',href='source.html#'+block.id)

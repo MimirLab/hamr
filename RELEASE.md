@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev30
+
+- RTF reads authored chapter outlines, footnotes, endnotes, text boxes, and font-specific encodings. The same reader works in TextBundle and Scrivener. Notes keep their anchors in the companion, and tables with merged or nested cells show the exact passage to verify. [Document intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev29
 
 - Open AbiWord documents, templates and compressed copies directly or inside an archive. The resident reader follows chapter styles, notes, table coordinates, text boxes and line breaks. Page headers and footers stay in the companion, and unsaved field values appear at their source locations. [Document intake](docs/INTAKE.md#source-readers)
