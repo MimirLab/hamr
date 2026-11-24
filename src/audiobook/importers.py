@@ -54,11 +54,13 @@ def markdown(data:bytes)->Document:
     for index,note in inline_notes.items():
         add_note(f'markdown-inline-note:{index}',f'inline:{index}',
                  [Token('inline','',0,children=note['tokens'])],{'exact':'^['+note['content']+']'})
-    i=0;chapter_id=None;list_depth=0
+    i=0;chapter_id=None;list_depth=0;quote_depth=0
     while i<len(tokens):
         t=tokens[i]
         if t.type in ('bullet_list_open','ordered_list_open'):list_depth+=1
         elif t.type in ('bullet_list_close','ordered_list_close'):list_depth-=1
+        elif t.type=='blockquote_open':quote_depth+=1
+        elif t.type=='blockquote_close':quote_depth-=1
         if t.type=='hr':
             loc={'format':'markdown','lines':[t.map[0]+1,t.map[1]],'exact':''.join(lines[t.map[0]:t.map[1]])}
             if chapter_id is not None:loc['chapter_id']=chapter_id
@@ -83,6 +85,7 @@ def markdown(data:bytes)->Document:
             exact=loc.pop('exact')
             b=block(source,loc,role,chapter,['Markdown AST source range'],issue=issue,links=links)
             b.locator['exact']=exact
+            if quote_depth:b.locator['block_quote']=True
             if spans:b.locator['inline_semantics']=spans
             out.append(b)
             i+=3; continue
@@ -364,6 +367,7 @@ def epub(data:bytes|Path)->Document:
                 if node.find(attrs={'rowspan':True}) or node.find(attrs={'colspan':True}): issue='Merged table header associations require review.'
                 if node.find('table'):issue='Nested table associations need a verified reading.'
             out.append(block(text,loc,role,chapter,['EPUB spine occurrence and DOM element'],issue,links)); found+=1
+            if node.find_parent('blockquote') is not None:out[-1].locator['block_quote']=True
             if leaves and text==base_text and role in ('body','heading','caption'):
                 loc['text_leaves']=leaves
             if semantics:

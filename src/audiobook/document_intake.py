@@ -113,6 +113,8 @@ def html_read(data,builder):
             links.append({'kind':'note','href':href,'source_start':span['source_start'],'text':contents})
         block = builder.add(source,role,where,loc={'anchor':node.get('id'),'inline_semantics':spans,
                             'exact':str(node)},links=links,issue=uncertainty(spans))
+        if block and (node.name == 'blockquote' or node.find_parent('blockquote') is not None):
+            block.locator['block_quote'] = True
         if block and node.get('id'):
             inserted_notes[node['id']] = block.id
 
@@ -346,7 +348,10 @@ def docx(path,builder):
                     add(item.text or '')
                     return
                 if tag in ('tab','br','cr'):
+                    start = offset
                     add('\t' if tag=='tab' else '\n')
+                    if tag!='tab':
+                        spans.append({'kind':'line_break','source_start':start,'source_end':offset})
                     return
                 if tag in ('pPr','instrText','delText','fldChar','bookmarkStart','bookmarkEnd'):
                     return
@@ -377,7 +382,10 @@ def docx(path,builder):
                 if excluded:
                     builder.doc.inventory.append({'location':loc,'selected_edition':'visible final',
                                                   'excluded_runs':excluded})
-                builder.add(text,role,loc,loc={'inline_semantics':spans},links=links,issue=issue)
+                item = builder.add(text,role,loc,loc={'inline_semantics':[span for span in spans
+                                   if span['kind']!='line_break']},links=links,issue=issue)
+                if item and any(span['kind']=='line_break' and span['source'] == '\n' for span in spans):
+                    item.locator['authored_line_breaks'] = True
             elif tag=='tbl':
                 rows = []
                 heads = []
@@ -442,7 +450,10 @@ def odt(path,builder):
                     count = int(attr(item,'c') or '1')
                     if not 0<=count<=4096:
                         raise Error('source_structure_size','OpenDocument space repetition exceeds its reading bound.')
+                    start = offset
                     add(' '*count if tag=='s' else '\t' if tag=='tab' else '\n')
+                    if tag=='line-break':
+                        spans.append({'kind':'line_break','source_start':start,'source_end':offset})
                     return
                 if tag in ('image','object','object-ole','frame'):
                     label = next((plain_xml_text(n) for n in item.iter() if name(n) in ('desc','title')),None)
@@ -471,8 +482,11 @@ def odt(path,builder):
             loc = 'content.xml:'+node.getroottree().getpath(node)
             if tag in ('p','h'):
                 text,spans,links,issue = paragraph(node)
-                builder.add(text,'heading' if tag=='h' else 'body',loc,
-                            loc={'inline_semantics':spans},links=links,issue=issue)
+                item = builder.add(text,'heading' if tag=='h' else 'body',loc,
+                                   loc={'inline_semantics':[span for span in spans if span['kind']!='line_break']},
+                                   links=links,issue=issue)
+                if item and any(span['kind']=='line_break' and span['source_end']>span['source_start'] for span in spans):
+                    item.locator['authored_line_breaks'] = True
             elif tag=='table':
                 rows,headers = [],[]
                 issue = None

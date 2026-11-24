@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev8
+
+- Prepare reading order, printed page boundaries, and prose wraps before applying narration rules. The same readable passage can carry its dialogue delivery through text, Word, PDFs, and scans. Preserve authored line breaks and keep timing and source evidence tied to the original text.
+
 # hamr 0.4.9.dev7
 
 - Read verified PAGE XML transcriptions with either modern coordinate attributes or the earlier point elements. Preserve multiline region text when reading archival sidecars.

@@ -272,7 +272,10 @@ def scan(path,source,sha,cache=None,title=None):
                                           if k in ('ocr_layout','ocr_confidence')}}
                                 if part.get('issue'):
                                     evidence['status'] = 'needs_review'
-                                blocks.append(block(part['text'],loc,role,chapter,issue=part.get('issue')))
+                                item = block(part['text'],loc,role,chapter,issue=part.get('issue'))
+                                if evidence['route']=='supplied_text':
+                                    item.locator['verified_transcription'] = True
+                                blocks.append(item)
                             inventory.append({**entry,**evidence})
                             fault('after_intake_page')
             except (Error, UnidentifiedImageError, Image.DecompressionBombError, BadZipFile, OSError, ValueError) as exc:

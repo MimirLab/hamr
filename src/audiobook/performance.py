@@ -2,7 +2,6 @@
 from collections import Counter
 from difflib import SequenceMatcher
 from functools import cache
-from itertools import groupby
 from pathlib import Path
 import re
 import struct
@@ -11,9 +10,10 @@ import sys
 from .boundaries import sentence_spans
 from .core import Error, RATE, key, loadjson
 from .linguistic import spoken_vocal_marker
+from .source_passages import Continuation, SourcePassages, legacy_prose_scope
 
 MODES = ('auto', 'off', 'experimental')
-CONTEXT_VERSION = 34
+CONTEXT_VERSION = 35
 RULES_FILE = Path(__file__).with_name('performance_rules.json')
 CATALOG_FILE = Path(__file__).with_name('catalog.json')
 MARKER = r'(?:\[[a-z]+(?: [a-z]+){0,3}\]|\([a-z]+(?: [a-z]+){0,3}\))'
@@ -174,13 +174,6 @@ def normalize_space(text):
     return ' '.join(text.split())
 
 
-def delivery_text(block, all_formats):
-    if all_formats and block.locator.get('format')=='pdf':
-        # A PDF line wrap is layout. Replace it without shifting any source spans.
-        return block.source.replace('\n',' ').replace('\r',' ')
-    return block.source
-
-
 def quotation_text(text, context_version):
     """Expose a single mixed pair to the matcher without moving source offsets."""
     if context_version >= 17 and (match := MIXED_DOUBLE_QUOTES.fullmatch(text)):
@@ -199,7 +192,7 @@ def block_spans(blocks, start, stop):
     return parts
 
 
-def locate_pdf_candidate(candidate, blocks):
+def locate_passage_candidate(candidate, blocks):
     source = candidate['source']
     candidate['source'] = block_spans(blocks,*source['span'])[0]
     for evidence in candidate.get('evidence', ()):
@@ -357,20 +350,16 @@ def attributed_turn_continuation(source, cue_pattern, postposed, *, actor, conte
     return None
 
 
-def native_quote_flow(left, right, config, context_version=None):
-    """Identify adjacent PDF lines that can share an intact speech request."""
-    from .pdf_layout import adjacent_native_lines
-
-    version = context_version or CONTEXT_VERSION
-    continuation = re.fullmatch(QUOTATION, right.source)
-    description = (version>=31 and re.search(r'\b(?:voice|words)\b',right.source,re.I)
-                   and re.search(QUOTATION,left.source))
+def quotation_flow(left, right, relationship, config, version):
+    """Recognize ownership when intake found adjacent passage fragments."""
+    continuation = re.fullmatch(QUOTATION, right)
+    description = (version>=31 and re.search(r'\b(?:voice|words)\b',right,re.I)
+                   and re.search(QUOTATION,left))
     if (not isinstance(config, dict) or not (continuation or description)
-            or not adjacent_native_lines(left, right)
-            or len(left.source) + len(right.source) > 480):
+            or relationship < Continuation.ALIGNED_LINES or len(left) + len(right) > 480):
         return None
     registry = loadjson(RULES_FILE)
-    source = left.source + ' ' + right.source
+    source = left + ' ' + right
     if description and trailing_voice_description(source,registry['context'],'direct',version):
         return 'pdf_voice_description'
     if not continuation:
@@ -380,31 +369,23 @@ def native_quote_flow(left, right, config, context_version=None):
     turn = attributed_turn_continuation(source, cues, postposed, actor=attribution_actor(version),
                                          context_version=version)
     if turn and (kind := verbs.get(attribution_phrase(turn[0]))) and not registry['directions'][kind].get('progression'):
-        if left.locator.get('tagged_paragraph') is not None:
+        if relationship == Continuation.PARAGRAPH:
             return 'tagged_pdf_quotation'
         return 'adjacent_pdf_quotation'
     return None
 
 
-def native_voice_paragraphs(blocks, excluded, context_version=None):
-    """Keep the lead-in of a tagged paragraph when it owns a trailing voice cue."""
-    version = context_version or CONTEXT_VERSION
+def voice_paragraphs(passages, excluded, version):
+    """Keep the lead-in of an authored paragraph when it owns a voice cue."""
     if version<32:
         return []
-    from .pdf_layout import adjacent_native_lines
 
     registry = loadjson(RULES_FILE)
     paragraphs = []
-    groups = groupby(blocks,key=lambda block:(block.locator.get('page'),block.locator.get('tagged_paragraph')))
-    for (_,tag),run in groups:
-        if tag is None:
-            continue
-        lines = list(run)
+    for lines in passages.authored_paragraphs():
         if len(lines)<3 or any(line.id in excluded for line in lines):
             continue
-        if not all(adjacent_native_lines(left,right) for left,right in zip(lines,lines[1:])):
-            continue
-        source = ' '.join(line.source for line in lines)
+        source = ' '.join(passages.text(line,legacy_layout=False) for line in lines)
         if trailing_voice_description(source,registry['context'],'direct',version):
             paragraphs.append(tuple(line.id for line in lines))
     return paragraphs
@@ -744,13 +725,10 @@ def inline_event_site(source, recipes, actor, *, owned_span=None):
     return kind, quote, mark
 
 
-def pdf_inline_event_continues(left, right, context_version, config=None):
-    if (left.role!='body' or right.role!='body' or left.issue or right.issue
-            or left.chapter!=right.chapter or left.locator.get('page')!=right.locator.get('page')
-            or not right.source.lstrip().startswith(('[','('))):
+def inline_event_continues(left, right, relationship, version, config=None):
+    if not relationship or not right.lstrip().startswith(('[','(')):
         return False
-    version = context_version or CONTEXT_VERSION
-    source = quotation_text(' '.join(delivery_text(block, True) for block in (left,right)),version)
+    source = quotation_text(left+' '+right,version)
     registry = loadjson(RULES_FILE)
     rules = inline_event_rules(registry,version)
     actor = attribution_actor(version)
@@ -889,7 +867,7 @@ def eligible(block, decision, disabled, role='body', modes=('listen',), *, all_f
             and decision['action'] == 'speak' and decision['section_policy']['mode'] in modes
             and not locator.get('checklist') and not block.links
             and not any(span['kind'] in PRIVATE_KINDS for span in locator.get('inline_semantics', ()))
-            and (all_formats or locator.get('format') in ('epub', 'markdown', 'text')))
+            and (all_formats or legacy_prose_scope(block)))
 
 
 def performance_preferences(document_policy, known):
@@ -1064,7 +1042,7 @@ def add_structural_directions(units, by_id, decisions, occurrences, disabled, di
     return count
 
 
-def annotate(plan, document, *, automatic_prose=True, context_version=None):
+def annotate(plan, document, *, automatic_prose=True, context_version=None, passages=None):
     """Recognize cues only when the compiled request has one demonstrable owner."""
     mode = plan['policy'].get('performance', 'auto')
     if mode not in MODES:
@@ -1073,6 +1051,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     disabled, preference = performance_preferences(document_policy, {b.id for b in document.blocks})
     registry = loadjson(RULES_FILE)
     version = context_version or (CONTEXT_VERSION if automatic_prose else 1)
+    passages = passages or SourcePassages(document,unified=version>=35)
     full_delivery = version >= 3
     recipes = registry['directions']
     custom = attribution_preferences(document_policy.get('performance',{}),recipes)
@@ -1082,7 +1061,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     instructions = passage_instructions(document_policy.get('performance', {}), by_id)
     if mode == 'off':
         plan['performance'] = {'mode':mode, 'bound':True, 'active':0, 'candidates':0}
-        if document.format == 'pdf' and version >= 11:
+        if version >= 11 and (passages.unified or passages.legacy_paginated_prose):
             plan['performance']['context_version'] = version
         if document_policy.get('performance',{}).get('tuning'):
             plan['performance']['tuning_state']='inactive'
@@ -1102,16 +1081,15 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
     occurrences = Counter(bid for u in plan['utterances'] for bid in u['sources'])
     if version>=29 and mode=='auto' and preference!='off':
         from . import fragments
-        fragments.annotate(plan['utterances'],by_id,decisions,source_order,occurrences,disabled)
+        fragments.annotate(plan['utterances'],by_id,decisions,source_order,occurrences,disabled,passages)
     by_source_candidate={}
     candidates = 0
     registry_sha = key(registry)
     for unit in plan['utterances']:
         sources = unit['sources']
         blocks = [by_id[bid] for bid in sources]
-        joined_pdf = (full_delivery and len(blocks)>1 and
-                      all(b.locator.get('format')=='pdf' for b in blocks))
-        if not sources or (len(sources)>2 and not joined_pdf) or any(occurrences[bid]!=1 or not eligible(
+        joined_passage = full_delivery and passages.joined_prose(blocks)
+        if not sources or (len(sources)>2 and not joined_passage) or any(occurrences[bid]!=1 or not eligible(
                 by_id[bid],decisions[bid],disabled,all_formats=full_delivery) for bid in sources):
             continue
         start_index = source_order[blocks[0].id]
@@ -1122,9 +1100,9 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         neutral = unit['text']
         if neutral != normalize_space(' '.join(decisions[b.id]['spoken'] for b in blocks)):
             continue
-        source = delivery_text(blocks[0], full_delivery)
-        if joined_pdf:
-            source = ' '.join(delivery_text(b, True) for b in blocks)
+        source = passages.text(blocks[0],legacy_layout=full_delivery)
+        if joined_passage:
+            source = ' '.join(passages.text(b) for b in blocks)
         source = quotation_text(source,version)
         direction = None
         surrounding = None
@@ -1133,8 +1111,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
         event = None
         inline_event = None
         event_attribution = None
-        if len(blocks)==2 and not joined_pdf:
-            next_source=quotation_text(delivery_text(blocks[1], full_delivery),version)
+        if len(blocks)==2 and not joined_passage:
+            next_source=quotation_text(passages.text(blocks[1],legacy_layout=full_delivery),version)
             if STANDALONE.fullmatch(source) and (
                     event_attribution:=dialogue_attribution(next_source,cue_pattern,postposed,actor=actor,
                                                             context_version=version)):
@@ -1244,7 +1222,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 evidence = candidate['evidence'][0]
                 evidence['speaker_span'] = [offset+i for i in attribution.span('actor')]
                 evidence.setdefault('quotation_spans',[[offset+i for i in attribution.span('quote')]])
-            if joined_pdf:
+            if joined_passage:
                 candidate['evidence'][0].setdefault('quotation_spans',[list(attribution.span('quote'))])
             phrase = attribution_phrase(attribution)
             if phrase not in custom and (affect:=affects.get(phrase)):
@@ -1295,7 +1273,7 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                                       or event_attribution.groupdict().get('continuation')
                                       or event_attribution['verb'] in NEUTRAL_REPORTING[1:]):
                 candidate['contextual']=True
-        elif len(blocks)==1 or joined_pdf:
+        elif len(blocks)==1 or joined_passage:
             index=source_order[blocks[0].id]
             previous=document.blocks[index-1] if index else None
             if (previous and (previous.chapter!=blocks[0].chapter
@@ -1361,8 +1339,8 @@ def annotate(plan, document, *, automatic_prose=True, context_version=None):
                 owned_span = tuple(offset+i for i in attribution.span('quote'))
             if owned_span or inline_event:
                 compose_quotation_cues(candidate,source,neutral,blocks,actor,owned_span,inline_rules,registry,version)
-        if joined_pdf:
-            locate_pdf_candidate(candidate,blocks)
+        if joined_passage:
+            locate_passage_candidate(candidate,blocks)
         narrated_context = surrounding or candidate.get('evidence',[{}])[0].get('kind') in (
             'trailing_voice_description','attached_voice_description')
         if ((direction or candidate.get('contextual')) and not focus and not candidate.get('anchor')

@@ -183,9 +183,11 @@ def mark_folios(blocks, inventory):
             b.evidence.append('Isolated bottom-margin folio follows the same page-number offset on at least five pages.')
 
 
-def spoken_paragraph(block):
+def spoken_paragraph(block, *, layout=None):
     text = block.source
-    if block.locator.get('format') in ('pdf','scan'):
+    if layout is None:
+        layout = block.locator.get('format') in ('pdf','scan')
+    if layout:
         if block.role=='heading' and block.locator.get('ruled_panel') and text[-1:] not in '.!?':
             return text+'.'
         equation = block.locator.get('pdf_equation')
@@ -198,11 +200,13 @@ def spoken_paragraph(block):
     return text
 
 
-def structure_policy(doc, document_policy,by_source=False):
+def structure_policy(doc, document_policy,by_source=False, *, paginated_source=None):
     structure = document_policy.get('structure')
     if not structure:
         return None, {}
-    if doc.format not in ('pdf','scan') or not isinstance(structure, dict):
+    if paginated_source is None:
+        paginated_source = doc.format in ('pdf','scan')
+    if not paginated_source or not isinstance(structure, dict):
         raise Error('document_structure', 'Verified page structure requires a paginated source.')
     by_id = {b.id: b for b in doc.blocks}
     def verified(item):

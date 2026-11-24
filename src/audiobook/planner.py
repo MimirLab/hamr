@@ -2,8 +2,9 @@ from __future__ import annotations
 import re
 from .core import Document,key,Error,digest
 
-RULES='faithful-17'
-PERFORMANCE_RULES=('faithful-16',RULES)
+RULES='faithful-18'
+CURRENT_DELIVERY_RULES=('faithful-17',RULES)
+PERFORMANCE_RULES=('faithful-16',*CURRENT_DELIVERY_RULES)
 CONTEXTUAL_RULES=('faithful-14','faithful-15',*PERFORMANCE_RULES)
 SOURCE_STRUCTURE=('faithful-12','faithful-13',*CONTEXTUAL_RULES)
 NORMALIZATION_TRACE=('faithful-13',*CONTEXTUAL_RULES)
@@ -173,17 +174,22 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         from .pdf_table_readings import apply_glyph_aliases
         doc=apply_glyph_aliases(doc,document_policy['pdf_glyph_aliases'])
     resolver=None
+    unified_source = rule_revision==RULES
     if rule_revision in CONTEXTUAL_RULES:
         from .contextual import Resolver
-        resolver=Resolver(doc,policy,document_policy,aliases or {})
+        resolver=Resolver(doc,policy,document_policy,aliases or {},unified=unified_source)
     section_defaults={k:v for k,v in policy.items() if k not in ('document','context','context_implementation','context_review','context_review_receipt')}
-    from .pdf_layout import structure_policy,spoken_paragraph
-    document_title,pdf_chapters=structure_policy(doc,document_policy,by_source=rule_revision in SOURCE_STRUCTURE)
+    from .source_passages import (SourcePassages, chapter_at, chapter_layout,
+                                  layout_disputes, prepared_paragraph, split_printed_word)
+    by_source = rule_revision in SOURCE_STRUCTURE
+    document_title,source_chapters=chapter_layout(doc,document_policy,by_source=by_source,unified=unified_source)
     source_positions={b.id:i for i,b in enumerate(doc.blocks)}
-    join_inline_events = (doc.format=='pdf' and automatic_prose and policy.get('performance')!='off' and
-                          (delivery_context is None or delivery_context>=6))
-    pdf_dialogue_flow = (doc.format == 'pdf' and rule_revision == RULES and
-                         (automatic_prose if delivery_context is None else delivery_context >= 11))
+    from .performance import CONTEXT_VERSION
+    performance_context = delivery_context or (
+        (CONTEXT_VERSION if rule_revision == RULES else 34) if automatic_prose else 1)
+    source_passages = SourcePassages(doc,unified=unified_source and performance_context>=35)
+    join_inline_events = automatic_prose and policy.get('performance')!='off' and performance_context>=6
+    dialogue_flow = rule_revision in CURRENT_DELIVERY_RULES and performance_context>=11
     quote_pairs = {}
     delivery=document_policy.get('delivery',{})
     if not isinstance(delivery,dict) or delivery.get('flow','continuous') not in ('continuous','segmented'):raise Error('delivery_policy','Delivery flow must be continuous or segmented.')
@@ -197,19 +203,15 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
     protected_readings={}
     heading_ids={item['source_block'] for item in document_policy.get('structure',{}).get('chapters',[])}
     tagged_voice_links = set()
-    if continuous and anchor=='paragraph' and pdf_dialogue_flow:
-        from .performance import native_voice_paragraphs
+    if continuous and anchor=='paragraph' and dialogue_flow:
+        from .performance import voice_paragraphs
 
-        for paragraph in native_voice_paragraphs(doc.blocks,heading_ids|overrides.keys(),delivery_context):
+        for paragraph in voice_paragraphs(source_passages,heading_ids|overrides.keys(),performance_context):
             quote_pairs[paragraph] = 'tagged_pdf_voice_description'
             tagged_voice_links.update(zip(paragraph,paragraph[1:]))
-    flow_disputes={}
-    if continuous and doc.format=='pdf':
-        from .pdf_flow import insertions
-        for insertion in insertions(doc.blocks,doc.inventory,expanded=rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE),margin_numbers=rule_revision in ('faithful-11',*SOURCE_STRUCTURE)):
-            choice=overrides.get(insertion['block'],{})
-            if choice.get('action')=='companion' or choice.get('placement')=='caption_after_paragraph':continue
-            for bid in insertion['source_blocks']:flow_disputes[bid]=insertion['reason']
+    flow_disputes=layout_disputes(doc,overrides,expanded=rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE),
+                                 margin_numbers=rule_revision in ('faithful-11',*SOURCE_STRUCTURE),
+                                 unified=unified_source) if continuous else {}
     original_by_id={b.id:b.source for b in doc.blocks}
     authored_lines={b.id for b in doc.blocks if b.locator.get('authored_line_breaks')}
     table_context=' '.join(b.source for b in doc.blocks) if rule_revision in SOURCE_STRUCTURE else ''
@@ -246,7 +248,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 from .performance import MARKER,QUOTATION
                 limit=120 if continuous else 65
                 sentence_limit=(160 if rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) else 120) if continuous else limit
-                balance_tail=(rule_revision==RULES and continuous and len(source_ids)==1
+                balance_tail=(rule_revision in CURRENT_DELIVERY_RULES and continuous and len(source_ids)==1
                               and doc.blocks[source_positions[source_ids[0]]].role=='body'
                               and not re.search(f'{QUOTATION}|{MARKER}',joined))
                 pieces=passages(joined,max_words=limit,separate_incomplete=continuous and (rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE) or anchor=='paragraph'),max_sentence_words=sentence_limit,whole_sentences=whole_sentences,protected=protected,balance_tail=balance_tail)
@@ -289,23 +291,15 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             for caption,bid in captions:buffer.append('Illustration caption. '+caption);source_ids.append(bid)
             flush();captions=[]
     for b in doc.blocks:
-        block_chapter=b.chapter
-        block_chapter_id=b.locator.get('chapter_id')
-        if rule_revision in SOURCE_STRUCTURE and b.locator.get('format')=='pdf' and not pdf_chapters and block_chapter_id is None:
-            block_chapter='Opening';block_chapter_id='pdf:unclassified'
-        if b.locator.get('format') in ('pdf','scan'):
-            if rule_revision in SOURCE_STRUCTURE and pdf_chapters:block_chapter='Opening';block_chapter_id='pdf:opening'
-            for start,title in pdf_chapters.items():
-                if start<=(source_positions[b.id] if rule_revision in SOURCE_STRUCTURE else b.locator['page']):
-                    block_chapter=title
-                    if rule_revision in SOURCE_STRUCTURE:block_chapter_id='pdf-source:'+str(start)
+        block_chapter,block_chapter_id=chapter_at(b,source_positions[b.id],source_chapters,
+                                                   by_source=by_source,unified=unified_source)
         if rule_revision in SOURCE_STRUCTURE and b.locator.get('auxiliary'):
             block_chapter=chapter or block_chapter;block_chapter_id=chapter_id
         section=policy.get('sections',{}).get(block_chapter,{})
         effective={**section_defaults,**section}
         if 'mode' in section:
             effective={**section_defaults,'code':'speak' if section['mode']=='procedure' else 'companion','references':'speak' if section['mode']=='study' else 'companion',**section}
-        action='speak'; reason='Preserve authored content and qualifiers.'; text=spoken_paragraph(b); connector=False;force_pause=False;cells=();prepared_spans=None
+        action='speak'; reason='Preserve authored content and qualifiers.'; text=prepared_paragraph(b,unified=unified_source); connector=False;force_pause=False;cells=();prepared_spans=None
         table_fragments=[]
         if resolver and b.locator.get('pdf_equation'):
             prepared_spans=[(0,len(text))]
@@ -336,7 +330,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             text='Literal block. '+b.source; reason='Follow a procedure: speak the exact literal block by explicit policy.'; connector=True
         elif b.role=='table':
             rows=b.locator.get('rows',[])
-            column_headers=b.locator.get('table_header_cells') if rule_revision in ('faithful-15',RULES) else None
+            column_headers=b.locator.get('table_header_cells') if rule_revision in ('faithful-15',*CURRENT_DELIVERY_RULES) else None
             excluded={tuple(pair) for pair in b.locator.get('table_hidden_cells',())} if column_headers is not None else set()
             caption='';note_suffix='';cell_spans={}
             if resolver and rows:
@@ -382,7 +376,12 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         if b.id in overrides:
             override=overrides[b.id];action=override['action'];reason=override['reason'];connector=False
             force_pause=action=='pause'
-            text='' if action in ('companion','pause') else override.get('spoken',text if rule_revision in MODERN and not b.issue else spoken_paragraph(b))
+            if action in ('companion','pause'):
+                text=''
+            elif 'spoken' in override:
+                text=override['spoken']
+            elif rule_revision not in MODERN or b.issue:
+                text=prepared_paragraph(b,unified=unified_source)
             if action=='companion' and override.get('announce'):
                 text='The '+override['announce']+' is available in the companion.';connector=True
         if rule_revision in SOURCE_STRUCTURE and action=='speak' and b.id not in overrides:
@@ -462,9 +461,9 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         if text:
             if preserve_lines:flush()
             if not continuous and sum(len(x.split()) for x in buffer)+len(text.split())>65: flush()
-            if continuous and buffer and source_ids and re.search(r'[A-Za-z]{2,}-$',buffer[-1]) and b.locator.get('format')=='pdf':
-                previous=next(x for x in doc.blocks if x.id==source_ids[-1])
-                if previous.locator.get('page')!=b.locator.get('page'):
+            if continuous and buffer and source_ids:
+                previous=doc.blocks[source_positions[source_ids[-1]]]
+                if split_printed_word(previous,b,buffer[-1],unified=unified_source):
                     reason='Unresolved printed word split across source pages. Verify discretionary versus lexical hyphenation; no word is guessed.'
                     for decision in decisions:
                         if decision['block'] in (previous.id,b.id):decision.update(action='unreadable',reason=reason)
@@ -481,19 +480,24 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
                 following = source_positions[b.id]+1
                 continue_passage = (effective['mode']=='listen' and following<len(doc.blocks)
                                     and (b.id,doc.blocks[following].id) in tagged_voice_links)
-                if (not continue_passage and (pdf_dialogue_flow or join_inline_events) and effective['mode']=='listen'
+                if (not continue_passage and (dialogue_flow or join_inline_events) and effective['mode']=='listen'
                         and following < len(doc.blocks) and len(buffer) == 1):
                     next_block = doc.blocks[following]
-                    if next_block.id not in heading_ids and next_block.id not in overrides:
-                        from .performance import native_quote_flow, pdf_inline_event_continues
-                        if (pdf_dialogue_flow and b.id not in overrides and
-                                (quote_flow := native_quote_flow(
-                                    b, next_block, document_policy.get('performance', {}), delivery_context))):
+                    relationship = source_passages.between(b,next_block)
+                    if relationship and next_block.id not in heading_ids and next_block.id not in overrides:
+                        from .performance import quotation_flow, inline_event_continues
+                        config = document_policy.get('performance', {})
+                        if (dialogue_flow and b.id not in overrides and
+                                (quote_flow := quotation_flow(
+                                    source_passages.text(b,legacy_layout=False),
+                                    source_passages.text(next_block,legacy_layout=False),
+                                    relationship,config,performance_context))):
                             quote_pairs[b.id, next_block.id] = quote_flow
                             continue_passage = True
                         elif join_inline_events:
-                            continue_passage = pdf_inline_event_continues(
-                                b, next_block, delivery_context, document_policy.get('performance', {}))
+                            continue_passage = inline_event_continues(
+                                source_passages.text(b),source_passages.text(next_block),
+                                relationship,performance_context,config)
                 if not continue_passage:
                     flush()
                     if utterances:utterances[-1]['pause_samples']=8400
@@ -531,7 +535,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         result['review_groups']=source_groups(doc.json(),result)
     if rule_revision in PERFORMANCE_RULES:
         from .performance import annotate
-        annotate(result,doc,automatic_prose=automatic_prose,context_version=delivery_context)
+        annotate(result,doc,automatic_prose=automatic_prose,context_version=performance_context,passages=source_passages)
     if intake:=doc.metadata.get('intake'):
         source_fields = ('page','member','occurrence','frame','label','route','status',
                          'raw_OCR_reused','reason','location_id','sheet','slide','part')

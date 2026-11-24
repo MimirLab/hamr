@@ -109,7 +109,7 @@ def inline_reading(block, span, raw):
     return None
 
 
-def observations(block, cells, table_fragments, *, source_digest):
+def observations(block, cells, table_fragments, *, source_digest, reading):
     """Use exact spans or named cell locators. Existing source readings still render speech."""
     source=block.source
     spans=block.locator.get('inline_semantics',[])
@@ -151,14 +151,13 @@ def observations(block, cells, table_fragments, *, source_digest):
                 add('pdf_inline','superscript',{'source_span':[start,end],'source':item['source']},fields,
                     ('CR-L030','mathematical_superscript',fields,()))
 
-    logical_input=block.locator.get('format') in ('epub','markdown','text')
-    if logical_input:
+    if reading.logical_order:
         directions={unicodedata.bidirectional(c) for c in source} if not source.isascii() else set()
         if 'L' in directions and directions & {'R','AL'}:
             fields={'logical_order_retained':True,'do_not_reverse_entire_line':True}
             add('source_order','bidirectional',{'source_span':[0,len(source)],'source':source},fields,
                 ('CR-L047','source_logical_order',fields,()))
-    if logical_input or block.locator.get('format')=='pdf' and 'line' in block.locator and not block.issue:
+    if reading.reliable_repetition:
         literal=[(span['source_start'],span['source_end']) for span in spans if span['kind']=='literal']
         for match in re.finditer(r"(?<!\w)([^\W\d_][\w’']*)[ \t]+(\1)(?!\w)",source):
             if block.role!='body' or any(match.start()<b and a<match.end() for a,b in hidden+literal):
@@ -182,7 +181,7 @@ def observations(block, cells, table_fragments, *, source_digest):
                     ('CR-L020','sentence_boundary',fields,()))
 
     joins={tuple(join['source_span']):join for join in block.locator.get('line_wrap_joins',[]) if 'source_span' in join}
-    if block.locator.get('format')=='pdf':
+    if reading.printed_layout:
         for match in re.finditer(r'[A-Za-z]+-\n[ \t]*[a-z]+',source):
             join=joins.get(match.span())
             if join:

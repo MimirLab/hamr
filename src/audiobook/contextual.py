@@ -283,11 +283,14 @@ class Projection:
 
 
 class Resolver:
-    def __init__(self, doc, policy, source_policy, aliases):
+    def __init__(self, doc, policy, source_policy, aliases, *, unified):
+        from .source_passages import reading_evidence
+
         self.doc=doc
         self.policy=policy
         self.config=context_config.effective(policy.get('context'))
-        self.implementation=context_config.implementation()
+        self.implementation=context_config.implementation(unified=unified)
+        self.readings={block.id:reading_evidence(block,unified=unified) for block in doc.blocks}
         if policy.get('context_implementation',self.implementation)!=self.implementation:
             raise Error('context_rules_changed','The saved plan uses a different contextual reader.',
                         'Use the matching build or hamr repair JOB --upgrade-rules.')
@@ -331,7 +334,7 @@ class Resolver:
                 excluded=[(span['source_start'],span['source_end']) for span in block.locator.get('inline_semantics',[])
                           if span['kind'] in ('literal','hidden','hyperlink','language','ruby')]
                 excluded.extend(match.span() for match in context_numbers.QUOTATIONS.finditer(block.source))
-                if block.locator.get('format')=='markdown' and block.locator.get('exact','').lstrip().startswith('>'):
+                if self.readings[block.id].quoted_material:
                     excluded=[(0,len(block.source))]
                 if excluded:self.number_exclusions[block.id]=excluded
                 for mark, number, span in context_numbers.witnesses(block.source,number_pattern,excluded):
@@ -366,7 +369,8 @@ class Resolver:
         return next((settings['ditto_marker'] for _,settings in reversed(scopes) if 'ditto_marker' in settings),None)
 
     def structural_evidence(self, block, cells, table_fragments):
-        return context_structure.observations(block,cells,table_fragments,source_digest=self.doc.source_sha256)
+        return context_structure.observations(block,cells,table_fragments,source_digest=self.doc.source_sha256,
+                                              reading=self.readings[block.id])
 
     def outcome(self, block, view, match, env, options):
         raw=match[0];event=grammar.EVENTS[match.lastgroup]
@@ -481,7 +485,7 @@ class Resolver:
                 chronology=(self.chronology_headings.get(self.scope(block)) if match.lastgroup=='slash' and a==0
                             and value==block.source and match[0]==self.chronology_entries.get(block.id) else None)
                 inferred=self.chronologies.get(self.scope(block),{}) if chronology else anchors.get(header_column,{})
-                wrapped=(block.locator.get('format')=='text' and view['kind']=='block_source'
+                wrapped=(self.readings[block.id].soft_wraps and view['kind']=='block_source'
                          and match.lastgroup in ('heteronym','colon'))
                 env=Evidence(self,value,match.start(),match.end(),header,inferred,chapter,chapter_id,
                              block.id if row is not None else None,header_column,chronology,

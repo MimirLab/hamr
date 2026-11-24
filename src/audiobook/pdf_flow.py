@@ -1,4 +1,4 @@
-"""Detect layout insertions which separate a continued PDF sentence.
+"""Detect layout insertions which separate a continued sentence in printed pages.
 
 This is a review locator, not an automatic caption classifier or word guesser.
 """
@@ -29,7 +29,7 @@ def overlaps(blocks,inventory):
     return result
 
 
-def insertions(blocks,inventory,expanded=False,margin_numbers=False):
+def insertions(blocks,inventory,expanded=False,margin_numbers=False,*,page_label='PDF pages'):
     heights={i['page']:i['size'][1] for i in inventory}
     sizes={i['page']:i['size'] for i in inventory}
     # A damaged folio can hide a caption from the three-region locator.
@@ -51,5 +51,5 @@ def insertions(blocks,inventory,expanded=False,margin_numbers=False):
         if p<=q<=r and r-p==1 and re.search(r'[A-Za-z-]$',previous.source.strip()) and re.match(r'^[a-z]',following.source.strip()) and re.search(r'[.!?]$',text) and len(text.split())<=(60 if expanded else 35) and rect[3]-rect[1]<heights[q]*(.08 if expanded else .05):
             ambiguous=[b.id for b in blocks if b.id in margins and positions[previous.id]<positions[b.id]<positions[following.id]]
             result.append({'block':current.id,'source_blocks':[previous.id,current.id,following.id]+ambiguous,
-                           'reason':'A short isolated source region interrupts a sentence continued across PDF pages. Verify its affiliation and reading order before narration.'})
+                           'reason':f'A short isolated source region interrupts a sentence continued across {page_label}. Verify its affiliation and reading order before narration.'})
     return result

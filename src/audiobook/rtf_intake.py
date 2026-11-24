@@ -70,7 +70,9 @@ def read_rtf(data,builder):
         value = text()
         if value:
             flush_table()
-            builder.add(value,where=f'rtf:{position}')
+            item = builder.add(value,where=f'rtf:{position}')
+            if '\n' in value:
+                item.locator['authored_line_breaks'] = True
 
     while position<len(data):
         char = data[position]

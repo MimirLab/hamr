@@ -42,7 +42,7 @@ def signals(text, current_end):
     return matches
 
 
-def annotate(units, by_id, decisions, order, occurrences, disabled):
+def annotate(units, by_id, decisions, order, occurrences, disabled, passages):
     def source(unit):
         blocks = [by_id[bid] for bid in unit['sources']]
         if not blocks or any(occurrences[b.id]!=1 or order[b.id]!=order[blocks[0].id]+i
@@ -51,7 +51,7 @@ def annotate(units, by_id, decisions, order, occurrences, disabled):
             return None
         if unit['text']!=performance.normalize_space(' '.join(decisions[b.id]['spoken'] for b in blocks)):
             return None
-        printed = ' '.join(performance.delivery_text(b,True) for b in blocks)
+        printed = ' '.join(passages.text(b) for b in blocks)
         return performance.normalize_space(printed)
 
     for index, unit in enumerate(units):
