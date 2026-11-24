@@ -642,7 +642,7 @@ def epub(data:bytes|Path)->Document:
 def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
     import pypdfium2 as pdfium
     from .pdf_visual import Observer, authored_artifact, bind_captions, merge_regions, regional_images
-    from .pdf_geometry import crop_glyphs,glyph_baseline,redundant_note_icons
+    from .pdf_geometry import asciidoctor_tips,crop_glyphs,glyph_baseline,redundant_note_icons
     from .epub_semantics import uncertainty
     from .pdf_scripts import raised_digits, spans as script_spans
     from .pdf_tagged_tables import TaggedTables, outer_tables
@@ -653,6 +653,7 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
     try: doc=pdfium.PdfDocument(data)
     except Exception: raise Error('unreadable_pdf','PDF is protected, damaged or unsupported.')
     out=[]; inventory=[];outlines=[]
+    producer=doc.get_metadata_value('Producer')
     visual=Observer(ocr_cache,ocr_config)
     tagged=TaggedTables()
     for index,item in enumerate(doc.get_toc()):
@@ -668,10 +669,16 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
         image_objects=[(obj,list(obj.get_bounds())) for obj in page.get_objects(filter=[pdfium.raw.FPDF_PAGEOBJ_IMAGE])]
         images=[rect for _,rect in image_objects]
         entry={'page':n+1,'size':[w,h],'glyphs':tp.count_chars(),'rotation':page.get_rotation(),'raster_regions':images,'route':'native','native_observation':native}
+        if not entry['rotation'] and (label:=doc.get_page_label(n)):
+            entry['declared_page_label'] = label
         redundant = redundant_note_icons(tp,native)
-        skip = {item['native_index'] for item in redundant}
+        tips = asciidoctor_tips(page,tp,native,producer) if not entry['rotation'] else []
+        tip_headings = {item['heading_index']:item for item in tips}
+        skip = {item['native_index'] for item in (*redundant,*tips)}
         if redundant:
             entry['redundant_note_icons'] = redundant
+        if tips:
+            entry['source_tip_icons'] = tips
         if damaged:=suspect_characters(''.join(' ' if i in skip else c for i,c in enumerate(native)) if skip else native):
             entry['native_character_diagnostics']=damaged
         box=page.get_bbox();media=page.get_mediabox()
@@ -791,10 +798,18 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                         last=r;previous=index
                     if text.strip():
                         segment = {'text':text.strip(),'rect':[chunk[0][0],min(x[3][1] for x in chunk),chunk[-1][1],max(x[3][3] for x in chunk)],'y':line['y']}
+                        if full_geometry and not (overlays or table_tags):
+                            segment['glyphs'] = chunk
+                        spans = []
                         if scripts:
                             padding = len(text)-len(text.lstrip())
                             spans = prepare_scripts(segment['text'],script_spans(segment['text'],(
                                 (a-padding,b-padding,index,base) for a,b,index,base in scripts)))
+                        first_glyph = next((glyph[-1] for glyph in chunk if glyph[2].strip()),None)
+                        if tip:=tip_headings.get(first_glyph):
+                            spans.append({'kind':'generated_label','source_start':0,'source_end':0,'source':'',
+                                          'reading':tip['label'],'origin':tip['basis'],'native_index':tip['native_index']})
+                        if spans:
                             segment['locator'] = {'inline_semantics':spans}
                             segment['issue'] = uncertainty(spans)
                         if table_tags:
@@ -803,6 +818,10 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                             segment['tagged_paragraph'] = paragraph
                         segments.append(segment)
             if not panels:
+                if full_geometry and not (overlays or table_tags):
+                    from .pdf_literals import group_terminal_transcripts
+
+                    segments = group_terminal_transcripts(page,tp,segments)
                 from .pdf_layout import column_order
                 def uncertain_boundary(row):
                     for item in row:
@@ -910,7 +929,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-33'
+IMPORT_REVISION='import-34'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 

@@ -311,7 +311,7 @@ class Resolver:
         self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
         self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],
                                              self.config['cues']['price_noun'],self.config['native_names'],
-                                             precise_codes=rule_revision in ('faithful-27','faithful-28','faithful-29'))
+                                             precise_codes=rule_revision in ('faithful-27','faithful-28','faithful-29','faithful-30'))
         self.definitions=defaultdict(list)
         self.chronologies=defaultdict(lambda:defaultdict(list))
         self.number_anchors=defaultdict(lambda:defaultdict(dict))

@@ -11,7 +11,7 @@ from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v46'
+POLICY='bounded-english-composed-scale-typed-v47'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -59,6 +59,9 @@ NAME_OBSERVATIONS = ((re.compile(r'\bSymPy\b'),re.compile(r'\bsimpy\b',re.I)),)
 LEGACY_POSSESSIVE = re.compile(r"(?<=[A-Za-z])\u0313(?=[sS](?!\w))")
 DOTTED_US = re.compile(r'(?<![\w.])U\.S\.(?!\w)')
 SECONDS_MERIDIEM = re.compile(r'(\bseconds?[ \t]+)([AP])[. \t]+M\.?(?!\w)',re.I)
+SHA_LABEL = re.compile(r'(?<!\w)sha[-‐‑– \t]?(1|2|3(?:-(?:224|256|384|512))?|224|256|384|512(?:/(?:224|256))?)'
+                       r'(s?)(?!\w|[-/][0-9])',re.I)
+SPOKEN_SHA_FAMILY = re.compile(r'(?<!\w)SHA[ \t]+(one|two|three)(?!\w|[/-][0-9])')
 
 
 def isbn_notation(text):
@@ -145,6 +148,15 @@ def notation_observation(expected, observed):
     observed=domain_notation(expected,observed)
     observed=name_observation(expected,observed)
     observed=code_pair_observation(expected,observed)
+    families = {match[1] for match in SHA_LABEL.finditer(expected) if not match[2]}
+    if families:
+        spellings = {'one':'1','two':'2','three':'3'}
+
+        def hash_family(match):
+            value = spellings[match[1]]
+            return 'SHA'+value if value in families else match[0]
+
+        observed = SPOKEN_SHA_FAMILY.sub(hash_family,observed)
     # Uppercase initials are a written equivalent at the same occurrence.
     # The lowercase pronoun remains different even in matching context.
     us = {word_context(expected,*match.span()) for match in DOTTED_US.finditer(expected)}
@@ -399,6 +411,7 @@ def comparison_tokens(text):
     text=comparison_text(LITERAL_DIGIT_RUN.sub(literal_digit_run,isbn_notation(text)))
     text,_,_=expand(text)
     text=SECONDS_MERIDIEM.sub(lambda match:match[1]+match[2]+'M',text)
+    text=SHA_LABEL.sub(lambda match:'sha'+match[1].replace('-','_').replace('/','_')+match[2],text)
     text=text.lower().replace('’',"'").replace('±',' plus or minus ')
     ts=[];end=0
     for match in LEX.finditer(text):

@@ -21,6 +21,20 @@ def test_book_identifier_formatting_preserves_each_digit_and_distinct_counts():
     assert quantities(c('978 1122 334455'))==['978','1122','334455']
 
 
+def test_hash_algorithm_spelling_preserves_variant_and_adjacent_quantities():
+    from audiobook.speech_compare import notation_observation
+
+    original = 'Compute two SHA-1 digests and compare the SHA-512/256 result.'
+    asr = 'Compute 2 SHA1 digests and compare the SHA512/256 result.'
+    assert c(original)==c(asr)
+    assert quantities(c(original))==['2']
+    assert c(notation_observation(original,asr.replace('SHA1','SHA one')))==c(original)
+    assert c(notation_observation(original,asr.replace('SHA1','SHA two')))!=c(original)
+    assert c(original)!=c(asr.replace('512/256','512/224'))
+    assert c('Inspect the SHA-1s.')==c('Inspect the SHA1s.')
+    assert notation_observation('Safer digest','Use SHA one.')=='Use SHA one.'
+
+
 def test_known_orthographic_compounds_do_not_permit_arbitrary_merges():
     assert c('Dust Bowl and MathML')==c('dustbowl and Math ML')
     assert c('The textbox and two textboxes')==c('The text box and two text boxes')

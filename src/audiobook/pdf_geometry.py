@@ -6,7 +6,14 @@ from pypdfium2 import raw
 
 
 NOTE_ICON = re.compile(r'(?:^|\n)(?P<icon>\uf05a)\r?\n(?:A (?:SHORT )?)?NOTE\b', re.I)
-ICON_FONT = re.compile(rb'(?:[A-Z]{6}\+)?FontAwesome5Free-Solid')
+TIP_ICON = re.compile(r'(?:^|\n)(?P<icon>\uf0eb)\r?\n(?P<heading>[A-Za-z])')
+ICON_FONT = re.compile(rb'(?:[A-Z]{6}\+)?FontAwesome5Free-(?:Solid|Regular)')
+
+
+def known_icon(textpage,index,value):
+    buffer = create_string_buffer(128)
+    raw.FPDFText_GetFontInfo(textpage,index,buffer,len(buffer),byref(c_int()))
+    return ICON_FONT.fullmatch(buffer.value) and textpage.get_text_range(index,1)==value
 
 
 def redundant_note_icons(textpage,source):
@@ -16,9 +23,7 @@ def redundant_note_icons(textpage,source):
     artifacts = []
     for match in NOTE_ICON.finditer(source):
         index = match.start('icon')
-        buffer = create_string_buffer(128)
-        raw.FPDFText_GetFontInfo(textpage,index,buffer,len(buffer),byref(c_int()))
-        if not ICON_FONT.fullmatch(buffer.value) or textpage.get_text_range(index,1)!='\uf05a':
+        if not known_icon(textpage,index,'\uf05a'):
             continue
         rect = textpage.get_charbox(index)
         label = textpage.get_charbox(index+3 if source[index+1:index+3]=='\r\n' else index+2)
@@ -26,6 +31,25 @@ def redundant_note_icons(textpage,source):
             artifacts.append({'native_index':index,'codepoint':'U+F05A','rect':list(rect),
                               'basis':'Font Awesome information glyph paired with an adjacent authored Note label'})
     return artifacts
+
+
+def asciidoctor_tips(page,textpage,source,producer):
+    """Bind the converter's standard Tip icon to its adjacent titled panel."""
+    if '\uf0eb' not in source or not producer.startswith('Asciidoctor PDF ') or len(source)!=textpage.count_chars():
+        return []
+    rules = [path.get_bounds() for path in page.get_objects(filter=[raw.FPDF_PAGEOBJ_PATH])]
+    tips = []
+    for match in TIP_ICON.finditer(source):
+        index,target = match.start('icon'),match.start('heading')
+        if not known_icon(textpage,index,'\uf0eb'):
+            continue
+        rect,heading = textpage.get_charbox(index),textpage.get_charbox(target)
+        adjacent = [rule for rule in rules if rect[2]<rule[0]<rule[2]<heading[0] and rule[2]-rule[0]<=2
+                    and rule[1]<rect[1]<rect[3]<rule[3] and rule[1]<heading[1]<heading[3]<rule[3]]
+        if len(adjacent)==1:
+            tips.append({'native_index':index,'heading_index':target,'codepoint':'U+F0EB','rect':list(rect),
+                         'label':'Tip.','rule':list(adjacent[0]),'basis':'Asciidoctor PDF default Tip icon and divider'})
+    return tips
 
 
 def glyph_baseline(textpage,index,crop_bottom,fallback):

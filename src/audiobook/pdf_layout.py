@@ -176,13 +176,26 @@ def paragraphs(words, page, height, page_issue=None, *, region=None, width=None,
 
 def mark_folios(blocks, inventory):
     heights = {x['page']: x['size'][1] for x in inventory}
+    labels = {x['page']:x['declared_page_label'] for x in inventory if x.get('declared_page_label')}
     candidates = []
+    by_page = {}
+    for b in blocks:
+        if 'rect' in b.locator:
+            by_page.setdefault(b.locator.get('page'),[]).append(b)
     for b in blocks:
         loc = b.locator
-        if 'paragraph' not in loc or loc.get('page') not in heights or not b.source.strip().isdigit():
+        printed = b.source.strip()
+        if (loc.get('page') not in heights or not loc.get('rect')
+                or not re.fullmatch(r'[0-9]{1,6}',printed)):
             continue
         page = loc['page'];rect = loc['rect'];height = heights[page]
-        if rect[3] < height * .1:
+        if (b.role=='body' and printed==labels.get(page) and rect[3]<height*.08 and 0<rect[3]-rect[1]<height*.025
+                and len(by_page[page])>1 and all(rect[3]+height*.012 < peer.locator['rect'][1]
+                                                for peer in by_page[page] if peer is not b)):
+            b.role = 'furniture'
+            b.issue = None
+            b.evidence.append('Isolated bottom-margin number matches the declared PDF page label.')
+        elif 'paragraph' in loc and rect[3] < height * .1:
             candidates.append((b, int(b.source.strip()) - page))
     offsets = Counter(offset for _, offset in candidates)
     for b, offset in candidates:

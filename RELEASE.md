@@ -1,3 +1,10 @@
+# hamr 0.4.9.dev56
+
+- Read explicitly introduced caret equations through the shared math reader. Ordinary text, HTML and native PDF keep the original expression and speak its operators and powers.
+- Preserve verified boxed PDF terminal transcripts in the companion under the ordinary code policy. Read a native PDF folio as page furniture when its isolated printed number matches the declared page label.
+- Read verified Asciidoctor PDF Tip panels without sending the surrounding native text through OCR. Retain the icon, divider and source coordinates.
+- Treat matching SHA spellings such as `SHA-1` and `SHA1` as the same identifier in speech checks. A changed hash variant or nearby quantity still needs inspection.
+
 # hamr 0.4.9.dev55
 
 - Read styled numeric powers aloud when the surrounding expression establishes the role. AsciiDoc, Markdown, HTML, EPUB, Word, OpenDocument and native PDF pass their source evidence to the same reader. Linked notes still follow their target and uncertain markers appear in source review.
