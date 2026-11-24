@@ -193,7 +193,9 @@ their boundaries. The companion keeps the native glyph or OCR positions.
 Consistently aligned values and headings can also establish simple borderless
 tables. Source review identifies a detected table with competing cell readings.
 Text-bearing XPS and OpenXPS use declared pages and page stories. The original
-page parts can be recovered through the companion.
+page parts can be recovered through the companion. On x86-64 Linux with glibc
+2.36 or newer and Bubblewrap, graphic-only pages use the bundled renderer and
+OCR. Source review locates pages or words whose reading could not be verified.
 Writer/Web OpenDocument packages (.oth) open with the OpenDocument reader.
 .PP
 Use \fB\-\-offline\fR with \fBopen\fR, \fBplan\fR, or \fBqueue\fR to

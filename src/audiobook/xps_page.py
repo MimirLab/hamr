@@ -308,7 +308,7 @@ def locator(runs,evidence):
             'xps_glyphs':[run.observation() for run in runs]}
 
 
-def page_reading(package,member,root,metrics,builder,evidence):
+def page_reading(package,member,root,metrics,builder,evidence,visual=None):
     from .xps_story import story_reading
 
     try:
@@ -322,6 +322,11 @@ def page_reading(package,member,root,metrics,builder,evidence):
     evidence['glyph_runs'] = len(runs)
     if not runs and not graphics:
         evidence['status'] = 'verified_blank'
+        return names
+    if visual is not None and not any(glyph.text.strip() for glyph in runs):
+        if runs:
+            evidence['glyph_observation'] = [glyph.observation() for glyph in runs]
+        visual.read(member,builder,evidence)
         return names
     first = len(builder.doc.blocks)
     try:

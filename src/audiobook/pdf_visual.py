@@ -196,7 +196,7 @@ class Observer:
         return self.read_raster(lambda: raster(page, rect), textpage, entry, rect, native, regional=regional)
 
     def read_raster(self, load_image, textpage, entry, rect, native='', *, regional=False,
-                    format='pdf', scale=SCALE):
+                    format='pdf', scale=SCALE, verification=()):
         from .pdf_ocr import configuration, observe, offline_observation
         from .pdf_words import localize_words
 
@@ -205,6 +205,7 @@ class Observer:
         evidence = {'rect':rect, 'scale':scale, 'native_observation':native,
                     'coordinate_space':'rendered_page_points' if format=='pdf' else 'oriented_pixels'}
         read_table_crop = None
+        unresolved_words = ()
         try:
             image = load_image()
             if not native.strip() and all(lo==hi for lo,hi in ImageStat.Stat(image).extrema):
@@ -247,6 +248,24 @@ class Observer:
                                         {'observer':alternate[2],'recognized_words':len(alternate_words),'reused':retry_reused}]
                 if alternate_words:
                     words, selected, reused = alternate_words, alternate, retry_reused
+            if verification and words:
+                from .ocr_consensus import verify_words
+
+                def read_view(view):
+                    content = io.BytesIO()
+                    view.save(content,format='PNG')
+                    payload = content.getvalue()
+                    if offline:
+                        receipt = offline_observation(payload,self.cache,self.scope)
+                        if receipt is None or receipt[1]!=selected[2]:
+                            raise Error('missing_ocr','A matching alternate view has no saved OCR observation.')
+                        result = receipt[0]
+                    else:
+                        result,_ = observe(payload,selected,self.cache,self.scope)
+                    return read_words(result,view.size)
+
+                words,evidence['ocr_visual_verification'],unresolved_words = verify_words(
+                    words,image.size,verification,read_view)
             if words and selected and len(selected)==4:
                 binary, env, recipe, reusable = selected
                 def read_crop(view, segmentation, label):
@@ -310,6 +329,10 @@ class Observer:
         if not parts:
             parts = [{'text':text,'locator':locator,'issue':issue,'role':'unreadable'}]
         lexical_localization = localize_words(parts,native,text,source_reader,geometry)
+        if unresolved_words!=():
+            from .ocr_consensus import localize_verification
+
+            localize_verification(parts,words,unresolved_words,rect,scale)
         for part in parts:
             if damaged_regnal_glyph(part['text']):
                 reason = 'Visual OCR shows an unmatched bracket in a possible regnal numeral. Verify the printed reading before synthesis.'

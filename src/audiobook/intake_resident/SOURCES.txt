@@ -20,3 +20,21 @@ SHA-256 f85ae46948bac63f793066945f850c8663be1518b690a9af9e1d6ba507979064
 The Hamr worker source and link instructions are tools/intake_chm.c and
 tools/build_intake_chm.sh. Build against the unmodified library sources
 in the linked archive. The Linux x86-64 decoder uses glibc 2.34 or later.
+
+XPS page renderer for Linux x86-64, requiring glibc 2.36 or later:
+GNOME libgxps 0.3.2, built by Debian as libgxps-utils and libgxps2
+version 0.3.2-2+b1. Its worker is the unmodified xpstopng.
+https://deb.debian.org/debian/pool/main/libg/libgxps/
+The asset's notices directory contains licenses, Debian package pins,
+and exact checksums for the corresponding source and patch archives.
+The same pins are available in tools/intake_xps_runtime.json in the sdist.
+
+The libarchive 3.8.11 source and checksum are pinned in that manifest.
+Unpack its source and extract the listed sysroot packages with their
+paths intact. Ensure that the sysroot path lib64/ld-linux-x86-64.so.2
+is a relative symlink to ../lib/x86_64-linux-gnu/ld-linux-x86-64.so.2.
+Run tools/build_xps_libarchive.sh to build the shared library with the
+ZIP decompression dependencies. The release used GCC 16.2.1, CMake 4.4.4,
+and GNU binutils 2.47. Run tools/build_intake_xps.py with the pinned
+binary packages, resulting library, upstream COPYING file, and desired
+archive path to assemble the resident runtime.

@@ -61,7 +61,7 @@ def parse(path,source,sha,cache,title):
     if source.route=='xps' and source.kind in ('zip','tar','libarchive'):
         from .xps_intake import read_xps
 
-        return read_xps(path,source,sha,title)
+        return read_xps(path,source,sha,title,cache)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):
@@ -283,6 +283,7 @@ def capabilities():
     from .pdf_ocr import resident_binary
     from .source_bundle import NATIVE, PACKAGE_FOLDERS
     from .intake_helpers import CALIBRE_BYTES,CALIBRE_UNPACKED
+    from .xps_visual import available as xps_renderer_ready
 
     arch = platform.machine().lower()
     x64 = arch in ('x86_64','amd64')
@@ -296,6 +297,7 @@ def capabilities():
         'djvu':{'ready':linux and (assets/'djvu-linux-x86_64').is_file() and bool(shutil.which('bwrap'))},
         'chm':{'ready':linux and (assets/'chm-linux-x86_64').is_file() and bool(shutil.which('bwrap')),
                'source':'resident CHMLib with ordered HTML contents'},
+        'xps-renderer':{'ready':xps_renderer_ready(),'source':'resident libgxps and shared OCR'},
         'mobi':{'ready':(linux and (assets/'mobitool-linux-x86_64').is_file()
                          or os.name=='nt' and x64 and (assets/'mobitool-windows-x86_64.exe').is_file()
                          or bool(shutil.which('mobitool')))},

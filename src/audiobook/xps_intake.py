@@ -1,4 +1,4 @@
-"""Read XPS pagination and original OPC parts without invoking a renderer."""
+"""Read declared XPS pagination and preserve its original OPC parts."""
 
 from collections import Counter, defaultdict
 from itertools import count
@@ -96,7 +96,7 @@ class Package:
             raise Error('source_xps_structure',f'{member.name} has no unique local {suffix} part.')
         return choices[0].member if choices else None
 
-    def emit(self, builder):
+    def emit(self, builder, visual):
         from .pdf_headers import mark_headers
         from .pdf_layout import mark_folios
         from .xps_page import FontMetrics, page_reading
@@ -107,7 +107,8 @@ class Package:
         targets = defaultdict(list)
         members_at = defaultdict(list)
         pages = count(1)
-        for reference in self.parse(self.sequence,'FixedDocumentSequence').findall(self.fixed+'DocumentReference'):
+        references = self.parse(self.sequence,'FixedDocumentSequence').findall(self.fixed+'DocumentReference')
+        for document_index,reference in enumerate(references,1):
             address = reference.get('Source','')
             document = self.resolve(self.sequence,address)
             if document is None:
@@ -126,13 +127,14 @@ class Package:
                 builder.add('','unreadable',document.name,loc={'member':document.name,'archive_entry':document.index},
                             issue=error.message)
                 continue
-            for row in page_records:
+            for document_page,row in enumerate(page_records,1):
                 page = next(pages)
                 if page>MAX_PAGES:
                     raise Error('source_structure_size','The XPS sequence exceeds its page budget.')
                 address = row.get('Source','')
                 member = self.resolve(document,address)
-                evidence = {'page':page,'reference':address,'member':member.name if member else document.name}
+                evidence = {'page':page,'reference':address,'member':member.name if member else document.name,
+                            'document':document_index,'document_page':document_page,'document_pages':len(page_records)}
                 doc.inventory.append(evidence)
                 if member is None:
                     evidence['status'] = 'unavailable'
@@ -146,7 +148,7 @@ class Package:
                 before = len(doc.blocks)
                 try:
                     root = self.parse(member,'FixedPage')
-                    anchors = page_reading(self,member,root,metrics,builder,evidence)
+                    anchors = page_reading(self,member,root,metrics,builder,evidence,visual)
                     for anchor in anchors:
                         if page not in targets[anchor]:
                             targets[anchor].append(page)
@@ -200,7 +202,9 @@ class Package:
             doc.metadata['source_outlines'] = entries
 
 
-def read_xps(path,source,sha,title):
+def read_xps(path,source,sha,title,cache=None):
+    from .xps_visual import VisualPages
+
     with containers(path,source.kind) as archive:
         members = list(archive.members())
         selected = next((item for item in members if item.index==source.entry),None)
@@ -208,10 +212,14 @@ def read_xps(path,source,sha,title):
             raise Error('source_xps_root','The selected XPS publication has no valid OPC declaration.')
         package = Package(archive,selected,members)
         builder = DocumentBuilder('xps',package.title or title,sha)
-        package.emit(builder)
+        with VisualPages(path,source,archive,package.parts,members,cache) as visual:
+            package.emit(builder,visual)
         seen = Counter(package.parts.local(member) for member in members if member.name.startswith(package.parts.prefix))
+        capabilities = ['paginated','image_regions']
+        if any(entry.get('route')=='visual_ocr' for entry in builder.doc.inventory):
+            capabilities.append('raster_ocr')
         builder.doc.metadata.update(
-            source_capabilities=['paginated','image_regions'],
+            source_capabilities=capabilities,
             source_resources=[member_location(sha,item,'package') for item in members
                               if item.name.startswith(package.parts.prefix) and seen[package.parts.local(item)]==1],
             xps_dialect='OpenXPS' if package.namespace==NAMESPACES[1] else 'Microsoft XPS')

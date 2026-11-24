@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev37
+
+- Read XPS and OpenXPS pages printed as images or glyph outlines using the bundled renderer and OCR on compatible Linux hosts. Hamr compares readings at multiple resolutions, keeps unresolved text at its original page location, and preserves exact page parts for later recovery. [Document intake](docs/INTAKE.md#source-readers)
+
 # hamr 0.4.9.dev36
 
 - Open text-bearing XPS and OpenXPS packages directly, from an extracted folder, or inside a ZIP. Hamr follows declared pages and page stories, reads table spans, and preserves exact page parts in the companion. Pages with graphics and no text report where a visual reading is needed. [Document intake](docs/INTAKE.md#source-readers)

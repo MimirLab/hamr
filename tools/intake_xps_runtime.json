@@ -1,0 +1,797 @@
+{
+  "debian_archive": "https://deb.debian.org/debian/",
+  "packages": [
+    {
+      "package": "base-files",
+      "version": "12.4+deb12u15",
+      "filename": "pool/main/b/base-files/base-files_12.4+deb12u15_amd64.deb",
+      "sha256": "3eb1ea6d85488f488cc2a163b98ad640ef88cee4c79287cf14e361aaf6206f47",
+      "members": {
+        "notices/base-files": "./usr/share/doc/base-files/copyright",
+        "notices/Apache-2.0": "./usr/share/common-licenses/Apache-2.0",
+        "notices/Artistic": "./usr/share/common-licenses/Artistic",
+        "notices/BSD": "./usr/share/common-licenses/BSD",
+        "notices/CC0-1.0": "./usr/share/common-licenses/CC0-1.0",
+        "notices/GFDL-1.2": "./usr/share/common-licenses/GFDL-1.2",
+        "notices/GFDL-1.3": "./usr/share/common-licenses/GFDL-1.3",
+        "notices/GPL-1": "./usr/share/common-licenses/GPL-1",
+        "notices/GPL-2": "./usr/share/common-licenses/GPL-2",
+        "notices/GPL-3": "./usr/share/common-licenses/GPL-3",
+        "notices/LGPL-2": "./usr/share/common-licenses/LGPL-2",
+        "notices/LGPL-2.1": "./usr/share/common-licenses/LGPL-2.1",
+        "notices/LGPL-3": "./usr/share/common-licenses/LGPL-3",
+        "notices/MPL-1.1": "./usr/share/common-licenses/MPL-1.1",
+        "notices/MPL-2.0": "./usr/share/common-licenses/MPL-2.0"
+      },
+      "source_package": "base-files"
+    },
+    {
+      "package": "gcc-12-base",
+      "version": "12.2.0-14+deb12u1",
+      "filename": "pool/main/g/gcc-12/gcc-12-base_12.2.0-14+deb12u1_amd64.deb",
+      "sha256": "1896a2aacf4ad681ff5eacc24a5b0ca4d5d9c9b9c9e4b6de5197bc1e116ea619",
+      "members": {
+        "notices/gcc-12-base": "./usr/share/doc/gcc-12-base/copyright"
+      },
+      "source_package": "gcc-12"
+    },
+    {
+      "package": "libblkid1",
+      "version": "2.38.1-5+deb12u3",
+      "filename": "pool/main/u/util-linux/libblkid1_2.38.1-5+deb12u3_amd64.deb",
+      "sha256": "5a083377f29191cafcdf0f91ec124349b4a7895b531556633a136e43c6d53943",
+      "members": {
+        "lib/libblkid.so.1": "./usr/lib/x86_64-linux-gnu/libblkid.so.1",
+        "notices/libblkid1": "./usr/share/doc/libblkid1/copyright"
+      },
+      "source_package": "util-linux"
+    },
+    {
+      "package": "libbrotli1",
+      "version": "1.0.9-2+b6",
+      "filename": "pool/main/b/brotli/libbrotli1_1.0.9-2+b6_amd64.deb",
+      "sha256": "563b4caec1aa5e876bd3355b36e7a38e1484baf5a293b48d1e8bd22db786e4d7",
+      "members": {
+        "lib/libbrotlicommon.so.1": "./usr/lib/x86_64-linux-gnu/libbrotlicommon.so.1",
+        "lib/libbrotlidec.so.1": "./usr/lib/x86_64-linux-gnu/libbrotlidec.so.1",
+        "notices/libbrotli1": "./usr/share/doc/libbrotli1/copyright"
+      },
+      "source_package": "brotli"
+    },
+    {
+      "package": "libbsd0",
+      "version": "0.11.7-2",
+      "filename": "pool/main/libb/libbsd/libbsd0_0.11.7-2_amd64.deb",
+      "sha256": "bb31cc8b40f962a85b2cec970f7f79cc704a1ae4bad24257a822055404b2c60b",
+      "members": {
+        "lib/libbsd.so.0": "./usr/lib/x86_64-linux-gnu/libbsd.so.0",
+        "notices/libbsd0": "./usr/share/doc/libbsd0/copyright"
+      },
+      "source_package": "libbsd"
+    },
+    {
+      "package": "libcairo2",
+      "version": "1.16.0-7",
+      "filename": "pool/main/c/cairo/libcairo2_1.16.0-7_amd64.deb",
+      "sha256": "927fa059f8b5791d0cd744d4e3a8c57fa872ef849ce14434dc2222ac8a076a69",
+      "members": {
+        "lib/libcairo.so.2": "./usr/lib/x86_64-linux-gnu/libcairo.so.2",
+        "notices/libcairo2": "./usr/share/doc/libcairo2/copyright"
+      },
+      "source_package": "cairo"
+    },
+    {
+      "package": "libdeflate0",
+      "version": "1.14-1",
+      "filename": "pool/main/libd/libdeflate/libdeflate0_1.14-1_amd64.deb",
+      "sha256": "3d4b39f94317b64a860db8a7a8b581b555124cd461fe07ec0d347edbdb9f6683",
+      "members": {
+        "lib/libdeflate.so.0": "./usr/lib/x86_64-linux-gnu/libdeflate.so.0",
+        "notices/libdeflate0": "./usr/share/doc/libdeflate0/copyright"
+      },
+      "source_package": "libdeflate"
+    },
+    {
+      "package": "libexpat1",
+      "version": "2.5.0-1+deb12u2",
+      "filename": "pool/main/e/expat/libexpat1_2.5.0-1+deb12u2_amd64.deb",
+      "sha256": "2255e62fc22a86d2c544b8a3f516da9aee19383ad5742722ab4ce7f66a30dbc8",
+      "members": {
+        "lib/libexpat.so.1": "./lib/x86_64-linux-gnu/libexpat.so.1",
+        "notices/libexpat1": "./usr/share/doc/libexpat1/copyright"
+      },
+      "source_package": "expat"
+    },
+    {
+      "package": "libffi8",
+      "version": "3.4.4-1",
+      "filename": "pool/main/libf/libffi/libffi8_3.4.4-1_amd64.deb",
+      "sha256": "6d9f6c25c30efccce6d4bceaa48ea86c329a3432abb360a141f76ac223a4c34a",
+      "members": {
+        "lib/libffi.so.8": "./usr/lib/x86_64-linux-gnu/libffi.so.8",
+        "notices/libffi8": "./usr/share/doc/libffi8/copyright"
+      },
+      "source_package": "libffi"
+    },
+    {
+      "package": "libfontconfig1",
+      "version": "2.14.1-4",
+      "filename": "pool/main/f/fontconfig/libfontconfig1_2.14.1-4_amd64.deb",
+      "sha256": "16ee38d374e064f534116dc442b086ef26f9831f1c0af7e5fb4fe4512e700649",
+      "members": {
+        "lib/libfontconfig.so.1": "./usr/lib/x86_64-linux-gnu/libfontconfig.so.1",
+        "notices/libfontconfig1": "./usr/share/doc/libfontconfig1/copyright"
+      },
+      "source_package": "fontconfig"
+    },
+    {
+      "package": "libfreetype6",
+      "version": "2.12.1+dfsg-5+deb12u4",
+      "filename": "pool/main/f/freetype/libfreetype6_2.12.1+dfsg-5+deb12u4_amd64.deb",
+      "sha256": "8043e479f73f29992d652e3f9dfe8b17f9780c7ea6330afe379ec5f9f188ac44",
+      "members": {
+        "lib/libfreetype.so.6": "./usr/lib/x86_64-linux-gnu/libfreetype.so.6",
+        "notices/libfreetype6": "./usr/share/doc/libfreetype6/copyright"
+      },
+      "source_package": "freetype"
+    },
+    {
+      "package": "libgcc-s1",
+      "version": "12.2.0-14+deb12u1",
+      "filename": "pool/main/g/gcc-12/libgcc-s1_12.2.0-14+deb12u1_amd64.deb",
+      "sha256": "3016e62cb4b7cd8038822870601f5ed131befe942774d0f745622cc77d8a88f7",
+      "members": {
+        "lib/libgcc_s.so.1": "./lib/x86_64-linux-gnu/libgcc_s.so.1"
+      },
+      "source_package": "gcc-12"
+    },
+    {
+      "package": "libglib2.0-0",
+      "version": "2.74.6-2+deb12u9",
+      "filename": "pool/main/g/glib2.0/libglib2.0-0_2.74.6-2+deb12u9_amd64.deb",
+      "sha256": "7ff85197685d89e150e342b29a59aab1beee400050ba7da73de81cd999ffee5a",
+      "members": {
+        "lib/libgio-2.0.so.0": "./usr/lib/x86_64-linux-gnu/libgio-2.0.so.0",
+        "lib/libglib-2.0.so.0": "./usr/lib/x86_64-linux-gnu/libglib-2.0.so.0",
+        "lib/libgmodule-2.0.so.0": "./usr/lib/x86_64-linux-gnu/libgmodule-2.0.so.0",
+        "lib/libgobject-2.0.so.0": "./usr/lib/x86_64-linux-gnu/libgobject-2.0.so.0",
+        "notices/libglib2.0-0": "./usr/share/doc/libglib2.0-0/copyright"
+      },
+      "source_package": "glib2.0"
+    },
+    {
+      "package": "libgxps-utils",
+      "version": "0.3.2-2+b1",
+      "filename": "pool/main/libg/libgxps/libgxps-utils_0.3.2-2+b1_amd64.deb",
+      "sha256": "1babf0c928ddee1b77dee2c9e8308ad5b799ab9b45ee7273e6d2c838786b0b88",
+      "members": {
+        "xpstopng": "./usr/bin/xpstopng",
+        "notices/libgxps-utils": "./usr/share/doc/libgxps-utils/copyright"
+      },
+      "source_package": "libgxps"
+    },
+    {
+      "package": "libgxps2",
+      "version": "0.3.2-2+b1",
+      "filename": "pool/main/libg/libgxps/libgxps2_0.3.2-2+b1_amd64.deb",
+      "sha256": "43eb88b3aa28241747a878919572c77eecfa86676581ea1d58b921792f48164f",
+      "members": {
+        "lib/libgxps.so.2": "./usr/lib/x86_64-linux-gnu/libgxps.so.2",
+        "notices/libgxps2": "./usr/share/doc/libgxps2/copyright"
+      },
+      "source_package": "libgxps"
+    },
+    {
+      "package": "libjbig0",
+      "version": "2.1-6.1",
+      "filename": "pool/main/j/jbigkit/libjbig0_2.1-6.1_amd64.deb",
+      "sha256": "6b07c77b700a615642888a82ba92a7e7c429d04b9c8669c62b2263f15c4c4059",
+      "members": {
+        "lib/libjbig.so.0": "./usr/lib/x86_64-linux-gnu/libjbig.so.0",
+        "notices/libjbig0": "./usr/share/doc/libjbig0/copyright"
+      },
+      "source_package": "jbigkit"
+    },
+    {
+      "package": "libjpeg62-turbo",
+      "version": "1:2.1.5-2",
+      "filename": "pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.1.5-2_amd64.deb",
+      "sha256": "95ec30140789a342add8f8371ed018924de51b539056522b66f207b25cba9cad",
+      "members": {
+        "lib/libjpeg.so.62": "./usr/lib/x86_64-linux-gnu/libjpeg.so.62",
+        "notices/libjpeg62-turbo": "./usr/share/doc/libjpeg62-turbo/copyright"
+      },
+      "source_package": "libjpeg-turbo"
+    },
+    {
+      "package": "liblcms2-2",
+      "version": "2.14-2+deb12u1",
+      "filename": "pool/main/l/lcms2/liblcms2-2_2.14-2+deb12u1_amd64.deb",
+      "sha256": "333efe13d165b8a98194d95e72fd10b502ebbee4dc2eb43fc2ab83e2b53e5f17",
+      "members": {
+        "lib/liblcms2.so.2": "./usr/lib/x86_64-linux-gnu/liblcms2.so.2",
+        "notices/liblcms2-2": "./usr/share/doc/liblcms2-2/copyright"
+      },
+      "source_package": "lcms2"
+    },
+    {
+      "package": "liblerc4",
+      "version": "4.0.0+ds-2",
+      "filename": "pool/main/l/lerc/liblerc4_4.0.0+ds-2_amd64.deb",
+      "sha256": "771f5c47ca69f24ca61e4be0c98c5912b182ce442f921697d17a472f3ded5c9c",
+      "members": {
+        "lib/libLerc.so.4": "./usr/lib/x86_64-linux-gnu/libLerc.so.4",
+        "notices/liblerc4": "./usr/share/doc/liblerc4/copyright"
+      },
+      "source_package": "lerc"
+    },
+    {
+      "package": "liblzma5",
+      "version": "5.4.1-1+deb12u1",
+      "filename": "pool/main/x/xz-utils/liblzma5_5.4.1-1+deb12u1_amd64.deb",
+      "sha256": "f96d8876b53ec89d76a992bc199679b818cf518225a768954d9451fb556a4eb7",
+      "members": {
+        "lib/liblzma.so.5": "./lib/x86_64-linux-gnu/liblzma.so.5",
+        "notices/liblzma5": "./usr/share/doc/liblzma5/copyright"
+      },
+      "source_package": "xz-utils"
+    },
+    {
+      "package": "libmd0",
+      "version": "1.0.4-2",
+      "filename": "pool/main/libm/libmd/libmd0_1.0.4-2_amd64.deb",
+      "sha256": "03539fd30c509e27101d13a56e52eda9062bdf1aefe337c07ab56def25a13eab",
+      "members": {
+        "lib/libmd.so.0": "./usr/lib/x86_64-linux-gnu/libmd.so.0",
+        "notices/libmd0": "./usr/share/doc/libmd0/copyright"
+      },
+      "source_package": "libmd"
+    },
+    {
+      "package": "libmount1",
+      "version": "2.38.1-5+deb12u3",
+      "filename": "pool/main/u/util-linux/libmount1_2.38.1-5+deb12u3_amd64.deb",
+      "sha256": "f46e2d6b006951825adde9757790b6609d7c66c7700f9b68f3db913eaac323c3",
+      "members": {
+        "lib/libmount.so.1": "./usr/lib/x86_64-linux-gnu/libmount.so.1",
+        "notices/libmount1": "./usr/share/doc/libmount1/copyright"
+      },
+      "source_package": "util-linux"
+    },
+    {
+      "package": "libpcre2-8-0",
+      "version": "10.42-1",
+      "filename": "pool/main/p/pcre2/libpcre2-8-0_10.42-1_amd64.deb",
+      "sha256": "030db54f4d76cdfe2bf0e8eb5f9efea0233ab3c7aa942d672c7b63b52dbaf935",
+      "members": {
+        "lib/libpcre2-8.so.0": "./usr/lib/x86_64-linux-gnu/libpcre2-8.so.0",
+        "notices/libpcre2-8-0": "./usr/share/doc/libpcre2-8-0/copyright"
+      },
+      "source_package": "pcre2"
+    },
+    {
+      "package": "libpixman-1-0",
+      "version": "0.42.2-1",
+      "filename": "pool/main/p/pixman/libpixman-1-0_0.42.2-1_amd64.deb",
+      "sha256": "9ed75ef81b6b1eba9e1357f8b0ce01d31112b0e07b2b685bee2cf627a8932892",
+      "members": {
+        "lib/libpixman-1.so.0": "./usr/lib/x86_64-linux-gnu/libpixman-1.so.0",
+        "notices/libpixman-1-0": "./usr/share/doc/libpixman-1-0/copyright"
+      },
+      "source_package": "pixman"
+    },
+    {
+      "package": "libpng16-16",
+      "version": "1.6.39-2+deb12u5",
+      "filename": "pool/main/libp/libpng1.6/libpng16-16_1.6.39-2+deb12u5_amd64.deb",
+      "sha256": "a56d64bfaa9da12aafb83347909e62e6fd5fd251e6b34c194065911a30359978",
+      "members": {
+        "lib/libpng16.so.16": "./usr/lib/x86_64-linux-gnu/libpng16.so.16",
+        "notices/libpng16-16": "./usr/share/doc/libpng16-16/copyright"
+      },
+      "source_package": "libpng1.6"
+    },
+    {
+      "package": "libselinux1",
+      "version": "3.4-1+b6",
+      "filename": "pool/main/libs/libselinux/libselinux1_3.4-1+b6_amd64.deb",
+      "sha256": "2b07f5287b9105f40158b56e4d70cc1652dac56a408f3507b4ab3d061eed425f",
+      "members": {
+        "lib/libselinux.so.1": "./lib/x86_64-linux-gnu/libselinux.so.1",
+        "notices/libselinux1": "./usr/share/doc/libselinux1/copyright"
+      },
+      "source_package": "libselinux"
+    },
+    {
+      "package": "libstdc++6",
+      "version": "12.2.0-14+deb12u1",
+      "filename": "pool/main/g/gcc-12/libstdc++6_12.2.0-14+deb12u1_amd64.deb",
+      "sha256": "5cd3171216d4ab0fc911cfe9c35509bf2dd8f47761c43b7f6a4296701551a24d",
+      "members": {
+        "lib/libstdc++.so.6": "./usr/lib/x86_64-linux-gnu/libstdc++.so.6"
+      },
+      "source_package": "gcc-12"
+    },
+    {
+      "package": "libtiff6",
+      "version": "4.5.0-6+deb12u4",
+      "filename": "pool/main/t/tiff/libtiff6_4.5.0-6+deb12u4_amd64.deb",
+      "sha256": "255cd1d9f204355c366638ee21756234a8d43c03a3de18a5af6cdd94765b5053",
+      "members": {
+        "lib/libtiff.so.6": "./usr/lib/x86_64-linux-gnu/libtiff.so.6",
+        "notices/libtiff6": "./usr/share/doc/libtiff6/copyright"
+      },
+      "source_package": "tiff"
+    },
+    {
+      "package": "libwebp7",
+      "version": "1.2.4-0.2+deb12u1",
+      "filename": "pool/main/libw/libwebp/libwebp7_1.2.4-0.2+deb12u1_amd64.deb",
+      "sha256": "7259b7ce46444694ce536360ad53acb68eb3b47a7ff81d7b1b8a3939b2ac9918",
+      "members": {
+        "lib/libwebp.so.7": "./usr/lib/x86_64-linux-gnu/libwebp.so.7",
+        "notices/libwebp7": "./usr/share/doc/libwebp7/copyright"
+      },
+      "source_package": "libwebp"
+    },
+    {
+      "package": "libx11-6",
+      "version": "2:1.8.4-2+deb12u2",
+      "filename": "pool/main/libx/libx11/libx11-6_1.8.4-2+deb12u2_amd64.deb",
+      "sha256": "d88c973e79fd9b65838d77624142952757e47a6eb1a58602acf0911cf35989f4",
+      "members": {
+        "lib/libX11.so.6": "./usr/lib/x86_64-linux-gnu/libX11.so.6",
+        "notices/libx11-6": "./usr/share/doc/libx11-6/copyright"
+      },
+      "source_package": "libx11"
+    },
+    {
+      "package": "libxau6",
+      "version": "1:1.0.9-1",
+      "filename": "pool/main/libx/libxau/libxau6_1.0.9-1_amd64.deb",
+      "sha256": "679db1c4579ec7c61079adeaae8528adeb2e4bf5465baa6c56233b995d714750",
+      "members": {
+        "lib/libXau.so.6": "./usr/lib/x86_64-linux-gnu/libXau.so.6",
+        "notices/libxau6": "./usr/share/doc/libxau6/copyright"
+      },
+      "source_package": "libxau"
+    },
+    {
+      "package": "libxcb-render0",
+      "version": "1.15-1",
+      "filename": "pool/main/libx/libxcb/libxcb-render0_1.15-1_amd64.deb",
+      "sha256": "29c32cc76be9393f409378be79a0f534b9f07dea06ae52fa80a7f27e298de239",
+      "members": {
+        "lib/libxcb-render.so.0": "./usr/lib/x86_64-linux-gnu/libxcb-render.so.0",
+        "notices/libxcb-render0": "./usr/share/doc/libxcb-render0/copyright"
+      },
+      "source_package": "libxcb"
+    },
+    {
+      "package": "libxcb-shm0",
+      "version": "1.15-1",
+      "filename": "pool/main/libx/libxcb/libxcb-shm0_1.15-1_amd64.deb",
+      "sha256": "c1afcef29dc78b95c475159b181b28b1dedaf1d5aa06efd2fa6d90c73bfbe0e5",
+      "members": {
+        "lib/libxcb-shm.so.0": "./usr/lib/x86_64-linux-gnu/libxcb-shm.so.0",
+        "notices/libxcb-shm0": "./usr/share/doc/libxcb-shm0/copyright"
+      },
+      "source_package": "libxcb"
+    },
+    {
+      "package": "libxcb1",
+      "version": "1.15-1",
+      "filename": "pool/main/libx/libxcb/libxcb1_1.15-1_amd64.deb",
+      "sha256": "fdc61332a3892168f3cc9cfa1fe9cf11a91dc3e0acacbc47cbc50ebaa234cc71",
+      "members": {
+        "lib/libxcb.so.1": "./usr/lib/x86_64-linux-gnu/libxcb.so.1",
+        "notices/libxcb1": "./usr/share/doc/libxcb1/copyright"
+      },
+      "source_package": "libxcb"
+    },
+    {
+      "package": "libxdmcp6",
+      "version": "1:1.1.2-3",
+      "filename": "pool/main/libx/libxdmcp/libxdmcp6_1.1.2-3_amd64.deb",
+      "sha256": "ecb8536f5fb34543b55bb9dc5f5b14c9dbb4150a7bddb3f2287b7cab6e9d25ef",
+      "members": {
+        "lib/libXdmcp.so.6": "./usr/lib/x86_64-linux-gnu/libXdmcp.so.6",
+        "notices/libxdmcp6": "./usr/share/doc/libxdmcp6/copyright"
+      },
+      "source_package": "libxdmcp"
+    },
+    {
+      "package": "libxext6",
+      "version": "2:1.3.4-1+b1",
+      "filename": "pool/main/libx/libxext/libxext6_1.3.4-1+b1_amd64.deb",
+      "sha256": "504b7be9d7df4f6f4519e8dd4d6f9d03a9fb911a78530fa23a692fba3058cba6",
+      "members": {
+        "lib/libXext.so.6": "./usr/lib/x86_64-linux-gnu/libXext.so.6",
+        "notices/libxext6": "./usr/share/doc/libxext6/copyright"
+      },
+      "source_package": "libxext"
+    },
+    {
+      "package": "libxrender1",
+      "version": "1:0.9.10-1.1",
+      "filename": "pool/main/libx/libxrender/libxrender1_0.9.10-1.1_amd64.deb",
+      "sha256": "b2a6d160578f359220101947c8d67059b44704a251e688de1d0b744fefedfd1a",
+      "members": {
+        "lib/libXrender.so.1": "./usr/lib/x86_64-linux-gnu/libXrender.so.1",
+        "notices/libxrender1": "./usr/share/doc/libxrender1/copyright"
+      },
+      "source_package": "libxrender"
+    },
+    {
+      "package": "libzstd1",
+      "version": "1.5.4+dfsg2-5",
+      "filename": "pool/main/libz/libzstd/libzstd1_1.5.4+dfsg2-5_amd64.deb",
+      "sha256": "6315b5ac38b724a710fb96bf1042019398cb656718b1522279a5185ed39318fa",
+      "members": {
+        "lib/libzstd.so.1": "./usr/lib/x86_64-linux-gnu/libzstd.so.1",
+        "notices/libzstd1": "./usr/share/doc/libzstd1/copyright"
+      },
+      "source_package": "libzstd"
+    },
+    {
+      "package": "zlib1g",
+      "version": "1:1.2.13.dfsg-1",
+      "filename": "pool/main/z/zlib/zlib1g_1.2.13.dfsg-1_amd64.deb",
+      "sha256": "d7dd1d1411fedf27f5e27650a6eff20ef294077b568f4c8c5e51466dc7c08ce4",
+      "members": {
+        "lib/libz.so.1": "./lib/x86_64-linux-gnu/libz.so.1",
+        "notices/zlib1g": "./usr/share/doc/zlib1g/copyright"
+      },
+      "source_package": "zlib"
+    }
+  ],
+  "source_packages": {
+    "base-files": {
+      "version": "12.4+deb12u15",
+      "directory": "pool/main/b/base-files",
+      "sha256": {
+        "base-files_12.4+deb12u15.dsc": "e531274d0c3916dacfe55bbd27148d775b004e1836bc2fbb01549f142d524e8c",
+        "base-files_12.4+deb12u15.tar.xz": "9fb369194365fe9da74621da247ea70884fc3d1d9c063db310764ef0e43c02c5"
+      }
+    },
+    "brotli": {
+      "version": "1.0.9-2",
+      "directory": "pool/main/b/brotli",
+      "sha256": {
+        "brotli_1.0.9-2.dsc": "8c4c86748ec9770e08b60233d658593650444b04a452dc5b607ed5b5537b683e",
+        "brotli_1.0.9.orig.tar.gz": "f9e8d81d0405ba66d181529af42a3354f838c939095ff99930da6aa9cdf6fe46",
+        "brotli_1.0.9-2.debian.tar.xz": "ab81b1db852c8d01e0fa5b0b650bb486f32a232b35336828423af50af6fecca0"
+      }
+    },
+    "cairo": {
+      "version": "1.16.0-7",
+      "directory": "pool/main/c/cairo",
+      "sha256": {
+        "cairo_1.16.0-7.dsc": "96b21b7b9c9ab4ae689b1191830b53d0b3c38e5664105c36a3c39dee6bcf29a4",
+        "cairo_1.16.0.orig.tar.xz": "5e7b29b3f113ef870d1e3ecf8adf21f923396401604bda16d44be45e66052331",
+        "cairo_1.16.0-7.debian.tar.xz": "af666a040fd54df96885907d0e9a74883396218a620ae03d173f1a3fee4980ea"
+      }
+    },
+    "expat": {
+      "version": "2.5.0-1+deb12u2",
+      "directory": "pool/main/e/expat",
+      "sha256": {
+        "expat_2.5.0-1+deb12u2.dsc": "6fc87dbd01f49999ed368cfb37c08d35e41348dda2281d60642f3aa14cb77e32",
+        "expat_2.5.0.orig.tar.gz": "ab00ee05c7067fd10a35c5d2a4922ebba746ddd50ff83b79c828da17bbdf1757",
+        "expat_2.5.0-1+deb12u2.debian.tar.xz": "7e29f5db5067e55193540089ed0f3ec9676704cf79dcea81a9bfb9f49435ae53"
+      }
+    },
+    "fontconfig": {
+      "version": "2.14.1-4",
+      "directory": "pool/main/f/fontconfig",
+      "sha256": {
+        "fontconfig_2.14.1-4.dsc": "8bb59d9c96ff8ef77df06dc65273fa398bf248f7e2448a8314989ec01ce74a58",
+        "fontconfig_2.14.1.orig.tar.xz": "298e883f6e11d2c5e6d53c8a8394de58d563902cfab934e6be12fb5a5f361ef0",
+        "fontconfig_2.14.1-4.debian.tar.xz": "9c2421c04c8d26a006166ad39e0be10de5f2e8149f508b6dbd87f1403275f4a5"
+      }
+    },
+    "freetype": {
+      "version": "2.12.1+dfsg-5+deb12u4",
+      "directory": "pool/main/f/freetype",
+      "sha256": {
+        "freetype_2.12.1+dfsg-5+deb12u4.dsc": "eead829b4bc79107e8e79c4da006110dffe264f9d48b3ba02f76cf7e84b64389",
+        "freetype_2.12.1+dfsg.orig-ft2demos.tar.xz": "ce729d97f166a919a6a3037c949af01d5d6e1783614024d72683153f0bc5ef05",
+        "freetype_2.12.1+dfsg.orig-ft2demos.tar.xz.asc": "0303e45fe1dc659f14353c276ac0ea1025b30e19ac8138c52d5df79b55726f14",
+        "freetype_2.12.1+dfsg.orig-ft2docs.tar.xz": "6664a32e4eedaa89f45422c1150e32da46fd301c972cbfd19d2dcc6dd96f07d1",
+        "freetype_2.12.1+dfsg.orig-ft2docs.tar.xz.asc": "e686683830c782c30cdd83278c8d5ed7ab930ae7d548682565b706322f44007f",
+        "freetype_2.12.1+dfsg.orig.tar.xz": "7dedb6b9adf331559daea614a83b8de42a753e685ec8e1c4bdb4529eb880b0d1",
+        "freetype_2.12.1+dfsg-5+deb12u4.debian.tar.xz": "c625a97a78e4c74acd32e5b63b3973c9ea8a5c3d7b7f8f7c02def4421589c61b"
+      }
+    },
+    "gcc-12": {
+      "version": "12.2.0-14+deb12u1",
+      "directory": "pool/main/g/gcc-12",
+      "sha256": {
+        "gcc-12_12.2.0-14+deb12u1.dsc": "3aed0b189189c744dc9f4b74798a51d3e512ea85e492568db788a927c88e20ba",
+        "gcc-12_12.2.0.orig.tar.gz": "b8298be16aeeb96a889c6afed0a8e2241b47452e89cc81fe65ea849d5c740fcb",
+        "gcc-12_12.2.0-14+deb12u1.debian.tar.xz": "59f7f7763a0c355e3f27ff9e7ac80d06382b29939361a87e7b139226bfe7402e"
+      }
+    },
+    "glib2.0": {
+      "version": "2.74.6-2+deb12u9",
+      "directory": "pool/main/g/glib2.0",
+      "sha256": {
+        "glib2.0_2.74.6-2+deb12u9.dsc": "bd8e8cd8d251c2365a02258bf4d6c44721289ac44c3a2477c140ce253bdb4b41",
+        "glib2.0_2.74.6.orig-unicode-data.tar.xz": "dabcaff9298aa111a94e580561d2f29371f3e61b356c925ec5e0792df2b11ff2",
+        "glib2.0_2.74.6.orig.tar.xz": "069cf7e51cd261eb163aaf06c8d1754c6835f31252180aff5814e5afc7757fbc",
+        "glib2.0_2.74.6-2+deb12u9.debian.tar.xz": "ccfe76a05463099331f31fc2fde1677ce3c5e0d054112890541b511c0b3321ff"
+      }
+    },
+    "jbigkit": {
+      "version": "2.1-6.1",
+      "directory": "pool/main/j/jbigkit",
+      "sha256": {
+        "jbigkit_2.1-6.1.dsc": "8dea586c47cb4b2436f77fd33ef4a702b9da936d74de8332a72a8ddbe8124e09",
+        "jbigkit_2.1.orig.tar.gz": "de7106b6bfaf495d6865c7dd7ac6ca1381bd12e0d81405ea81e7f2167263d932",
+        "jbigkit_2.1-6.1.debian.tar.xz": "c9ba99e84d18b1affdc97b26b625721ed06b41a92996d9b426b62c0dbe3868cd"
+      }
+    },
+    "lcms2": {
+      "version": "2.14-2+deb12u1",
+      "directory": "pool/main/l/lcms2",
+      "sha256": {
+        "lcms2_2.14-2+deb12u1.dsc": "8328883a2b25ac3017bdacd1b1b1b60a3ae1f1e68a7e92d94b03060274cd10c5",
+        "lcms2_2.14.orig.tar.gz": "28474ea6f6591c4d4cee972123587001a4e6e353412a41b3e9e82219818d5740",
+        "lcms2_2.14-2+deb12u1.debian.tar.xz": "3b88006a5ccc15f3d4b2f28310875a8c4d789ac8342deaf4113ed5c2fd4a59e8"
+      }
+    },
+    "lerc": {
+      "version": "4.0.0+ds-2",
+      "directory": "pool/main/l/lerc",
+      "sha256": {
+        "lerc_4.0.0+ds-2.dsc": "61c32adc1590f930af4b94b151e6a0a8569ace7d7a4f1961eb049f209b47a417",
+        "lerc_4.0.0+ds.orig.tar.xz": "acf855502fd3b950ee78f0b67bc9e9b39316b3526fbf6d8b8b1a9482fb756723",
+        "lerc_4.0.0+ds-2.debian.tar.xz": "b5676df41934c3c95447a66f766ac8f536cf9fa88063c93b0201e6b4fd25aff6"
+      }
+    },
+    "libbsd": {
+      "version": "0.11.7-2",
+      "directory": "pool/main/libb/libbsd",
+      "sha256": {
+        "libbsd_0.11.7-2.dsc": "21c62d65fa3b914d765b733fb0e03d331db830df45f1a5225f95902567f05146",
+        "libbsd_0.11.7.orig.tar.xz": "9baa186059ebbf25c06308e9f991fda31f7183c0f24931826d83aa6abd8a0261",
+        "libbsd_0.11.7.orig.tar.xz.asc": "b470d3fa5ad6948de7a85891e652970828f26eb7057028d57b94fa8644af934a",
+        "libbsd_0.11.7-2.debian.tar.xz": "e588e52a99415226767362637071764ebfaf454450bda64d53652e7a451d3e67"
+      }
+    },
+    "libdeflate": {
+      "version": "1.14-1",
+      "directory": "pool/main/libd/libdeflate",
+      "sha256": {
+        "libdeflate_1.14-1.dsc": "1f82791c5ac5623ed110e09cc991471deebfe4c419414392d1242e122c6f4c19",
+        "libdeflate_1.14.orig.tar.gz": "89e7df898c37c3427b0f39aadcf733731321a278771d20fc553f92da8d4808ac",
+        "libdeflate_1.14-1.debian.tar.xz": "4794c379cc4e77eaeb283620bd80a7ce57b858af508f80ba6d5efbc4bcb10434"
+      }
+    },
+    "libffi": {
+      "version": "3.4.4-1",
+      "directory": "pool/main/libf/libffi",
+      "sha256": {
+        "libffi_3.4.4-1.dsc": "21c9ef156b6766535cb014e0765142c8104ffbcd73f003ecfa80cfb314baa4f0",
+        "libffi_3.4.4.orig.tar.gz": "d66c56ad259a82cf2a9dfc408b32bf5da52371500b84745f7fb8b645712df676",
+        "libffi_3.4.4-1.debian.tar.xz": "161b210bfd2ada0b15b0d2a2a98ffc779cd4a68661a7fdf46f61732493db0895"
+      }
+    },
+    "libgxps": {
+      "version": "0.3.2-2",
+      "directory": "pool/main/libg/libgxps",
+      "sha256": {
+        "libgxps_0.3.2-2.dsc": "bf18651d099c9d9a9dc0537f88d19f80f8df84512830e27604fc182afb02fdce",
+        "libgxps_0.3.2.orig.tar.xz": "6d27867256a35ccf9b69253eb2a88a32baca3b97d5f4ef7f82e3667fa435251c",
+        "libgxps_0.3.2-2.debian.tar.xz": "5165d55c281084fe4dfb480ebae16e2f897faa346ccb40cf2934cfc64bde68d1"
+      }
+    },
+    "libjpeg-turbo": {
+      "version": "1:2.1.5-2",
+      "directory": "pool/main/libj/libjpeg-turbo",
+      "sha256": {
+        "libjpeg-turbo_2.1.5-2.dsc": "d718ead0dfbcbc8523665c02a7f7152e31039ded641d022868722623bb3b486d",
+        "libjpeg-turbo_2.1.5.orig.tar.gz": "254f3642b04e309fee775123133c6464181addc150499561020312ec61c1bf7c",
+        "libjpeg-turbo_2.1.5-2.debian.tar.xz": "cdb2433c2f7101345c1ffa14efb943787c675b86354691a32490845fe4bc9237"
+      }
+    },
+    "libmd": {
+      "version": "1.0.4-2",
+      "directory": "pool/main/libm/libmd",
+      "sha256": {
+        "libmd_1.0.4-2.dsc": "5e060cb277f31e67b91033e05ece00832ca8056decba873b1698a5680414a177",
+        "libmd_1.0.4.orig.tar.xz": "f51c921042e34beddeded4b75557656559cf5b1f2448033b4c1eec11c07e530f",
+        "libmd_1.0.4.orig.tar.xz.asc": "32deebe1cfab127ee69a3e8c8caf439e459b7cdcdd7535fe021cb485adc14057",
+        "libmd_1.0.4-2.debian.tar.xz": "a27a2221b1a81e192455e2e93da2e313b21e489f6ac2bcf84b0b813dc3fe261b"
+      }
+    },
+    "libpng1.6": {
+      "version": "1.6.39-2+deb12u5",
+      "directory": "pool/main/libp/libpng1.6",
+      "sha256": {
+        "libpng1.6_1.6.39-2+deb12u5.dsc": "7b86211030a34deb6b0a2cd7e1d9db0fe92443fd30cab537fb89b1e7f7c9f188",
+        "libpng1.6_1.6.39.orig.tar.gz": "a00e9d2f2f664186e4202db9299397f851aea71b36a35e74910b8820e380d441",
+        "libpng1.6_1.6.39-2+deb12u5.debian.tar.xz": "ab14906eda9fddf14cbb1e589b9ba7439c22e233dc3c5e3cf9356c9625565a82"
+      }
+    },
+    "libselinux": {
+      "version": "3.4-1",
+      "directory": "pool/main/libs/libselinux",
+      "sha256": {
+        "libselinux_3.4-1.dsc": "4035af53388d343f9b5c46ca2867ba32823cf4a2d218ddd590b34ae59c899157",
+        "libselinux_3.4.orig.tar.gz": "77c294a927e6795c2e98f74b5c3adde9c8839690e9255b767c5fca6acff9b779",
+        "libselinux_3.4.orig.tar.gz.asc": "5c370bdef7b756697445e6838ba1b2d934f668b244461e36e245f589ec994a24",
+        "libselinux_3.4-1.debian.tar.xz": "046ace4ad0092104bdfb0c6e5187131910216c89b8b81a4bce3c2067615c9196"
+      }
+    },
+    "libwebp": {
+      "version": "1.2.4-0.2+deb12u1",
+      "directory": "pool/main/libw/libwebp",
+      "sha256": {
+        "libwebp_1.2.4-0.2+deb12u1.dsc": "d9ed0b59e2010f255c28d0869fd15b31f9b08aed757bfc91862d43aa9ec1aa99",
+        "libwebp_1.2.4.orig.tar.gz": "7bf5a8a28cc69bcfa8cb214f2c3095703c6b73ac5fba4d5480c205331d9494df",
+        "libwebp_1.2.4.orig.tar.gz.asc": "4c546cf7f757a70d8803ab850e69d28e7ce06e66dbee003fd3ede7346543851a",
+        "libwebp_1.2.4-0.2+deb12u1.debian.tar.xz": "69cdba4dfe2e1b34d55fa80c1b29c31cacd40dd183812d6bcca7e508a2f7afcd"
+      }
+    },
+    "libx11": {
+      "version": "2:1.8.4-2+deb12u2",
+      "directory": "pool/main/libx/libx11",
+      "sha256": {
+        "libx11_1.8.4-2+deb12u2.dsc": "d7374ec568d895f9e5919ebdbd94301e2acb9e8b307a39ac8708082aa1757fa3",
+        "libx11_1.8.4.orig.tar.gz": "efd3a3a43c1f177edc2c205bedb0719b6648203595e54c0b83a32576aeaca7cd",
+        "libx11_1.8.4.orig.tar.gz.asc": "9d9a6bcdd81a40ed377b2981a4d40a0db1315d095e9ccc35a0ba78e692df8591",
+        "libx11_1.8.4-2+deb12u2.diff.gz": "3b3b43eabf8a58dda4442031652cc2294b50fe46129d6943937bf320d8a62243"
+      }
+    },
+    "libxau": {
+      "version": "1:1.0.9-1",
+      "directory": "pool/main/libx/libxau",
+      "sha256": {
+        "libxau_1.0.9-1.dsc": "e6e059652cda7e5a49b6c9a70667639f32d629c20320487d16c642a06c1ebf85",
+        "libxau_1.0.9.orig.tar.gz": "1f123d8304b082ad63a9e89376400a3b1d4c29e67e3ea07b3f659cccca690eea",
+        "libxau_1.0.9.orig.tar.gz.asc": "af6104aaf3c5ede529e381237dd60f49640ec96593a84502fa493b86582b2f04",
+        "libxau_1.0.9-1.diff.gz": "7b34899563f172e8f11d061de41b58fe1c32f8683d985e57686677ccb7299a9a"
+      }
+    },
+    "libxcb": {
+      "version": "1.15-1",
+      "directory": "pool/main/libx/libxcb",
+      "sha256": {
+        "libxcb_1.15-1.dsc": "f689569f33e70ca4c95c91b094d0659eb49a958d9ac43186640338f9290e298b",
+        "libxcb_1.15.orig.tar.gz": "1cb65df8543a69ec0555ac696123ee386321dfac1964a3da39976c9a05ad724d",
+        "libxcb_1.15-1.diff.gz": "639c719ed06ffc397b200a209abd1a049e21e9e19431fb14c9ca870de01a6eac"
+      }
+    },
+    "libxdmcp": {
+      "version": "1:1.1.2-3",
+      "directory": "pool/main/libx/libxdmcp",
+      "sha256": {
+        "libxdmcp_1.1.2-3.dsc": "f9697dca6a275aeee9a3eee9fb2d55e0f77485481e8b84efc6950fc9b1988460",
+        "libxdmcp_1.1.2.orig.tar.gz": "6f7c7e491a23035a26284d247779174dedc67e34e93cc3548b648ffdb6fc57c0",
+        "libxdmcp_1.1.2-3.diff.gz": "5844df115c17e5ba40ac116f80373304d821c607e763ef6f40562421f5cc0cf3"
+      }
+    },
+    "libxext": {
+      "version": "2:1.3.4-1",
+      "directory": "pool/main/libx/libxext",
+      "sha256": {
+        "libxext_1.3.4-1.dsc": "25024f57d955739c6b858822bf93ec3c71400b56fc0d666826f440e3661fd7c0",
+        "libxext_1.3.4.orig.tar.gz": "8ef0789f282826661ff40a8eef22430378516ac580167da35cc948be9041aac1",
+        "libxext_1.3.4-1.diff.gz": "b975870d6a7b791ffbe2d57efdf6e20c250c5e76d12e45b04c8655f593bb8337"
+      }
+    },
+    "libxrender": {
+      "version": "1:0.9.10-1.1",
+      "directory": "pool/main/libx/libxrender",
+      "sha256": {
+        "libxrender_0.9.10-1.1.dsc": "348ab15d05f1d802da485e4c6abdb9d5419691fb7c8ce44ca5b17b2b7f889ce8",
+        "libxrender_0.9.10.orig.tar.gz": "770527cce42500790433df84ec3521e8bf095dfe5079454a92236494ab296adf",
+        "libxrender_0.9.10-1.1.diff.gz": "caf8c84085b3b0d073f738fa12d32d4eca2d8b669cb3c7f1b1cd2ce64b7b10b7"
+      }
+    },
+    "libzstd": {
+      "version": "1.5.4+dfsg2-5",
+      "directory": "pool/main/libz/libzstd",
+      "sha256": {
+        "libzstd_1.5.4+dfsg2-5.dsc": "8f602f92b575aa8b5e979196fb6ee82d78f233521dc9636526d3ecba1f63c1b1",
+        "libzstd_1.5.4+dfsg2.orig.tar.xz": "8cf4bbb65e77ec348d052c8d6230eba66d435bddf64c8b5be2fcb16880c19953",
+        "libzstd_1.5.4+dfsg2.orig.tar.xz.asc": "be007507630aabfc7d88d5d3c467115935ca22025253491d525e0119bbb23d40",
+        "libzstd_1.5.4+dfsg2-5.debian.tar.xz": "82ce911445772861d0838bd4545f93bc50658bc7f3cefdb17a307dfb8ffca5d8"
+      }
+    },
+    "pcre2": {
+      "version": "10.42-1",
+      "directory": "pool/main/p/pcre2",
+      "sha256": {
+        "pcre2_10.42-1.dsc": "726dafe7a8d07332d4df61edf23f384ddb158b2b263846273d1103b6b9a7c176",
+        "pcre2_10.42.orig.tar.gz": "c33b418e3b936ee3153de2c61cc638e7e4fe3156022a5c77d0711bcbb9d64f1f",
+        "pcre2_10.42-1.diff.gz": "8267c3acacb04e8a077235f676187393e295443fc16ff46ddbe5f6476879c8cb"
+      }
+    },
+    "pixman": {
+      "version": "0.42.2-1",
+      "directory": "pool/main/p/pixman",
+      "sha256": {
+        "pixman_0.42.2-1.dsc": "393302f5ba22d1206c456902baa02cdd577cb74fe35ec6659f587cce67b91b3d",
+        "pixman_0.42.2.orig.tar.gz": "ea1480efada2fd948bc75366f7c349e1c96d3297d09a3fe62626e38e234a625e",
+        "pixman_0.42.2-1.diff.gz": "dd6472676c68260a298e52f45c485d3cc85c4bf25df8af0f68e37acff7bfed8a"
+      }
+    },
+    "tiff": {
+      "version": "4.5.0-6+deb12u4",
+      "directory": "pool/main/t/tiff",
+      "sha256": {
+        "tiff_4.5.0-6+deb12u4.dsc": "b32082304d725936078d687303fcf771c9ecf738b505f9a66a29e8ba282c8615",
+        "tiff_4.5.0.orig.tar.bz2": "638f43d7dea33948d5dee7f39572fc0194d9cc3c74195de9dd26a4388a1f880a",
+        "tiff_4.5.0-6+deb12u4.debian.tar.xz": "4ee50a8cdf74a184d94e65a04f3c9de466cb0b74ef5393fb5ca65666fccb864b"
+      }
+    },
+    "util-linux": {
+      "version": "2.38.1-5+deb12u3",
+      "directory": "pool/main/u/util-linux",
+      "sha256": {
+        "util-linux_2.38.1-5+deb12u3.dsc": "0fe5fcd2b83d0465e32ca5cb9d8319e9b6fbf14c9a69abfd7ea905e45fa90b67",
+        "util-linux_2.38.1.orig.tar.xz": "60492a19b44e6cf9a3ddff68325b333b8b52b6c59ce3ebd6a0ecaa4c5117e84f",
+        "util-linux_2.38.1-5+deb12u3.debian.tar.xz": "d46b85313f536fc4831a69ba3fa2c8160450b5b26c7c5dfafce4f078fe4f205c"
+      }
+    },
+    "xz-utils": {
+      "version": "5.4.1-1+deb12u1",
+      "directory": "pool/main/x/xz-utils",
+      "sha256": {
+        "xz-utils_5.4.1-1+deb12u1.dsc": "38f98e356f7e7e89b0920d39c55dd5f3d1a9f2684bff83c8b4890561e1832e94",
+        "xz-utils_5.4.1.orig.tar.xz": "5d9827aa1875b21c288f78864bb26d2650b436ea8d2cad364e4921eb6266a5a5",
+        "xz-utils_5.4.1.orig.tar.xz.asc": "4b0c7707114996092a5f75a98333de2102db83a27218e4903b8fb7c24a8d0233",
+        "xz-utils_5.4.1-1+deb12u1.debian.tar.xz": "3e162db2b76480c7e157f4c2f6ff9a426fc023f262d4dc3287530b36e2843ebe"
+      }
+    },
+    "zlib": {
+      "version": "1:1.2.13.dfsg-1",
+      "directory": "pool/main/z/zlib",
+      "sha256": {
+        "zlib_1.2.13.dfsg-1.dsc": "3fa1e6b2fc525062aa88207dda52fed8e045373c809d362fe8a2bfbf7cf515a8",
+        "zlib_1.2.13.dfsg.orig.tar.bz2": "71feb7947e3c00ef125f83b79a4e529bde31171e5babe48b391f06758d1ab0a1",
+        "zlib_1.2.13.dfsg-1.debian.tar.xz": "f66cf3d4f2d7defcd4d1fd1fb0a11ee39f1e01b42ec7d059c9dc5c1695133c44"
+      }
+    }
+  },
+  "libarchive": {
+    "source": "https://github.com/libarchive/libarchive/releases/download/v3.8.11/libarchive-3.8.11.tar.xz",
+    "source_sha256": "a3dc0872b1b39da34dc18ef1b944f0f11ffd37425d70ae04be679279f1cf43d2",
+    "built_sha256": "97b77897a633b835097dcecf514e4bcfdb4006e642cdcf6f8d870f4a9779a2b6",
+    "license_sha256": "30e556b3959e3985d66efefec5eaac51d4995053caa1d3cffe6eb916f146f229",
+    "sysroot": [
+      {
+        "package": "libc6",
+        "version": "2.36-9+deb12u14",
+        "filename": "pool/main/g/glibc/libc6_2.36-9+deb12u14_amd64.deb",
+        "sha256": "ba4f88f73dbc3ae9055f3c20f4523bfdbaf1ad13ff95e258924f77d20b4fbedf"
+      },
+      {
+        "package": "libc6-dev",
+        "version": "2.36-9+deb12u14",
+        "filename": "pool/main/g/glibc/libc6-dev_2.36-9+deb12u14_amd64.deb",
+        "sha256": "0218fc2befcd784c1b0c6292c0a137ce89fad054efaa579ad083bee0f2c01aae"
+      },
+      {
+        "package": "linux-libc-dev",
+        "version": "6.1.176-1",
+        "filename": "pool/main/l/linux/linux-libc-dev_6.1.176-1_amd64.deb",
+        "sha256": "8bb258735b9dffbb111da778ebdd024750878e435ffd9dfcadcb6762ede6b4cf"
+      },
+      {
+        "package": "zlib1g",
+        "version": "1:1.2.13.dfsg-1",
+        "filename": "pool/main/z/zlib/zlib1g_1.2.13.dfsg-1_amd64.deb",
+        "sha256": "d7dd1d1411fedf27f5e27650a6eff20ef294077b568f4c8c5e51466dc7c08ce4"
+      },
+      {
+        "package": "zlib1g-dev",
+        "version": "1:1.2.13.dfsg-1",
+        "filename": "pool/main/z/zlib/zlib1g-dev_1.2.13.dfsg-1_amd64.deb",
+        "sha256": "f9ce531f60cbd5df37996af9370e0171be96902a17ec2bdbd8d62038c354094f"
+      }
+    ]
+  }
+}

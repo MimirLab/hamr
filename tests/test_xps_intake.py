@@ -1,8 +1,10 @@
+from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
 
 import pytest
 import reportlab
+from PIL import Image, ImageDraw, ImageFont
 
 from audiobook.intake import inspect_source
 from audiobook.planner import plan
@@ -122,3 +124,63 @@ def test_positioned_ordinal_keeps_its_suffix_and_returns_to_the_prose_line():
     text,observed,issue = next(assemble(runs))
     assert text=='The 1st edition.'
     assert observed==runs and issue is None
+
+
+RASTER_READING = ('The keeper returned at sunrise.', 'A green lamp marked the shore.')
+
+
+def write_raster_book(path):
+    ns = NAMESPACES[1]
+    parts = {
+        '[Content_Types].xml':f'<Types xmlns="{TYPES}"><Default Extension="fdseq" ContentType="application/vnd.openxps-fixeddocumentsequence+xml"/></Types>',
+        '_rels/.rels':f'<Relationships xmlns="{RELS}"><Relationship Id="r1" Type="{ns}/fixedrepresentation" Target="/Book.fdseq"/></Relationships>',
+        'Book.fdseq':f'<FixedDocumentSequence xmlns="{ns}"><DocumentReference Source="/Z/Part.fdoc"/><DocumentReference Source="/A/Part.fdoc"/></FixedDocumentSequence>',
+    }
+    font = ImageFont.truetype(str(Path(reportlab.__file__).parent/'fonts'/'Vera.ttf'),58)
+    for directory,sentence in zip(('Z','A'),RASTER_READING):
+        parts[directory+'/Part.fdoc'] = f'<FixedDocument xmlns="{ns}"><PageContent Source="Page.fpage"/></FixedDocument>'
+        parts[directory+'/Page.fpage'] = f'''
+            <FixedPage xmlns="{ns}" Width="720" Height="480" xml:lang="en-US">
+                <Path Data="M 0,0 L 720,0 L 720,480 L 0,480 Z">
+                    <Path.Fill>
+                        <ImageBrush ImageSource="/{directory}/Scan.png"
+                            Viewbox="0,0,1500,1000" ViewboxUnits="Absolute"
+                            Viewport="0,0,720,480" ViewportUnits="Absolute"/>
+                    </Path.Fill>
+                </Path>
+            </FixedPage>'''
+        with Image.new('RGB',(1500,1000),'white') as image,BytesIO() as data:
+            ImageDraw.Draw(image).text((100,180),sentence,font=font,fill='black')
+            image.save(data,format='PNG')
+            parts[directory+'/Scan.png'] = data.getvalue()
+    with ZipFile(path,'w') as archive:
+        for member,value in sorted(parts.items()):
+            archive.writestr(member,value)
+
+
+def test_raster_openxps_follows_declared_document_order(tmp_path):
+    from audiobook.xps_visual import available
+
+    if not available():
+        pytest.skip('Resident XPS renderer needs a compatible Linux host with Bubblewrap')
+    source = tmp_path/'watch.oxps'
+    write_raster_book(source)
+    result = inspect_source(source,tmp_path/'cache')
+    if result.inventory[0].get('visual_failure')=='source_helper_failed' and any(
+            'namespace' in b.issue for b in result.blocks if b.issue):
+        pytest.skip('Bubblewrap cannot create a namespace on this host')
+    assert [page['member'] for page in result.inventory]==['Z/Page.fpage','A/Page.fpage']
+    assert [page['route'] for page in result.inventory]==['visual_ocr','visual_ocr']
+    assert [block.source for block in result.blocks]==list(RASTER_READING)
+    assert not plan(result)['issues']
+
+
+def test_missing_renderer_names_each_original_page(tmp_path,monkeypatch):
+    from audiobook import xps_visual
+
+    monkeypatch.setattr(xps_visual,'available',lambda:False)
+    source = tmp_path/'watch.oxps'
+    write_raster_book(source)
+    result = inspect_source(source)
+    assert [page['visual_failure'] for page in result.inventory]==['source_helper_unavailable']*2
+    assert [issue['location']['member'] for issue in plan(result)['issues']]==['Z/Page.fpage','A/Page.fpage']

@@ -197,7 +197,7 @@ wheels = [
 
 [[package]]
 name = "hamr"
-version = "0.4.9.dev36"
+version = "0.4.9.dev37"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
