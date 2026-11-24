@@ -89,6 +89,8 @@ e6ff67e457854bb6 · ready · Ravens in Winter
 
 Open a folder of JPG, PNG or TIFF page images directly, or point Hamr at the ZIP the book arrived in. The page preview shows the order. Completed books carry a portable copy of their original pages and the companion points back to each one. [Scan folders, archives and other document formats](docs/INTAKE.md)
 
+Hamr also opens NIMAS textbook ZIPs as a single book. Their authored DTBook text supplies the reading, while page labels, illustrations and the title-page PDF remain available in the companion. [NIMAS and other structured documents](docs/INTAKE.md#source-readers)
+
 ### Scanned and mixed PDFs (OCR)
 
 An old scan or a page with a scanned inset can become part of the same book as searchable text. Hamr uses the PDF’s native text where it can and runs local English OCR where it needs the page image. It follows simple two-column layouts and can keep a figure crop, its recognized labels, and the author's caption together in the companion.

@@ -1,3 +1,9 @@
+# hamr 0.4.9.dev21
+
+- Open a NIMAS textbook ZIP, source folder or `.opf` and follow its declared DTBook reading order. Recover the exact XML, package descriptor and illustrations from the finished companion.
+- Read DTBook headings, linked notes, image descriptions and MathML through the same preparation as other structured documents. Printed page labels and marked contents stay available for reference in the companion.
+- Other recent intake additions include TextBundle, mdBook, GitBook, Sphinx, Scrivener and standalone reStructuredText includes. The companion identifies original files and archive members. [Document intake](docs/INTAKE.md)
+
 # hamr 0.4.9.dev8
 
 - Prepare reading order, printed page boundaries, and prose wraps before applying narration rules. The same readable passage can carry its dialogue delivery through text, Word, PDFs, and scans. Preserve authored line breaks and keep timing and source evidence tied to the original text.

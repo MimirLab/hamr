@@ -26,6 +26,8 @@ MATH_ROOT = '{'+MATHML+'}math'
 FORMULA_ELEMENTS = frozenset(('math','formula','disp-formula','inline-formula','equation','informalequation'))
 CONTENT_TAGS = frozenset(('p','para','simpara','title','subtitle','h','hd','heading',
                           'li','item','line','v','l','caption','blockquote','epigraph','programlisting'))
+BOOK_ROOTS = frozenset(('FictionBook','book','article','article-set','TEI','teiCorpus','dtbook',
+                        'abiword','section','reference','refentry','docbook'))
 
 
 def name(element):
@@ -41,6 +43,21 @@ def xml(data):
         return etree.fromstring(data,etree.XMLParser(load_dtd=False,no_network=True,resolve_entities=False))
     except etree.XMLSyntaxError as exc:
         raise Error('source_xml', 'The selected structured document has unreadable XML.') from exc
+
+
+def xml_book_root(stream):
+    parser = etree.XMLPullParser(events=('start',),load_dtd=False,no_network=True,resolve_entities=False)
+    for _ in range(16):
+        data = stream.read(4096)
+        if not data:
+            return False
+        try:
+            parser.feed(data)
+        except etree.XMLSyntaxError:
+            break
+        for _,element in parser.read_events():
+            return name(element) in BOOK_ROOTS
+    return False
 
 
 def bounded_read(path):
@@ -892,11 +909,15 @@ def read_document(path,source,sha,cache,title):
         if route=='html':
             html_read(data,builder)
         elif route in ('xml-book','fb2'):
+            from .dtbook_intake import is_dtbook, read_dtbook
+
             root = xml(data)
-            if name(root) not in ('FictionBook','book','article','article-set','TEI','teiCorpus','dtbook',
-                                  'abiword','section','reference','refentry'):
+            if name(root) not in BOOK_ROOTS:
                 raise Error('unsupported_format', f'No book reader is available for XML root {name(root)!r}.')
-            semantic_xml(root,builder,path.name)
+            if is_dtbook(root):
+                read_dtbook(root,builder,PurePosixPath(title).name+path.suffix)
+            else:
+                semantic_xml(root,builder,path.name)
         elif route in ('tcr','amigaguide'):
             from .compact_documents import read_guide, read_tcr
             (read_tcr if route=='tcr' else read_guide)(data,builder)

@@ -31,7 +31,7 @@ NATIVE = {
     '.rst':'rst', '.rest':'rst',
 }
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener'))
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','nimas'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -168,9 +168,17 @@ def publication_folder(path):
 
 
 def directory_members(root):
+    from .nimas_intake import folder_packages
+
+    declared = set()
     pages, other = [], []
     for folder, directories, files in os.walk(root, followlinks=False):
         here = Path(folder)
+        if any(Path(filename).suffix.casefold()=='.opf' for filename in files):
+            for descriptor,book in folder_packages(here):
+                other.append(((here/descriptor).relative_to(root).as_posix(),'nimas'))
+                declared.update((here/item.target).relative_to(root).as_posix()
+                                for item in book.resources() if item.target)
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
                           and name != '__MACOSX' and not (here/name).is_symlink()
                           and not (here/name).is_junction()]
@@ -182,6 +190,8 @@ def directory_members(root):
                 continue
             path = here/name
             relative = path.relative_to(root).as_posix()
+            if relative in declared:
+                continue
             suffix = path.suffix.lower()
             if suffix in IMAGE_SUFFIXES:
                 pages.append(relative)
@@ -265,6 +275,7 @@ def wrapped_source(path,kind,entry,override=None):
 
 
 def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,package_route=None):
+    from .document_intake import xml_book_root
     from .publication_package import archive_packages
     from .scan_intake import bounded
 
@@ -295,12 +306,13 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         if suffix in SIDECAR_SUFFIXES and suffix!='.xml':
             continue
         detected = 'scan' if suffix in IMAGE_SUFFIXES else NATIVE.get(suffix)
-        if (kind=='zip' and not detected or suffix in ('.lrf','.lit','.xml')) and not name.name.startswith('.'):
+        if suffix=='.xml' and not name.name.startswith('.'):
+            with archive.open_member(item) as stream:
+                detected = 'xml-book' if xml_book_root(stream) else None
+        elif (kind=='zip' and not detected or suffix in ('.lrf','.lit')) and not name.name.startswith('.'):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
             detected = probe(prefix,item.name)
-            if suffix=='.xml' and not re.search(rb'<(?:[A-Za-z][\w.-]*:)?(?:FictionBook|dtbook|TEI|teiCorpus|article|book|docbook)(?:[\s>])',prefix):
-                detected = None
         if detected=='scan':
             images.append(item)
         elif detected and not scan_only:
@@ -366,11 +378,13 @@ def _describe(path,entry,format,offline):
                 ordinal = next(number for number,(ident,_) in enumerate(labels,1) if ident==selected)
             return Source(route,'directory',entry=ordinal,offline=offline)
         manifest = path/'pages.hamr.json'
-        if manifest.exists():
+        if manifest.exists() and format!='nimas':
             relative_file(path,manifest.name)
             read_manifest(manifest)
             return Source('scan','directory',route_override=format,offline=offline)
         pages,books = directory_members(path)
+        if format=='nimas':
+            pages,books = [],[(name,route) for name,route in books if route=='nimas']
         inputs = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])
         selectors = {}
         for name,route in books:
@@ -388,6 +402,9 @@ def _describe(path,entry,format,offline):
             name,child = selectors.get(selection,(selection,None))
             selected = relative_path(path,name)
             result = describe(selected,entry=child,format=format,offline=offline)
+            if result.kind=='directory' and result.route=='nimas' and selected.is_file():
+                parent = selected.parent.relative_to(path)
+                return replace(result,member_name=parent.as_posix() if parent.parts else None)
             return replace(result,member_name=name) if result.kind=='directory' else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
@@ -404,6 +421,14 @@ def _describe(path,entry,format,offline):
         if path.name not in names:
             raise Error('source_scrivener_binder','Choose the visible root .scrivx binder for this project.')
         return Source('scrivener','directory',entry=names.index(path.name)+1,offline=offline)
+    if path.suffix.casefold()=='.opf' and format in (None,'nimas'):
+        from .nimas_intake import folder_packages
+
+        names = [filename for filename,_ in folder_packages(path.parent)]
+        if path.name in names:
+            return Source('nimas','directory',entry=names.index(path.name)+1,offline=offline)
+        raise Error('source_nimas','This OPF does not identify a supported NIMAS package.',
+                    'Open the complete EPUB for an ebook, or select a NIMAS source folder or ZIP.')
     with path.open('rb') as stream:
         prefix = stream.read(512)
     suffix = path.suffix.lower()
@@ -434,7 +459,7 @@ def _describe(path,entry,format,offline):
 
 def _local_source(path, options, source=None):
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
-        if source.route=='scrivener' and path.is_file():
+        if source.route in ('scrivener','nimas') and path.is_file():
             return path.parent
         return relative_path(path,source.member_name) if source.member_name else path
     if path.is_dir() and options.get('entry') not in (None,'pages') and not (path/'pages.hamr.json').exists():
@@ -577,6 +602,12 @@ def capture(path,target_dir,**options):
         prepared = capture_dependencies(local,target_dir,source)
     if prepared:
         target,source = prepared
+    elif source.kind=='directory' and source.route=='nimas':
+        from .nimas_intake import capture_nimas
+
+        target = target_dir/'source.zip'
+        ordinal = capture_nimas(local,target,source.entry,descriptor=path.name if path.is_file() else None)
+        source = replace(source,kind='zip',entry=ordinal,member_name=None)
     elif source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if source.route=='textbundle':
             from .textbundle import capture_textbundle
