@@ -10,7 +10,7 @@ from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v43'
+POLICY='bounded-english-composed-scale-typed-v44'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -48,6 +48,11 @@ DOMAIN_END=r'(?![\w-]|\.[a-z0-9])'
 WWW_DOMAIN=re.compile(DOMAIN_START+r'www\.(?:[a-z0-9-]+\.){1,6}[a-z]{2,20}'+DOMAIN_END,re.I)
 SPOKEN_PADDED_CODE=re.compile(r'\bzero(?:[ \t]+(?:'+'|'.join(SMALL[:10])+r')){1,7}\b',re.I)
 PRINTED_PADDED_CODE=re.compile(r'(?<![\w/.:+−-])0[0-9]{1,7}(?![\w/:-]|\.\d)')
+SPOKEN_DIGIT='(?:'+'|'.join(SMALL[:10])+')'
+SPOKEN_CODE_PAIR=re.compile(
+    rf'\b({SPOKEN_DIGIT}(?: {SPOKEN_DIGIT}){{0,3}}) ([A-Z](?: [A-Z]){{1,5}}), '
+    rf'({SPOKEN_DIGIT}(?: {SPOKEN_DIGIT}){{1,7}}), (and|or) '
+    rf'({SPOKEN_DIGIT}(?: {SPOKEN_DIGIT}){{1,7}})\b')
 NAME_OBSERVATIONS = ((re.compile(r'\bSymPy\b'),re.compile(r'\bsimpy\b',re.I)),)
 
 
@@ -114,12 +119,27 @@ def name_observation(expected,observed):
     return observed
 
 
+def code_pair_observation(expected,observed):
+    def digits(words):
+        return ''.join(str(SMALL_VALUES[word]) for word in words.split())
+
+    for match in SPOKEN_CODE_PAIR.finditer(expected):
+        series,letters,first,join,second=match.groups()
+        prefix=r'\s*'.join(letters.split())
+        printed=(r'(?<![\w.+−-])'+digits(series)+r'(?:[ \t,]+)?'+prefix+
+                 r'(?:[ \t]*-[ \t]*|[ \t]+)'+digits(first)+
+                 r'[ \t,]+'+join+r'[ \t]+'+digits(second)+r'(?!\w|[.,:-]\d)')
+        observed=re.sub(printed,lambda _:match[0],observed,flags=re.I)
+    return observed
+
+
 def notation_observation(expected, observed):
     """Resolve ASR formatting that represents the chosen spoken reading."""
     observed=spoken_currency_observation(expected,observed)
     observed=contextual_years(expected,observed)
     observed=domain_notation(expected,observed)
     observed=name_observation(expected,observed)
+    observed=code_pair_observation(expected,observed)
     # Recognizers write spoken identifiers as digits. Keep every leading zero
     # and only recover a spelling that the planned request actually uses.
     forms = {''.join(str(SMALL_VALUES[word]) for word in match[0].casefold().split()):match[0]
@@ -473,7 +493,15 @@ def mathematical_markers(text):
     markers += ['exponent:3']*len(re.findall(r'\bcubic\b|\bcubed\b',text))
     for name,pattern in [('divide',r'\bdivided by\b'),('sine',r'\bsine\b'),('cosine',r'\bcosine\b')]:
         markers += [name]*len(re.findall(pattern,text))
-    markers += ['unit:'+unit_name(w) for w in re.findall(r'\b('+UNITS+r')\b',text)]
+    units=re.findall(r'\b('+UNITS+r')\b',text)
+    markers += ['unit:'+unit_name(w) for w in units if w!='second']
+    if 'second' in units:
+        from .boundaries import sentence_parts
+
+        # The number at the end of one sentence cannot own the ordinal
+        # at the start of the next one.
+        seconds=sum(comparison_tokens(sentence).count('second') for sentence in sentence_parts(text))
+        markers += ['unit:second']*seconds
     markers += ['denominator:'+unit_name(w) for w in re.findall(r'\bper\s+(?:square\s+|cubic\s+)?('+UNITS+r')\b',text)]
     rates={'percent':r'\b(?:percent|per cent)\b|%', 'per_mille':r'\bper\s+mille\b|‰', 'basis_point':r'\bbasis\s+points?\b'}
     for label,pattern in rates.items():markers += ['rate:'+label]*len(re.findall(pattern,text))
@@ -496,7 +524,10 @@ def mathematical_markers(text):
             markers.append('bar:'+ts[i-1])
         if t=='to' and i and i+1<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#'):markers.append('numeric-range')
         if t=='by' and i and i+2<len(ts) and ts[i-1].startswith('#') and ts[i+1].startswith('#') and UNIT_WORD.fullmatch(ts[i+2]):markers.append('dimension-axis')
-        if t in ('a','p') and i and ts[i+1:i+2]==['m']:
-            previous=ts[i-1] if ts[i-1]!="o'clock" or i<2 else ts[i-2]
-            if previous.startswith('#'):markers.append('meridiem:'+t)
+        period=t[0] if t in ('am','pm') or t in ('a','p') and ts[i+1:i+2]==['m'] else None
+        if period and i:
+            previous=ts[i-1]
+            if i>=2 and previous in ("o'clock",'second','seconds'):
+                previous=ts[i-2]
+            if previous.startswith('#'):markers.append('meridiem:'+period)
     return dict(sorted(Counter(markers).items()))

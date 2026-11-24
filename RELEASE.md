@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev48
+
+- Read printed clocks with seconds and an explicit AM or PM, and related identifiers that share a printed prefix, through the shared contextual reader. Preserve their original spelling and exact field values in the plan.
+- Distinguish calendar ordinals from time units in speech QA. Compare exact identifier groups and time fields across common transcript spellings. A changed digit, quantity sign, or AM/PM still needs inspection.
+
 # hamr 0.4.9.dev47
 
 - Open tested WordPerfect documents with the resident Linux reader. It uses the shared OpenDocument narration path and keeps the exact original. [WordPerfect intake](docs/INTAKE.md#wordperfect-documents)

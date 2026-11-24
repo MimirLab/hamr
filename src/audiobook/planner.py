@@ -3,9 +3,9 @@ import re
 from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-26'
-NUMBERING_RULES=(RULES,)
-TABLE_PASSAGE_RULES=('faithful-25',RULES)
+RULES='faithful-27'
+NUMBERING_RULES=('faithful-26',RULES)
+TABLE_PASSAGE_RULES=('faithful-25',*NUMBERING_RULES)
 AUTHORED_LINE_RULES=('faithful-24',*TABLE_PASSAGE_RULES)
 PROJECTED_SOURCE_RULES=('faithful-20','faithful-21','faithful-22','faithful-23',*AUTHORED_LINE_RULES)
 PROSE_SOURCE_RULES=('faithful-18','faithful-19',*PROJECTED_SOURCE_RULES)

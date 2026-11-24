@@ -117,6 +117,52 @@ def test_scientific_denominator_seconds_and_script_letters_are_distinct():
     assert math('alpha superscript minus one')!=math('alpha superscript one')
 
 
+def test_calendar_ordinals_do_not_create_time_units():
+    from audiobook.pipeline import critical
+
+    expected = 'Her journey began March twenty second, with mission STS-76.'
+    observed = 'Her journey began March 22nd, with mission STS-76.'
+    assert not critical(expected,observed)
+    assert 'quantity' in critical(expected,observed.replace('22nd','23rd'))
+    assert math('The second runner waited one second.')=={'unit:second':1}
+    assert math('First 8. Second 3.')=={}
+    assert 'math_or_unit' in critical('Wait one second.','Wait one minute.')
+
+
+def test_clock_seconds_need_exact_fields_and_time_context():
+    from audiobook.pipeline import critical
+
+    expected = 'Atlantis touched down at 8:13:15 A M EDT.'
+    observed = 'Atlantis touched down at 8 13 15 AM EDT.'
+    assert not critical(expected,observed)
+    assert 'quantity' in critical(expected,observed.replace('15','16'))
+    assert 'quantity' in critical(expected,'Atlantis touched down at 8.1315 AM EDT.')
+    assert c('Read codes 8 13 15 AM.')!=c('Read codes 8:13:15 AM.')
+    assert 'math_or_unit' in critical(expected,'Atlantis touched down at 8 13 15 PM EDT.')
+
+
+def test_explicit_spoken_seconds_can_follow_a_compact_observed_clock():
+    from audiobook.pipeline import critical
+
+    expected='It landed at eight thirteen and fifteen seconds A M EDT.'
+    for observed in ('It landed at 813 and 15 seconds AM EDT.','It landed at 8 13 and 15 seconds AM EDT.'):
+        assert not critical(expected,observed)
+        assert 'quantity' in critical(expected,observed.replace('15','16'))
+        assert 'math_or_unit' in critical(expected,observed.replace(' AM',' PM'))
+    assert c('The countdown was 813 and 15 seconds AM.')!=c(expected)
+
+
+def test_code_pair_observation_keeps_exact_letters_digits_and_sign_boundaries():
+    from audiobook.pipeline import critical
+
+    expected='Use zero seven A B, one one two three, and one one two four. Keep minus twelve degrees.'
+    observed='Use 07AB-1123 and 1124. Keep -12 degrees.'
+    assert not critical(expected,observed)
+    for wrong in (observed.replace('1124','1125'),observed.replace('07AB','07AC'),
+                  observed.replace('and 1124','and -1124'),observed.replace('-12','12')):
+        assert 'quantity' in critical(expected,wrong)
+
+
 def test_exact_decimal_repeats_and_formula_attachments():
     assert c('three point eight six one five nine two six seven double four')==c('3.8615926744')
     assert c('3.86159267 double 4')==c('3.8615926744')

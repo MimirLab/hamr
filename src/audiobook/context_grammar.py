@@ -17,6 +17,15 @@ CLOCK_SUFFIX = r'(?:UTC|GMT)(?![+−-][0-9])|[AP]M|[aApP]\.[ \t]*[mM]\.?(?!\.?\w
 CLOCK_CORE = r'([0-9]{1,3}):([0-9]{1,3})(?:[ \t]*(' + CLOCK_SUFFIX + '))?'
 CLOCK = re.compile(CLOCK_CORE)
 CLOCK_ZONE = re.compile(r'\s+(?:UTC|GMT|[ECMP][SD]T)\b')
+CLOCK_SECONDS = (
+    r'(?P<hour>0?[1-9]|1[0-2]):(?P<minute>[0-5][0-9]):(?P<second>[0-5][0-9])'
+    r'[ \t]*(?P<meridiem>(?i:[AP][.]?[ \t]*M\.?))'
+)
+SERIAL_PAIR = (
+    r'(?P<series>[0-9]{1,4})(?P<letters>[A-Z]{2,6})-(?P<first>[0-9]{2,8})'
+    r'[ \t]+(?P<join>and|or)[ \t]+-(?P<second_id>[0-9]{2,8})'
+)
+PRECISE = {'clock_seconds':CLOCK_SECONDS, 'related_identifiers':SERIAL_PAIR}
 UNITS = {**TECHNICAL_UNITS, **UNIT_NAMES}
 COMPOSITES = context_forms.patterns(LEFT, RIGHT, MONTHS)
 MEASUREMENT = re.compile(rf'({context_numbers.MEASUREMENT_AMOUNT})[^\S\r\n]*(.+)')
@@ -45,16 +54,18 @@ PATTERNS = {
     'integer': LEFT + r'[0-9]{1,12}' + RIGHT,
 }
 
-def expressions(lexicon, initialisms, price_nouns, native_names=()):
+def expressions(lexicon, initialisms, price_nouns, native_names=(), *, precise_codes=False):
     fields=dict(context_lexical.expressions(LEFT,RIGHT,initialisms,native_names))
     # A dash between two numbers belongs to the numeric expression.
-    fields={'date_iso':PATTERNS['date_iso'], **PATTERNS, **fields}
+    precise={name:LEFT+pattern+RIGHT for name,pattern in PRECISE.items()} if precise_codes else {}
+    fields={**precise, **PATTERNS, **fields}
     fields['abbreviation']=PATTERNS['abbreviation'].format(lexicon='|'.join(map(re.escape,lexicon)))
     fields['money_modifier']=PATTERNS['money_modifier'].replace('{price_nouns}','|'.join(map(re.escape,price_nouns)) or r'(?!)')
     return re.compile('|'.join(f'(?P<{kind}>{pattern})' for kind, pattern in fields.items()))
 
 
 EVENTS = {**{name: event for name, (event, _) in (COMPOSITES|context_lexical.PATTERNS|context_lexical.OPAQUE_PATTERNS).items()}, 'money':'CR-N012', 'money_modifier':'CR-N041', 'date_iso':'CR-N023', 'slash':'CR-N008', 'colon':'CR-N021',
+          'clock_seconds':'CR-N021','related_identifiers':'CR-N025',
           'parentheses':'CR-N007', 'measurement':'CR-N017', 'separators':'CR-N004',
           'abbreviation':'CR-L002', 'integer':'CR-N001'}
 PROTECTED_PATH = re.compile(context_lexical.PATH)
@@ -238,6 +249,22 @@ def candidates(kind, raw, env):
         return context_lexical.candidates(kind, raw, env)
     if kind in COMPOSITES:
         return context_forms.expand(kind, raw, env)
+    if kind=='clock_seconds':
+        match=re.fullmatch(CLOCK_SECONDS,raw)
+        hour,minute,second,period=match.groups()
+        meridiem=re.sub(r'[. \t]','',period).upper()
+        fields={'hour':hour,'minute':minute,'seconds':second,'meridiem':meridiem}
+        part=Component('CR-N016','clock_time',(0,match.end('second')),fields)
+        seconds=f'{number(int(second))} '+('second' if int(second)==1 else 'seconds')
+        stop=period.endswith('.') and not CLOCK_ZONE.match(env.after) and (
+            not env.after.strip() or env.after.lstrip()[0].isupper() or env.after.lstrip()[0] in '"”’)]')
+        spoken=f'{clock_words(hour,minute)} and {seconds} {" ".join(meridiem)}'+('.' if stop else '')
+        return [Candidate('clock_time',fields,spoken,('syntax',),(part,))]
+    if kind=='related_identifiers':
+        series,letters,first,join,second=re.fullmatch(SERIAL_PAIR,raw).groups()
+        fields={'prefix':series+letters,'identifiers':[series+letters+'-'+serial for serial in (first,second)]}
+        spoken=f'{identifier(series)} {" ".join(letters)}, {identifier(first)}, {join} {identifier(second)}'
+        return [Candidate('identifier',fields,spoken,('syntax',))]
     if kind=='money':
         return monetary(raw,env)
     if kind=='money_modifier':

@@ -307,7 +307,8 @@ class Resolver:
             context_config.invalid('A context table policy names an unknown source table.')
         self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
         self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],
-                                             self.config['cues']['price_noun'],self.config['native_names'])
+                                             self.config['cues']['price_noun'],self.config['native_names'],
+                                             precise_codes=rule_revision=='faithful-27')
         self.definitions=defaultdict(list)
         self.chronologies=defaultdict(lambda:defaultdict(list))
         self.number_anchors=defaultdict(lambda:defaultdict(dict))

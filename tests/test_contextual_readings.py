@@ -43,6 +43,34 @@ def test_owned_occurrences_keep_distinct_numeric_roles_and_literal_scope():
     assert not result['issues']
 
 
+def test_shared_clock_seconds_and_abbreviated_identifier_readings_keep_source(tmp_path):
+    from audiobook.intake import inspect_source
+
+    source=('Photos 07AB-1123 and -1124 are on file. The vessel arrived at 8:03:01 A.M. EDT. '
+            'The temperature was -1124 degrees.')
+    paths=[tmp_path/f'caps.{extension}' for extension in ('txt','md','html')]
+    for path in paths:
+        path.write_text(f'<p>{source}</p>' if path.suffix=='.html' else source,encoding='utf-8')
+    for path in paths:
+        result=plan(inspect_source(path))
+        assert not result['issues']
+        assert 'zero seven A B, one one two three, and one one two four' in speech(result)
+        assert 'eight oh three and one second A M EDT.' in speech(result)
+        report=[e for e in events(result) if e['source'] in ('07AB-1123 and -1124','8:03:01 A.M.')]
+        serial,clock=report
+        assert selected(serial)['fields']['identifiers']==['07AB-1123','07AB-1124']
+        assert selected(clock)['fields']=={'hour':'8','minute':'03','seconds':'01','meridiem':'AM'}
+        for event in report:
+            start,end=event['expression_span']
+            assert source[start:end]==event['source']
+        assert '-1124 degrees' in result['decisions'][0]['source']
+        assert 'zero seven A B' not in speech(plan(inspect_source(path),rule_revision='faithful-26'))
+    protected=reading('Type `07AB-1123 and -1124` and `8:03:01 A.M.` exactly.')
+    assert '07AB-1123 and -1124' in speech(protected)
+    assert '8:03:01 A.M.' in speech(protected)
+    assert 'and one second' not in speech(reading('The elapsed time was 8:03:01.'))
+
+
 def test_literal_scopes_do_not_expand_machine_syntax_or_abbreviation():
     result=reading('Type `Dr. $222 and 1/4`. Read /tmp/v1.2.3.txt. Open https://example.net/?fee=$222.')
     assert not result['issues']
