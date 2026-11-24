@@ -18,6 +18,7 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 | Publishing XML and other structured sources | Resident readers accept selected FB2, FB3, DTBook, DocBook, JATS and TEI documents, saved mail and MHTML, CSV, Jupyter notebook text, XLSX worksheet contents, PPTX slide text, OPML, SVG text and subtitles. Content and reading order depend on the source structures present. |
 | Archive containers | ZIP and TAR are built in. 7z and RAR use a compatible local libarchive. Encrypted or unresolved members appear as an intake error. |
 | Unencrypted classic Kindle and DjVu | The Linux x86-64 and Windows x64 packages include a compact Kindle reader. Supported uncompressed Kindle Print Replica editions (AZW4) go through the PDF reader. The Linux DjVu reader uses available page text and runs raster OCR for pages without it. |
+| Compiled HTML Help (`.chm`) | The resident Linux x86-64 reader follows the authored HTML table of contents. A linked topic outside the contents stays accessible in the companion. The plan reports unlisted topics and unreadable entries. |
 | Selected old office formats | A compatible installed LibreOffice Writer can produce an ODT reading in an isolated Linux worker. Hamr keeps the exact original. |
 | LRF and unencrypted LIT ebooks | A compatible local Calibre can be reused. Hamr can acquire a pinned Linux x86-64 helper on first use. The archive is 230 MiB and the installed helper is about 906 MiB. |
 
@@ -28,6 +29,8 @@ Structured XML such as JATS can supply the same readings through one authored Ma
 When a searchable PDF establishes an equation, raised script or scientific table cell from its printed layout, Hamr carries that reading into the same preparation step. The companion retains the exact glyph range and cell location. Source review identifies geometry that leaves the reading unresolved.
 
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
+
+For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the actual source encoding. The resident CHM decoder runs locally with Bubblewrap. Its tested path uses a readable HTML contents file inside the CHM. Binary-only contents and popup controls without a local HTML target still need qualification.
 
 ## Page order, recovery and originals
 

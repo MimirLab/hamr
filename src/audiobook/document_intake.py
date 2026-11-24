@@ -123,21 +123,27 @@ def cell_semantics(row,column,text,spans):
     return {'row':row,'column':column,'source':text,'spans':spans,'notes':[]}
 
 
-def html_read(data,builder):
+def html_read(data,builder, *, where='html', metadata=True, fragment=None, encoding=None, collect_links=False):
     from .epub_semantics import AUDIT_SPANS, hidden, note_container, uncertainty
     from .importers import html_text
     from .epub_semantics import describe as semantics
 
-    soup = BeautifulSoup(data,'html.parser')
+    soup = BeautifulSoup(data,'html.parser',from_encoding=encoding)
     for node in soup.find_all(['script','style','template','noscript']):
         node.decompose()
-    if soup.title and soup.title.get_text(strip=True):
+    if metadata and soup.title and soup.title.get_text(strip=True):
         builder.doc.title = soup.title.get_text(' ',strip=True)
-    if soup.html and soup.html.get('lang'):
+    if metadata and soup.html and soup.html.get('lang'):
         builder.doc.language = soup.html['lang']
     if soup.find('link',rel='stylesheet'):
         builder.doc.warnings.append('External stylesheet retained as a reference. Its remote contents were not fetched.')
     body = soup.body or soup
+    if fragment:
+        targets = body.find_all(lambda node: node.get('id')==fragment or
+                                node.name=='a' and node.get('name')==fragment)
+        if len(targets)!=1 or targets[0].name in ('a','h1','h2','h3','h4','h5','h6','span'):
+            raise Error('source_topic_fragment','The topic link does not name one bounded HTML region.')
+        body = targets[0]
     note_ids = {node['id']:node for node in body.find_all(id=True) if note_container(node)}
     inserted_notes = {}
     atomic = {'p','h1','h2','h3','h4','h5','h6','table','pre','img','svg','math','figcaption','dt','dd','li',
@@ -145,7 +151,8 @@ def html_read(data,builder):
 
     def text_node(node,role,where):
         source,spans = semantics(node)
-        spans = [span for span in spans if span['kind'] not in AUDIT_SPANS]
+        spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
+                 collect_links and span['kind']=='hyperlink']
         links = []
         for span in spans:
             if span['kind']!='note_reference':
@@ -215,8 +222,9 @@ def html_read(data,builder):
         for i,child in enumerate(node.children,1):
             visit(child,f'{path}/{i}')
 
-    visit(body,'html')
-    for block in builder.doc.blocks:
+    start = len(builder.doc.blocks)
+    visit(body,where)
+    for block in builder.doc.blocks[start:]:
         for link in block.links:
             if link['href'].startswith('#') and link['href'][1:] in inserted_notes:
                 link['destinations'] = ['source.html#'+inserted_notes[link['href'][1:]]]

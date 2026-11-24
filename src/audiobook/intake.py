@@ -66,6 +66,10 @@ def parse(path,source,sha,cache,title):
         from .djvu_intake import djvu
 
         return djvu(path,source,sha,cache,title)
+    if source.route=='chm':
+        from .chm_intake import chm
+
+        return chm(path,source,sha,cache,title)
     if source.route=='scan':
         from .scan_intake import scan
 
@@ -218,6 +222,8 @@ def capabilities():
         'legacy-ebook':{'managed_available':linux and bool(shutil.which('bwrap')),
                         'download_bytes':CALIBRE_BYTES,'unpacked_bytes':CALIBRE_UNPACKED},
         'djvu':{'ready':linux and (assets/'djvu-linux-x86_64').is_file() and bool(shutil.which('bwrap'))},
+        'chm':{'ready':linux and (assets/'chm-linux-x86_64').is_file() and bool(shutil.which('bwrap')),
+               'source':'resident CHMLib with ordered HTML contents'},
         'mobi':{'ready':(linux and (assets/'mobitool-linux-x86_64').is_file()
                          or os.name=='nt' and x64 and (assets/'mobitool-windows-x86_64.exe').is_file()
                          or bool(shutil.which('mobitool')))},

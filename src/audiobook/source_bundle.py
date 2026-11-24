@@ -21,7 +21,7 @@ SIDECAR_SUFFIXES = frozenset(('.xml', '.hocr', '.alto', '.page', '.tsv'))
 SIDECAR_ENDINGS = ('.alto.xml','.page.xml','.abbyy.xml','.hocr','.tsv')
 NATIVE = {
     '.txt':'text', '.text':'text', '.asc':'text', '.nfo':'text', '.md':'markdown', '.markdown':'markdown', '.epub':'epub', '.pdf':'pdf',
-    '.djvu':'djvu', '.djv':'djvu', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt',
+    '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt',
     '.abw':'xml-book', '.dbk':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
@@ -65,6 +65,10 @@ def probe(prefix, name):
     suffix = Path(name).suffix.lower()
     if prefix.startswith(b'AT&TFORM') and prefix[12:16] in (b'DJVU',b'DJVM'):
         return 'djvu'
+    if prefix.startswith(b'ITSF') and len(prefix)>=8 and int.from_bytes(prefix[4:8],'little') in (2,3):
+        return 'chm'
+    if suffix=='.chm':
+        return None
     if prefix.lstrip().startswith(b'%PDF-'):
         return 'pdf'
     if prefix.startswith(b'!!8-Bit!!'):
@@ -271,8 +275,8 @@ def archive_publications(archive,kind,entry,*,scan_only=False):
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route!='text':
-        raise Error('source_encoding','Use --encoding for a plain text publication.')
+    if encoding and source.route not in ('text','chm'):
+        raise Error('source_encoding','Use --encoding for plain text or a compiled HTML Help publication.')
     if source.kind=='file' and source.route in ('scan','djvu') and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source

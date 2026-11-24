@@ -13,3 +13,10 @@ with --disable-shared --enable-static --disable-desktopfiles --disable-xmltools.
 Compile the worker with -O2 -static-libgcc -static-libstdc++ and link the
 resulting libdjvulibre.a with -pthread. The Linux builds bind stock glibc
 and process original files locally.
+
+CHMLib 0.40a (LGPL-2.1-or-later), separate compiled-help decoder:
+https://deb.debian.org/debian/pool/main/c/chmlib/chmlib_0.40a.orig.tar.gz
+SHA-256 f85ae46948bac63f793066945f850c8663be1518b690a9af9e1d6ba507979064
+The Hamr worker source and link instructions are tools/intake_chm.c and
+tools/build_intake_chm.sh. Build against the unmodified library sources
+in the linked archive. The Linux x86-64 decoder uses glibc 2.34 or later.

@@ -24,7 +24,8 @@ ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock',
               'install.ps1', 'tools/inspect_gguf.py', 'tools/compare_breeze.py', 'tools/mix_hoppou.py',
               'tools/build_timing_name_spellings.py',
               'tools/build_intake_ocr.sh', 'tools/build_intake_ocr_windows.sh', 'tools/build_intake_mobi.sh',
-              'tools/intake_djvu.cc', 'docs/INTAKE.md',
+              'tools/intake_djvu.cc', 'tools/intake_chm.c', 'tools/build_intake_chm.sh',
+              'fixtures/chm_ordered.chm', 'docs/INTAKE.md',
               'tools/performance_review.py', 'tools/master_cast_gallery.py', 'docs/ENGINES.md',
               'PKG-INFO', '.gitignore', 'AGENTS.md', 'tools/check_release.py',
               'docs/USAGE.md', 'docs/CAST.md', 'docs/ARTWORK.md', 'docs/listen/manifest.json',
@@ -41,11 +42,12 @@ INTAKE_ASSETS = {
     'audiobook/intake_resident/mobitool-linux-x86_64':'05567860bd98a8393621183ba977c9e3c4d8abbb4747045711501a1d70bd8b34',
     'audiobook/intake_resident/mobitool-windows-x86_64.exe':'1e63bece58cf2a71f7626c6025cba4c3c20973bce912978df47ebd7e5fe22dce',
     'audiobook/intake_resident/djvu-linux-x86_64':'dc0f35ae2e2170bc3a2b4c0e7c2a16abe8608c79cc0aa6bd794ae3bb20e0f357',
+    'audiobook/intake_resident/chm-linux-x86_64':'a604e6b43866ed96ebd485061bd1c7e0be018a69d56c5907da738bf83ec85672',
 }
 INTAKE_NOTICES = {
     *('audiobook/ocr_resident/'+name for name in ('LICENSE.eng','LICENSE.leptonica','LICENSE.libpng',
                 'LICENSE.tesseract','LICENSE.zlib','LICENSE.windows-libpng','LICENSE.windows-zlib','SOURCES.txt')),
-    *('audiobook/intake_resident/'+name for name in ('LICENSE.djvu','LICENSE.libmobi','LICENSE.gpl3','SOURCES.txt')),
+    *('audiobook/intake_resident/'+name for name in ('LICENSE.djvu','LICENSE.libmobi','LICENSE.gpl3','LICENSE.chmlib','SOURCES.txt')),
 }
 
 
