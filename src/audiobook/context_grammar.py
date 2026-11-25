@@ -17,6 +17,8 @@ CLOCK_SUFFIX = r'(?:UTC|GMT)(?![+−-][0-9])|[AP]M|[aApP]\.[ \t]*[mM]\.?(?!\.?\w
 CLOCK_CORE = r'([0-9]{1,3}):([0-9]{1,3})(?:[ \t]*(' + CLOCK_SUFFIX + '))?'
 CLOCK = re.compile(CLOCK_CORE)
 CLOCK_ZONE = re.compile(r'\s+(?:UTC|GMT|[ECMP][SD]T)\b')
+CLOCK_CLAUSE = re.compile(r"""^,[ \t]+["“'‘(]*[^\W\d_]""")
+AFTER_SENTENCE = re.compile(r"""[.!?]["”’')\]]*\s+["“'‘ \t]*$""")
 CLOCK_SECONDS = (
     r'(?P<hour>0?[1-9]|1[0-2]):(?P<minute>[0-5][0-9]):(?P<second>[0-5][0-9])'
     r'[ \t]*(?P<meridiem>(?i:[AP][.]?[ \t]*M\.?))'
@@ -248,6 +250,14 @@ def colon_duration(first, second, base, fallback, env):
     return options if len(supported)==1 else [neutral,*options]
 
 
+def opening_clock(env, governor):
+    if (not env.resolver.opening_clocks or env.header is not None
+            or env.setting('narration_style')=='technical' or not CLOCK_CLAUSE.match(env.after)):
+        return False
+    prefix = env.before.rstrip()[:-len(governor)]
+    return not prefix.strip(' \t"“\'‘') or AFTER_SENTENCE.search(prefix) is not None
+
+
 def candidates(kind, raw, env):
     if kind in context_lexical.PATTERNS:
         return context_lexical.candidates(kind, raw, env)
@@ -341,8 +351,9 @@ def candidates(kind, raw, env):
             clock_cue=env.cue('clock') if suffix is None else None
             contextual=not (suffix or clock_cue) and not (env.nearby('reference') or env.nearby('ratio')) and (
                 getattr(env.resolver,'narrative_clocks',False) and env.cue('clock_narrative')
-                or env.cue('clock_at') and (env.cue('clock_daypart',side='right')
-                    or env.cue('clock_transport',side='right') or env.nearby('clock_transport',side='left')))
+                or (governor:=env.cue('clock_at')) and (env.cue('clock_daypart',side='right')
+                    or env.cue('clock_transport',side='right') or env.nearby('clock_transport',side='left')
+                    or opening_clock(env,governor)))
             if not (suffix or clock_cue or contextual):return [fallback]
             fields={'hour':first,'minute':second,'zone':suffix if suffix in ('UTC','GMT') else None}
             if suffix in ('AM','PM'):

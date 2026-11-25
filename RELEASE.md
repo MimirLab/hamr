@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev90
+
+- Read a sentence opening like “At 7:43, the keeper opened the gate” as “at seven forty-three.” The rule uses shared text preparation for documents and scans. Existing jobs can adopt it with `hamr repair JOB --upgrade-rules`.
+
 # hamr 0.4.9.dev89
 
 - Open HEIC and HEIF still photos and AVIF scans directly, in scan folders, or in ZIPs. Hamr follows the designated primary HEIF image and its display orientation, and keeps the exact original file with the book.

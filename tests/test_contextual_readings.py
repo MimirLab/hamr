@@ -935,3 +935,21 @@ def test_narrated_clock_uses_narrative_cues_and_saved_rules_stay_pinned():
     old = plan(doc, rule_revision='faithful-31')
     assert 'woke at seven colon four three' in speech(old)
     assert plan(doc, old['policy'], rule_revision='faithful-31')['plan_sha256'] == old['plan_sha256']
+
+
+def test_opening_clock_reads_temporal_clauses_and_retains_other_colon_roles():
+    source = 'At 7:43, the keeper opened the gate. “At about 07:05, the lights came on,” she said.'
+    doc = markdown(source.encode())
+    result = plan(doc)
+    assert speech(result) == (
+        'At seven forty three, the keeper opened the gate. “At about seven oh five, the lights came on,” she said.')
+    assert [selected(item)['kind'] for item in events(result)] == ['clock_time', 'clock_time']
+    assert 'At seven colon four three' in speech(plan(doc,rule_revision='faithful-36'))
+    assert 'At seven colon four three' in speech(reading(source,conventions={'narration_style':'technical'}))
+    assert 'At seven colon four three' in speech(reading(source,cues={'clock_at':[]}))
+
+    reference = reading('Read John 7:43, and turn the page.')
+    assert 'John seven colon four three' in speech(reference)
+    assert selected(events(reading('The ratio was 7:43.'))[0])['kind']=='ratio'
+    assert selected(events(reading('Elapsed time: 07:43.'))[0])['kind']=='duration'
+    assert speech(reading('Type `At 7:43, stay close.` exactly.'))=='Type At 7:43, stay close. exactly.'

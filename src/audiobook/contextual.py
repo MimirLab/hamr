@@ -294,7 +294,8 @@ class Resolver:
 
         self.doc=doc
         self.policy=policy
-        character_inventories=rule_revision in ('faithful-34','faithful-35','faithful-36')
+        self.opening_clocks=rule_revision=='faithful-37'
+        character_inventories=rule_revision in ('faithful-34','faithful-35','faithful-36','faithful-37')
         self.narrative_clocks=character_inventories or rule_revision in ('faithful-32','faithful-33')
         keyboard=self.narrative_clocks or rule_revision=='faithful-31'
         self.config=context_config.effective(policy.get('context'),keyboard=keyboard,narrative_clocks=self.narrative_clocks,
@@ -317,7 +318,7 @@ class Resolver:
                                              self.config['cues']['price_noun'],self.config['native_names'],
                                              precise_codes=keyboard or rule_revision in ('faithful-27','faithful-28','faithful-29','faithful-30'),
                                              keyboard=keyboard,character_inventories=character_inventories,
-                                             grouped_units=rule_revision=='faithful-36')
+                                             grouped_units=rule_revision in ('faithful-36','faithful-37'))
         self.definitions=defaultdict(list)
         self.chronologies=defaultdict(lambda:defaultdict(list))
         self.number_anchors=defaultdict(lambda:defaultdict(dict))
