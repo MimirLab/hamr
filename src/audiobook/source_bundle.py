@@ -39,6 +39,7 @@ NATIVE = {
     '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc', '.tex':'latex',
     '.textile':'textile',
+    '.idml':'idml', '.icml':'icml',
     '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
@@ -47,7 +48,7 @@ PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx',
-                             'odp','odt','odf-master','pages')) | DESCRIPTOR_FOLDERS
+                             'odp','odt','odf-master','pages','idml')) | DESCRIPTOR_FOLDERS
 DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master','textile'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
@@ -200,6 +201,7 @@ def relative_file(root, name):
 
 def publication_folder(path):
     from .fictionbook_package import folder_marker as fb3_folder
+    from .indesign_package import folder_marker as idml_folder
     from .odf_package import MEDIA_ROUTES, folder_media
     from .pages_intake import folder_marker as pages_folder
     from .presentation_intake import folder_marker as pptx_folder
@@ -209,6 +211,8 @@ def publication_folder(path):
         return 'xps'
     if fb3_folder(path):
         return 'fb3'
+    if idml_folder(path):
+        return 'idml'
     if pptx_folder(path):
         return 'pptx'
     if route:=MEDIA_ROUTES.get(folder_media(path)):
@@ -370,7 +374,8 @@ def zip_members(archive):
 
 def zip_source(path, entry, override):
     from .archive_intake import ZipMembers
-    from .document_intake import MAX_STRUCTURE
+    from .document_intake import MAX_STRUCTURE, xml_start
+    from .indesign_package import DESIGN as IDML_DESIGN, MIME as IDML_MIME, design_root
     from .odf_package import MANIFEST_PART, MASTER_TYPES, PRESENTATION_MEDIA, WRITER_MEDIA, manifest_media
     from .pml_package import pmlz_parts
 
@@ -397,6 +402,8 @@ def zip_source(path, entry, override):
             marker, mimetype = next(((index,info) for index,info in records
                                      if info.filename=='mimetype' and info.file_size<=256),(None,None))
             media = archive.read(mimetype).strip() if mimetype else b''
+            if override in (None,'idml') and (path.suffix.casefold()=='.idml' or media==IDML_MIME):
+                package_route = 'idml'
             if 'mimetype' not in names and 'content.xml' in names and MANIFEST_PART in names:
                 for index,info in records:
                     if info.filename==MANIFEST_PART and info.file_size<=MAX_STRUCTURE:
@@ -404,8 +411,13 @@ def zip_source(path, entry, override):
                         break
             if override is None and media in PRESENTATION_MEDIA:
                 package_route = 'odp'
+            epub_marker = 'META-INF/container.xml' in names
+            if epub_marker and media!=b'application/epub+zip' and IDML_DESIGN in names:
+                design_info = next(info for _,info in records if info.filename==IDML_DESIGN)
+                with archive.open(design_info) as stream:
+                    epub_marker = not design_root(xml_start(stream))
             for predicate,route in (
-                ('META-INF/container.xml' in names or media==b'application/epub+zip','epub'),
+                (epub_marker or media==b'application/epub+zip','epub'),
                 ('word/document.xml' in names,'docx'),
                 ('xl/workbook.xml' in names,'xlsx'),
                 (media in WRITER_MEDIA,'odt'),
@@ -416,7 +428,7 @@ def zip_source(path, entry, override):
                         from .fixed_pages import image_only_fixed
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
-                    if override!='scan' and package_route not in ('fb3','xps','pptx','odp','pages'):
+                    if override!='scan' and package_route not in ('fb3','xps','pptx','odp','pages','idml'):
                         if route in ('odt','odf-master') and path.suffix.casefold()=='.zip':
                             return Source(route,'zip',marker)
                         return Source(route)
@@ -461,11 +473,11 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         packages = [item for item in packages if item[1].index not in linked]
     manifests, images, documents = [], [], []
     for item in members:
-        if textpack or package_route not in (None,'odf-master') or item.index in claimed:
+        if textpack or package_route not in (None,'odf-master','idml') or item.index in claimed:
             continue
         name = PurePosixPath(item.name)
         basename, suffix = name.name.casefold(),source_suffix(name.name)
-        if package_route=='odf-master' and NATIVE.get(suffix)!='odf-master':
+        if package_route in ('odf-master','idml') and NATIVE.get(suffix)!=package_route:
             continue
         is_manifest = basename in ('pages.hamr.json','mets.xml') or suffix=='.mets'
         if basename=='manifest.json' and item.size is not None and item.size<=MAX_MANIFEST:
@@ -533,7 +545,7 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
     if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar','textile',*PALM_ROUTES):
         raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, Textile, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile',*PALM_ROUTES) and source.member_name is None:
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -661,7 +673,7 @@ def _describe(path,entry,format,offline):
     if (suffix in ('.7z','.rar','.cb7','.cbr') or prefix.startswith((b'7z\xbc\xaf\x27\x1c',b'Rar!'))):
         selected = wrapped_source(path,'libarchive',entry,format)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
-    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx','.odp','.otp','.pmlz','.pages') or prefix.startswith(b'PK\x03\x04'):
+    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx','.odp','.otp','.pmlz','.pages','.idml') or prefix.startswith(b'PK\x03\x04'):
         selected = zip_source(path,entry,format or ('scan' if suffix=='.cbz' else None))
         if format and format!=selected.route and selected.kind!='file':
             raise Error('source_format', 'The selected container does not match the requested format.')
@@ -865,7 +877,7 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_sphinx(local,target)
-        elif source.route in ('fb3','xps','pptx','odp','odt','pages'):
+        elif source.route in ('fb3','xps','pptx','odp','odt','pages','idml'):
             from .publication_package import capture_folder, folder_files
 
             target = target_dir/'source.zip'

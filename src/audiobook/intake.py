@@ -64,6 +64,10 @@ def parse(path,source,sha,cache,title):
         from .fictionbook_package import read_fb3
 
         return read_fb3(path,source,sha,title)
+    if source.route=='idml' and source.kind in ('file','zip','tar','libarchive'):
+        from .indesign_package import read_idml
+
+        return read_idml(path,source,sha,title)
     if source.route=='xps' and source.kind in ('zip','tar','libarchive'):
         from .xps_intake import read_xps
 
@@ -98,7 +102,7 @@ def parse(path,source,sha,cache,title):
             route = describe(member,format=source.route_override,offline=source.offline,encoding=source.encoding)
             if route.kind in ('zip-member','tar-member','libarchive-member','directory','manifest'):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
-            if route.kind=='file' and route.route in ('abiword','odt','odp','pml','wordstar',*PALM_ROUTES):
+            if route.kind=='file' and route.route in ('abiword','odt','odp','pml','wordstar','icml',*PALM_ROUTES):
                 route = replace(route,member_name=entry.name)
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
             doc.source_sha256 = sha
@@ -114,6 +118,10 @@ def parse(path,source,sha,cache,title):
                 bind_location(location)
             doc.metadata['archive_entry'] = {'index':entry.index,'name':entry.name}
             return doc
+    if source.route=='icml':
+        from .indesign_intake import read_icml
+
+        return read_icml(path,source,sha,title)
     if source.route=='pdf':
         return ADAPTERS['.pdf'](path,ocr_cache=cache/'pdf-observations' if cache else None)
     if source.route=='palmdoc':

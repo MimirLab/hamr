@@ -124,6 +124,7 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     """Use the same publication boundaries for discovery and page sequences."""
     from .fictionbook_package import archive_books as fb3_books
     from .gitbook_intake import archive_spaces
+    from .indesign_package import archive_books as idml_books
     from .mdbook_intake import archive_books
     from .ncc_intake import archive_books as ncc_books
     from .odf_package import archive_books as odf_books
@@ -152,6 +153,9 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     editions,fb3_members = fb3_books(archive,remaining)
     packages.extend(('fb3',descriptor,title) for descriptor,title in editions)
     remaining = [item for item in remaining if item.index not in fb3_members]
+    editions,idml_members = idml_books(archive,remaining)
+    packages.extend(('idml',descriptor,title) for descriptor,title in editions)
+    remaining = [item for item in remaining if item.index not in idml_members]
     slides,pptx_members = pptx_books(archive,remaining)
     packages.extend(('pptx',descriptor,title) for descriptor,title in slides)
     remaining = [item for item in remaining if item.index not in pptx_members]
@@ -185,5 +189,5 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in xml_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
     textile_members = textile_claims(archive,[item for item in remaining if item.index not in xml_members|plain])
-    return (packages,claimed | xps_members | fb3_members | pptx_members | odf_members | pages_members |
+    return (packages,claimed | xps_members | fb3_members | idml_members | pptx_members | odf_members | pages_members |
             owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain | textile_members)

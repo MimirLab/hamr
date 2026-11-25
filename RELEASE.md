@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev84
+
+- Open InDesign IDML exports and InCopy ICML stories directly, in folders, and in ZIPs. Follow article order and page placement, read threaded text once, and retain the original story and layout parts with the audiobook.
+- Read floating sidebars and illustrations beside their anchor paragraph so they do not interrupt the sentence.
+
 # hamr 0.4.9.dev83
 
 - Open historical Rails Guides Textile sources. Hamr reads the guide's title, introduction, and body, and preserves the authored programming examples for the usual code settings.

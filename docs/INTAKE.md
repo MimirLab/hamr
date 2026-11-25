@@ -34,6 +34,7 @@ Word follows tracked paragraph joins, deleted rows and cells, and supported vert
 | Org mode | Open an `.org` file, a folder, or a ZIP. Hamr follows selected headings, notes, lists, tables and local includes. [Org mode intake](#org-mode) |
 | AsciiDoc | Open an `.adoc`, `.asciidoc` or recognized `.asc` book, including from a folder or archive. [AsciiDoc intake](#asciidoc) |
 | Textile | Open a `.textile` manuscript, folder, or ZIP. Hamr reads numbered footnotes, named notes, tables, and authored image descriptions. [Textile intake](#textile) |
+| InDesign and InCopy | Open an InDesign exchange package (`.idml`) or a saved InCopy story (`.icml`), including from a folder or ZIP. [InDesign and InCopy intake](#indesign-and-incopy) |
 | LaTeX | Open a `.tex` manuscript, a source folder, or an archive. The built-in reader follows local chapter includes and reads authored headings, prose, notes, lists, simple tables and supported equations. [LaTeX intake](#latex) |
 | WordStar 7 for DOS | Open an original `.ws` or `.ws7` manuscript, a folder containing one, or an archive. Hamr also recognizes the saved file header. [WordStar intake](#wordstar-7) |
 | Scrivener projects and backups | Open the `.scriv` folder, its root `.scrivx` file, or the backup ZIP. Hamr reads the manuscript’s RTF documents in Draft binder order, using the binder labels for chapter navigation. |
@@ -152,6 +153,12 @@ Hamr recognizes `.asc` when it finds clear AsciiDoc source syntax. For an older 
 Open a `.textile` manuscript or its enclosing folder or ZIP. Keep local illustrations at their written relative paths. The parser installs with Hamr. Footnotes, tables, and code blocks follow the usual reading settings. Known project badge rows stay in the companion. An illustration that needs a description appears in source review. [Textile Reference Manual](https://textile-lang.com/)
 
 Hamr also reads the historical Rails Guides Textile sources. It keeps the title and introduction and preserves literal Ruby, ERB, shell, and HTML examples in the companion. Use the usual code settings to hear those examples.
+
+## InDesign and InCopy
+
+Open the `.idml` export, its unpacked folder, or a ZIP containing the export. Hamr uses the selected articles and the page layout to order the text. Linked text frames contribute one continuous story. Pasteboard and master-page content normally stay with the source. Keep packaged illustrations in their original paths. Missing story parts or a placed figure that needs a description appear in source review.
+
+Use `.icml` for an individual InCopy story. Hamr reads the saved paragraphs, style cues, notes, and tables through the usual prep and narration settings. Export `.idml`, EPUB, or tagged PDF from InDesign when you have an editable `.indd` file.
 
 ## LaTeX
 
