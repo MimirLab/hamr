@@ -7,21 +7,26 @@ Homophones such as for/four and know/no are deliberately not equated.
 from calendar import monthrange
 from difflib import SequenceMatcher
 import re,unicodedata
+from .abbreviations import EMAIL_HEAD
 from .context_forms import MONTHS, duration_pair, money_words
+from .keyboard_readings import observation as keyboard_observation
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v49'
+POLICY='bounded-english-composed-scale-typed-v50'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
 SPECIAL_NEGATIVES={"can't":'can',"won't":'will',"shan't":'shall'}
 SPELLING_VARIANTS={'harbour':'harbor','harbours':'harbors','harboured':'harbored','harbouring':'harboring',
-                   'café':'cafe','cafés':'cafes','fulfilment':'fulfillment','fulfilments':'fulfillments'}
+                   'café':'cafe','cafés':'cafes','fulfilment':'fulfillment','fulfilments':'fulfillments',
+                   'colour':'color','colours':'colors','coloured':'colored','colouring':'coloring',
+                   'dialogue':'dialog','dialogues':'dialogs'}
 COMPOUND_SPELLINGS={'dustbowl':('dust','bowl'),'mathml':('math','ml'),'dtbook':('dt','book'),
                     'textbox':('text','box'),'textboxes':('text','boxes'),
                     'shortname':('short','name'),'shortnames':('short','names'),
-                    'reflog':('ref','log'),'reflogs':('ref','logs')}
+                    'reflog':('ref','log'),'reflogs':('ref','logs'),
+                    'wordstar':('word','star'),'touchtypable':('touch','typable')}
 ORDINALS={word:i for i,word in enumerate(['zeroth','first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth','eleventh','twelfth','thirteenth','fourteenth','fifteenth','sixteenth','seventeenth','eighteenth','nineteenth','twentieth'])}
 ORDINALS.update(thirtieth=30,fortieth=40,fiftieth=50,sixtieth=60,seventieth=70,eightieth=80,ninetieth=90)
 SCALES={'thousand':1000,'million':10**6,'billion':10**9}
@@ -50,6 +55,7 @@ SPOKEN_YEAR=re.compile(r'\b('+YEAR_PREFIX+r')[ -]+('+ '|'.join(YEAR_DECADES)+r'|
 DOMAIN_START=r'(?<![\w@.])'
 DOMAIN_END=r'(?![\w-]|\.[a-z0-9])'
 WWW_DOMAIN=re.compile(DOMAIN_START+r'www\.(?:[a-z0-9-]+\.){1,6}[a-z]{2,20}'+DOMAIN_END,re.I)
+WRITTEN_EMAIL=re.compile(EMAIL_HEAD+r'(?:[a-z0-9-]+\.)+[a-z]{2,20}'+DOMAIN_END,re.I)
 SPOKEN_PADDED_CODE=re.compile(r'\bzero(?:[ \t]+(?:'+'|'.join(SMALL[:10])+r')){1,7}\b',re.I)
 PRINTED_PADDED_CODE=re.compile(r'(?<![\w/.:+−-])0[0-9]{1,7}(?![\w/:-]|\.\d)')
 SPOKEN_DIGIT='(?:'+'|'.join(SMALL[:10])+')'
@@ -124,6 +130,19 @@ def domain_notation(expected,observed):
     return observed
 
 
+def email_notation(expected,observed):
+    dot = r'(?:\.|[ \t]+dot[ \t]+)'
+    equal_at = r'(?:@|[ \t]+at[ \t]+)'
+    for address in dict.fromkeys(WRITTEN_EMAIL.findall(expected)):
+        local,host = address.split('@',1)
+        parts = lambda part: dot.join(map(re.escape,part.split('.')))
+        spoken = r'(?<![\w@.+-])'+parts(local)+equal_at+parts(host)+DOMAIN_END
+        sites = {word_context(expected,*match.span()) for match in re.finditer(re.escape(address),expected)}
+        observed = re.sub(spoken,lambda match:address if word_context(observed,*match.span()) in sites else match[0],
+                          observed,flags=re.I)
+    return observed
+
+
 def name_observation(expected,observed):
     for source,alternate in NAME_OBSERVATIONS:
         spellings = {context:match[0] for match in source.finditer(expected)
@@ -176,8 +195,10 @@ def notation_observation(expected, observed):
     observed=spoken_currency_observation(expected,observed)
     observed=contextual_years(expected,observed)
     observed=domain_notation(expected,observed)
+    observed=email_notation(expected,observed)
     observed=name_observation(expected,observed)
     observed=apostrophe_s_observation(expected,observed)
+    observed=keyboard_observation(expected,observed,word_context)
     observed=code_pair_observation(expected,observed)
     families = {match[1]+match[2].lower() for match in SHA_LABEL.finditer(expected)}
     if families:

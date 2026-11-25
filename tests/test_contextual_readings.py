@@ -80,6 +80,55 @@ def test_literal_scopes_do_not_expand_machine_syntax_or_abbreviation():
     assert 'open parenthesis sigh close parenthesis' in speech(reading('This says `(sigh)`.'))
 
 
+def test_keyboard_notation_keeps_sequential_and_simultaneous_keys_distinct(tmp_path):
+    from html import escape
+    from audiobook.intake import inspect_source
+
+    source = ('Use the bookmarks (commands ^K0 through ^K9 and ^Q0 through ^Q9). '
+              'For the formatting codes, ^OD toggles them on and off. '
+              'Toggle modes with ^V. Press Ctrl+Shift+P and Alt+F12.')
+    expected = ('Use the bookmarks (commands Control K, then zero through Control K, then nine '
+                'and Control Q, then zero through Control Q, then nine). '
+                'For the formatting codes, Control O, then D toggles them on and off. '
+                'Toggle modes with Control V. Press Control Shift P and Alt F twelve.')
+    for extension in ('txt','md','html'):
+        path = tmp_path/f'manual.{extension}'
+        path.write_text(f'<p>{escape(source)}</p>' if extension=='html' else source,encoding='utf-8')
+        doc = inspect_source(path)
+        result = plan(doc)
+        assert not result['issues']
+        assert speech(result)==expected
+        readings = [event for event in events(result) if selected(event)['kind']=='keyboard_sequence']
+        assert [event['source'] for event in readings]==['^K0','^K9','^Q0','^Q9','^OD','^V','Ctrl+Shift+P','Alt+F12']
+        for event in readings:
+            start,end = event['expression_span']
+            assert source[start:end]==event['source']
+        assert selected(readings[4])['fields']['strokes']==[
+            {'modifiers':['Control'],'key':'O'}, {'modifiers':[],'key':'D'}]
+        assert selected(readings[6])['fields']['strokes']==[{'modifiers':['Control','Shift'],'key':'P'}]
+        legacy = plan(doc,rule_revision='faithful-30')
+        assert speech(legacy)==source
+        assert 'keyboard_context' not in legacy['policy']['context']['cues']
+    assert speech(reading('Press Ctrl-Shift-P to open the command palette.')) == (
+        'Press Control Shift P to open the command palette.')
+
+
+def test_caret_needs_keyboard_evidence_and_keeps_math_code_and_patterns(tmp_path):
+    from audiobook.intake import inspect_source
+
+    source = ('The pattern ^V toggles matching at the start of line. The label ^OD is blue. '
+              'Type `^V` exactly. Press `Ctrl+X` in this example. '
+              'The equation is y = X^2. Press Ctrl+Alt+Delete for the menu.')
+    path = tmp_path/'literal-controls.md'
+    path.write_text(source,encoding='utf-8')
+    result = plan(inspect_source(path))
+    assert [event['source'] for event in events(result) if selected(event)['kind']=='keyboard_sequence']==['Ctrl+Alt+Delete']
+    assert all(token in speech(result) for token in ('^V toggles','^OD is blue','Type ^V','Press Ctrl+X','Control Alt Delete'))
+    assert 'y equals X to the power of 2' in speech(result)
+    suppressed = reading('Press ^V.',cues={'keyboard_action':[],'keyboard_context':[]})
+    assert speech(suppressed)=='Press ^V.'
+
+
 def test_quoted_numeric_symbols_are_voiced_as_characters_in_a_literal_instruction():
     source='The string "3/4" contains three characters. Type "$222" exactly, including the dollar sign. Pay $222.'
     result=reading(source)

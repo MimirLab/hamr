@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev59
+
+- Read keyboard instructions in prose. Named chords such as `Ctrl+Shift+P` keep their modifiers together, and contextual legacy shortcuts such as `^OD` read as sequential keys. The plan keeps each printed shortcut and its source range.
+- Compare equivalent modifier spellings, written email addresses, and common English spelling variants during speech checks. Changed keys, address fields, and words still require review.
+
 # hamr 0.4.9.dev58
 
 - Open WordStar 7 for DOS manuscripts directly, from a folder, or within an archive. The built-in reader follows saved paragraph styles and notes, restores prose across soft line endings, and preserves the original byte ranges. [WordStar intake](docs/INTAKE.md#wordstar-7)

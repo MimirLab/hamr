@@ -292,3 +292,35 @@ def test_audio_comparison_matches_apostrophe_s_at_the_same_word_site():
         assert c(notation_observation(expected, wrong)) != c(expected)
     assert notation_observation("The dinosaur's eyes.", 'Dinosaur saw the dinosaurs.') == 'Dinosaur saw the dinosaurs.'
     assert notation_observation("We’re done.", 'Were done.') == 'Were done.'
+
+
+def test_speech_observation_keeps_exact_keys_order_and_modifiers():
+    from audiobook.speech_compare import notation_observation, shared_residual_sites
+
+    expected = 'Press Control O, then D to toggle. Use Control Shift P to print. Try Alt F twelve again.'
+    observed = 'Press Ctrl+O then D to toggle. Use Ctrl+Shift+P to print. Try Alt+F12 again.'
+    assert c(notation_observation(expected, observed)) == c(expected)
+    assert not shared_residual_sites(expected, observed, observed)
+    assert c(notation_observation('Try Alt F twelve again.','Try Alt F12 again.')) == c('Try Alt F twelve again.')
+    expected_hyphens = 'Press Control Shift P to open the command palette.'
+    observed_hyphens = 'Press Ctrl-Shift-P to open the command palette.'
+    assert c(notation_observation(expected_hyphens,observed_hyphens)) == c(expected_hyphens)
+    for wrong in (observed.replace('then D', 'then T'), observed.replace('Ctrl+O', 'Ctrl+0'),
+                  observed.replace('Ctrl+Shift+P', 'Shift+P'), observed.replace('F12', 'F13')):
+        assert c(notation_observation(expected,wrong)) != c(expected)
+    assert notation_observation('The control variable is P.','The ctrl variable is P.')=='The ctrl variable is P.'
+    assert c('A coloured Word Star dialogue box. Heal the wound.') == c('A colored WordStar dialog box. Heal the wound.')
+    assert c('A colored dialog box.') != c('A colorless dial box.')
+
+
+def test_read_email_keeps_each_address_field_and_occurrence():
+    from audiobook.speech_compare import notation_observation
+
+    expected = 'Send it to editor.name@example.com tomorrow.'
+    for observed in ('Send it to editor.name at example.com tomorrow.',
+                     'Send it to editor dot name at example dot com tomorrow.'):
+        assert notation_observation(expected,observed)==expected
+    for wrong in ('Send it to editor.other at example.com tomorrow.',
+                  'Send it to editor.name at examples.com tomorrow.',
+                  'Send it to editor.name at example.com soon.'):
+        assert c(notation_observation(expected,wrong)) != c(expected)

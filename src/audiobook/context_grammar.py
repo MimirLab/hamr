@@ -54,8 +54,8 @@ PATTERNS = {
     'integer': LEFT + r'[0-9]{1,12}' + RIGHT,
 }
 
-def expressions(lexicon, initialisms, price_nouns, native_names=(), *, precise_codes=False):
-    fields=dict(context_lexical.expressions(LEFT,RIGHT,initialisms,native_names))
+def expressions(lexicon, initialisms, price_nouns, native_names=(), *, precise_codes=False, keyboard=False):
+    fields=dict(context_lexical.expressions(LEFT,RIGHT,initialisms,native_names,keyboard=keyboard))
     # A dash between two numbers belongs to the numeric expression.
     precise={name:LEFT+pattern+RIGHT for name,pattern in PRECISE.items()} if precise_codes else {}
     fields={**precise, **PATTERNS, **fields}

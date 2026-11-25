@@ -21,6 +21,7 @@ CONVENTIONS = {
     'narration_style': {'natural','technical'},
 }
 BOOLEAN_CONVENTIONS={'accounting_parentheses','expand_contractions','expand_citations'}
+KEYBOARD_CUES={'keyboard_context','keyboard_action','pattern_syntax'}
 
 
 def invalid(message):
@@ -47,7 +48,7 @@ def conventions(value):
     return dict(value)
 
 
-def effective(value=None):
+def effective(value=None, *, keyboard=True):
     value = {} if value is None else value
     if not isinstance(value, dict) or value.keys() - DEFAULT.keys() or value.get('schema_version', 1) != 1:
         invalid('Unknown context settings key or schema version.')
@@ -62,6 +63,8 @@ def effective(value=None):
         invalid('Unknown context weight.')
     if any(type(weight) is not int or not 0 <= weight <= 100 for weight in weights.values()):
         invalid('Context weights must be integers from 0 through 100.')
+    cue_defaults = DEFAULT['cues'] if keyboard else {
+        name:phrases for name,phrases in DEFAULT['cues'].items() if name not in KEYBOARD_CUES}
     if not isinstance(cues, dict) or cues.keys() - DEFAULT['cues'].keys():
         invalid('Unknown context cue group.')
     for group, phrases in cues.items():
@@ -69,7 +72,8 @@ def effective(value=None):
                 not isinstance(phrase, str) or not re.fullmatch(r"[\w][\w '\u2019-]{0,79}", phrase, re.UNICODE)
                 or not phrase[-1].isalnum() for phrase in phrases)):
             invalid(f'Context cue group {group} must contain short literal phrases.')
-    merged_cues={name: sorted(set(p.casefold() for p in phrases)) for name, phrases in {**DEFAULT['cues'], **cues}.items()}
+    merged_cues={name: sorted(set(p.casefold() for p in cues.get(name,phrases)))
+                 for name,phrases in cue_defaults.items()}
     lexicon=config['lexicon']
     if not isinstance(lexicon,dict) or len(lexicon)>128:
         invalid('Context lexicon must map short dotted tokens to cue-based readings.')
@@ -130,10 +134,12 @@ def implementation(*, unified=True, rule_revision=None):
         return 'df772e6534764093c6bd95de9ac806fad6c9f617b2791f7f4369a9bd586faf8d'
     if rule_revision=='faithful-29':
         return 'badb69c8d1a7854caec4656673fde7b12efee39930e3f2a10c674ff92df6b925'
+    if rule_revision=='faithful-30':
+        return '62a3240b8f66419b85dad0c354292293032bd00e20f41f89a9064de6c177c31e'
     return key({name: filehash(Path(__file__).with_name(name))
                 for name in ('context_config.py','contextual.py','context_grammar.py','context_candidate.py','context_forms.py','context_lexical.py','context_numbers.py',
                              'context_structure.py','context_reviewer.py','context_rules.json','abbreviations.py','boundaries.py','epub_semantics.py','epub_styles.py','linguistic.py','pronunciation.py',
                              'markdown_notes.py','pdf_formula.py','pdf_geometry.py','pdf_layout.py','pdf_overlays.py','pdf_rules.py','pdf_tables.py','pdf_table_readings.py',
                              'pdf_words.py','pdf_reading_spans.py','pdf_scripts.py','pdf_literals.py','source_passages.py','source_numbering.py',
                              'source_math.py','source_arithmetic.py','source_notes.py','source_scripts.py',
-                             'epub_notes.py','html_notes.py','spoken_forms.py','table_readings.py','typed_readings.py')})
+                             'epub_notes.py','html_notes.py','keyboard_readings.py','spoken_forms.py','table_readings.py','typed_readings.py')})

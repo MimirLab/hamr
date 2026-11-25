@@ -294,6 +294,8 @@ An optional top-level `native_names` list records particular names whose reading
 
 The contextual reader gives whole forms such as rates, ranges, dimensions, and measurements priority over their component numbers. It still draws on the established EPUB handling for authored links, literal text, and publisher pronunciation. For words such as “read” or “record”, a recorded contextual interpretation may rely on Breeze for pronunciation. Hearing and acoustic evaluation are required to verify the resulting stress or vowel.
 
+In instructions, `Ctrl+Shift+P` reads as “Control Shift P.” Nearby keyboard wording can also identify compact notation in older manuals. A WordStar instruction containing `^OD` reads “Control O, then D.” The plan keeps the printed keys and the spoken sequence. Literal code spans and signatures that belong to expressions such as regular expressions keep their existing treatment.
+
 An EPUB expression split by inline markup can have multiple `source_leaves` in the plan. Each part records its parsed XHTML text node and half-open Unicode code point range. In a simple table, a unique authored `headers` reference supplies the column label and its source ID. A ditto cell follows the preceding value within the same authored column, and a chain retains the original value cell as well as its immediate antecedent.
 
 In an instruction to copy `"$222"` exactly, Hamr reads the dollar sign and digits as characters. The same amount in ordinary prose reads as money. Recognized vocal markers such as `[laughs]` and `(clears throat)` are read as text. Their original spelling and punctuation remain in the companion.

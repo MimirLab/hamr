@@ -2,7 +2,7 @@
 import re
 import unicodedata
 
-from . import boundaries
+from . import boundaries, keyboard_readings
 from .abbreviations import EMAIL_HEAD
 from .context_candidate import Candidate, Component, literal
 from .linguistic import LIGATURES, VOCAL_MARKER, spoken_vocal_marker
@@ -16,6 +16,7 @@ OPAQUE = re.compile('|'.join(f'(?P<{kind}>{pattern})' for kind,(_,pattern) in OP
 PICTOGRAPH = r'[\U0001F300-\U0001FAFF]\ufe0f?[\U0001F3FB-\U0001F3FF]?'
 
 PATTERNS = {
+    'keyboard': ('CR-L050', keyboard_readings.EXPRESSION),
     'corporate': ('CR-L003', r'(?i:Inc\.|Corp\.|Ltd\.)(?!\w)'),
     'initials': ('CR-L005', r'(?:[A-Z]\. ){1,4}[A-Z][a-z]+'),
     'acronym': ('CR-L004', r'{acronyms}'),
@@ -46,8 +47,10 @@ PATTERNS = {
 }
 
 
-def expressions(left, right, abbreviations, native_names=()):
+def expressions(left, right, abbreviations, native_names=(), *, keyboard=False):
     for kind, (_, pattern) in PATTERNS.items():
+        if kind=='keyboard' and not keyboard:
+            continue
         if kind=='acronym':
             pattern='(?:'+'|'.join(map(re.escape,abbreviations)) + ')' if abbreviations else r'(?!)'
         if kind=='native_name':
@@ -81,6 +84,22 @@ def literal_candidate(kind,raw,env):
 
 
 def candidates(kind,raw,env):
+    if kind=='keyboard':
+        if raw.startswith('^'):
+            if (env.nearby('pattern_syntax',side='either') or env.setting('notation') in ('ASCII_power','ASCII_subscript')
+                    or not (env.cue('keyboard_action') or env.cue('keyboard_action',side='right')
+                            or env.nearby('keyboard_context',side='either') or env.header_cue('keyboard_context'))):
+                return []
+        reading = keyboard_readings.describe(raw)
+        if reading is None:
+            return []
+        strokes,spoken = reading
+        evidence = ['syntax']
+        for family,found in (('governor',env.governors),('nearby',env.neighbors),
+                             ('column',env.header_cue('keyboard_context'))):
+            if found:
+                evidence.append(family)
+        return [Candidate('keyboard_sequence',{'strokes':strokes},spoken,tuple(evidence))]
     form = env.resolver.config['initialisms'].get(raw)
     if kind=='acronym' and form:
         if raw=='US' and not env.cue('country_context',side='right') and not env.cue('country_context'):
