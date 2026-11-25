@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev75
+
+- Read tracked paragraph joins and table revisions in Word documents. Joined words stay intact, and deleted rows and cells stay out of narration. The companion retains the original Word source and records the affected locations.
+
 # hamr 0.4.9.dev74
 
 - Read the current text of tracked RTF edits. Insertions and moved text are read in their final locations, and deleted words, note anchors, and breaks are omitted. The original file remains available from the companion.

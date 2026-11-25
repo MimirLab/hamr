@@ -12,7 +12,8 @@ from .source_notes import Definition, NoteGraph, note_text
 from .source_numbering import embed_ordered_label
 from .source_commands import literal_paragraph_location, literal_spans, literal_style
 from .table_grid import Grid, count, passage, passages, simple_matrix
-from .word_stories import ALTERNATE, MISSING_BRANCH, TEXTBOX, Stories, branch, enabled, excluded_kind, properties, visible
+from .word_stories import (ALTERNATE, MISSING_BRANCH, TEXTBOX, WORD_NAMESPACES, Stories, branch, enabled,
+                           excluded_kind, properties, removed_paragraph_mark, visible)
 from .word_numbering import Numbering, value as style_value
 
 
@@ -23,7 +24,7 @@ class Paragraph:
     excluded: list = field(default_factory=list)
     issue: str | None = None
     stories: list = field(default_factory=list)
-    location: dict | None = None
+    locations: tuple = ()
     numbering: tuple | None = None
 
 
@@ -45,12 +46,15 @@ def join_paragraphs(paragraphs, *, note=False):
     return Paragraph(' '.join(pieces),spans,issue=issue)
 
 
+VERTICAL_CHANGES = {f'{{{namespace}}}cellMerge' for namespace in WORD_NAMESPACES}
+
+
 def table_members(node,tag):
     for child in node:
-        if excluded_kind(child):
-            continue
         if name(child)==tag:
             yield child
+        elif excluded_kind(child):
+            continue
         elif name(child) in ('sdt','sdtContent','customXml','ins','moveTo'):
             yield from table_members(child,tag)
         elif child.tag==ALTERNATE and (selected:=branch(child)) is not None:
@@ -63,6 +67,68 @@ def setting(node,group,key,default=None):
 
 def word_location(node,part='document'):
     return {'source_file':f'word/{part}.xml','xml_path':node.getroottree().getpath(node)}
+
+
+def row_cells(row,removed):
+    """Return surviving cells with their accepted grid widths."""
+    previous,span = None,0
+    for cell in table_members(row,'tc'):
+        width = count(setting(cell,'tcPr','gridSpan','0'))
+        if excluded_kind(cell)=='deleted_cell':
+            removed.append(word_location(cell))
+            # A removed neighbor's positions belong to the surviving cell on its left.
+            if previous is not None:
+                span += width
+            continue
+        if previous is not None:
+            yield previous,span
+        previous,span = cell,width
+    if previous is not None:
+        yield previous,span
+
+
+def vertical_merge(cell):
+    revision = next((prop for prop in properties(cell,'tcPr') if prop.tag in VERTICAL_CHANGES),None)
+    if revision is not None:
+        state = attr(revision,'vMerge')
+        if state is not None:
+            return {'rest':'restart','cont':'continue'}.get(state,state)
+    return setting(cell,'tcPr','vMerge','continue')
+
+
+def story_nodes(container, *, discover=False):
+    for child in container:
+        tag = name(child)
+        if excluded_kind(child) or tag in ('sectPr','sdtPr','sdtEndPr'):
+            continue
+        if child.tag==ALTERNATE:
+            if (selected:=branch(child)) is not None:
+                yield from story_nodes(selected,discover=discover)
+            else:
+                yield child
+        elif tag in ('p','tbl','altChunk','object') or office_tag(child) in ('oMath','oMathPara'):
+            yield child
+        elif discover or tag in ('sdt','sdtContent','customXml','ins','moveTo'):
+            yield from story_nodes(child,discover=discover)
+
+
+def story_groups(container, *, discover=False):
+    """Group only adjacent paragraphs joined by marks removed in the final view."""
+    pending = []
+    for node in story_nodes(container,discover=discover):
+        if name(node)=='p':
+            pending.append(node)
+            if removed_paragraph_mark(node):
+                continue
+            yield tuple(pending)
+            pending.clear()
+        else:
+            if pending:
+                yield tuple(pending)
+                pending.clear()
+            yield node,
+    if pending:
+        yield tuple(pending)
 
 
 def read_word(path,builder):
@@ -99,7 +165,7 @@ def read_word(path,builder):
                     if ident is not None and attr(note,'type') in (None,'normal'):
                         pending_notes['#'+part[:-1]+':'+ident].append((part,note))
 
-        def paragraph(node, *, note_part=None, embed=False):
+        def paragraph(nodes, *, note_part=None, embed=False):
             pieces,spans,excluded,problems = [],[],[],[]
             textboxes = []
             drawings = drawing_parts[note_part or 'document']
@@ -184,7 +250,8 @@ def read_word(path,builder):
                     return
                 for child in item:
                     walk(child)
-            walk(node)
+            for node in nodes:
+                walk(node)
             untrimmed = ''.join(pieces)
             left = len(untrimmed)-len(untrimmed.lstrip())
             text = untrimmed.strip()
@@ -194,31 +261,29 @@ def read_word(path,builder):
                 span['source'] = text[span['source_start']:span['source_end']]
             spans = prepare_scripts(text,spans)
             issue = ' '.join(dict.fromkeys(problems)) or uncertainty(spans)
-            order = numbering.next(node)
+            # The surviving paragraph mark determines the paragraph style and list counter.
+            order = numbering.next(nodes[-1])
             if order:
                 value,marker = order
                 issue = issue or marker.get('issue')
                 if embed and not issue:
                     embed_ordered_label(text,spans,order)
-            return Paragraph(text,spans,excluded,issue,textboxes,word_location(node,note_part or 'document'),order)
+            locations = tuple(word_location(node,note_part or 'document') for node in nodes)
+            if embed and len(locations)>1:
+                builder.doc.inventory.append({**locations[-1],'selected_edition':'visible final',
+                                              'source_members':list(locations)})
+            return Paragraph(text,spans,excluded,issue,textboxes,locations,order)
 
         def embedded_content(node,*,note_part=None):
-            for child in node:
-                if excluded_kind(child):
-                    continue
+            for nodes in story_groups(node):
+                child = nodes[-1]
                 if child.tag==ALTERNATE:
-                    if (selected:=branch(child)) is not None:
-                        yield from embedded_content(selected,note_part=note_part)
-                    else:
-                        yield Paragraph(issue=MISSING_BRANCH)
-                    continue
-                if name(child)=='p' or office_tag(child) in ('oMath','oMathPara'):
-                    result = paragraph(child,note_part=note_part,embed=True)
+                    yield Paragraph(issue=MISSING_BRANCH)
+                elif name(child)=='p' or office_tag(child) in ('oMath','oMathPara'):
+                    result = paragraph(nodes,note_part=note_part,embed=True)
                     yield result
                     for story in result.stories:
                         yield from embedded_content(story,note_part=note_part)
-                elif name(child) in ('sdt','sdtContent','customXml','ins','moveTo'):
-                    yield from embedded_content(child,note_part=note_part)
                 elif name(child)=='tbl':
                     yield child
                 elif name(child) in ('altChunk','object'):
@@ -229,15 +294,19 @@ def read_word(path,builder):
             if any(child.tag==ALTERNATE and branch(child) is None for child in visible(node)):
                 grid.issue(MISSING_BRANCH)
             vertical = {}
+            removed_rows = []
+            removed_cells = []
             for row in table_members(node,'tr'):
+                if excluded_kind(row)=='deleted_row':
+                    removed_rows.append(word_location(row))
+                    continue
                 grid.begin_row(count(setting(row,'trPr','gridBefore'),minimum=0,default=0))
                 head = setting(row,'trPr','tblHeader','true')
                 role = 'column' if head is not None and enabled(head) else 'data'
                 next_vertical = {}
                 left = None
-                for cell in table_members(row,'tc'):
-                    columns = count(setting(cell,'tcPr','gridSpan','0'))
-                    v_merge = setting(cell,'tcPr','vMerge','continue')
+                for cell,columns in row_cells(row,removed_cells):
+                    v_merge = vertical_merge(cell)
                     h_merge = setting(cell,'tcPr','hMerge','continue')
                     loc = word_location(cell)
                     pieces, parts = [],[]
@@ -248,7 +317,7 @@ def read_word(path,builder):
                             grid.issue(content.issue)
                         if content.text or content.spans:
                             part = passage(content.text,content.spans)
-                            locations = [p.location for p in pieces if p.location and (p.text or p.spans)]
+                            locations = [location for p in pieces if p.text or p.spans for location in p.locations]
                             part['location'] = locations[0] if len(locations)==1 else loc
                             if len(locations)>1:
                                 part['source_members'] = locations
@@ -282,9 +351,17 @@ def read_word(path,builder):
                     left = origin if h_merge=='restart' else None
                 vertical = next_vertical
                 grid.end_row(count(setting(row,'trPr','gridAfter'),minimum=0,default=0))
+            if removed_rows or removed_cells:
+                builder.doc.inventory.append({**word_location(node),'selected_edition':'visible final',
+                                              'excluded_rows':removed_rows,'excluded_cells':removed_cells})
             return grid.finish()
 
-        def visit(node,textbox=None):
+        def visit_story(node,textbox=None):
+            for nodes in story_groups(node,discover=True):
+                visit(nodes,textbox)
+
+        def visit(nodes,textbox):
+            node = nodes[-1]
             tag = name(node)
             xml_path = node.getroottree().getpath(node)
             loc = 'word/document.xml:'+xml_path
@@ -295,13 +372,11 @@ def read_word(path,builder):
                 provenance = {'source_file':'word/document.xml','xml_path':xml_path,
                               'text_box':tree.getpath(textbox),'text_box_anchor':tree.getpath(anchor)}
             if node.tag==ALTERNATE:
-                if (selected:=branch(node)) is not None:
-                    visit(selected,textbox)
-                else:
-                    builder.issue(MISSING_BRANCH,loc)
-                return
-            if tag=='p' or office_tag(node) in ('oMath','oMathPara'):
-                content = paragraph(node)
+                builder.issue(MISSING_BRANCH,loc)
+            elif tag=='p' or office_tag(node) in ('oMath','oMathPara'):
+                content = paragraph(nodes)
+                if len(content.locations)>1:
+                    provenance['source_members'] = list(content.locations)
                 props = properties(node,'pPr')
                 style = next((attr(n,'val') for n in props if name(n)=='pStyle'),None) or ''
                 role = 'heading' if style.lower().startswith(('heading','title')) or any(
@@ -327,7 +402,7 @@ def read_word(path,builder):
                 if item and any(span['kind']=='line_break' and span['source']=='\n' for span in content.spans):
                     item.locator['authored_line_breaks'] = True
                 for story in content.stories:
-                    visit(story,story)
+                    visit_story(story,story)
             elif tag=='tbl':
                 grid = table(node)
                 if matrix:=simple_matrix(grid):
@@ -338,20 +413,20 @@ def read_word(path,builder):
                     builder.grid(grid,loc,loc=provenance)
             elif tag in ('altChunk','object'):
                 builder.issue('The Word body refers to embedded content that must be reviewed.',loc)
-            elif tag not in ('del','moveFrom','sectPr','sdtPr','sdtEndPr'):
-                for child in node:
-                    visit(child,textbox)
-        visit(document)
+        visit_story(document)
         definitions = defaultdict(list)
         for href,notes in pending_notes.items():
             for part,node in notes:
-                content = join_paragraphs((token if isinstance(token,Paragraph) else
-                                           Paragraph(issue='A table in a Word note needs a verified reading.')
-                                           for token in embedded_content(node,note_part=part)),note=True)
+                pieces = [token if isinstance(token,Paragraph) else
+                          Paragraph(issue='A table in a Word note needs a verified reading.')
+                          for token in embedded_content(node,note_part=part)]
+                content = join_paragraphs(pieces,note=True)
                 xml_path = node.getroottree().getpath(node)
                 member = 'word/'+part+'.xml'
                 location = {'source_file':member,'xml_path':xml_path,'note_kind':part[:-1],
                             'inline_semantics':content.spans}
+                if any(len(piece.locations)>1 for piece in pieces):
+                    location['source_members'] = [loc for piece in pieces for loc in piece.locations]
                 if item:=builder.add(content.text,'note',member+':'+xml_path,loc=location):
                     definitions[href].append(Definition(item,note_text(item,terminal=True),content.issue))
         graph = NoteGraph(definitions.get)

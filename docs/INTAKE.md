@@ -13,6 +13,8 @@ OpenDocument text and slides retain authored inline bold and italics, with the e
 
 RTF retains inline bold and italics set directly or through a character style. It reads the current wording of tracked edits, including inserted text and the destination of moves. Deleted words and tracked line breaks stay in the original file. The same reader handles Scrivener manuscript text and RTF inside archives.
 
+Word follows tracked paragraph joins, deleted rows and cells, and supported vertical-merge revisions before preparing speech. Deleted material remains in the original Word file, and the companion links the joined passages to their original paragraphs.
+
 `hamr agent capabilities` checks whether Linux converters can start their required Bubblewrap isolation. It distinguishes a missing worker, a missing Bubblewrap executable, and isolation that the host blocks.
 
 ## Source readers

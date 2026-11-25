@@ -33,6 +33,76 @@ def paragraph(text):
     return f'<w:p><w:r><w:t>{text}</w:t></w:r></w:p>'
 
 
+def test_word_final_revision_joins_a_word_and_keeps_exact_original_parts(tmp_path):
+    body = ('<w:p><w:pPr><w:pStyle w:val="Heading1"/><w:rPr><w:del w:id="1"/></w:rPr></w:pPr>'
+            '<w:r><w:t>A river</w:t></w:r></w:p>'
+            '<w:ins w:id="2"><w:p><w:r><w:rPr><w:i/></w:rPr><w:t>bank</w:t></w:r>'
+            '<w:r><w:footnoteReference w:id="3"/><w:t xml:space="preserve"> lay ahead.</w:t></w:r>'
+            '</w:p></w:ins>'+paragraph('The keeper shut the gate.'))
+    note = ('<w:footnote w:id="3"><w:p><w:pPr><w:rPr><w:moveFrom w:id="4"/></w:rPr></w:pPr>'
+            '<w:r><w:t>The light</w:t></w:r></w:p>'+paragraph('house still stands.')+'</w:footnote>')
+    source = package(tmp_path/'edition.docx',body,note)
+    wrapped = tmp_path/'edition.zip'
+    with ZipFile(wrapped,'w') as archive:
+        archive.write(source,'Book/edition.docx')
+    for variant in (source,wrapped):
+        document = inspect_source(variant)
+        combined,later,definition = document.blocks
+        assert (combined.role,combined.source)==('body','A riverbank lay ahead.')
+        assert later.source=='The keeper shut the gate.'
+        assert [p['xml_path'] for p in combined.locator['source_members']]==[
+            '/w:document/w:body/w:p[1]','/w:document/w:body/w:ins/w:p']
+        mark,anchor = combined.locator['inline_semantics']
+        assert (mark['source'],mark['source_start'],mark['source_end'])==('bank',7,11)
+        assert anchor['source_start']==anchor['source_end']==11
+        assert combined.links[0]['destination']=='source.html#'+definition.id
+        assert definition.source=='The lighthouse still stands.'
+        assert len(definition.locator['source_members'])==2
+        assert not plan(document)['issues']
+
+
+def test_word_final_revision_drops_the_whole_row_before_building_the_grid(tmp_path):
+    body = ('<w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc>'
+            +paragraph('Place')+'</w:tc><w:tc>'+paragraph('Count')+'</w:tc></w:tr>'
+            '<w:tr><w:trPr><w:del w:id="9"/></w:trPr><w:tc>'
+            +paragraph('West gate')+'</w:tc><w:tc>'
+            '<w:p><w:r><w:t>96</w:t><w:footnoteReference w:id="99"/></w:r></w:p></w:tc></w:tr>'
+            '<w:tr><w:tc>'+paragraph('East gate')+'</w:tc><w:tc>'
+            '<w:p><w:pPr><w:rPr><w:del w:id="10"/></w:rPr></w:pPr><w:r><w:t>1</w:t></w:r></w:p>'
+            +paragraph('7')+'</w:tc></w:tr></w:tbl>')
+    document = inspect_source(package(tmp_path/'counts.docx',body))
+    item, = document.blocks
+    assert item.locator['rows']==[['Place','Count'],['East gate','17']]
+    entry, = [row for row in document.inventory if 'excluded_rows' in row]
+    assert entry['excluded_rows'][0]['xml_path']=='/w:document/w:body/w:tbl/w:tr[2]'
+    joined, = [row for row in document.inventory if 'source_members' in row]
+    assert [p['xml_path'].split('/')[-1] for p in joined['source_members']]==['w:p[1]','w:p[2]']
+    result = plan(document)
+    assert not result['issues']
+    assert [unit['text'] for unit in result['utterances']]==['Table. Place: East gate; Count: 17.']
+
+
+def test_word_final_cell_revisions_preserve_the_grid_and_omit_deleted_text(tmp_path):
+    table = ('<w:tbl><w:tr><w:tc><w:tcPr><w:cellMerge w:id="1" w:vMerge="rest"/></w:tcPr>'
+             +paragraph('North gate')+'</w:tc><w:tc>'+paragraph('Wing')
+             +'</w:tc><w:tc><w:tcPr><w:cellDel w:id="2"/></w:tcPr>'
+             +paragraph('Retired wing')+'</w:tc></w:tr>'
+             '<w:tr><w:tc><w:tcPr><w:cellMerge w:id="3" w:vMerge="cont"/></w:tcPr><w:p/>'
+             '</w:tc><w:tc>'+paragraph('East')+'</w:tc><w:tc>'+paragraph('West')+'</w:tc></w:tr></w:tbl>')
+    document = inspect_source(package(tmp_path/'accepted-grid.docx',table))
+    item, = document.blocks
+    grid = item.locator['table_grid']
+    assert (grid['width'],grid['height'])==(3,2)
+    assert [(c['row'],c['column'],c['rows'],c['columns']) for c in grid['cells']]==[
+        (0,0,2,1),(0,1,1,2),(1,1,1,1),(1,2,1,1)]
+    assert grid['cells'][0]['continuations'][0]['xml_path'].endswith('/w:tr[2]/w:tc[1]')
+    deleted, = document.inventory[0]['excluded_cells']
+    assert deleted['xml_path'].endswith('/w:tr[1]/w:tc[3]')
+    result = plan(document)
+    assert not result['issues']
+    assert [unit['text'] for unit in result['utterances']]==['Table. North gate. Wing. East. West.']
+
+
 def test_word_character_style_marks_the_owned_word_and_respects_explicit_off(tmp_path):
     styles = ('<w:style w:type="character" w:styleId="Authored"><w:rPr><w:i/></w:rPr></w:style>'
               '<w:style w:type="character" w:styleId="Alias"><w:basedOn w:val="Authored"/></w:style>')

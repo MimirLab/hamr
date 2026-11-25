@@ -7,6 +7,7 @@ from .document_intake import attr, name
 WORD = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 STRICT_WORD = 'http://purl.oclc.org/ooxml/wordprocessingml/main'
 WORD_EXT = 'http://schemas.microsoft.com/office/word/2006/wordml'
+WORD_NAMESPACES = (WORD,STRICT_WORD,WORD_EXT)
 MC = '{http://schemas.openxmlformats.org/markup-compatibility/2006}'
 SHAPE = 'http://schemas.microsoft.com/office/word/2010/wordprocessingShape'
 GROUP = 'http://schemas.microsoft.com/office/word/2010/wordprocessingGroup'
@@ -17,12 +18,15 @@ GRAPHIC_DATA = {f'{{{ns}}}graphicData' for ns in DRAWING}
 SUPPORTED = DRAWING | {WORD,STRICT_WORD,WORD_EXT,SHAPE,GROUP,VML,
                        'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
                        'http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing'}
-TEXTBOX = {f'{{{ns}}}txbxContent' for ns in (WORD,STRICT_WORD,WORD_EXT)}
+TEXTBOX = {f'{{{ns}}}txbxContent' for ns in WORD_NAMESPACES}
 VML_BOX = f'{{{VML}}}textbox'
 OWNER = f'{{{SHAPE}}}txbx'
 CONTINUATION = f'{{{SHAPE}}}linkedTxbx'
 ALTERNATE = MC+'AlternateContent'
 MISSING_BRANCH = 'This Word content has no readable compatibility branch.'
+REMOVED_MARKS = {f'{{{ns}}}{tag}' for ns in WORD_NAMESPACES for tag in ('del','moveFrom')}
+DELETED_ROWS = {f'{{{ns}}}del' for ns in WORD_NAMESPACES}
+DELETED_CELLS = {f'{{{ns}}}cellDel' for ns in WORD_NAMESPACES}
 
 
 def branch(node):
@@ -43,10 +47,19 @@ def properties(node,tag):
     return next((child for child in node if name(child)==tag),())
 
 
+def removed_paragraph_mark(node):
+    return any(mark.tag in REMOVED_MARKS for prop in properties(node,'pPr')
+               if name(prop)=='rPr' for mark in prop)
+
+
 def excluded_kind(node):
     tag = name(node)
     if tag in ('del','moveFrom'):
         return tag
+    if tag=='tr' and any(prop.tag in DELETED_ROWS for prop in properties(node,'trPr')):
+        return 'deleted_row'
+    if tag=='tc' and any(prop.tag in DELETED_CELLS for prop in properties(node,'tcPr')):
+        return 'deleted_cell'
     if tag=='r' and any(name(prop) in ('vanish','webHidden') and enabled(attr(prop,'val'))
                         for prop in properties(node,'rPr')):
         return 'hidden'
