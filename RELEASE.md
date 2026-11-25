@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev79
+
+- Read unpacked Writer master documents and linked chapters from folders and ZIPs. Hamr follows Writer's section order, keeps the original package parts for recovery, and recognizes an unrelated scan as a separate publication.
+
 # hamr 0.4.9.dev78
 
 - Read unpacked Writer document packages from a folder or ZIP. Hamr follows the authored text and table structure and retains each original package part for recovery.

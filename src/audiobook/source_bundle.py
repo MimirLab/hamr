@@ -43,7 +43,8 @@ PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp','odt','pages')) | DESCRIPTOR_FOLDERS
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx',
+                             'odp','odt','odf-master','pages')) | DESCRIPTOR_FOLDERS
 DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
@@ -196,8 +197,7 @@ def relative_file(root, name):
 
 def publication_folder(path):
     from .fictionbook_package import folder_marker as fb3_folder
-    from .odf_package import WRITER_MEDIA, folder_marker as writer_media
-    from .odf_presentation import folder_marker as odp_folder
+    from .odf_package import MEDIA_ROUTES, folder_media
     from .pages_intake import folder_marker as pages_folder
     from .presentation_intake import folder_marker as pptx_folder
     from .xps_intake import folder_marker as xps_folder
@@ -208,10 +208,8 @@ def publication_folder(path):
         return 'fb3'
     if pptx_folder(path):
         return 'pptx'
-    if odp_folder(path):
-        return 'odp'
-    if writer_media(path,WRITER_MEDIA):
-        return 'odt'
+    if route:=MEDIA_ROUTES.get(folder_media(path)):
+        return route
     if pages_folder(path):
         return 'pages'
     if path.suffix.casefold()=='.textbundle':
@@ -361,9 +359,7 @@ def zip_members(archive):
 def zip_source(path, entry, override):
     from .archive_intake import ZipMembers
     from .document_intake import MAX_STRUCTURE
-    from .odf_content import MASTER_MEDIA
-    from .odf_package import MANIFEST_PART, WRITER_MEDIA, manifest_media
-    from .odf_presentation import MEDIA as ODF_PRESENTATION_TYPES
+    from .odf_package import MANIFEST_PART, MASTER_TYPES, PRESENTATION_MEDIA, WRITER_MEDIA, manifest_media
     from .pml_package import pmlz_parts
 
     try:
@@ -394,14 +390,14 @@ def zip_source(path, entry, override):
                     if info.filename==MANIFEST_PART and info.file_size<=MAX_STRUCTURE:
                         marker,media = index,manifest_media(archive.read(info))
                         break
-            if override is None and media in ODF_PRESENTATION_TYPES:
+            if override is None and media in PRESENTATION_MEDIA:
                 package_route = 'odp'
             for predicate,route in (
                 ('META-INF/container.xml' in names or media==b'application/epub+zip','epub'),
                 ('word/document.xml' in names,'docx'),
                 ('xl/workbook.xml' in names,'xlsx'),
                 (media in WRITER_MEDIA,'odt'),
-                (media==MASTER_MEDIA.encode(),'odf-master'),
+                (media in MASTER_TYPES,'odf-master'),
             ):
                 if predicate:
                     if route=='epub' and 'META-INF/container.xml' in names:
@@ -409,7 +405,7 @@ def zip_source(path, entry, override):
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
                     if override!='scan' and package_route not in ('fb3','xps','pptx','odp','pages'):
-                        if route=='odt' and path.suffix.casefold()=='.zip':
+                        if route in ('odt','odf-master') and path.suffix.casefold()=='.zip':
                             return Source(route,'zip',marker)
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
@@ -445,16 +441,20 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         raise Error('source_format','The selected publication is a TextPack.')
     if textpack and not packages:
         raise Error('source_textbundle','The TextPack has no info.json descriptor next to its text payload.')
-    if not (scan_only or textpack or package_route or latex_only):
+    if not (scan_only or textpack or latex_only) and package_route in (None,'odf-master'):
         from .odf_master import archive_claims
 
-        claimed |= archive_claims(archive,[item for item in members if item.index not in claimed])
+        linked = archive_claims(archive,members,packages,claimed)
+        claimed |= linked
+        packages = [item for item in packages if item[1].index not in linked]
     manifests, images, documents = [], [], []
     for item in members:
-        if textpack or package_route or item.index in claimed:
+        if textpack or package_route not in (None,'odf-master') or item.index in claimed:
             continue
         name = PurePosixPath(item.name)
         basename, suffix = name.name.casefold(),source_suffix(name.name)
+        if package_route=='odf-master' and NATIVE.get(suffix)!='odf-master':
+            continue
         is_manifest = basename in ('pages.hamr.json','mets.xml') or suffix=='.mets'
         if basename=='manifest.json' and item.size is not None and item.size<=MAX_MANIFEST:
             with archive.open_member(item) as stream:
@@ -917,7 +917,7 @@ def capture_dependencies(path,target_dir,source,*,root=None):
         from .classic_mac_intake import capture_classic_mac
 
         return capture_classic_mac(path,target_dir,source)
-    if source.kind=='file' and source.route=='odf-master':
+    if source.kind in ('file','directory') and source.route=='odf-master':
         from .odf_master import capture_master
 
         return capture_master(path,target_dir,source,root=root)

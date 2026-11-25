@@ -1,7 +1,6 @@
 """Saved section content and references shared by OpenDocument text readers."""
 
 import posixpath
-from pathlib import PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 from .core import Error
@@ -78,12 +77,10 @@ def section_target(part,source,*,packaged):
     # Packaged content.xml resolves from the virtual directory of its ODF.
     base = part if packaged else posixpath.dirname(part)
     target = posixpath.normpath(posixpath.join(base,'/'.join(fragments)))
-    if packaged and target.startswith(part+'/'):
+    if packaged and (target.startswith(part+'/') or not part and not target.startswith('../')):
         raise Error('odf_link','This Writer link points to a document embedded inside its package.')
     try:
         target = safe_name(target)
     except Error as exc:
         raise Error('odf_link','The Writer link leaves the supplied source folder.') from exc
-    if PurePosixPath(target).suffix.casefold() not in LINKED_SUFFIXES:
-        raise Error('odf_link','The Writer link needs a local OpenDocument text file.')
     return target,region

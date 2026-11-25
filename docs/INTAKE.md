@@ -95,7 +95,7 @@ The built-in reader recognizes OpenOffice.org 1.x Writer text using the original
 
 ## Writer master documents
 
-Open the `.odm` with its chapters beside it or in subfolders. If chapters live in a shared parent folder, open that folder or ZIP the whole publication with its relative paths. The reading follows Writer's section order and can select a named section from a linked chapter. A copy that Writer saved inside the master supplies that section's reading. The companion can return the original master and each chapter Hamr used.
+Open the `.odm` with its chapters beside it or in subfolders. If chapters live in a shared parent folder, open that folder or ZIP the whole publication with its relative paths. The folder and ZIP also work when the master or its chapters have been unpacked into folders containing `content.xml` and their Writer package markers. The reading follows Writer's section order and can select a named section from a linked chapter. A copy that Writer saved inside the master supplies that section's reading. The companion can return the original linked files and the individual parts of unpacked packages.
 
 If an unsaved section has a missing chapter, a circular reference, or a link outside the supplied files, the plan marks that section for source review. To include a chapter from elsewhere, save it inside the publication and update the link in Writer, or save a reading copy with the section contents included.
 

@@ -31,11 +31,6 @@ def flat_presentation(root):
                 and root.get(OFFICE+'mimetype','').encode() in MEDIA)
 
 
-def folder_marker(root):
-    from .odf_package import folder_marker as media_folder
-
-    return media_folder(root,MEDIA)
-
 def location(node,slide,groups=()):
     loc = {'slide':slide,'xml_path':node.getroottree().getpath(node)}
     if groups:

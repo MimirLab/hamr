@@ -1,6 +1,9 @@
 from pathlib import Path
 from zipfile import ZipFile
 
+import pytest
+
+from audiobook.core import Error
 from audiobook.intake import inspect_saved, inspect_source
 from audiobook.planner import plan
 from audiobook.source_bundle import capture
@@ -141,3 +144,64 @@ def test_unreadable_local_chapter_leaves_a_review_item_in_the_saved_job(tmp_path
     assert [block.source for block in doc.blocks if not block.issue]==['Introduction.','Closing words.']
     assert [entry['status'] for entry in doc.inventory if entry['kind']=='odf_linked_section']==['unresolved']
     assert 'Restricted.odt' in plan(doc)['issues'][0]['reason']
+
+
+def unpack(path,directory):
+    with ZipFile(path) as archive:
+        archive.extractall(directory)
+    return directory
+
+
+def test_unpacked_master_owns_its_linked_package_in_folder_and_zip(tmp_path):
+    root = tmp_path/'Edition'
+    master = writer(tmp_path/'Main.odm',p('The keeper checked the light.')+
+                    section('Part','../Chapter%20one',region='Selected'),'-master')
+    child = writer(tmp_path/'Part.odt',p('An unused introduction.')+
+                   '<text:section text:name="Selected">'+p('The lantern flickered.')+'</text:section>')
+    directory = unpack(master,root/'Reader')
+    unpack(child,root/'Chapter one')
+    parts = {file.relative_to(root).as_posix():file.read_bytes()
+             for file in root.rglob('*') if file.is_file()}
+    zipped = wrap(tmp_path/'Edition.zip',*((f'Shelf/{name}',root/name) for name in parts))
+
+    expected = ['The keeper checked the light.','The lantern flickered.']
+    for path,prefix in ((root,''),(zipped,'Shelf/')):
+        doc = inspect_source(path,offline=True)
+        assert speech(doc)==expected
+        assert not plan(doc)['issues']
+        assert [block.locator['member'] for block in doc.blocks]==[
+            prefix+'Reader/content.xml',prefix+'Chapter one/content.xml']
+        assert {item['member'] for item in doc.metadata['source_resources']}=={prefix+name for name in parts}
+
+    scoped = inspect_source(directory,offline=True)
+    assert speech(scoped)==expected[:1]
+    assert 'leaves the supplied source folder' in plan(scoped)['issues'][0]['reason']
+
+    area = tmp_path/'job'
+    area.mkdir()
+    snapshot,source = capture(root,area,offline=True)
+    with ZipFile(snapshot) as archive:
+        assert {name:archive.read(name) for name in archive.namelist()}==parts
+    (root/'Chapter one/content.xml').write_text('A different edition.')
+    assert speech(inspect_saved(snapshot,source))==expected
+
+
+def test_unpacked_master_and_unrelated_scan_remain_two_choices(tmp_path):
+    root = tmp_path/'Edition'
+    master = writer(tmp_path/'Main.odm',p('The keeper checked the light.')+
+                    section('Part','../A chapter.odt'),'-master')
+    unpack(master,root/'Reader')
+    child = writer(root/'A chapter.odt',p('The lantern flickered.'))
+    scan = root/'independent.jpg'
+    scan.write_bytes(b'\xff\xd8\xff')
+    zipped = wrap(tmp_path/'Edition.zip',*((file.relative_to(root).as_posix(),file)
+                                         for file in root.rglob('*') if file.is_file()))
+    for path in (root,zipped):
+        with pytest.raises(Error) as err:
+            inspect_source(path,offline=True)
+        assert err.value.code=='source_selection'
+        pages,publication = err.value.candidates
+        assert pages=={'id':'pages','name':'Image sequence (1 files)'}
+        assert publication['name']=='Reader'
+        selected = inspect_source(path,offline=True,entry=publication['id'])
+        assert speech(selected)==['The keeper checked the light.','The lantern flickered.']

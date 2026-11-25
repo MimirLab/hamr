@@ -72,10 +72,10 @@ def parse(path,source,sha,cache,title):
         from .pml_package import read_pml
 
         return read_pml(path,source,sha,title)
-    if source.route=='odf-master' and source.kind.endswith('-member'):
+    if source.route=='odf-master' and (source.kind in ('zip','tar','libarchive') or source.kind.endswith('-member')):
         from .odf_master import read_master
 
-        return read_master(path,source,sha)
+        return read_master(path,source,sha,title)
     if source.route=='odp' and source.kind in ('file','zip','tar','libarchive'):
         from .odf_presentation import read_odp
 

@@ -5,15 +5,17 @@ from pathlib import PurePosixPath
 
 from .core import Error, key
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, visit_odf_parts, xml
-from .odf_content import MANIFEST, TEXT_MEDIA
+from .odf_content import MANIFEST, MASTER_MEDIA, TEXT_MEDIA
 from .publication_package import member_bytes, member_location
 
 
 LEGACY_TEXT_MEDIA = frozenset((b'application/vnd.sun.xml.writer',b'application/vnd.sun.xml.writer.template'))
 WRITER_MEDIA = frozenset(value.encode() for value in TEXT_MEDIA) | LEGACY_TEXT_MEDIA
+MASTER_TYPES = frozenset((MASTER_MEDIA.encode(),))
 PRESENTATION_MEDIA = frozenset((b'application/vnd.oasis.opendocument.presentation',
                                 b'application/vnd.oasis.opendocument.presentation-template'))
-PACKAGE_MEDIA = WRITER_MEDIA | PRESENTATION_MEDIA
+MEDIA_ROUTES = {value:route for media,route in ((WRITER_MEDIA,'odt'),(MASTER_TYPES,'odf-master'),
+                                                (PRESENTATION_MEDIA,'odp')) for value in media}
 LEGACY_MANIFEST = '{http://openoffice.org/2001/manifest}'
 MEDIA_LIMIT = 256
 MANIFEST_PART = 'META-INF/manifest.xml'
@@ -34,19 +36,23 @@ def manifest_media(data):
     return b''
 
 
-def folder_marker(root,media):
+def folder_media(root):
     marker = root/'mimetype'
     if marker.is_symlink():
-        return False
+        return b''
     if marker.is_file():
         with marker.open('rb') as stream:
-            return stream.read(MEDIA_LIMIT+1).strip() in media
+            return stream.read(MEDIA_LIMIT+1).strip()
     manifest = root/MANIFEST_PART
     if manifest.parent.is_symlink() or manifest.is_symlink() or not manifest.is_file():
-        return False
+        return b''
     with manifest.open('rb') as stream:
         data = stream.read(MAX_STRUCTURE+1)
-    return len(data)<=MAX_STRUCTURE and manifest_media(data) in media
+    return manifest_media(data) if len(data)<=MAX_STRUCTURE else b''
+
+
+def folder_marker(root,media):
+    return folder_media(root) in media
 
 
 def marker_prefix(name):
@@ -71,22 +77,20 @@ def archive_books(archive,members):
             continue
         data = member_bytes(archive,marker,limit)
         media = data.strip() if limit==MEDIA_LIMIT else manifest_media(data)
-        if media not in PACKAGE_MEDIA:
+        if not (route:=MEDIA_ROUTES.get(media)):
             continue
-        route = 'odt' if media in WRITER_MEDIA else 'odp'
         claimed.update(part.index for part in members if part.name.startswith(prefix))
         label = PurePosixPath(prefix).name
         if route=='odp':
             label = f'OpenDocument presentation ({label})' if label else 'OpenDocument presentation'
-        roots.append((route,marker,label or 'OpenDocument text'))
+        roots.append((route,marker,label or ('Writer master document' if route=='odf-master' else 'OpenDocument text')))
     return roots,claimed
 
 
 class PackageParts:
-    def __init__(self,archive,members,marker):
+    def __init__(self,archive,members,prefix):
         self.archive = archive
         self.members = defaultdict(list)
-        prefix = marker_prefix(marker.name)
         for member in members:
             if member.name.startswith(prefix):
                 self.members[member.name[len(prefix):]].append(member)
@@ -97,6 +101,9 @@ class PackageParts:
             namespace = LEGACY_MANIFEST if root.tag.startswith(LEGACY_MANIFEST) else MANIFEST
             self.protected = {entry.get(namespace+'full-path') for entry in root.iter(namespace+'file-entry')
                               if entry.find(namespace+'encryption-data') is not None}
+
+    def marker(self):
+        return self.member('mimetype',required=False) or self.member(MANIFEST_PART)
 
     def member(self,name,required=True):
         matches = self.members.get(name,())
@@ -127,8 +134,8 @@ def read_writer_package(path,source,sha,title):
         if len(selected)!=1:
             raise Error('source_member_missing','The source has no unique Writer package.')
         marker,label = selected[0]
-        package = PackageParts(archive,members,marker)
-        package.member(marker.name.removeprefix(marker_prefix(marker.name)))
+        package = PackageParts(archive,members,marker_prefix(marker.name))
+        package.marker()
         content = package.member('content.xml')
         raw = xml(package.read('content.xml'))
         builder = DocumentBuilder('odt',label if marker_prefix(marker.name) else title,sha)
