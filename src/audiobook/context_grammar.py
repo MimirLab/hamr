@@ -335,10 +335,10 @@ def candidates(kind, raw, env):
             return durations
         if len(second)==2 and int(first)<24 and int(second)<60 and (suffix not in ('AM','PM') or 1<=int(first)<=12):
             clock_cue=env.cue('clock') if suffix is None else None
-            contextual=not (suffix or clock_cue) and (
-                env.cue('clock_at') and not (env.nearby('reference') or env.nearby('ratio'))
-                and (env.cue('clock_daypart',side='right') or env.cue('clock_transport',side='right')
-                     or env.nearby('clock_transport',side='left')))
+            contextual=not (suffix or clock_cue) and not (env.nearby('reference') or env.nearby('ratio')) and (
+                getattr(env.resolver,'narrative_clocks',False) and env.cue('clock_narrative')
+                or env.cue('clock_at') and (env.cue('clock_daypart',side='right')
+                    or env.cue('clock_transport',side='right') or env.nearby('clock_transport',side='left')))
             if not (suffix or clock_cue or contextual):return [fallback]
             fields={'hour':first,'minute':second,'zone':suffix if suffix in ('UTC','GMT') else None}
             if suffix in ('AM','PM'):

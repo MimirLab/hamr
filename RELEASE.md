@@ -1,3 +1,9 @@
+# hamr 0.4.9.dev61
+
+- Review flagged speech in a local browser with source text, the intended reading, verifier transcripts, and exact recordings. Filter or sample recurring disagreements, see likely missing speech and changed values first, and revisit saved decisions. Use `hamr review JOB` for a short summary and playback and export commands. [Speech review](docs/USAGE.md#review-saved-speech)
+- Recheck saved transcripts after a comparison fix with `hamr qa JOB --recheck`. Matching spoken and written line ranges compare by their endpoints. Changed numbers, missing words, and listening findings still need inspection.
+- Plan natural time readings in explicit narration contexts, such as “woke at 7:43.” Report a planned reading problem separately from a faulty recording so a retake starts with the corrected words.
+
 # hamr 0.4.9.dev60
 
 - Open Apple Pages documents through the bundled Linux reader. Tested XML and IWA editions preserve tables, linked notes and editable layout stories through the usual audiobook pipeline. Open a `.pages` file, a package folder, or one inside an archive. [Apple Pages intake](docs/INTAKE.md#apple-pages)

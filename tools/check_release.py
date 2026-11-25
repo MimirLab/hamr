@@ -35,6 +35,7 @@ ROOT_FILES = {'README.md', 'RELEASE.md', 'LICENSE', 'pyproject.toml', 'uv.lock',
               'docs/demo/lantern.md', 'docs/demo/lantern-plain.mp3', 'docs/demo/lantern-expressive.mp3',
               'docs/man/hamr.1', 'docs/man/audiobook.1'}
 TIMING_NAME_ASSETS = {'audiobook/timing_name_spellings.json', 'audiobook/timing_name_spellings_LICENSE.txt'}
+SPEECH_REVIEW_ASSETS = {f'audiobook/speech_review.{extension}' for extension in ('html', 'css', 'js')}
 
 
 INTAKE_ASSETS = {
@@ -106,7 +107,7 @@ def audit(path, version):
         allowed_source = not wheel and (name in ROOT_FILES or re.fullmatch(r'tests/[a-z0-9_]+\.py', name)
                                        or re.fullmatch(r'docs/listen/[a-z0-9-]+\.mp3', name)
                                        or name == 'fixtures/technical.md')
-        if not (allowed_runtime or runtime in TIMING_NAME_ASSETS or allowed_metadata or allowed_source
+        if not (allowed_runtime or runtime in TIMING_NAME_ASSETS or runtime in SPEECH_REVIEW_ASSETS or allowed_metadata or allowed_source
                 or allowed_preview or allowed_manual or runtime in INTAKE_ASSETS or runtime in INTAKE_NOTICES):
             raise ReleaseError(f'Unexpected release file: {name}')
         if not name.endswith('/reference.wav') and runtime not in INTAKE_ASSETS:
@@ -127,6 +128,9 @@ def audit(path, version):
             raise ReleaseError('Missing manual, speech checker inputs or operator guide.')
         if not files[manual + 'hamr.1'].startswith(b'.TH HAMR 1 ') or files[manual + 'audiobook.1'] != b'.so man1/hamr.1\n':
             raise ReleaseError('Invalid manual title or alias.')
+    if package + 'audiobook/speech_review_server.py' in files:
+        if not {package+name for name in SPEECH_REVIEW_ASSETS} <= files.keys():
+            raise ReleaseError('Missing local speech review interface assets.')
     if package + 'audiobook/wash_setup.py' in files:
         if package + 'audiobook/wash-runtime.lock' not in files:
             raise ReleaseError('Missing the pinned voice preparation runtime.')

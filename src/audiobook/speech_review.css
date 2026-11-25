@@ -1,0 +1,18 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+body { max-width: 75rem; margin: auto; padding: 1.5rem; }
+header, section, nav { margin-bottom: 2rem; }
+h1, h2, h3 { line-height: 1.15; }
+h1 { font-size: clamp(1.7rem, 4vw, 2.8rem); }
+.filters, .reading { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
+label { display: block; }
+input, select, textarea, button { font: inherit; padding: .3rem .5rem; }
+select, input, textarea { width: 100%; box-sizing: border-box; }
+button, summary { cursor: pointer; }
+article { padding: 1rem; margin-block: 1rem; border: 1px solid GrayText; border-radius: .45rem; }
+.reading h4 { margin-bottom: .3rem; }
+.reading p { margin-top: 0; white-space: pre-wrap; }
+pre { padding: .5rem; border: 1px solid GrayText; white-space: pre-wrap; overflow-wrap: anywhere; }
+audio { max-width: 100%; }
+#message:empty { display: none; }
+#message { padding: .5rem; border-left: .3rem solid Highlight; }
+nav { text-align: center; }

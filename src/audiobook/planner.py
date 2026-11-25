@@ -3,8 +3,8 @@ import re
 from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-31'
-TASK_LABEL_RULES=('faithful-28','faithful-29','faithful-30',RULES)
+RULES='faithful-32'
+TASK_LABEL_RULES=('faithful-28','faithful-29','faithful-30','faithful-31',RULES)
 NUMBERING_RULES=('faithful-26','faithful-27',*TASK_LABEL_RULES)
 TABLE_PASSAGE_RULES=('faithful-25',*NUMBERING_RULES)
 AUTHORED_LINE_RULES=('faithful-24',*TABLE_PASSAGE_RULES)

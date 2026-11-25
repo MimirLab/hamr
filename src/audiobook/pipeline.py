@@ -182,13 +182,16 @@ def run(store,jid,python,model,second_model=None,batch_takes=1,max_retakes=8,pre
             nonlocal confirming_observer
             byid={u['id']:u for u in j['plan']['utterances']};candidates=[]
             source=j['document']['source_sha256']
-            listening={r['clip_key'] for r in j.get('listening_findings',[]) if r['status']=='open'}
+            open_findings=[r for r in j.get('listening_findings',[]) if r['status']=='open']
+            listening={r['clip_key'] for r in open_findings}
+            planned_readings={r['reading_sha256'] for r in open_findings if 'reading_sha256' in r}
             accepted={(r['clip_key'],r.get('pcm_sha256')) for r in j.get('audio_acceptances',[])
                       if r['source_sha256']==source}
             for row in rows:
                 u=byid[row['utterance']];identity=jobs.take_selection(u)
                 clip=jobs.clip_key(u,j)
-                if u.get('performance') or clip in listening or (clip,row['pcm_sha256']) in accepted:continue
+                if (u.get('performance') or clip in listening or (clip,row['pcm_sha256']) in accepted
+                        or planned_readings and qa.reading_identity(j,u) in planned_readings):continue
                 first=row['comparison_text']
                 mismatch=critical(u['text'],first,u.get('protected_counts'),(j.get('voice') or {}).get('transcript'))
                 sites = set()

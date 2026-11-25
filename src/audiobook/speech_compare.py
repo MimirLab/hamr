@@ -13,7 +13,7 @@ from .keyboard_readings import observation as keyboard_observation
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v50'
+POLICY='bounded-english-composed-scale-typed-v51'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -190,6 +190,62 @@ def code_pair_observation(expected,observed):
     return observed
 
 
+REFERENCE_LABELS = r'lines|pages|paragraphs|verses|chapters'
+RANGE_WORDS = '|'.join((*SMALL, *filter(None,TENS), 'hundred', 'thousand'))
+RANGE_CONNECTIVE = r'(?:(?<=hundred)|(?<=thousand)) and '
+RANGE_ENDPOINT = rf'(?:[1-9][0-9]{{0,5}}|(?:{RANGE_WORDS})(?:(?:[ -]|{RANGE_CONNECTIVE})(?:{RANGE_WORDS})){{0,7}})'
+REFERENCE_RANGE = re.compile(
+    rf'\b(?P<label>{REFERENCE_LABELS})[ \t]+(?P<start>{RANGE_ENDPOINT})'
+    rf'(?P<join>[ \t]*[-–—][ \t]*|[ \t]+(?:to|through)[ \t]+)(?P<end>{RANGE_ENDPOINT})'
+    r'(?!\w|[.,:/][0-9]|[ \t]*[-–—][ \t]*[0-9])', re.I)
+WRITTEN_CLOCK = re.compile(r'(?<![\w.:/+−-])([01]?[0-9]|2[0-3]):([0-5][0-9])(?!\w|[.:/][0-9])')
+
+
+def reference_range_observation(expected, observed):
+    def identity(match):
+        start, end = (comparison_tokens(match[name]) for name in ('start','end'))
+        if (len(start)==len(end)==1 and re.fullmatch(r'#[1-9]\d{0,5}',start[0])
+                and re.fullmatch(r'#[1-9]\d{0,5}',end[0]) and int(start[0][1:])<=int(end[0][1:])):
+            return match['label'].casefold(),start[0],end[0]
+        return None
+
+    def printed(match):
+        return match['join'].strip() in ('-', '–', '—') and match['start'].isdigit() and match['end'].isdigit()
+
+    forms = {}
+    for match in REFERENCE_RANGE.finditer(expected):
+        if site:=identity(match):
+            forms.setdefault(site,set()).add((match[0].casefold(),printed(match)))
+    if not forms:
+        return observed
+
+    def matching_range(match):
+        options = forms.get(identity(match),set())
+        if len(options)==1:
+            planned, written = next(iter(options))
+            if written!=printed(match):
+                return planned
+        return match[0]
+
+    return REFERENCE_RANGE.sub(matching_range,observed)
+
+
+def contextual_clock_observation(expected, observed):
+    from .typed_readings import clock_words
+
+    def matching_time(match):
+        spoken = clock_words(*match.groups())
+        pattern = r'\b' + r'[ \-]+'.join(map(re.escape,spoken.split())).replace('’',"[’']") + r'\b'
+        context = word_context(observed,*match.span())
+        if not any(context):
+            return match[0]
+        if any(word_context(expected,*site.span()) == context for site in re.finditer(pattern,expected,re.I)):
+            return spoken
+        return match[0]
+
+    return WRITTEN_CLOCK.sub(matching_time,observed)
+
+
 def notation_observation(expected, observed):
     """Resolve ASR formatting that represents the chosen spoken reading."""
     observed=spoken_currency_observation(expected,observed)
@@ -200,6 +256,8 @@ def notation_observation(expected, observed):
     observed=apostrophe_s_observation(expected,observed)
     observed=keyboard_observation(expected,observed,word_context)
     observed=code_pair_observation(expected,observed)
+    observed=reference_range_observation(expected,observed)
+    observed=contextual_clock_observation(expected,observed)
     families = {match[1]+match[2].lower() for match in SHA_LABEL.finditer(expected)}
     if families:
         spellings = {'one':'1','two':'2','three':'3'}

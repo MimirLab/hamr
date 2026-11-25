@@ -125,8 +125,9 @@ def recognize(python, model, clips):
             raise Error('asr_contract','ASR returned an invalid observation.') from e
     return checked
 
-def observe(store,j,utterances,python,model):
-    worker=Path(__file__).with_name('qa_worker.py'); identity=observer_identity(python,model,worker)
+def observe(store,j,utterances,python,model,*,saved_observer=None):
+    worker=Path(__file__).with_name('qa_worker.py')
+    identity=saved_observer if saved_observer is not None else observer_identity(python,model,worker)
     # A unique verified take is recognized once, even if it occurs repeatedly in the plan.
     takes={}; mapping={}; raw={}; reused=0; recognized=0; started=time.monotonic()
     progress_path=store.path(j)/'qa-progress.json'
@@ -139,6 +140,12 @@ def observe(store,j,utterances,python,model):
         old=read_observation(store,k,receipt,identity)
         if old is not None: raw[k]=old;reused+=1
     todo=[k for k in takes if k not in raw]
+    if saved_observer is not None and todo:
+        from .installation import command
+        raise Error('qa_observations_missing',
+                    f'{len(todo)} current take(s) lack an exact saved transcript from the previous verifier.',
+                    'Check the existing recordings to fill in the missing transcripts. This does not render speech.\n'
+                    + command(store.root,'qa',j['id'],'--all','--require-review'))
     def progress(phase):
         elapsed=time.monotonic()-started
         done=sum(k in raw for k in mapping.values())

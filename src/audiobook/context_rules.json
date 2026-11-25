@@ -35,6 +35,7 @@
     "count": ["books", "visitors", "people", "copies", "birds", "units", "votes", "items", "subscribers", "objects", "records"],
     "finance": ["loss", "balance", "profit", "net income", "net loss", "debit", "credit", "expense", "amount", "cash flow"],
     "clock": ["departure", "arrival", "departure time", "arrival time", "departure is at", "arrival is at", "clock reads", "scheduled for", "local time", "departs at", "arrives at"],
+    "clock_narrative": ["the time was", "timestamp", "time stamp", "woke at", "awoke at", "got up at", "went to bed at", "arrived at", "departed at", "left at", "started at", "ended at", "called at", "alarm went off at", "sun rose at", "sun set at"],
     "clock_at": ["at", "at about", "at exactly", "by", "by the"],
     "clock_daypart": ["this morning", "this afternoon", "this evening", "tonight", "tomorrow morning"],
     "clock_transport": ["train", "flight", "bus", "ferry", "station"],

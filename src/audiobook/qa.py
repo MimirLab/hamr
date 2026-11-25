@@ -1,8 +1,9 @@
 from __future__ import annotations
 import re,time,unicodedata
 from difflib import SequenceMatcher
-from .core import Error,writejson,key,check_revision
+from .core import Error,loadjson,writejson,key,check_revision
 from .jobs import clip_key,valid_clip,summary,final_path,verify_publication,take_signature
+from .installation import command
 from .planner import count_words,SMALL,TENS,COUNT_RE
 from .speech_compare import POLICY,comparison_tokens,quantities,negations,mathematical_markers,notation_observation,unit_sites,residual_edits
 
@@ -147,16 +148,64 @@ WORD_ERROR_REVIEW = 'WER above 20%; inspect this passage for drops/insertions.'
 RESIDUAL_WORD_REVIEW = 'ASR differs at a spoken-word site; verify the words before publication.'
 
 
-def check(store,jid,python,model,all_clips=False,require_review=False):
+def previous_report(store,j):
+    directory=store.path(j)
+    revisions=sorted((int(match[1]) for path in directory.glob('qa-r*.json')
+                      if (match:=re.fullmatch(r'qa-r([1-9]\d*)\.json',path.name))
+                      and int(match[1])<=j['revision']), reverse=True)
+    fallback=None
+    for revision in revisions:
+        path=directory/f'qa-r{revision}.json'
+        if path.is_symlink() or not path.is_file():
+            continue
+        try:
+            report=loadjson(path)
+            observer=report['observer']
+            if report['job']==j['id'] and report['revision']==revision and isinstance(observer.get('model_files'),dict):
+                if report['clips_checked']>=len(j['plan']['utterances']):
+                    return report
+                if fallback is None:
+                    fallback=report
+        except (OSError,ValueError,KeyError,TypeError,AttributeError):
+            continue
+    if fallback is not None:
+        return fallback
+    raise Error('qa_no_observations','There is no saved verifier report to recheck.',
+                'Check the existing recordings first.\n'+command(store.root,'qa',j['id'],'--all','--require-review'))
+
+
+def reading_identity(job, utterance):
+    return key([job['document']['source_sha256'],utterance['sources'],utterance['text']])
+
+
+def check(store,jid,python,model,all_clips=False,require_review=False,*,recheck=False):
     with store.lock():
         j=store.get(jid); utterances=j['plan']['utterances']
         from . import performance
+        if recheck: require_review=True
         if require_review: all_clips=True
         listening_keys={r['clip_key'] for r in j.get('listening_findings',[]) if r['status']=='open'}
         if not all_clips: utterances=[u for i,u in enumerate(utterances) if i in (0,len(utterances)-1) or re.search(r'\d|\bnot\b|\bnever\b|--',u['text']) or mathematical_markers(u['text']) or clip_key(u,j) in listening_keys]
         if not utterances: raise Error('qa_empty','No eligible speech passages.')
         from .qa_cache import audible_text, observe
-        observations,observer,checkpoint=observe(store,j,utterances,python,model)
+        historical_challengers={}
+        if recheck:
+            previous=previous_report(store,j)
+            observations,observer,checkpoint=observe(store,j,utterances,None,None,saved_observer=previous['observer'])
+            historical_challengers={(row['utterance'],row['pcm_sha256']):row['challenger_observation']
+                                    for row in previous['rows'] if 'challenger_observation' in row}
+        else:
+            observations,observer,checkpoint=observe(store,j,utterances,python,model)
+        from collections import defaultdict
+        by_take, by_reading=defaultdict(list), defaultdict(list)
+        source=j['document']['source_sha256']
+        for finding in j.get('listening_findings',[]):
+            if finding['status']!='open' or finding['source_sha256']!=source:
+                continue
+            if reading:=finding.get('reading_sha256'):
+                by_reading[reading].append(finding)
+            else:
+                by_take[finding['clip_key'],finding['pcm_sha256']].append(finding)
         rows=[]; errors=0; words=0;raw_errors=0;raw_words=0
         for u,row in zip(utterances,observations):
             if row['utterance']!=u['id']: raise Error('asr_contract','ASR returned an unexpected utterance identity.')
@@ -168,7 +217,10 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             ref=comparison_tokens(u['text']);hyp=comparison_tokens(comparison_text);edits=distance(ref,hyp);errors+=edits;words+=len(ref)
             expected_numbers=re.findall(r'(?<!\w)[+-]?\d+(?:[.,]\d+)*',u['text']); observed_numbers=re.findall(r'(?<!\w)[+-]?\d+(?:[.,]\d+)*',row['text'])
             flags=[]
-            findings=[r for r in j.get('listening_findings',[]) if r['status']=='open' and r['source_sha256']==j['document']['source_sha256'] and r['clip_key']==clip_key(u,j) and r['pcm_sha256']==row['pcm_sha256']]
+            take=(clip_key(u,j),row['pcm_sha256'])
+            findings=by_take.get(take,[])
+            if by_reading:
+                findings=findings+by_reading.get(reading_identity(j,u),[])
             flags.extend('Listening finding: '+r['reason'] for r in findings)
             if not sound and performance.label_spoken(u,literal_ref,tokens(comparison_text)):
                 flags.append('ASR reports the intended sound label as extra speech.')
@@ -196,7 +248,14 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             if sound and sound['status']=='ambiguous_vocalization':
                 warnings.append('The words match around an authored sound. The recognizer cannot determine whether the extra tokens were spoken or vocalized.')
             if any(s['start']>row['audio_seconds']+.1 or s['end']>row['audio_seconds']+1 for s in row['segments']):warnings.append('ASR timestamps extend beyond the physical clip; transcript tail is unreliable. Check recognition before changing the audio.')
-            rows.append({**row,'expected':u['text'],'source_blocks':u['sources'],'listening_findings':findings,'comparison_text':comparison_text,'ASR_segments_wholly_after_audio':len(row['segments'])-len(plausible),'word_errors':edits,'reference_words':len(ref),'wer':edits/max(1,len(ref)),'raw_word_errors':literal_edits,'raw_reference_words':len(literal_ref),'raw_wer':literal_edits/max(1,len(literal_ref)),'comparison_quantities_expected':quantities(ref),'comparison_quantities_observed':quantities(hyp),'expected_numbers':expected_numbers,'asr_numbers':observed_numbers,'missing_parenthetical_counts':missing_counts,'observation_warnings':warnings,'flags':flags,'retake_action':f'hamr repair {jid} --retake {u["id"]}'})
+            retake_action=(command(store.root,'show',jid,'--content') if any(f.get('reading_sha256') for f in findings)
+                           else command(store.root,'repair',jid,'--retake',u['id']))
+            rows.append({**row,'expected':u['text'],'source_blocks':u['sources'],'listening_findings':findings,'comparison_text':comparison_text,'ASR_segments_wholly_after_audio':len(row['segments'])-len(plausible),'word_errors':edits,'reference_words':len(ref),'wer':edits/max(1,len(ref)),'raw_word_errors':literal_edits,'raw_reference_words':len(literal_ref),'raw_wer':literal_edits/max(1,len(literal_ref)),'comparison_quantities_expected':quantities(ref),'comparison_quantities_observed':quantities(hyp),'expected_numbers':expected_numbers,'asr_numbers':observed_numbers,'missing_parenthetical_counts':missing_counts,'observation_warnings':warnings,'flags':flags,'retake_action':retake_action})
+            if challenger:=historical_challengers.get((u['id'],row['pcm_sha256'])):
+                compared=notation_observation(u['text'],performance.lexical_observation(u,challenger['text']))
+                other=comparison_tokens(compared)
+                rows[-1]['challenger_observation']={**challenger,'comparison_text':compared,
+                                                   'word_edits':distance(ref,other),'agrees_with_primary':other==hyp}
             if residual:
                 rows[-1]['residual_word_edits'] = residual
             if event:=(u.get('performance') or {}).get('event'):
@@ -207,18 +266,21 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
         report['primary_profile']=observer.get('profile','whisper')
         report['device']=observer.get('device','cpu')
         report['compute_type']=observer.get('compute_type','int8')
-        if require_review and report['primary_profile']!='fluid-int8':
+        if require_review and not recheck and report['primary_profile']!='fluid-int8':
             from .asr_fluid import screen
             from .checks_setup import configured
             if (configured(store) or {}).get('requested_profile')!='whisper':
                 if diagnostic:=screen(store,j,rows):
                     report['speech_diagnostic']=diagnostic
-        dest=store.path(j)/f'qa-r{j["revision"]}.json'; writejson(dest,report)
+        dest=store.path(j)/f'qa-r{j["revision"]}.json'
+        if not require_review:
+            writejson(dest,report)
         if require_review:
             current={(clip_key(u,j),r['pcm_sha256']) for u,r in zip(utterances,rows)}
+            readings={reading_identity(j,u) for u in utterances}
             for finding in j.get('listening_findings',[]):
-                if finding['status']=='open' and (finding['clip_key'],finding['pcm_sha256']) not in current:
-                    finding.update(status='superseded',resolution='The reported PCM is no longer in this plan/take set. Replacement audio has not inherited any listening approval.',superseded_at=time.time())
+                if finding['status']=='open' and (finding['clip_key'],finding['pcm_sha256']) not in current and finding.get('reading_sha256') not in readings:
+                    finding.update(status='superseded',resolution='The reported reading or recording has been replaced. Replacement audio requires its own check.',superseded_at=time.time())
             accepted={(r['clip_key'],r.get('pcm_sha256')) for r in j.get('audio_acceptances',[]) if r['source_sha256']==j['document']['source_sha256']}
             by_id={u['id']:u for u in utterances}
             observed_signature=key(sorted({(clip_key(by_id[r['utterance']],j),r['pcm_sha256'],r['audio_samples']) for r in rows}))
@@ -228,59 +290,88 @@ def check(store,jid,python,model,all_clips=False,require_review=False):
             j['audio_gate_checked_takes']=observed_signature
             j['audio_gate_checked_comparison_policy']=POLICY
             j['audio_review']=[{'utterance':r['utterance'],'clip_key':clip_key(by_id[r['utterance']],j),'pcm_sha256':r['pcm_sha256'],'sources':by_id[r['utterance']]['sources'],'flags':r['flags'],'report':str(dest),
+                                **({'kind':'planned_reading','reading_sha256':reading_identity(j,by_id[r['utterance']])}
+                                   if any(f.get('kind')=='planned_reading' for f in r['listening_findings']) else {}),
                                 **({'residual_word_edits':r['residual_word_edits']} if r.get('residual_word_edits') else {})}
-                               for r in rows if r['flags'] and (clip_key(by_id[r['utterance']],j),r['pcm_sha256']) not in accepted]
+                               for r in rows if r['flags'] and (r['listening_findings']
+                                   or (clip_key(by_id[r['utterance']],j),r['pcm_sha256']) not in accepted)]
             if j['audio_review']:
-                j['audio_gate_approved_plan']=None;j['audio_gate_approved_takes']=None;j['audio_gate_approved_comparison_policy']=None; j['status']='needs_review'; j['error']={'code':'speech_qa_review','message':'Speech QA or recorded listening evidence requires review. Verified clips and unrelated jobs are retained.','action':f'hamr show {jid} --content; inspect the QA report, then retake or explicitly accept the checked clip.'}
+                j['audio_gate_approved_plan']=None;j['audio_gate_approved_takes']=None;j['audio_gate_approved_comparison_policy']=None; j['status']='needs_review'; j['error']={'code':'speech_qa_review','message':'Speech QA or recorded listening evidence requires review. Verified clips and unrelated jobs are retained.','action':command(store.root,'review',jid,'--serve')}
             else:
                 j['audio_gate_approved_plan']=j['plan']['plan_sha256']; j['error']=None
                 j['audio_gate_approved_takes']=observed_signature
                 j['audio_gate_approved_comparison_policy']=POLICY
                 j['status']='needs_review' if j['plan']['issues'] else ('ready' if verify_publication(final_path(j),j) else 'queued')
+            writejson(dest,report)
             store.save(j)
-        result={'schema_version':1,'status':j['status'],'job':jid,'clips_checked':len(rows),'wer':report['wer'],'flagged_passages':report['flagged_passages'],'report':str(dest),'primary_profile':report['primary_profile'],'device':report['device'],'prompt':None,'planned_output':str(final_path(j)/'book.m4b')}
+        result={'schema_version':1,'status':j['status'],'job':jid,'clips_checked':len(rows),'wer':report['wer'],'flagged_passages':report['flagged_passages'],'report':str(dest),'primary_profile':report['primary_profile'],'device':report['device'],'prompt':None,'planned_output':str(final_path(j)/'book.m4b'),'observation_checkpoints':checkpoint}
         if require_review and j.get('audio_review'):
             result.update(message='Flagged audio needs a listening check before publication.',
-                          action=f'Run hamr status {jid} for the flagged passages and listening instructions.')
+                          action=command(store.root,'review',jid,'--serve'))
         elif require_review and j['plan']['issues']:
             result.update(message='The speech check finished. Source passages still need review.',
-                          action=f'Run hamr status {jid} for the source review instructions.')
+                          action=command(store.root,'status',jid))
         elif j['status']!='ready':
             result.update(message='The speech check finished. This command does not write the audiobook.',
-                          action=f'Run hamr resume {jid} to continue to publication.')
+                          action=command(store.root,'resume',jid))
         return result
 
 
-def accept(store,jid,utterance,reason,*,expect_revision=None):
+def exact_take(identity,k,receipt):
+    if identity is not None and (identity[0] not in (None,k) or identity[1]!=receipt['sha256']):
+        raise Error('review_changed','This recording changed since you opened the review. Reload and listen to the current take.')
+
+
+def accept(store,jid,utterance,reason,*,expect_revision=None,expected_take=None,include_summary=True):
     if not reason.strip(): raise Error('review_reason','Record what you checked before accepting a speech reading.')
     with store.lock():
         j=store.get(jid)
         check_revision(j,expect_revision)
-        if j.get('audio_gate_checked_plan')!=j['plan']['plan_sha256']: raise Error('review_changed','The plan changed since the last complete required QA pass.','Run qa --all --require-review on the current plan before accepting individual readings.')
-        if j.get('speech_contract',1)>=2 and j.get('audio_gate_checked_comparison_policy')!=POLICY:raise Error('review_changed','The speech comparison policy changed since required QA.','Run qa --all --require-review with this application before accepting a reading.')
-        if not j.get('audio_gate_checked_takes') or j['audio_gate_checked_takes']!=take_signature(store,j):raise Error('review_changed','The physical takes changed since required QA.','Run qa --all --require-review before accepting a reading.')
+        if j.get('audio_gate_checked_plan')!=j['plan']['plan_sha256']: raise Error('review_changed','The plan changed since the last complete required QA pass.',command(store.root,'qa',jid,'--all','--require-review'))
+        if j.get('speech_contract',1)>=2 and j.get('audio_gate_checked_comparison_policy')!=POLICY:raise Error('review_changed','The speech comparison policy changed since required QA.',command(store.root,'qa',jid,'--recheck'))
+        if expected_take is None and j.get('audio_gate_checked_takes')!=take_signature(store,j):
+            raise Error('review_changed','The physical takes changed since required QA.',
+                        command(store.root,'qa',jid,'--all','--require-review'))
         u=next((u for u in j['plan']['utterances'] if u['id']==utterance),None)
         review=next((r for r in j.get('audio_review',[]) if r['utterance']==utterance),None)
         if not u or not review: raise Error('unknown_review','No pending speech review for that utterance.')
         k=clip_key(u,j)
         receipt=valid_clip(store,k)
         if k!=review['clip_key'] or not receipt or review.get('pcm_sha256')!=receipt['sha256']: raise Error('review_changed','The reviewed take changed; run QA on the current plan before accepting it.')
+        exact_take(expected_take,k,receipt)
+        take=(k,receipt['sha256'])
+        reading=reading_identity(j,u)
+        remaining=[r for r in j['audio_review'] if (r['clip_key'],r.get('pcm_sha256'))!=take
+                   or r.get('reading_sha256',reading)!=reading]
+        # Browser decisions validate their one recording. Recheck the full set
+        # before the last decision opens the publication gate.
+        if not j.get('audio_gate_checked_takes') or (expected_take is not None and not remaining
+                and j['audio_gate_checked_takes']!=take_signature(store,j)):
+            raise Error('review_changed','The physical takes changed since required QA.',
+                        command(store.root,'qa',jid,'--all','--require-review'))
         j.setdefault('audio_acceptances',[]).append({'utterance':utterance,'clip_key':k,'pcm_sha256':receipt['sha256'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'reason':reason,'at':time.time()})
         for finding in j.get('listening_findings',[]):
-            if finding['status']=='open' and finding['clip_key']==k and finding['pcm_sha256']==receipt['sha256']:
+            if finding['status']!='open':
+                continue
+            scope=finding.get('reading_sha256')
+            if (scope==reading if scope else (finding['clip_key'],finding['pcm_sha256'])==take):
                 finding.update(status='accepted',resolution=reason,resolved_at=time.time())
-        j['audio_review']=[r for r in j['audio_review'] if r['clip_key']!=k]
+        j['audio_review']=remaining
         if not j['audio_review']:
             j['audio_gate_approved_plan']=j['plan']['plan_sha256']; j['error']=None
             j['audio_gate_approved_takes']=j['audio_gate_checked_takes']
             j['audio_gate_approved_comparison_policy']=POLICY
             j['status']='needs_review' if j['plan']['issues'] else ('ready' if verify_publication(final_path(j),j) else 'queued')
-        store.save(j); return summary(store,j)
+        store.save(j)
+        return summary(store,j) if include_summary else None
 
 
-def flag(store,jid,utterance,reason,*,expect_revision=None):
+def flag(store,jid,utterance,reason,*,expect_revision=None,expected_take=None,
+         kind='recording',include_summary=True):
     """Record human audio evidence independently of what ASR recognizes."""
-    if not reason.strip():raise Error('review_reason','Record the audible problem and source/time context.')
+    if not reason.strip():raise Error('review_reason','Record the problem and source/time context.')
+    if kind not in ('recording','planned_reading'):
+        raise Error('review_kind','Choose a recording or planned reading finding.')
     with store.lock():
         j=store.get(jid)
         check_revision(j,expect_revision)
@@ -288,13 +379,25 @@ def flag(store,jid,utterance,reason,*,expect_revision=None):
         if u is None:raise Error('unknown_utterance','Listening finding names no current source occurrence.')
         k=clip_key(u,j);receipt=valid_clip(store,k)
         if not receipt:raise Error('review_missing_clip','A listening finding requires a committed verified take.')
-        finding={'utterance':utterance,'revision':j['revision'],'clip_key':k,'pcm_sha256':receipt['sha256'],'source_sha256':j['document']['source_sha256'],'sources':u['sources'],'reason':reason.strip(),'status':'open','created':time.time()}
+        exact_take(expected_take,k,receipt)
+        finding={'kind':kind,'utterance':utterance,'revision':j['revision'],'clip_key':k,'pcm_sha256':receipt['sha256'],'source_sha256':j['document']['source_sha256'],'sources':u['sources'],'reason':reason.strip(),'status':'open','created':time.time()}
+        if kind=='planned_reading':
+            finding['reading_sha256']=reading_identity(j,u)
         j.setdefault('listening_findings',[]).append(finding)
         revoked=[r for r in j.get('audio_acceptances',[]) if r['clip_key']==k and r.get('pcm_sha256')==receipt['sha256']]
         if revoked:j.setdefault('revoked_audio_acceptances',[]).extend(revoked)
         j['audio_acceptances']=[r for r in j.get('audio_acceptances',[]) if r not in revoked]
-        j['audio_review']=[r for r in j.get('audio_review',[]) if r['clip_key']!=k]
-        j['audio_review'].append({'utterance':utterance,'clip_key':k,'pcm_sha256':receipt['sha256'],'sources':u['sources'],'flags':['Listening finding: '+reason.strip()],'report':'Recorded listening evidence'})
+        reading=reading_identity(j,u)
+        related=[r for r in j['listening_findings'] if r['status']=='open' and
+                 (r.get('reading_sha256')==reading if r.get('reading_sha256') else
+                  (r['clip_key'],r['pcm_sha256'])==(k,receipt['sha256']))]
+        pending={'utterance':utterance,'clip_key':k,'pcm_sha256':receipt['sha256'],'sources':u['sources'],
+                 'flags':['Listening finding: '+r['reason'] for r in related],'report':'Recorded listening evidence'}
+        if any(r.get('kind')=='planned_reading' for r in related):
+            pending.update(kind='planned_reading',reading_sha256=reading)
+        j['audio_review']=[r for r in j.get('audio_review',[]) if r['utterance']!=utterance]
+        j['audio_review'].append(pending)
         j['audio_gate']=True;j['audio_gate_approved_plan']=None;j['audio_gate_approved_takes']=None;j['status']='needs_review'
-        j['error']={'code':'listening_review','message':'Reported audio needs review independently of ASR.','action':f'Retake the exact passage or inspect it, then use hamr review {jid} --accept {utterance} --reason after complete current-plan QA.'}
-        store.save(j);return summary(store,j)
+        j['error']={'code':'listening_review','message':'Reported audio needs review independently of ASR.','action':command(store.root,'review',jid,'--serve')}
+        store.save(j)
+        return summary(store,j) if include_summary else None

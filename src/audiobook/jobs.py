@@ -248,9 +248,10 @@ def review_error(store,j):
     code=(error or {}).get('code')
     jid=j['id']
     if code in ('speech_qa_review','listening_review') or (not code and j.get('audio_review')):
+        from .installation import command
         return {'code':code or 'speech_qa_review',
                 'message':'Flagged audio needs a listening check before publication. The saved narration is retained.',
-                'action':f'Run hamr status {jid} --json for the passage IDs, reasons and report paths.'}
+                'action':'Open the local listening review with:\n'+command(store.root,'review',jid,'--serve')}
     if code=='source_review' or (code in (None,'speech_qa_pending') and j['plan']['issues']):
         return {'code':'source_review',
                 'message':'Some source passages need to be resolved before Hamr can finish the audiobook.',
@@ -285,9 +286,13 @@ def summary(store,j):
         j['status']='failed'; j['error']={'code':'publication_corrupt','message':f'The published audiobook is missing or damaged at {final}.','action':'Choose another existing output directory and pass it with --output when resuming.'}
         if not store.save_if_current(j,j['updated']): return summary(store,store.get(j['id']))
     reviews=list(j['plan']['issues'])
+    reported_readings={(r['clip_key'],r['pcm_sha256']) for r in j.get('listening_findings',[])
+                       if r.get('kind')=='planned_reading' and r['status']=='open'}
+    locators={b['id']:b['locator'] for b in j['document']['blocks']}
     for r in j.get('audio_review',[]):
-        locations=[{k:v for k,v in b['locator'].items() if k not in ('exact','rows')} for b in j['document']['blocks'] if b['id'] in r['sources']]
-        reviews.append({'utterance':r['utterance'],'location':locations,'reason':' '.join(r['flags']),'report':r['report'],'repair':f'hamr repair {j["id"]} --retake {r["utterance"]}',
+        locations=[{k:v for k,v in locators[bid].items() if k not in ('exact','rows')} for bid in r['sources'] if bid in locators]
+        planned=r.get('kind')=='planned_reading' or (r['clip_key'],r.get('pcm_sha256')) in reported_readings
+        reviews.append({'utterance':r['utterance'],'location':locations,'reason':' '.join(r['flags']),'report':r['report'],'repair':f'hamr show {j["id"]} --content' if planned else f'hamr repair {j["id"]} --retake {r["utterance"]}',
                         **({'residual_word_edits':r['residual_word_edits']} if r.get('residual_word_edits') else {})})
     qa_progress=None
     try:
@@ -331,6 +336,15 @@ def summary(store,j):
     metrics = {**j.get('metrics', {}), 'semantic_qa':speech_check_status(j)}
     checked = {k:valid_clip(store,k) for k in set(j['clips'].values())}
     result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(r is not None for r in checked.values()),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
+    if j.get('audio_review'):
+        from .installation import command
+        jid=j['id']; rev=j['revision']
+        first=[r['utterance'] for r in j['audio_review'][:3]]
+        uid=first[0]
+        result['speech_review']={'count':len(j['audio_review']),'command':command(store.root,'review',jid),
+                                 'first_passages':first,
+                                 'export':command(store.root,'excerpt',jid,'--start',uid,'--count','1',
+                                                  '--output',f'hamr-review-{jid}-{uid}-r{rev}')}
     result['mastering']=j.get('mastering','off')
     if intake:=j.get('intake'):
         result['intake'] = {'state':intake['state'],'route':j['source_selection']['route']}
@@ -774,9 +788,15 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
                            if 'performance_state' in u}
         takes=j.get('retakes',{});rebased_takes={}
         target=None
+        blocked_reading=None
         if retake:
             target=next((u for u in j['plan']['utterances'] if u['id']==retake),None)
             if target is None: raise Error('unknown_utterance','Retake ID does not belong to this approved plan.')
+            from .qa import reading_identity
+            reading=reading_identity(j,target)
+            if any(r.get('reading_sha256')==reading and r.get('status')=='open'
+                   for r in j.get('listening_findings',[])):
+                blocked_reading=reading
         previous={'audio':str(old_output/'book.m4b'),'sha256':filehash(old_output/'book.m4b'),'plan_sha256':old_plan} if verify_publication(old_output,j) else None
         if mastering_mode is not None:
             if mastering_mode not in mastering.MODES:
@@ -895,6 +915,11 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
                 if seed: u['seed']=seed
             j['plan'].pop('plan_sha256',None)
             j['plan']['plan_sha256']=key(j['plan'])
+        if blocked_reading and any(reading_identity(j,u)==blocked_reading for u in j['plan']['utterances']):
+            from .installation import command
+            raise Error('planned_reading_repair','This passage has a reported planned reading problem.',
+                        'Apply a verified reading correction before generating another take.\n'
+                        + command(store.root,'show',jid,'--content'))
         j['revision']+=1; j['status']='queued'; j['error']=None
         j.pop('metadata_repackage',None)
         if previous and mastering_mode is None and old_plan==j['plan']['plan_sha256'] and old_voice==j['voice']:
@@ -941,7 +966,8 @@ def cleanup(store,purge_job=None,apply=False):
                 pins.update(j['clips'].values()); pins.update(clip_key(u,j) for u in j['plan']['utterances'] if j.get('backend') and j.get('voice'))
                 # Listening evidence remains inspectable after a retake. Purging
                 # its owning job explicitly releases these historical pins.
-                pins.update(finding['clip_key'] for finding in j.get('listening_findings',[]))
+                for field in ('listening_findings','audio_acceptances','revoked_audio_acceptances'):
+                    pins.update(finding['clip_key'] for finding in j.get(field,[]))
                 pins.update(entry['clip_key'] for entry in j.get('performance_fallbacks',[]))
                 pins.update(entry['previous_clip'] for entry in j.get('automatic_retakes',[]) if 'previous_clip' in entry)
         candidates=[]; skipped=[]

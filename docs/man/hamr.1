@@ -118,6 +118,18 @@ speech check or review a specific passage.
 .B "repair, qa, review"
 Apply a scoped correction, compare speech to the plan, or record and
 resolve a listening finding.
+.B "hamr review JOB"
+prints the grouped summary and export instructions.
+.B "hamr review JOB --serve"
+opens a local browser review with the source, intended reading,
+verifier transcripts, and recordings.
+.B "hamr review JOB --report FILE"
+writes the full report. Use a .json extension for structured output.
+.B "hamr review JOB --play PASSAGE"
+plays a committed take.
+.B "hamr qa JOB --recheck"
+uses saved transcripts to apply the current comparison rules without
+rerunning recognition or rendering.
 Use
 .B "hamr repair JOB --mastering natural"
 followed by

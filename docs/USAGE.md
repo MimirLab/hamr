@@ -395,9 +395,21 @@ Cast introductions are balanced separately for browsing. They are the clips you 
 
 ## Recovery and repair
 
-When publication is on hold, `hamr status JOB` shows the planned M4B path and the next step. **Speech check pending** means saved narration still needs the automatic check. Run `hamr resume JOB` to check it and finish the book. If the checker is missing, run `hamr setup --checks-only` first. **Listening review needed** means Hamr flagged specific recordings. The status includes a command to export the first flagged passage, and `hamr status JOB --json` lists the reasons and report paths. **Source review needed** means a passage in the original document must be resolved before publication.
+When publication is on hold, `hamr status JOB` shows the planned M4B path and the next step. **Speech check pending** means saved narration still needs the automatic check. Run `hamr resume JOB` to check it and finish the book. If the checker is missing, run `hamr setup --checks-only` first. **Listening review needed** means Hamr flagged specific recordings. The status shows the first few passage IDs, a WAV export command, and how to open the grouped review. **Source review needed** means a passage in the original document must be resolved before publication.
 
-For a standalone report, run `hamr qa JOB --all --require-review` with the checker installed by setup. The report records the check, and `hamr resume JOB` writes the book once all holds are cleared. Use the custom Python and model options only when supplying your own local checker.
+### Review saved speech
+
+```sh
+hamr review JOB
+hamr review JOB --serve
+hamr review JOB --report speech-review.md
+```
+
+The first command shows grouped counts and retrieves the playback and export commands. The second prints a browser link on your computer. Review possible cutoffs, omissions, and changed values first. Filter by chapter or reason, or sample one passage per recurring pattern. Each passage shows the source, intended reading, saved verifier transcript, words to listen for, and a playable WAV. Check the recording before saving a decision. Reopen an acceptance from the decision history if you hear a problem on another listen. The report includes all flagged passages and the decision history. Use a `.json` filename for structured output.
+
+If the plan is right and the audio is faulty, use the displayed retake command. If the intended reading is wrong, report a planned reading problem and check the source block with `hamr show JOB --content`. Apply a verified reading with `hamr repair JOB --block BLOCK --text-file corrected.txt` or use a scoped pronunciation correction with `hamr repair JOB --pronounce 'SOURCE=SPOKEN'`. The changed passage gets new audio when you resume. Check the replacement recording before clearing it.
+
+After a comparison-rule fix, run `hamr qa JOB --recheck` to compare the full set of saved transcripts again without synthesis or recognition. If some transcripts are missing, `hamr qa JOB --all --require-review` fills them from the recordings using the installed checker. Existing listening decisions stay bound to the audio you reviewed. Once the flags are resolved, `hamr resume JOB` publishes the book.
 
 ```sh
 hamr status JOB --json
@@ -467,7 +479,7 @@ Signal fixtures verify recovery and packaging without certifying narration. ASR 
 ```sh
 hamr review JOB --flag u00003 --reason 'Clipped ending at 01:03:52' --json
 # After checking the current take against its source and completing required QA:
-hamr review JOB --accept u00003 --reason 'Checked the complete replacement passage' --json
+hamr review JOB --accept u00003 --expect-pcm SHA256 --reason 'Checked the complete replacement passage' --json
 ```
 
 Release archives include the program, voice references, approved listening samples, Linux manual and required installation inputs. The [release notes](../RELEASE.md) record what has been qualified.

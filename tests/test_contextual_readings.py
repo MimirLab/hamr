@@ -887,3 +887,15 @@ def test_native_name_watch_list_preserves_the_word_and_allows_a_verified_alias()
     assert speech(result)==source and not result['issues']
     verified=plan(markdown(source.encode()),{'context':{'native_names':['Zhalorin']}},aliases={'Zhalorin':'Zalorin'})
     assert not events(verified) and 'Zalorin entered' in speech(verified)
+
+
+def test_narrated_clock_uses_narrative_cues_and_saved_rules_stay_pinned():
+    text = 'She woke at 7:43 and went outside. Read John 7:43. The ratio was 7:43.'
+    doc = markdown(text.encode())
+    current = plan(doc)
+    assert 'woke at seven forty three and went outside' in speech(current)
+    assert 'John seven colon four three' in speech(current)
+    assert 'ratio was seven to forty three' in speech(current)
+    old = plan(doc, rule_revision='faithful-31')
+    assert 'woke at seven colon four three' in speech(old)
+    assert plan(doc, old['policy'], rule_revision='faithful-31')['plan_sha256'] == old['plan_sha256']

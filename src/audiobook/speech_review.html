@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hamr speech review</title>
+  <link rel="stylesheet" href="review.css">
+  <script src="review.js" defer></script>
+</head>
+<body>
+  <header>
+    <p>Hamr speech review</p>
+    <h1 id="title">Loading saved review…</h1>
+    <p id="status"></p>
+    <p>Verifier transcripts can miss words or mishear them. Listen before clearing a flag. Each decision is saved with the recording’s checksum.</p>
+    <p><a href="report.md" download>Download review report</a> · <a href="#history">Decision history</a></p>
+    <details><summary>Commands and output</summary><div id="commands"></div></details>
+  </header>
+  <main>
+    <h2>Flagged passages</h2>
+    <div class="filters">
+      <label>Reason <select id="reason"><option value="">All reasons</option></select></label>
+      <label>Chapter <select id="chapter"><option value="">All chapters</option></select></label>
+      <label>Pattern <select id="pattern"><option value="">All patterns</option></select></label>
+      <label>Find a passage <input type="search" id="search" placeholder="Passage ID or words"></label>
+    </div>
+    <p id="message" role="status"></p>
+    <p id="counts"></p>
+    <p><button id="sample">Sample each current pattern</button> <button id="reload">Reload review</button></p>
+    <div id="passages"></div>
+    <nav aria-label="Passage pages"><button id="previous">Previous</button> <span id="page"></span> <button id="next">Next</button></nav>
+    <section id="history"><h2>Decision history</h2><div id="decisions"></div><button id="more">Show more decisions</button></section>
+  </main>
+</body>
+</html>

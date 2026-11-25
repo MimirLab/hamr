@@ -202,7 +202,9 @@ def test_listening_hold_names_exact_passage_and_offers_export(tmp_path, capsys):
     assert cli.main(['--home', str(store.root), 'status', jid]) == 0
     status = capsys.readouterr().out
     assert 'Listening review needed' in status and f'Flagged passages: {uid}' in status
-    assert f'hamr excerpt {jid} --start {uid} --count 1 --output hamr-review-' in status
+    from audiobook.installation import command
+    assert command(store.root, 'excerpt', jid, '--start', uid, '--count', '1',
+                   '--output', f'hamr-review-{jid}-{uid}-r1') in status
     assert not jobs.final_path(job).exists()
 
 

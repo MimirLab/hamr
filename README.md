@@ -147,6 +147,8 @@ A stray “T” at the start of a quote can be re-read against two larger crops.
 
 Setup chooses the checker independently of the voice and speech model. Fluid INT8 runs on eligible Linux systems, and the lighter Whisper pair serves lower-memory machines and Windows x64. Both run on the CPU. `hamr transcribe JOB --utterance u00003 --json` inspects a saved take, and `hamr transcribe "sample.wav" --json` works on a local recording. Refresh an existing checker with `hamr setup --checks-only`. [Checker presets and review](docs/USAGE.md#speech-verifier-presets)
 
+If speech flags hold up publication, `hamr review JOB --serve` opens a local listening desk. Start with possible cutoffs and changed values, filter by chapter, and compare the original text with the intended reading, verifier transcript, and playable take. Use `hamr qa JOB --recheck` after a comparison fix to reuse the saved transcripts. [Review a saved book](docs/USAGE.md#review-saved-speech)
+
 ### Resume and repair
 
 A reboot needn't cost you the whole book. `hamr resume JOB` verifies saved takes and picks up unfinished work. `hamr status JOB --json` shows the progress, the output path, and any source or speech finding that needs attention. A bad line can get another take without remaking the chapters around it.

@@ -48,7 +48,7 @@ def conventions(value):
     return dict(value)
 
 
-def effective(value=None, *, keyboard=True):
+def effective(value=None, *, keyboard=True, narrative_clocks=True):
     value = {} if value is None else value
     if not isinstance(value, dict) or value.keys() - DEFAULT.keys() or value.get('schema_version', 1) != 1:
         invalid('Unknown context settings key or schema version.')
@@ -63,8 +63,10 @@ def effective(value=None, *, keyboard=True):
         invalid('Unknown context weight.')
     if any(type(weight) is not int or not 0 <= weight <= 100 for weight in weights.values()):
         invalid('Context weights must be integers from 0 through 100.')
-    cue_defaults = DEFAULT['cues'] if keyboard else {
-        name:phrases for name,phrases in DEFAULT['cues'].items() if name not in KEYBOARD_CUES}
+    inactive = set() if keyboard else KEYBOARD_CUES.copy()
+    if not narrative_clocks:
+        inactive.add('clock_narrative')
+    cue_defaults = {name:phrases for name,phrases in DEFAULT['cues'].items() if name not in inactive}
     if not isinstance(cues, dict) or cues.keys() - DEFAULT['cues'].keys():
         invalid('Unknown context cue group.')
     for group, phrases in cues.items():
@@ -134,6 +136,8 @@ def implementation(*, unified=True, rule_revision=None):
         return 'df772e6534764093c6bd95de9ac806fad6c9f617b2791f7f4369a9bd586faf8d'
     if rule_revision=='faithful-29':
         return 'badb69c8d1a7854caec4656673fde7b12efee39930e3f2a10c674ff92df6b925'
+    if rule_revision=='faithful-31':
+        return 'cad5c7c3d09fed2d8ca3f1957b9d354dec6f0fbe5f0b7cca54cea6358b066ad7'
     if rule_revision=='faithful-30':
         return '62a3240b8f66419b85dad0c354292293032bd00e20f41f89a9064de6c177c31e'
     return key({name: filehash(Path(__file__).with_name(name))

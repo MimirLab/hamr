@@ -27,13 +27,13 @@ def emit(value,json_mode=False):
         if value['status']=='needs_review' and value.get('planned_output'):
             print(f'Current audiobook publication is on hold. Planned file: {value["planned_output"]}')
         if error.get('action'): print(error['action'])
-        if error.get('code') in ('speech_qa_review','listening_review'):
-            passages=[issue['utterance'] for issue in value.get('needs_review',[]) if 'utterance' in issue]
-            if passages:
-                print('Flagged passages: '+', '.join(passages[:3])+ (f' and {len(passages)-3} more' if len(passages)>3 else ''))
-                jid=value['job']; uid=passages[0]; dest=f'hamr-review-{jid}-{uid}-r{value["revision"]}'
-                print(f'Export the first flagged passage with hamr excerpt {jid} --start {uid} --count 1 --output {dest}')
-                print(f'Listen to {dest}/audio.wav and compare it with the expected passage in the speech-check report.')
+        if detail:=value.get('speech_review'):
+            names=', '.join(detail['first_passages'])
+            if names:
+                suffix=f' and {detail["count"]-len(detail["first_passages"])} more' if detail['count']>len(detail['first_passages']) else ''
+                print(f'Flagged passages: {names}{suffix}')
+                print(f'Export a flagged passage as a WAV:\n{detail["export"]}')
+            print(f'For grouped counts, report and WAV export commands:\n{detail["command"]}')
     elif isinstance(value,dict) and 'jobs' in value:
         if not value['jobs']: print('No audiobook jobs yet. Run hamr open DOCUMENT.')
         for job in value['jobs']: emit(job)
@@ -274,9 +274,18 @@ def parser():
         q=sub(state,'Mark a non-running job '+state+'d'); q.add_argument('job')
     q=sub('cleanup','Report or remove unreferenced owned scratch/cache'); q.add_argument('--apply',action='store_true'); q.add_argument('--purge-job')
     q=sub('worker','Process the durable queue; failed/review jobs do not block others'); q.add_argument('--once',action='store_true'); q.add_argument('--detach',action='store_true')
-    q=sub('review','Record or resolve an exact-take listening finding'); q.add_argument('job');action=q.add_mutually_exclusive_group(required=True);action.add_argument('--accept',dest='accept_utterance');action.add_argument('--flag',dest='flag_utterance');q.add_argument('--reason',required=True)
+    q=sub('review','Summarize, listen to or resolve speech-review flags'); q.add_argument('job')
+    action=q.add_mutually_exclusive_group()
+    action.add_argument('--serve',action='store_true',help='Open a local browser review with playable recordings')
+    action.add_argument('--play',dest='play_utterance',metavar='PASSAGE',help='Play one committed recording with mpv')
+    action.add_argument('--report',type=Path,help='Write the grouped report as Markdown, or JSON with a .json extension')
+    action.add_argument('--accept',dest='accept_utterance');action.add_argument('--flag',dest='flag_utterance')
+    q.add_argument('--reason',help='Record what you checked or heard')
+    q.add_argument('--kind',choices=('recording','planned_reading'),help='Type of finding with --flag')
+    q.add_argument('--expect-pcm',metavar='SHA256',help='Save a decision only for the specified PCM checksum')
     q.add_argument('--expect-revision',type=int,help='Apply only to the specified job revision')
     q=sub('qa','Check saved narration locally; resume normally to check and publish'); q.add_argument('job'); q.add_argument('--asr-python',type=Path,help='Optional Python executable for a custom checker'); q.add_argument('--asr-model',type=Path,help='Optional local model directory for a custom checker'); q.add_argument('--all',action='store_true'); q.add_argument('--require-review',action='store_true',help='Save the check as evidence for publication and hold flagged passages')
+    q.add_argument('--recheck',action='store_true',help='Recompare existing exact-audio transcripts without speech generation or recognition')
     q=sub('transcribe','Compare unprompted local transcripts without changing audio or job state')
     q.add_argument('input',help='Local audio file, or a job ID with --utterance')
     q.add_argument('--utterance',help='Read this exact committed passage from the given job')
@@ -663,14 +672,75 @@ def dispatch(argv=None):
                             break
                         time.sleep(2)
         elif a.command=='review':
-            from .qa import accept,flag
-            review=flag if a.flag_utterance else accept
-            emit(review(s,a.job,a.flag_utterance or a.accept_utterance,a.reason,expect_revision=a.expect_revision),True)
+            from . import qa, speech_review
+            if a.flag_utterance or a.accept_utterance:
+                if not a.reason or a.kind and not a.flag_utterance:
+                    raise Error('review_reason','Give a --reason for the decision. Use --kind with --flag.')
+                options={'expect_revision':a.expect_revision}
+                if a.expect_pcm:
+                    import re
+                    if not re.fullmatch('[a-f0-9]{64}',a.expect_pcm):
+                        raise Error('review_pcm','Use the 64-character PCM checksum from the review or excerpt.')
+                    options['expected_take']=(None,a.expect_pcm)
+                if a.flag_utterance:
+                    result=qa.flag(s,a.job,a.flag_utterance,a.reason,kind=a.kind or 'recording',**options)
+                else:
+                    result=qa.accept(s,a.job,a.accept_utterance,a.reason,**options)
+                emit(result,True)
+            elif a.reason is not None or a.kind or a.expect_revision is not None or a.expect_pcm is not None:
+                raise Error('review_action','Use decision options with --accept or --flag.')
+            elif a.play_utterance:
+                result=speech_review.play(s,s.get(a.job),a.play_utterance)
+                if jm:
+                    emit(result,True)
+                else:
+                    print(f'Played {a.play_utterance} · PCM SHA-256 {result["pcm_sha256"]}')
+            elif a.serve:
+                if jm:
+                    raise Error('review_serve_json','Open the browser review without --json, or use review JOB --json to inspect the data.')
+                from .speech_review_server import serve
+                serve(s,a.job)
+            else:
+                data=speech_review.snapshot(s,s.get(a.job))
+                if a.report:
+                    path=a.report.absolute()
+                    if path.exists() or path.is_symlink():
+                        raise Error('output_collision',f'The report destination already exists: {path}',
+                                    'Choose a new report path.')
+                    content=dumps(data) if path.suffix.lower()=='.json' else speech_review.markdown(data)
+                    fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+                    with os.fdopen(fd,'w',encoding='utf-8') as stream:
+                        stream.write(content)
+                    if jm:
+                        emit({'schema_version':1,'job':a.job,'report':str(path),'flagged_passages':data['count']},True)
+                    else:
+                        print(f'Review report written to {path}')
+                        speech_review.print_summary(data)
+                elif jm:
+                    emit(data,True)
+                else:
+                    speech_review.print_summary(data)
         elif a.command=='qa':
             from .qa import check
             from .checks_setup import observer
-            python,model,_=observer(s,a.asr_python,a.asr_model,use_second=False)
-            result=check(s,a.job,python,model,a.all,a.require_review); emit(result,True)
+            if a.recheck:
+                if a.asr_python or a.asr_model:
+                    raise Error('qa_recheck_options','Recheck uses the previous verifier’s saved transcripts.',
+                                'Run qa without --recheck to use a different verifier.')
+                result=check(s,a.job,None,None,recheck=True)
+            else:
+                python,model,_=observer(s,a.asr_python,a.asr_model,use_second=False)
+                result=check(s,a.job,python,model,a.all,a.require_review)
+            if jm:
+                emit(result,True)
+            else:
+                print(f'{result["clips_checked"]} passages checked. Verifier report: {result["report"]}')
+                if a.require_review or a.recheck:
+                    from .speech_review import print_summary,snapshot
+                    print_summary(snapshot(s,s.get(a.job)))
+                else:
+                    print(f'{result["flagged_passages"]} verifier disagreements. Save a publication review with:\n'
+                          + command(s.root,'qa',a.job,'--all','--require-review'))
             if result['status']=='needs_review': return 3
         elif a.command=='transcribe':
             from .asr_diagnostic import transcribe
