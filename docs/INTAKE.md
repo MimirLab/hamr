@@ -91,11 +91,11 @@ For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the ac
 
 Open the original Writer file or a folder containing the unpacked publication's `content.xml` and package marker. Hamr can also locate such a package inside a ZIP. It keeps the original text, styles, and other package parts available through the companion. A separate scan in the same outer archive appears as its own choice.
 
-The built-in reader recognizes OpenOffice.org 1.x Writer text using the original media declaration. List marks, linked notes and editable text frames go through the same text preparation as OpenDocument. Hamr keeps the saved figure numbers and points to any illustration that needs a description.
+The built-in reader recognizes OpenOffice.org 1.x Writer documents (`.sxw`) and templates (`.stw`) using the original media declaration. List marks, linked notes and editable text frames go through the same text preparation as OpenDocument. Hamr keeps the saved figure numbers and points to any illustration that needs a description.
 
 ## Writer master documents
 
-Open the `.odm` with its chapters beside it or in subfolders. If chapters live in a shared parent folder, open that folder or ZIP the whole publication with its relative paths. The folder and ZIP also work when the master or its chapters have been unpacked into folders containing `content.xml` and their Writer package markers. The reading follows Writer's section order and can select a named section from a linked chapter. A copy that Writer saved inside the master supplies that section's reading. The companion can return the original linked files and the individual parts of unpacked packages.
+Open the `.odm` or older `.sxg` with its chapters beside it or in subfolders. If chapters live in a shared parent folder, open that folder or ZIP the whole publication with its relative paths. The folder and ZIP also work when the master or its chapters have been unpacked into folders containing `content.xml` and their Writer package markers. The reading follows Writer's section order and can select a named section from a linked chapter. A copy that Writer saved inside the master supplies that section's reading. The companion can return the original linked files and the individual parts of unpacked packages.
 
 If an unsaved section has a missing chapter, a circular reference, or a link outside the supplied files, the plan marks that section for source review. To include a chapter from elsewhere, save it inside the publication and update the link in Writer, or save a reading copy with the section contents included.
 

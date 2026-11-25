@@ -11,7 +11,7 @@ from .publication_package import member_bytes, member_location
 
 LEGACY_TEXT_MEDIA = frozenset((b'application/vnd.sun.xml.writer',b'application/vnd.sun.xml.writer.template'))
 WRITER_MEDIA = frozenset(value.encode() for value in TEXT_MEDIA) | LEGACY_TEXT_MEDIA
-MASTER_TYPES = frozenset((MASTER_MEDIA.encode(),))
+MASTER_TYPES = frozenset((MASTER_MEDIA.encode(),b'application/vnd.sun.xml.writer.global'))
 PRESENTATION_MEDIA = frozenset((b'application/vnd.oasis.opendocument.presentation',
                                 b'application/vnd.oasis.opendocument.presentation-template'))
 MEDIA_ROUTES = {value:route for media,route in ((WRITER_MEDIA,'odt'),(MASTER_TYPES,'odf-master'),

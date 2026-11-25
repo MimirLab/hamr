@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev80
+
+- Open original OpenOffice.org Writer templates (`.stw`) and master documents (`.sxg`). For master sections, Hamr follows the older Writer links to nearby chapters and retains the exact files for recovery.
+
 # hamr 0.4.9.dev79
 
 - Read unpacked Writer master documents and linked chapters from folders and ZIPs. Hamr follows Writer's section order, keeps the original package parts for recovery, and recognizes an unrelated scan as a separate publication.

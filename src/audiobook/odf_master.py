@@ -13,9 +13,10 @@ from .core import Error, key
 from .document_intake import DocumentBuilder, odf_parts, visit_odf_parts, xml
 from .odf_content import TEXT, XLINK_HREF
 from .odf_package import MASTER_TYPES, WRITER_MEDIA, PackageParts, archive_books, folder_marker, marker_prefix
-from .odf_sections import LINKED_SUFFIXES, saved_content, section_target
+from .odf_sections import saved_content, section_target
+from .openoffice_xml import legacy_document
 from .publication_package import capture_folder, folder_files, member_location
-from .source_bundle import CHUNK, relative_file, relative_path, stamp
+from .source_bundle import CHUNK, NATIVE, relative_file, relative_path, stamp
 
 
 MAX_LINK_DEPTH = 32
@@ -158,8 +159,10 @@ class MasterBook:
         position = len(doc.blocks)
         trail = (*ancestors,(name,region))
         with self.parts(name) as (document,read,member,resources):
+            package_relative = read is not None and not legacy_document(document)
+
             def section(element,source,location):
-                return self.read_section(element,source,location,trail,read is not None,member)
+                return self.read_section(element,source,location,trail,package_relative,member)
 
             visit_odf_parts(document,read,builder,name,region=region,link_section=section,use_title=not ancestors)
         for item in resources:
@@ -187,7 +190,7 @@ class MasterBook:
             with self.documents.open(name) as (stream,member), odf_parts(stream) as (document,read):
                 yield document,read,member,(member,) if member else ()
 
-    def read_section(self,element,source,location,trail,packaged,member):
+    def read_section(self,element,source,location,trail,package_relative,member):
         builder = self.builder
         doc = builder.doc
         name,_ = trail[-1]
@@ -200,8 +203,8 @@ class MasterBook:
         start,inventory = len(doc.blocks),len(doc.inventory)
         chapter,chapter_id = builder.chapter,builder.chapter_id
         try:
-            target,region = section_target(name,source,packaged=packaged)
-            if (target!=name and PurePosixPath(target).suffix.casefold() not in LINKED_SUFFIXES and
+            target,region = section_target(name,source,package_relative=package_relative)
+            if (target!=name and NATIVE.get(PurePosixPath(target).suffix.casefold()) not in ('odt','odf-master') and
                     not self.documents.is_package(target)):
                 raise Error('odf_link','The Writer link needs a local OpenDocument text file or package.')
             receipt.update(target=target,region=region)
@@ -246,7 +249,7 @@ def folder_claims(root,names):
 def archive_claims(archive,members,packages,claimed):
     expanded = [marker_prefix(item.name).rstrip('/') for route,item,_ in packages if route=='odf-master']
     roots = expanded+[item.name for item in members
-                      if item.index not in claimed and PurePosixPath(item.name).suffix.casefold()=='.odm']
+                      if item.index not in claimed and NATIVE.get(PurePosixPath(item.name).suffix.casefold())=='odf-master']
     if not roots:
         return set()
     documents = ArchivedDocuments(archive,members,packages)

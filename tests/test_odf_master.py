@@ -205,3 +205,32 @@ def test_unpacked_master_and_unrelated_scan_remain_two_choices(tmp_path):
         assert publication['name']=='Reader'
         selected = inspect_source(path,offline=True,entry=publication['id'])
         assert speech(selected)==['The keeper checked the light.','The lantern flickered.']
+
+
+def test_old_writer_master_resolves_links_beside_the_package(tmp_path):
+    root = tmp_path/'Edition'
+    root.mkdir()
+    master = root/'Book.sxg'
+    chapter = root/'Night watch.sxw'
+    ns = ('xmlns:office="http://openoffice.org/2000/office" '
+          'xmlns:text="http://openoffice.org/2000/text" '
+          'xmlns:xlink="http://www.w3.org/1999/xlink"')
+    for path,media,body in (
+        (master,'application/vnd.sun.xml.writer.global',p('The night was clear.')+
+         section('Watch','Night%20watch.sxw')+section('Absent','../../Outside.sxw')),
+        (chapter,'application/vnd.sun.xml.writer',p('The lantern flickered.')),
+    ):
+        with ZipFile(path,'w') as archive:
+            archive.writestr('mimetype',media)
+            archive.writestr('content.xml',f'<office:document-content {ns}><office:body>'
+                             f'{body}</office:body></office:document-content>')
+    zipped = wrap(tmp_path/'Edition.zip',('Book/Book.sxg',master),('Book/Night watch.sxw',chapter))
+    expanded = tmp_path/'Expanded'
+    unpack(master,expanded/'Reader')
+    (expanded/chapter.name).write_bytes(chapter.read_bytes())
+    for path in (master,root,zipped,expanded):
+        doc = inspect_source(path,offline=True)
+        assert speech(doc)==['The night was clear.','The lantern flickered.']
+        issues = plan(doc)['issues']
+        assert len(issues)==1
+        assert 'leaves the supplied source folder' in issues[0]['reason']

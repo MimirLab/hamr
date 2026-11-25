@@ -25,6 +25,7 @@ NATIVE = {
     '.textpack':'textbundle',
     '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx',
     '.odt':'odt', '.ott':'odt', '.oth':'odt', '.fodt':'odt', '.odm':'odf-master', '.sxw':'odt', '.stw':'odt',
+    '.sxg':'odf-master',
     '.abw':'abiword', '.awt':'abiword', '.zabw':'abiword', '.bzabw':'abiword',
     '.abw.gz':'abiword', '.abw.bz2':'abiword',
     '.dbk':'xml-book', '.docbook':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',

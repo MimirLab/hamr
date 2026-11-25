@@ -12,7 +12,6 @@ SECTION = TEXT+'section'
 SECTION_SOURCE = TEXT+'section-source'
 SECTION_NAME = TEXT+'section-name'
 NAME = TEXT+'name'
-LINKED_SUFFIXES = frozenset(('.odt','.ott','.oth','.fodt','.odm'))
 SKIP = frozenset({TEXT+'tracked-changes',TEXT+'deletion',OFFICE+'annotation',
                   OFFICE+'scripts',OFFICE+'forms'})
 
@@ -51,7 +50,7 @@ def body_region(body,region):
     return body
 
 
-def section_target(part,source,*,packaged):
+def section_target(part,source,*,package_relative):
     href = source.get(XLINK_HREF,'')
     try:
         url = urlsplit(href)
@@ -74,10 +73,10 @@ def section_target(part,source,*,packaged):
         if region:
             return part,region
         raise Error('odf_link','The Writer link has no document or section name.')
-    # Packaged content.xml resolves from the virtual directory of its ODF.
-    base = part if packaged else posixpath.dirname(part)
+    # OpenDocument links resolve from the package; old Writer links resolve beside it.
+    base = part if package_relative else posixpath.dirname(part)
     target = posixpath.normpath(posixpath.join(base,'/'.join(fragments)))
-    if packaged and (target.startswith(part+'/') or not part and not target.startswith('../')):
+    if package_relative and (target.startswith(part+'/') or not part and not target.startswith('../')):
         raise Error('odf_link','This Writer link points to a document embedded inside its package.')
     try:
         target = safe_name(target)
