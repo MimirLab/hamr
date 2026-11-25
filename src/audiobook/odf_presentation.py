@@ -2,7 +2,6 @@
 
 from collections import defaultdict
 from decimal import Decimal
-from pathlib import PurePosixPath
 import re
 
 from . import odf_content, table_grid, xml_source
@@ -11,6 +10,7 @@ from .core import Error, key
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, bounded_read, name, plain_xml_text, xml
 from .markdown_publication import local_path
 from .odf_content import DRAW, FO, MANIFEST, OFFICE, STYLE, TABLE, TEXT, XLINK_HREF
+from .odf_package import PRESENTATION_MEDIA as MEDIA
 from .presentation_common import canonical, observe_picture, speaker_note, visual_label
 from .publication_package import bind_member_block, member_bytes, member_location
 
@@ -19,8 +19,6 @@ PRESENT = '{urn:oasis:names:tc:opendocument:xmlns:presentation:1.0}'
 SVG = '{urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0}'
 MANIFEST_FILE = 'META-INF/manifest.xml'
 CONTENT_FILE = 'content.xml'
-MEDIA = frozenset((b'application/vnd.oasis.opendocument.presentation',
-                   b'application/vnd.oasis.opendocument.presentation-template'))
 LENGTH = re.compile(r'([+-]?(?:\d{1,8}(?:\.\d{1,10})?|\.\d{1,10}))(cm|mm|in|pt|pc)')
 SHAPES = frozenset(DRAW+tag for tag in (
     'frame','custom-shape','rect','ellipse','circle','line','connector','polygon','polyline','path','caption'))
@@ -34,26 +32,9 @@ def flat_presentation(root):
 
 
 def folder_marker(root):
-    path = root/'mimetype'
-    if path.is_symlink() or not path.is_file():
-        return False
-    with path.open('rb') as stream:
-        return stream.read(257).strip() in MEDIA
+    from .odf_package import folder_marker as media_folder
 
-
-def archive_books(archive,members):
-    publications,claimed = [],set()
-    markers = (member for member in members if PurePosixPath(member.name).name=='mimetype'
-               and (member.size is None or member.size<=256))
-    for item in sorted(markers,key=lambda member:member.name):
-        if item.index in claimed or member_bytes(archive,item,256).strip() not in MEDIA:
-            continue
-        prefix = item.name.removesuffix('mimetype')
-        claimed.update(part.index for part in members if part.name.startswith(prefix))
-        label = PurePosixPath(prefix).name
-        publications.append((item,'OpenDocument presentation'+(f' ({label})' if label else '')))
-    return publications,claimed
-
+    return media_folder(root,MEDIA)
 
 def location(node,slide,groups=()):
     loc = {'slide':slide,'xml_path':node.getroottree().getpath(node)}
@@ -349,6 +330,8 @@ class Presentation:
 
 
 def read_odp(path,source,sha,title,cache):
+    from .odf_package import archive_books, marker_prefix
+
     if source.kind=='file':
         root = xml(bounded_read(path))
         if not flat_presentation(root):
@@ -357,10 +340,10 @@ def read_odp(path,source,sha,title,cache):
     with containers(path,source.kind) as archive:
         members = list(archive.members())
         editions,_ = archive_books(archive,members)
-        matches = [item for item,_ in editions if source.entry is None or item.index==source.entry]
+        matches = [item for route,item,_ in editions if route=='odp' and source.entry in (None,item.index)]
         if len(matches)!=1:
             raise Error('source_presentation_part','The source has no unique OpenDocument presentation package.')
         if sum(member.name==matches[0].name for member in members)!=1:
-            raise Error('source_presentation_part','The source repeats its OpenDocument media-type marker.')
-        prefix = matches[0].name.removesuffix('mimetype')
+            raise Error('source_presentation_part','The source repeats its OpenDocument package marker.')
+        prefix = marker_prefix(matches[0].name)
         return Presentation(sha,title,cache,archive=archive,members=members,prefix=prefix).read_deck()

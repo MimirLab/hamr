@@ -80,6 +80,10 @@ def parse(path,source,sha,cache,title):
         from .odf_presentation import read_odp
 
         return read_odp(path,source,sha,title,cache)
+    if source.route=='odt' and source.kind in ('zip','tar','libarchive'):
+        from .odf_package import read_writer_package
+
+        return read_writer_package(path,source,sha,title)
     if source.route=='pages' and source.kind in ('zip','tar','libarchive'):
         from .pages_intake import read_pages
 

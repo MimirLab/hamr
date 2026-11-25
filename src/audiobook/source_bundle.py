@@ -24,7 +24,7 @@ NATIVE = {
     '.xps':'xps', '.oxps':'xps',
     '.textpack':'textbundle',
     '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx',
-    '.odt':'odt', '.ott':'odt', '.oth':'odt', '.fodt':'odt', '.odm':'odf-master',
+    '.odt':'odt', '.ott':'odt', '.oth':'odt', '.fodt':'odt', '.odm':'odf-master', '.sxw':'odt', '.stw':'odt',
     '.abw':'abiword', '.awt':'abiword', '.zabw':'abiword', '.bzabw':'abiword',
     '.abw.gz':'abiword', '.abw.bz2':'abiword',
     '.dbk':'xml-book', '.docbook':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
@@ -34,7 +34,7 @@ NATIVE = {
     '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.rb':'rocket', '.snb':'snb', '.mobi':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy',
     '.wpd':'wordperfect', '.wp':'wordperfect', '.wp4':'wordperfect', '.wp5':'wordperfect', '.wp6':'wordperfect',
     '.hqx':'classic-mac',
-    '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
+    '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc', '.tex':'latex',
     '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
@@ -43,7 +43,7 @@ PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp','pages')) | DESCRIPTOR_FOLDERS
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp','odt','pages')) | DESCRIPTOR_FOLDERS
 DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
@@ -196,6 +196,7 @@ def relative_file(root, name):
 
 def publication_folder(path):
     from .fictionbook_package import folder_marker as fb3_folder
+    from .odf_package import WRITER_MEDIA, folder_marker as writer_media
     from .odf_presentation import folder_marker as odp_folder
     from .pages_intake import folder_marker as pages_folder
     from .presentation_intake import folder_marker as pptx_folder
@@ -209,6 +210,8 @@ def publication_folder(path):
         return 'pptx'
     if odp_folder(path):
         return 'odp'
+    if writer_media(path,WRITER_MEDIA):
+        return 'odt'
     if pages_folder(path):
         return 'pages'
     if path.suffix.casefold()=='.textbundle':
@@ -357,7 +360,9 @@ def zip_members(archive):
 
 def zip_source(path, entry, override):
     from .archive_intake import ZipMembers
-    from .odf_content import MASTER_MEDIA, TEXT_MEDIA
+    from .document_intake import MAX_STRUCTURE
+    from .odf_content import MASTER_MEDIA
+    from .odf_package import MANIFEST_PART, WRITER_MEDIA, manifest_media
     from .odf_presentation import MEDIA as ODF_PRESENTATION_TYPES
     from .pml_package import pmlz_parts
 
@@ -381,15 +386,21 @@ def zip_source(path, entry, override):
             names = {info.filename for _,info in records}
             if 'manifest.json' in names and any(name.startswith('blobs/') for name in names):
                 return Source('scan','bundle')
-            mimetype = next((info for _,info in records if info.filename=='mimetype' and info.file_size<=256),None)
+            marker, mimetype = next(((index,info) for index,info in records
+                                     if info.filename=='mimetype' and info.file_size<=256),(None,None))
             media = archive.read(mimetype).strip() if mimetype else b''
+            if 'mimetype' not in names and 'content.xml' in names and MANIFEST_PART in names:
+                for index,info in records:
+                    if info.filename==MANIFEST_PART and info.file_size<=MAX_STRUCTURE:
+                        marker,media = index,manifest_media(archive.read(info))
+                        break
             if override is None and media in ODF_PRESENTATION_TYPES:
                 package_route = 'odp'
             for predicate,route in (
                 ('META-INF/container.xml' in names or media==b'application/epub+zip','epub'),
                 ('word/document.xml' in names,'docx'),
                 ('xl/workbook.xml' in names,'xlsx'),
-                (media.decode('ascii',errors='replace') in TEXT_MEDIA,'odt'),
+                (media in WRITER_MEDIA,'odt'),
                 (media==MASTER_MEDIA.encode(),'odf-master'),
             ):
                 if predicate:
@@ -398,6 +409,8 @@ def zip_source(path, entry, override):
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
                     if override!='scan' and package_route not in ('fb3','xps','pptx','odp','pages'):
+                        if route=='odt' and path.suffix.casefold()=='.zip':
+                            return Source(route,'zip',marker)
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
@@ -840,7 +853,7 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_sphinx(local,target)
-        elif source.route in ('fb3','xps','pptx','odp','pages'):
+        elif source.route in ('fb3','xps','pptx','odp','odt','pages'):
             from .publication_package import capture_folder, folder_files
 
             target = target_dir/'source.zip'

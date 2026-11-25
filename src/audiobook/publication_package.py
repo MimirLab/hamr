@@ -126,7 +126,7 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     from .gitbook_intake import archive_spaces
     from .mdbook_intake import archive_books
     from .ncc_intake import archive_books as ncc_books
-    from .odf_presentation import archive_books as odp_books
+    from .odf_package import archive_books as odf_books
     from .opf_intake import archive_books as opf_books
     from .pages_intake import archive_books as pages_books
     from .presentation_intake import archive_books as pptx_books
@@ -154,9 +154,9 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     slides,pptx_members = pptx_books(archive,remaining)
     packages.extend(('pptx',descriptor,title) for descriptor,title in slides)
     remaining = [item for item in remaining if item.index not in pptx_members]
-    slides,odp_members = odp_books(archive,remaining)
-    packages.extend(('odp',descriptor,title) for descriptor,title in slides)
-    remaining = [item for item in remaining if item.index not in odp_members]
+    odf,odf_members = odf_books(archive,remaining)
+    packages.extend(odf)
+    remaining = [item for item in remaining if item.index not in odf_members]
     pages,pages_members = pages_books(archive,remaining,explicit=explicit_pages)
     packages.extend(('pages',descriptor,title) for descriptor,title in pages)
     remaining = [item for item in remaining if item.index not in pages_members]
@@ -183,5 +183,5 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     packages.extend(('xml-book',descriptor,title) for descriptor,title in editions)
     spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in xml_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    return (packages,claimed | xps_members | fb3_members | pptx_members | odp_members | pages_members |
+    return (packages,claimed | xps_members | fb3_members | pptx_members | odf_members | pages_members |
             owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain)

@@ -21,7 +21,8 @@ def integer(value, default):
     return int(value) if value and SIGNED_INTEGER.fullmatch(value) else default
 
 
-def authored_marks(body, parts, *, omitted=None):
+def authored_marks(body, parts, *, omitted=None, location=None):
+    locate = location or (lambda node:node.getroottree().getpath(node))
     definitions = {}
     for member,root in parts:
         for list_style in root.iter(TEXT+'list-style'):
@@ -43,13 +44,13 @@ def authored_marks(body, parts, *, omitted=None):
         if not expected and not (style and rule is None or broken or printed):
             return
         location = {'source_file':member,'list_style':style,'level':depth,
-                    'item_path':owner.getroottree().getpath(owner)}
+                    'item_path':locate(owner)}
         if rule is not None:
-            location['xml_path'] = rule.getroottree().getpath(rule)
+            location['xml_path'] = locate(rule)
         error = {'issue':ISSUE,'location':location}
         if printed:
             error['notation'] = printed
-            error['location']['cached_marker_path'] = cached.getroottree().getpath(cached)
+            error['location']['cached_marker_path'] = locate(cached)
         if not expected or broken:
             marks[target] = (value,error)
             return
@@ -110,9 +111,14 @@ def authored_marks(body, parts, *, omitted=None):
                 elif child.tag==TEXT+'list-header':
                     for entry in child:
                         visit(entry,scope,style,parents)
-            previous[key] = style,depth,value-1
+            final = style,depth,value-1
+            _,levels = definitions.get(style,(None,{}))
+            rule = levels.get(depth)
+            # A bullet list does not interrupt the preceding numbered sequence.
+            if rule is None or rule.tag==NUMBER:
+                previous[key] = final
             if ident:=node.get(XML_ID):
-                ids[ident] = None if ident in ids else previous[key]
+                ids[ident] = None if ident in ids else final
             return
         if node.tag==NUMBERED:
             style = node.get(TEXT+'style-name') or style

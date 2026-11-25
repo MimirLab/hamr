@@ -706,23 +706,37 @@ def odt(path,builder,source_file=None):
 
 
 def visit_odf(stream,builder,flat_name,*,region=None,link_section=None,use_title=True):
-    from .odf_content import Content, OFFICE, TEXT
-
     with odf_parts(stream) as (document,read):
-        if read is None:
-            content = Content(None,flat_name)
-            metadata = document.find(OFFICE+'meta') if use_title else None
-            styles = None
-        else:
-            content = Content(read)
-            raw_meta = read('meta.xml',required=False) if use_title else None
-            metadata = xml(raw_meta) if raw_meta else None
-            styled = next(document.iter(TEXT+'span',TEXT+'list',TEXT+'numbered-paragraph'),None)
-            has_paragraph_styles = any(node.get(TEXT+'style-name') for node in document.iter(TEXT+'p'))
-            tracked = next(document.iter(TEXT+'tracked-changes'),None) is not None
-            raw_styles = read('styles.xml',required=False) if styled is not None or has_paragraph_styles or tracked else None
-            styles = xml(raw_styles) if raw_styles else None
-        _odt_body(document,builder,content,metadata,styles,region=region,link_section=link_section)
+        visit_odf_parts(document,read,builder,flat_name,region=region,link_section=link_section,use_title=use_title)
+
+
+def visit_odf_parts(document,read,builder,flat_name,*,region=None,link_section=None,use_title=True):
+    from .odf_content import Content, OFFICE, TEXT
+    from .openoffice_xml import legacy_document, project
+
+    locations = {}
+    legacy = legacy_document(document)
+    if legacy:
+        project(document,locations)
+        builder.doc.metadata['writer_dialect'] = 'OpenOffice.org 1.x XML'
+
+    if read is None:
+        content = Content(None,flat_name)
+        metadata = document.find(OFFICE+'meta') if use_title else None
+        styles = None
+    else:
+        content = Content(read)
+        raw_meta = read('meta.xml',required=False) if use_title else None
+        metadata = xml(raw_meta) if raw_meta else None
+        styled = next(document.iter(TEXT+'span',TEXT+'list',TEXT+'numbered-paragraph'),None)
+        has_paragraph_styles = any(node.get(TEXT+'style-name') for node in document.iter(TEXT+'p'))
+        tracked = next(document.iter(TEXT+'tracked-changes'),None) is not None
+        raw_styles = read('styles.xml',required=False) if styled is not None or has_paragraph_styles or tracked else None
+        styles = xml(raw_styles) if raw_styles else None
+        if legacy and styles is not None:
+            project(styles,locations)
+    content.locations = locations
+    _odt_body(document,builder,content,metadata,styles,region=region,link_section=link_section)
 
 
 def _odt_body(document,builder,content,metadata,styles=None,*,region=None,link_section=None):
@@ -741,16 +755,17 @@ def _odt_body(document,builder,content,metadata,styles=None,*,region=None,link_s
         raise Error('source_xml','OpenDocument has no document body.')
     selected = body_region(body,region) if region else body
     declarations = [('styles.xml',styles)] if styles is not None else []
-    content.styles = Styles(document,styles,source_file=content.source_file)
+    content.styles = Styles(document,styles,source_file=content.source_file,location=content.location)
     if next(body.iter(TEXT+'changed-region'),None) is not None:
         content.table_revisions = TableRevisions(body,content.styles,content.source_file,builder.doc.inventory)
         builder.doc.warnings.append('Tracked change records are preserved in the original. The visible body is selected.')
     omitted = content.table_revisions.omits if content.table_revisions is not None else None
-    content.numbering = authored_marks(body,[*declarations,(content.source_file,document)],omitted=omitted)
+    content.numbering = authored_marks(body,[*declarations,(content.source_file,document)],omitted=omitted,
+                                      location=content.location)
 
     def visit(node):
         tag = name(node)
-        loc = content.source_file+':'+node.getroottree().getpath(node)
+        loc = content.source_file+':'+content.location(node)
         if node.tag==TEXT+'section':
             if not visible_section(node):
                 return

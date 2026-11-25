@@ -68,8 +68,9 @@ def table_content(node):
 
 
 class Styles:
-    def __init__(self,root,external=None,*,source_file='content.xml'):
+    def __init__(self,root,external=None,*,source_file='content.xml',location=None):
         self.nodes = {}
+        self.location = location or (lambda node:node.getroottree().getpath(node))
         self.sources = {root:source_file}
         if external is not None:
             self.sources[external] = 'styles.xml'
@@ -113,7 +114,7 @@ class Styles:
                     continue
                 tree = style.getroottree()
                 origin = {'id':style.get(STYLE+'name'),'source_file':self.sources[tree.getroot()],
-                          'xml_path':tree.getpath(style)}
+                          'xml_path':self.location(style)}
                 for key in TEXT_ATTRIBUTES:
                     if (value:=properties.get(key)) is not None:
                         fields.setdefault(key,(value,origin))
@@ -268,6 +269,10 @@ class Content:
         self.numbering = {}
         self.styles = styles
         self.table_revisions = None
+        self.locations = {}
+
+    def location(self,node):
+        return self.locations.get(node) or node.getroottree().getpath(node)
 
     def object_formula(self,frame):
         if frame.tag!=DRAW+'frame' or frame.get(TEXT+'anchor-type')!='as-char':
@@ -291,7 +296,12 @@ class Content:
         if self.declared_objects is None:
             self.declared_objects = {}
             if manifest := self.read('META-INF/manifest.xml',required=False):
-                for entry in xml(manifest):
+                from .openoffice_xml import project
+
+                declarations = xml(manifest)
+                if declarations.tag.startswith('{http://openoffice.org/2001/manifest}'):
+                    project(declarations,{})
+                for entry in declarations:
                     if entry.tag==MANIFEST+'file-entry':
                         member = entry.get(MANIFEST+'full-path')
                         self.declared_objects[member] = (entry.get(MANIFEST+'media-type')
@@ -340,7 +350,7 @@ class Content:
                 if in_note:
                     findings.append('A nested OpenDocument note needs a verified reading.')
                     return
-                locator = '#odt-note-'+key(item.getroottree().getpath(item))[:16]
+                locator = '#odt-note-'+key(self.location(item))[:16]
                 text_node = next((n for n in item if name(n)=='note-body'),None)
                 paragraphs = [self.paragraph(p,in_note=True) for p in text_node if name(p) in ('p','h')] if text_node is not None else []
                 text,parts = join_formulas((p[0],p[1]) for p in paragraphs)
@@ -350,7 +360,7 @@ class Content:
                 spans.append({'kind':'note_reference','source_start':offset,'source_end':offset,
                               'source':'','href':locator})
                 link = formula_note({'kind':'note','href':locator,'reference_href':locator,'source_start':offset,
-                                     'source_locator':{'source_file':self.source_file,'xml_path':item.getroottree().getpath(item)}},
+                                     'source_locator':{'source_file':self.source_file,'xml_path':self.location(item)}},
                                     text,parts,problem or ('OpenDocument note has no body.' if not text else None))
                 link.setdefault('reading',text)
                 links.append(link)
@@ -456,7 +466,7 @@ class Content:
                 tag = name(cell)
                 if tag not in ('table-cell','covered-table-cell'):
                     continue
-                loc = {'source_file':self.source_file,'xml_path':cell.getroottree().getpath(cell)}
+                loc = {'source_file':self.source_file,'xml_path':self.location(cell)}
                 if typed and (kind:=cell.get(OFFICE+'value-type')):
                     loc.update(office_type=kind,office_value=cell.get(OFFICE+'value',''))
                 copies = count(attr(cell,'number-columns-repeated'),maximum=1000)
@@ -486,7 +496,7 @@ class Content:
                                 grid.issue(issue)
                             if source or spans:
                                 paragraphs.append((source,spans,links))
-                                locations.append({'source_file':self.source_file,'xml_path':child.getroottree().getpath(child)})
+                                locations.append({'source_file':self.source_file,'xml_path':self.location(child)})
                     flush()
                 authored.append(TableCell(loc,copies,columns,rows,parts,tag=='covered-table-cell',cell_deleted))
             for row_repeat in range(repeats):

@@ -1,3 +1,9 @@
+# hamr 0.4.9.dev78
+
+- Read unpacked Writer document packages from a folder or ZIP. Hamr follows the authored text and table structure and retains each original package part for recovery.
+- Open OpenOffice.org 1.x Writer documents (`.sxw`) through the built-in OpenDocument text reader. Hamr recognizes both a media marker and a manifest declaration, and retains the saved figure numbers, notes, text frames and list structure.
+- Preserve explicitly continued list numbering across an intervening bulleted list in Writer documents.
+
 # hamr 0.4.9.dev77
 
 - Open Writer templates (`.ott`) as text. Templates use the same reading and source companion as ordinary Writer documents.
