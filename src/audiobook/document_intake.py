@@ -698,13 +698,14 @@ def odt(path,builder,source_file=None):
             metadata = read('meta.xml',required=False)
             styled = next(document.iter(TEXT+'span',TEXT+'list',TEXT+'numbered-paragraph'),None)
             has_paragraph_styles = any(node.get(TEXT+'style-name') for node in document.iter(TEXT+'p'))
-            styles = read('styles.xml',required=False) if styled is not None or has_paragraph_styles else None
+            tracked = next(document.iter(TEXT+'tracked-changes'),None) is not None
+            styles = read('styles.xml',required=False) if styled is not None or has_paragraph_styles or tracked else None
             _odt_body(document,builder,Content(read),xml(metadata) if metadata else None,
                       xml(styles) if styles else None)
 
 
 def _odt_body(document,builder,content,metadata,styles=None):
-    from .odf_content import DRAW, OFFICE, STYLE, TEXT, Styles
+    from .odf_content import DRAW, OFFICE, STYLE, TEXT, Styles, TableRevisions
     from .odf_numbering import authored_marks
     from .source_commands import literal_paragraph_location, literal_spans, literal_style
     from .table_grid import simple_matrix
@@ -717,10 +718,12 @@ def _odt_body(document,builder,content,metadata,styles=None):
     if body is None:
         raise Error('source_xml','OpenDocument has no document body.')
     declarations = [('styles.xml',styles)] if styles is not None else []
-    content.numbering = authored_marks(body,[*declarations,(content.source_file,document)])
     content.styles = Styles(document,styles,source_file=content.source_file)
-    if any(name(n)=='changed-region' for n in body.iter()):
+    if next(body.iter(TEXT+'changed-region'),None) is not None:
+        content.table_revisions = TableRevisions(body,content.styles,content.source_file,builder.doc.inventory)
         builder.doc.warnings.append('Tracked change records are preserved in the original. The visible body is selected.')
+    omitted = content.table_revisions.omits if content.table_revisions is not None else None
+    content.numbering = authored_marks(body,[*declarations,(content.source_file,document)],omitted=omitted)
 
     def visit(node):
         tag = name(node)

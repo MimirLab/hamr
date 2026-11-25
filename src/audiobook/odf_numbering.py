@@ -2,12 +2,10 @@
 
 import re
 
-from .odf_content import OFFICE, TEXT
+from .odf_content import OFFICE, STYLE, TEXT, XML_ID
 from .source_numbering import HTML_STYLE, SIGNED_INTEGER, marker_component
 
 
-STYLE = '{urn:oasis:names:tc:opendocument:xmlns:style:1.0}'
-XML_ID = '{http://www.w3.org/XML/1998/namespace}id'
 GROUP = TEXT+'list'
 ITEM = TEXT+'list-item'
 NUMBERED = TEXT+'numbered-paragraph'
@@ -23,7 +21,7 @@ def integer(value, default):
     return int(value) if value and SIGNED_INTEGER.fullmatch(value) else default
 
 
-def authored_marks(body, parts):
+def authored_marks(body, parts, *, omitted=None):
     definitions = {}
     for member,root in parts:
         for list_style in root.iter(TEXT+'list-style'):
@@ -89,7 +87,7 @@ def authored_marks(body, parts):
         return integer(rule.get(TEXT+'start-value'),1) if rule is not None else 1
 
     def visit(node, scope, style=None, parents=()):
-        if node.tag in OMIT:
+        if node.tag in OMIT or omitted is not None and omitted(node):
             return
         if node.tag in (TEXT+'note-body', OFFICE+'text'):
             scope = node

@@ -1,5 +1,7 @@
 """Prepare OpenDocument paragraphs and tables for the common planner."""
 
+from collections import Counter
+from dataclasses import dataclass, replace
 import re
 from urllib.parse import unquote, urlsplit
 
@@ -9,7 +11,7 @@ from .epub_semantics import uncertainty
 from .source_bundle import safe_name
 from .source_math import MATHML, mathml, mathml_text
 from .source_scripts import prepare as prepare_scripts
-from .table_grid import Grid, count, join_passages
+from .table_grid import Grid, MAX_COLUMNS, MAX_ROWS, count, join_passages
 
 
 OFFICE = '{urn:oasis:names:tc:opendocument:xmlns:office:1.0}'
@@ -18,6 +20,8 @@ FO = '{urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0}'
 TEXT = '{urn:oasis:names:tc:opendocument:xmlns:text:1.0}'
 STYLE = '{urn:oasis:names:tc:opendocument:xmlns:style:1.0}'
 TABLE = '{urn:oasis:names:tc:opendocument:xmlns:table:1.0}'
+LOEXT = '{urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0}'
+XML_ID = '{http://www.w3.org/XML/1998/namespace}id'
 MANIFEST = '{urn:oasis:names:tc:opendocument:xmlns:manifest:1.0}'
 XLINK_HREF = '{http://www.w3.org/1999/xlink}href'
 MATH_ROOT = '{'+MATHML+'}math'
@@ -30,6 +34,14 @@ TEXT_MEDIA = frozenset((
 ))
 TEXT_BOX_CONTENT = frozenset((TEXT+'p',TEXT+'h',TEXT+'list',TEXT+'numbered-paragraph',
                               TEXT+'section',TABLE+'table'))
+TABLE_REVISION_FAMILY = {TABLE+'table-row':'table-row', TABLE+'table-cell':'table-cell',
+                         TABLE+'covered-table-cell':'table-cell'}
+EMPTY_REVISION_CONTENT = frozenset(TABLE_REVISION_FAMILY) | {
+    TEXT+tag for tag in ('p','h','span','a','s','tab','line-break','soft-page-break',
+                         'list','list-item','list-header','numbered-paragraph')
+}
+CELL_VALUE_FIELDS = ((TABLE+'formula',) + tuple(OFFICE+field for field in
+                     ('value','string-value','boolean-value','date-value','time-value')))
 
 
 def flat_text(root):
@@ -108,6 +120,124 @@ class Styles:
         return self.character_properties[label]
 
 
+class TableRevisions:
+    """Resolve Writer's structural flag together with its saved deletion points."""
+    def __init__(self,body,styles,source_file,inventory):
+        self.styles = styles
+        self.source_file = source_file
+        self.inventory = inventory
+        self.records = {}
+        self.structure_styles = {}
+        self.omissions = {}
+        anchors = Counter(point.get(TEXT+'change-id') for point in
+                          body.iter(TEXT+'change',TEXT+'change-start',TEXT+'change-end')
+                          if next(point.iterancestors(TEXT+'tracked-changes'),None) is None)
+        for ledger in body.iter(TEXT+'tracked-changes'):
+            for region in ledger.iterchildren(TEXT+'changed-region'):
+                identifiers = {value for field in (XML_ID,TEXT+'id') if (value:=region.get(field))}
+                if len(identifiers)!=1:
+                    self.records.update(dict.fromkeys(identifiers))
+                    continue
+                ident, = identifiers
+                children = [child for child in region if isinstance(child.tag,str)]
+                sole_deletion = len(children)==1 and children[0].tag==TEXT+'deletion'
+                self.records[ident] = (children[0] if ident not in self.records and
+                                       sole_deletion and anchors[ident]==1 else None)
+
+    def structural(self,family,label):
+        key = family,label
+        if key not in self.structure_styles:
+            value = None
+            for style in self.styles.inheritance(family,label,strict=False):
+                props = style.find(STYLE+family+'-properties')
+                if props is not None and (value:=props.get(LOEXT+'text-changes-only')) is not None:
+                    break
+            self.structure_styles[key] = value=='false'
+        return self.structure_styles[key]
+
+    def deletion_points(self,node):
+        points = {}
+        for child in node.iter():
+            if not isinstance(child.tag,str):
+                if (child.tail or '').strip():
+                    return {}
+                continue
+            if (child.text or '').strip() or (child is not node and (child.tail or '').strip()):
+                return {}
+            if child.tag==TEXT+'change':
+                ident = child.get(TEXT+'change-id')
+                deletion = self.records.get(ident)
+                if deletion is None:
+                    return {}
+                points[ident] = deletion
+            elif child.tag not in EMPTY_REVISION_CONTENT:
+                # Insertion borders, drawings, notes and nested tables are current content.
+                return {}
+            elif child.tag in (TABLE+'table-cell',TABLE+'covered-table-cell') and any(
+                    child.get(name) not in (None,'') for name in CELL_VALUE_FIELDS):
+                return {}
+        return points
+
+    def omits(self,node):
+        family = TABLE_REVISION_FAMILY.get(node.tag)
+        label = node.get(TABLE+'style-name') if family else None
+        if not (self.records and label and self.structural(family,label)):
+            return False
+        if node not in self.omissions:
+            points = self.deletion_points(node)
+            self.omissions[node] = bool(points)
+            if points:
+                tree = node.getroottree()
+                self.inventory.append({
+                    'kind':'odf_table_revision','selected_edition':'visible final','element':family,
+                    'source_file':self.source_file,'xml_path':tree.getpath(node),'style':label,
+                    'deletions':[{'id':ident,'xml_path':tree.getpath(record)} for ident,record in points.items()],
+                })
+        return self.omissions[node]
+
+
+@dataclass
+class TableCell:
+    location: dict
+    copies: int
+    columns: int
+    rows: int
+    parts: list
+    covered: bool
+    deleted: bool
+
+
+def projected_span(offset,size,visible):
+    """Translate a physical span while preserving any out-of-bounds tail."""
+    end = min(offset+size,len(visible)-1)
+    return visible[end]-visible[offset]+offset+size-end
+
+
+def project_row(authored,deleted_coverage,orphan_origins,source_row,deleted_row):
+    """Project explicit covered slots after accepting row and cell deletions."""
+    slots,visible = [],[0]
+    for cell in authored:
+        for repeat in range(cell.copies):
+            column = len(slots)
+            if column>=MAX_COLUMNS:
+                raise Error('source_structure_size','An authored table exceeds the column budget.')
+            if cell.deleted and not cell.covered:
+                until = source_row+cell.rows
+                for covered in range(column,min(column+cell.columns,MAX_COLUMNS)):
+                    deleted_coverage[covered] = max(until,deleted_coverage.get(covered,0))
+            elif deleted_row and not cell.covered and cell.rows>1:
+                orphan_origins[column] = source_row+cell.rows,cell.columns
+            omitted = deleted_row or cell.deleted or (cell.covered and deleted_coverage.get(column,0)>source_row)
+            actual = cell
+            if not deleted_row and (orphan:=orphan_origins.pop(column,None)):
+                end,width = orphan
+                if cell.covered and not omitted and end>source_row:
+                    actual = replace(cell,columns=width,rows=end-source_row,covered=False)
+            slots.append(None if omitted else (actual,repeat))
+            visible.append(visible[-1]+(not omitted))
+    return slots,visible
+
+
 def script_position(value, inherited):
     match = re.fullmatch(r'(super|sub|[+\-]?\d+(?:\.\d+)?%)(?:\s+\d+(?:\.\d+)?%)?',value.strip())
     if not match:
@@ -136,6 +266,7 @@ class Content:
         self.declared_objects = None
         self.numbering = {}
         self.styles = styles
+        self.table_revisions = None
 
     def object_formula(self,frame):
         if frame.tag!=DRAW+'frame' or frame.get(TEXT+'anchor-type')!='as-char':
@@ -307,8 +438,18 @@ class Content:
 
     def table(self,node,*,typed=False):
         grid = Grid()
+        declared_rows,visible_rows = [],[0]
         for row,header in table_rows(node):
             repeats = count(attr(row,'number-rows-repeated'),maximum=1000)
+            if len(visible_rows)+repeats>MAX_ROWS+1:
+                raise Error('source_structure_size','An authored table exceeds the row budget.')
+            deleted = self.table_revisions is not None and self.table_revisions.omits(row)
+            declared_rows.append((row,header,repeats,deleted,len(visible_rows)-1))
+            for _ in range(repeats):
+                visible_rows.append(visible_rows[-1]+(not deleted))
+
+        deleted_coverage,orphan_origins = {},{}
+        for row,header,repeats,deleted,source_start in declared_rows:
             authored = []
             for cell in row:
                 tag = name(cell)
@@ -320,6 +461,7 @@ class Content:
                 copies = count(attr(cell,'number-columns-repeated'),maximum=1000)
                 columns = count(attr(cell,'number-columns-spanned'))
                 rows = count(attr(cell,'number-rows-spanned'),maximum=10000)
+                cell_deleted = self.table_revisions is not None and self.table_revisions.omits(cell)
                 parts, paragraphs, locations = [],[],[]
 
                 def flush():
@@ -332,7 +474,7 @@ class Content:
                     paragraphs.clear()
                     locations.clear()
 
-                if tag=='table-cell':
+                if tag=='table-cell' and not (cell_deleted or deleted):
                     for child in table_content(cell):
                         if name(child)=='table':
                             flush()
@@ -345,18 +487,24 @@ class Content:
                                 paragraphs.append((source,spans,links))
                                 locations.append({'source_file':self.source_file,'xml_path':child.getroottree().getpath(child)})
                     flush()
-                authored.append((tag,loc,copies,columns,rows,parts))
+                authored.append(TableCell(loc,copies,columns,rows,parts,tag=='covered-table-cell',cell_deleted))
             for row_repeat in range(repeats):
+                source_row = source_start+row_repeat
+                slots,visible_columns = project_row(authored,deleted_coverage,orphan_origins,source_row,deleted)
+                if deleted:
+                    continue
                 grid.begin_row()
-                for tag,loc,copies,columns,rows,parts in authored:
-                    for cell_repeat in range(copies):
-                        location = {**loc,'row_repeat':row_repeat,'cell_repeat':cell_repeat}
-                        start = grid.column
-                        if tag=='covered-table-cell':
-                            grid.cover(location)
-                        else:
-                            grid.place(parts,location,columns=columns,rows=rows,role='column' if header else 'data')
-                            # ODF serializes covered cells explicitly.
-                            grid.column = start+1
+                for source_column,slot in enumerate(slots):
+                    if slot is None:
+                        continue
+                    cell,cell_repeat = slot
+                    location = {**cell.location,'row_repeat':row_repeat,'cell_repeat':cell_repeat}
+                    if cell.covered:
+                        grid.cover(location)
+                    else:
+                        grid.place(cell.parts,location,columns=projected_span(source_column,cell.columns,visible_columns),
+                                   rows=projected_span(source_row,cell.rows,visible_rows),role='column' if header else 'data')
+                        # ODF serializes covered cells explicitly.
+                        grid.column = visible_columns[source_column+1]
                 grid.end_row()
         return grid.finish()

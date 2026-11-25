@@ -955,7 +955,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-45'
+IMPORT_REVISION='import-46'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 

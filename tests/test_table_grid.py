@@ -160,6 +160,116 @@ def test_writer_web_package_routes_as_text_even_when_it_contains_a_thumbnail(tmp
         assert ' '.join(u['text'] for u in plan(doc)['utterances'])==READING
 
 
+WRITER_REVISION_NAMESPACES = (
+    'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+    'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+    'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" '
+    'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
+    'xmlns:loext="urn:org:documentfoundation:names:experimental:office:xmlns:loext:1.0"')
+WRITER_REVISION_STYLES = '''<office:styles>
+  <style:style style:name="Base" style:family="table-row">
+    <style:table-row-properties loext:text-changes-only="false"/>
+  </style:style>
+  <style:style style:name="Row" style:family="table-row" style:parent-style-name="Base"/>
+  <style:style style:name="Cell" style:family="table-cell">
+    <style:table-cell-properties loext:text-changes-only="false"/>
+  </style:style></office:styles>'''
+
+
+def writer_revisions(path, rows, deletions, *, extra_records=''):
+    records = ''.join(f'<text:changed-region xml:id="{ident}"><text:deletion>'
+                      '<text:p>Deleted content.</text:p></text:deletion></text:changed-region>'
+                      for ident in deletions)
+    body = (f'<office:body><office:text><text:tracked-changes>{records}{extra_records}'
+            f'</text:tracked-changes><table:table>{rows}</table:table></office:text></office:body>')
+    ns = WRITER_REVISION_NAMESPACES
+    if path.suffix=='.fodt':
+        path.write_text(f'<office:document {ns} office:mimetype="application/vnd.oasis.opendocument.text">'
+                        f'{WRITER_REVISION_STYLES}{body}</office:document>')
+    else:
+        with ZipFile(path,'w') as archive:
+            archive.writestr('mimetype','application/vnd.oasis.opendocument.text')
+            archive.writestr('content.xml',f'<office:document-content {ns}>{body}</office:document-content>')
+            archive.writestr('styles.xml',f'<office:document-styles {ns}>{WRITER_REVISION_STYLES}'
+                             '</office:document-styles>')
+    return path
+
+
+def writer_point(ident):
+    return f'<text:change text:change-id="{ident}"/>'
+
+
+def writer_revision_row(*cells):
+    return odt_row(*cells).replace('<table:table-row>','<table:table-row table:style-name="Row">',1)
+
+
+def test_writer_structural_edits_share_the_same_reading_in_packages_and_flat_xml(tmp_path):
+    rows = (
+        writer_revision_row(odt_cell(writer_point('goneRow')))
+        +odt_row(odt_cell(writer_point('goneCell'),'table:style-name="Cell"'),odt_cell('Keep the ledger.'))
+        +writer_revision_row(odt_cell('<text:change-start text:change-id="added"/>The lamp stayed lit.'
+                                     '<text:change-end text:change-id="added"/>'))
+        +odt_row(odt_cell(writer_point('emptyCell')),odt_cell('The cell beside this one is blank.')))
+    declarations = ('<text:changed-region xml:id="added"><text:insertion/>'
+                    '</text:changed-region>')
+    paths = [writer_revisions(tmp_path/f'ledger{ext}',rows,('goneRow','goneCell','emptyCell'),
+                              extra_records=declarations) for ext in ('.odt','.fodt')]
+    wrapped = tmp_path/'reading.zip'
+    with ZipFile(wrapped,'w') as archive:
+        archive.write(paths[0],'book/ledger.odt')
+    for source in (*paths,wrapped):
+        doc = inspect_source(source,offline=True)
+        result = plan(doc)
+        assert not result['issues']
+        grid = doc.blocks[0].locator['table_grid']
+        assert [(c['row'],c['column'],len(c['parts'])) for c in grid['cells']]==[
+            (0,0,1),(1,0,1),(2,0,0),(2,1,1)]
+        assert ' '.join(u['text'] for u in result['utterances'])==(
+            'Table. Keep the ledger. The lamp stayed lit. The cell beside this one is blank.')
+        omissions = [entry for entry in doc.inventory if entry['kind']=='odf_table_revision']
+        assert {entry['element']:entry['deletions'][0]['id'] for entry in omissions}=={
+            'table-row':'goneRow','table-cell':'goneCell'}
+        assert all('text:deletion' in entry['deletions'][0]['xml_path'] for entry in omissions)
+
+
+def test_writer_revision_style_alone_does_not_remove_live_or_ambiguous_cells(tmp_path):
+    style = 'table:style-name="Cell"'
+    nested = '<table:table>'+odt_row(odt_cell('The beacon flashed.'))+'</table:table>'
+    rows = odt_row(
+        odt_cell(writer_point('duplicated'),style),
+        odt_cell(writer_point('duplicated'),style),
+        odt_cell(writer_point('typed'),style+' office:value-type="float" office:value="14"'),
+        odt_cell(attributes=style,content='<text:p>'+writer_point('nested')+'</text:p>'+nested),
+        odt_cell(writer_point('live')+'The bell rang.',style))
+    source = writer_revisions(tmp_path/'ledger.odt',rows,('duplicated','typed','nested','live'))
+    doc = inspect_source(source,offline=True)
+    assert not any(entry['kind']=='odf_table_revision' for entry in doc.inventory)
+    assert len(doc.blocks[0].locator['table_grid']['cells'])==5
+    result = plan(doc)
+    assert not result['issues']
+    speech = ' '.join(u['text'] for u in result['utterances'])
+    assert 'The beacon flashed.' in speech and 'The bell rang.' in speech
+
+
+def test_writer_merged_cells_follow_surviving_rows_and_columns(tmp_path):
+    covered = '<table:covered-table-cell/>'
+    origin = odt_cell('North harbor.','table:number-rows-spanned="2"')
+    point = odt_cell(writer_point('removed'))
+    spanning_deleted = odt_cell(writer_point('removed'),'table:style-name="Cell" table:number-columns-spanned="2"')
+    cases = {
+        'continuation': (odt_row(origin,odt_cell('The sea was calm.'))
+                         +writer_revision_row(covered,point),[['North harbor.','The sea was calm.']]),
+        'origin': (writer_revision_row(odt_cell(writer_point('removed'),'table:number-rows-spanned="2"'))
+                   +odt_row(covered,odt_cell('The sea was calm.')),[['','The sea was calm.']]),
+        'columns': (odt_row(spanning_deleted,covered,odt_cell('The sea was calm.')),[['The sea was calm.']]),
+    }
+    for name,(rows,expected) in cases.items():
+        source = writer_revisions(tmp_path/f'{name}.odt',rows,('removed',))
+        doc = inspect_source(source,offline=True)
+        assert not plan(doc)['issues']
+        assert doc.blocks[0].locator['rows']==expected
+
+
 def test_long_table_requests_break_on_complete_sentences(tmp_path):
     source = tmp_path/'register.html'
     rows = ''.join(f'<tr><td>Station {n:02d}</td><td>The keeper checked the lamp and logged reading {n:02d}.</td></tr>'

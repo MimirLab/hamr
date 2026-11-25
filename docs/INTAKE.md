@@ -69,6 +69,8 @@ In Word, each editable text box keeps its exact XML location. Unresolved links b
 
 Word, OpenDocument, HTML, EPUB and supported tagged PDFs use the same reading for merged and nested table cells. Hamr reads a merged value once, follows nested tables between the surrounding passages, and uses the headers that apply to each value. The companion retains original cell locations and distinguishes a covered position, a missing position, and an authored empty cell. Conflicting geometry or missing authored header targets appear in source review.
 
+In LibreOffice Writer ODT and Flat ODF, Hamr follows the visible table when saved structural revision marks identify a deleted row or column. Inserted rows and authored blank cells remain. The original file and the locations of the resolved deletions are in the companion.
+
 In a tagged PDF, Hamr matches table tags to visible text, follows the same table across pages, and keeps verified repeated print headers in the companion. Each reconstructed cell retains its original page and glyph ranges. When ownership cannot be established, the plan reports that it used the visible reading.
 
 In a searchable PDF or scan, visible intersecting rules can establish cell boundaries and merged positions. Repeated alignment can also establish simple borderless tables with distinguishable headings and consistent number or date columns. Hamr reads these cells in order and keeps the native glyph or OCR locations.

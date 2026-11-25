@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev76
+
+- Read tracked row and column deletions in LibreOffice Writer ODT and Flat ODF. Surviving merged cells, inserted rows, and deliberately blank positions follow the visible table. The source companion records the deleted locations.
+
 # hamr 0.4.9.dev75
 
 - Read tracked paragraph joins and table revisions in Word documents. Joined words stay intact, and deleted rows and cells stay out of narration. The companion retains the original Word source and records the affected locations.
