@@ -35,14 +35,14 @@ NATIVE = {
     '.hqx':'classic-mac',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc',
-    '.ws':'wordstar', '.ws7':'wordstar',
+    '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
 PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
-PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp')) | DESCRIPTOR_FOLDERS
+PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp','pages')) | DESCRIPTOR_FOLDERS
 DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','xml-book','pml','classic-mac'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
@@ -196,6 +196,7 @@ def relative_file(root, name):
 def publication_folder(path):
     from .fictionbook_package import folder_marker as fb3_folder
     from .odf_presentation import folder_marker as odp_folder
+    from .pages_intake import folder_marker as pages_folder
     from .presentation_intake import folder_marker as pptx_folder
     from .xps_intake import folder_marker as xps_folder
 
@@ -207,6 +208,8 @@ def publication_folder(path):
         return 'pptx'
     if odp_folder(path):
         return 'odp'
+    if pages_folder(path):
+        return 'pages'
     if path.suffix.casefold()=='.textbundle':
         return 'textbundle'
     if path.suffix.casefold()=='.scriv':
@@ -364,6 +367,8 @@ def zip_source(path, entry, override):
                 package_route = 'pptx'
             if path.suffix.casefold() in ('.odp','.otp') and override is None:
                 package_route = 'odp'
+            if path.suffix.casefold()=='.pages' and override is None:
+                package_route = 'pages'
             records = zip_members(archive)
             names = {info.filename for _,info in records}
             if 'manifest.json' in names and any(name.startswith('blobs/') for name in names):
@@ -383,7 +388,7 @@ def zip_source(path, entry, override):
                         from .fixed_pages import image_only_fixed
                         if image_only_fixed(archive):
                             return Source('scan','fixed-epub')
-                    if override!='scan' and package_route not in ('fb3','xps','pptx','odp'):
+                    if override!='scan' and package_route not in ('fb3','xps','pptx','odp','pages'):
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
@@ -408,7 +413,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
     all_members = list(archive.members())
     members = [item for item in all_members if not item.name.startswith('__MACOSX/')]
-    packages,claimed = archive_packages(archive,members,textpack=textpack)
+    packages,claimed = archive_packages(archive,members,textpack=textpack,explicit_pages=package_route=='pages')
     if not scan_only and not textpack and package_route in (None,'classic-mac'):
         forked = mac_books(archive,[item for item in all_members if item.index not in claimed])
         packages.extend(forked)
@@ -466,6 +471,9 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
             label = name if name!='.' else 'TextBundle'
             ident = str(descriptor.index) if route=='xml-book' else 'bundle:'+str(descriptor.index)
             candidates[ident] = (label,Source(route,kind,descriptor.index))
+    if package_route=='pages' and not candidates:
+        raise Error('source_pages_package','The Pages package has no original document part.',
+                    'Open the complete Pages file or package folder.')
     selected = choose([(ident,name) for ident,(name,_) in candidates.items()],entry)
     return candidates[selected][1]
 
@@ -589,7 +597,7 @@ def _describe(path,entry,format,offline):
     if (suffix in ('.7z','.rar','.cb7','.cbr') or prefix.startswith((b'7z\xbc\xaf\x27\x1c',b'Rar!'))):
         selected = wrapped_source(path,'libarchive',entry,format)
         return Source(format or selected.route,selected.kind,selected.entry,format,offline)
-    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx','.odp','.otp','.pmlz') or prefix.startswith(b'PK\x03\x04'):
+    if suffix in ('.cbz','.zip','.textpack','.xps','.oxps','.pptx','.odp','.otp','.pmlz','.pages') or prefix.startswith(b'PK\x03\x04'):
         selected = zip_source(path,entry,format or ('scan' if suffix=='.cbz' else None))
         if format and format!=selected.route and selected.kind!='file':
             raise Error('source_format', 'The selected container does not match the requested format.')
@@ -791,7 +799,7 @@ def capture(path,target_dir,**options):
 
             target = target_dir/'source.zip'
             capture_sphinx(local,target)
-        elif source.route in ('fb3','xps','pptx','odp'):
+        elif source.route in ('fb3','xps','pptx','odp','pages'):
             from .publication_package import capture_folder, folder_files
 
             target = target_dir/'source.zip'

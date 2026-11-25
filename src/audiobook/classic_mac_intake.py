@@ -199,12 +199,12 @@ def read_classic_mac(path,source,sha,cache,title):
         with path.open('rb') as stream:
             binhex = stream.read(len(BINHEX))==BINHEX
         if not binhex:
-            return read_legacy_odf(path,builder,cache,mac=True)
+            return read_legacy_odf(path,builder,cache,kind='classic-mac')
         data = verified_binhex(bounded_read(path))
         with tempfile.TemporaryDirectory(prefix='hamr-mac-binhex-',dir=cache) as work:
             transport = Path(work)/'document.hqx'
             transport.write_bytes(data)
-            return read_legacy_odf(transport,builder,cache,mac=True)
+            return read_legacy_odf(transport,builder,cache,kind='classic-mac')
     with containers(path,source.kind) as archive, tempfile.TemporaryDirectory(
             prefix='hamr-mac-forks-',dir=cache) as work:
         members = list(archive.members())
@@ -224,7 +224,7 @@ def read_classic_mac(path,source,sha,cache,title):
         with ZipFile(converter_input,'x') as pair:
             pair.writestr('document',data)
             pair.writestr('._document',resource)
-        doc = read_legacy_odf(converter_input,builder,cache,mac=True)
+        doc = read_legacy_odf(converter_input,builder,cache,kind='classic-mac')
         for item in doc.blocks:
             bind_member_block(item,part,1,sha,{},lambda _,href:href)
         doc.metadata['source_resources'] = [member_location(sha,sidecar,'resource fork')]

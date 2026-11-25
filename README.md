@@ -119,6 +119,8 @@ Open a Shanda Bambook ebook (`.snb`) directly or in an archive. Hamr follows its
 
 Read classic WordPerfect documents on Linux with Hamr's bundled reader. Flat OpenDocument text files (`.fodt`) use the same preparation as packaged Writer documents. [WordPerfect documents](docs/INTAKE.md#wordperfect-documents)
 
+Open Apple Pages documents and package folders on Linux. Hamr reads the document body, tables, linked footnotes and editable layout text with its bundled reader. [Apple Pages documents](docs/INTAKE.md#apple-pages)
+
 Open tested MacWrite, MacWrite Pro, Nisus Writer, ClarisWorks/AppleWorks and WriteNow documents on Linux. Hamr can read checked BinHex files and keep matched Macintosh data and resource forks together. [Classic Mac documents](docs/INTAKE.md#classic-mac-writing-documents)
 
 Turn an Org manuscript into an audiobook with its chosen outline, footnotes, tables, and local includes intact. Hamr ships the reader and keeps the original included files recoverable. [Org mode intake](docs/INTAKE.md#org-mode)

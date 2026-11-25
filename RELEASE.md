@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev60
+
+- Open Apple Pages documents through the bundled Linux reader. Tested XML and IWA editions preserve tables, linked notes and editable layout stories through the usual audiobook pipeline. Open a `.pages` file, a package folder, or one inside an archive. [Apple Pages intake](docs/INTAKE.md#apple-pages)
+
 # hamr 0.4.9.dev59
 
 - Read keyboard instructions in prose. Named chords such as `Ctrl+Shift+P` keep their modifiers together, and contextual legacy shortcuts such as `^OD` read as sequential keys. The plan keeps each printed shortcut and its source range.

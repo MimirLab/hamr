@@ -23,17 +23,22 @@ jobs=${HAMR_BUILD_JOBS:-4}
 2465b0b662fdc5d4e3bebcdc9a79027713fb629ca2bff04a3c9251fdec42dd09  libwpd_0.10.3.orig.tar.xz
 ac3590f691a2904eb8c7dc8b757b8a29f125f592449e421459ae8fa928b399eb  libmwaw_0.3.23.orig.tar.xz
 b68ec10c23b8ac7abed8dfeb181b8592714c1e5bd33997ced0ee8bd6c4612bc5  libodfgen_0.1.9.orig.tar.xz
+032b71cb597edd92a0b270b916188281bc35be55296b263f6817b29adbcb1709  libetonyek-0.1.13.tar.xz
+1483d90cefb8aa4563c4d0a85cb7b243aa95217d235d422e9ca6722fd5b97e56  mdds-2.1.1.tar.xz
+fd87e0aba7e43ae054837afd6cd4db03a3f2693deb3619085e6ed9d8d9604ad8  gperf-3.3.tar.gz
+19edf2e860297efab1c74950e6076bf4dad9de483826bc95e2e0f2c758a43f65  glm-1.0.2.tar.gz
 CHECKSUMS
 )
 
 cd "$build"
 for archive in zlib-1.4.tar.gz libxml2-2.15.4.tar.xz librevenge_0.0.6.orig.tar.bz2 \
-               libwpd_0.10.3.orig.tar.xz libmwaw_0.3.23.orig.tar.xz libodfgen_0.1.9.orig.tar.xz; do
+               libwpd_0.10.3.orig.tar.xz libmwaw_0.3.23.orig.tar.xz libodfgen_0.1.9.orig.tar.xz \
+               libetonyek-0.1.13.tar.xz mdds-2.1.1.tar.xz gperf-3.3.tar.gz glm-1.0.2.tar.gz; do
     tar -xf "$archives/$archive"
 done
 # Preserve file kinds and original table-span coordinates across conversion.
 patch -d libmwaw-0.3.23 -p1 --batch --fuzz=0 < "$tools_dir/intake_legacy_office_libmwaw.patch"
-export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig"
+export PKG_CONFIG_LIBDIR="$prefix/lib/pkgconfig:$prefix/share/pkgconfig"
 export CFLAGS="-O2 -ffile-prefix-map=$build=/build"
 export CXXFLAGS="$CFLAGS"
 
@@ -57,9 +62,24 @@ build_library librevenge-0.0.6 --disable-tests --disable-tools
 build_library libwpd-0.10.3 --without-docs
 build_library libmwaw-0.3.23 --without-docs --disable-tools --disable-zip
 build_library libodfgen-0.1.9 --without-docs
+(
+    cd gperf-3.3
+    ./configure --prefix="$prefix"
+    make -j "$jobs"
+    make install
+)
+(
+    cd mdds-2.1.1
+    ./configure --prefix="$prefix"
+    make -C include install
+    make install-nodist_pkgconfDATA
+)
+export PATH="$prefix/bin:$PATH"
+GLM_CFLAGS="-I$build/glm-1.0.2" CXXFLAGS="$CXXFLAGS -std=c++17" build_library libetonyek-0.1.13 \
+    --without-liblangtag --without-docs --without-tools --disable-tests
 
 ${CXX:-c++} $CXXFLAGS -std=c++17 -Wall -Wextra -Werror -static \
-    "$tools_dir/intake_legacy_office.cc" \
+    -I"$prefix/include/libetonyek-0.1" "$tools_dir/intake_legacy_office.cc" "$prefix/lib/libetonyek-0.1.a" \
     $(pkg-config --static --cflags --libs libwpd-0.10 libmwaw-0.3 librevenge-stream-0.0 libodfgen-0.1 libxml-2.0 zlib) \
     -o "$output"
 ${STRIP:-strip} --strip-unneeded "$output"

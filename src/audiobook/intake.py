@@ -76,6 +76,10 @@ def parse(path,source,sha,cache,title):
         from .odf_presentation import read_odp
 
         return read_odp(path,source,sha,title,cache)
+    if source.route=='pages' and source.kind in ('zip','tar','libarchive'):
+        from .pages_intake import read_pages
+
+        return read_pages(path,source,sha,title,cache)
     if source.kind.endswith('-member'):
         work = cache if cache else None
         with materialized_member(path,source.kind,source.entry,work) as (member,entry):
@@ -371,6 +375,8 @@ def capabilities():
                        'source':'resident libwpd and shared OpenDocument text reader'},
         'classic-mac':{**worker(legacy_office_reader() is not None),
                        'source':'resident libmwaw and shared OpenDocument text reader'},
+        'pages':{**worker(legacy_office_reader() is not None),
+                 'source':'resident libetonyek and shared OpenDocument text reader'},
         'legacy-ebook':{'managed_available':linux and sandbox['ready'],
                         **({field:isolation[field] for field in ('reason','diagnostic') if field in isolation}
                            if linux else {'reason':'source_helper_unavailable'}),

@@ -11,7 +11,7 @@ from .intake_helpers import convert, legacy_document
 
 
 ASSET = Path(__file__).with_name('intake_resident')/'legacy-office-linux-x86_64'
-ASSET_SHA256 = 'f677c407de3e25d6f63a285ad5bbb6fb843d386aaf132e9150168088baf3e4ae'
+ASSET_SHA256 = '8cea1fd996e0d8bd149c49c8e99896e5d345d714e70005d1fc8b36df35143421'
 EXIT_ERRORS = {
     3: ('protected_source','This WordPerfect document needs a password.',
         'Open it with the password and save a readable local copy.'),
@@ -35,35 +35,39 @@ def read_wordperfect(path,source,builder,cache):
     return read_legacy_odf(path,builder,cache)
 
 
-def read_legacy_odf(path,builder,cache,*,mac=False):
+READERS = {
+    'wordperfect': ('WordPerfect','libwpd',[],{}),
+    'classic-mac': ('classic Macintosh','libmwaw',['--classic-mac'],{
+        3:('protected_source','This classic Macintosh document needs a password.',
+           'Open it with the password and save a readable local copy.'),
+        4:('unreadable_classic_mac','The reader could not identify a supported classic Macintosh writing document.',
+           'Keep its matching data and resource forks together, or export a readable ODT copy.')}),
+    'pages': ('Apple Pages','libetonyek',['--pages'],{
+        4:('unreadable_pages','The reader could not identify a complete, supported Apple Pages document.',
+           'Open the original Pages file or save a readable local export.')}),
+}
+
+
+def read_legacy_odf(path,builder,cache,*,kind='wordperfect',input_limit=MAX_STRUCTURE):
+    label,engine,mode,errors = READERS[kind]
     binary = resident()
     if binary is None:
-        raise Error('source_helper_unavailable','The bundled classic Macintosh reader needs Linux x86-64.',
+        raise Error('source_helper_unavailable',f'The bundled {label} reader needs Linux x86-64.',
                     'Export a readable local copy to ODT or EPUB.')
-    label = 'classic Macintosh' if mac else 'WordPerfect'
     binary_hash = filehash(binary)
     if binary_hash!=ASSET_SHA256:
         raise Error('asset_integrity',f'The bundled {label} reader has changed.')
-    if path.stat().st_size>MAX_STRUCTURE:
+    if path.stat().st_size>input_limit:
         raise Error('source_structure_size',f'The {label} source exceeds the local reader size bound.',
                     'Divide the document at a chapter boundary or use a readable local export.')
-    errors = EXIT_ERRORS
-    mode = []
-    if mac:
-        mode = ['--classic-mac']
-        errors = {**EXIT_ERRORS,
-                  3:('protected_source','This classic Macintosh document needs a password.',
-                     'Open it with the password and save a readable local copy.'),
-                  4:('unreadable_classic_mac','The reader could not identify a supported classic Macintosh writing document.',
-                     'Keep its matching data and resource forks together, or export a readable ODT copy.')}
     with tempfile.TemporaryDirectory(prefix='hamr-legacy-office-',dir=cache) as temporary:
         work = Path(temporary)
         output = work/'converted.fodt'
         convert(path,work,binary,[*mode,'/input/'+path.name,'/work/'+output.name],output,
-                runtime=binary.parent,exit_errors=errors)
+                runtime=binary.parent,exit_errors={**EXIT_ERRORS,**errors})
         odt(output,builder)
         builder.doc.metadata['converter'] = {
-            'engine':'libmwaw' if mac else 'libwpd', 'binary_sha256':binary_hash, 'intermediate':'Flat ODF',
+            'engine':engine, 'binary_sha256':binary_hash, 'intermediate':'Flat ODF',
             'derivative_sha256':filehash(output),
         }
         for item in builder.doc.blocks:

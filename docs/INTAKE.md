@@ -20,6 +20,7 @@ Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RT
 | Supplied OCR and ordered archives | Local hOCR, ALTO, PAGE XML, TSV and selected ABBYY XML sidecars can supply text for a scan. ABBYY XML uses one text page with original unrotated coordinates. A physical METS map or a local IIIF Presentation 3 sequence can name the pages. Binding and dimensions are checked before reuse. |
 | HTML, OpenDocument and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. OpenDocument Writer uses the same reader for `.odt`, `.oth` and Flat OpenDocument text (`.fodt`). Selected complex objects that require a verified reading appear in source review. |
 | Word documents (DOCX) | Read editable DrawingML and VML text boxes in the selected Word compatibility branch. Hamr reads each story after its anchor paragraph and follows linked frames in their authored order. Visible revisions, notes, equations and simple tables use the shared preparation step. |
+| Apple Pages | Read tested XML and IWA `.pages` files, package folders and archived publications with the bundled Linux x86-64 reader. [Apple Pages intake](#apple-pages) |
 | TextBundle folders and TextPack archives | Hamr opens the descriptor's text payload and preserves its companion files. Version 1 uses Markdown. Version 2 can declare Markdown, plain text, HTML, or RTF. |
 | mdBook folders and archives | Hamr follows the chapter links in the source directory's `SUMMARY.md` and reads included local material through the Markdown reader. A draft link stays in the companion. |
 | GitBook folders and archives | Hamr follows the configured home page and summary, including section and nested page order. Each local space in a site can be opened as its own book. |
@@ -74,6 +75,14 @@ When a searchable PDF establishes an equation, raised script or scientific table
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
 
 For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the actual source encoding. The resident CHM decoder runs locally with Bubblewrap. Its tested path uses a readable HTML contents file inside the CHM. Binary-only contents and popup controls without a local HTML target still need qualification.
+
+## Apple Pages
+
+```sh
+hamr open 'River Journal.pages' --voice cast:nigel-thornberry --output ~/Audiobooks
+```
+
+The bundled Linux x86-64 reader uses Bubblewrap and the ordinary OpenDocument text preparation. Open a Pages file, its native package folder, or an archive containing either. Hamr reads tested legacy XML and IWA editions, including the layout text, simple tables and linked notes the decoder exposes. Running headers and footers remain in the original. The companion retains the source package and its individual members. If a file is locked, open it in Pages and save a readable local copy. On other platforms, export to Word or EPUB and open that file.
 
 ## WordPerfect documents
 
