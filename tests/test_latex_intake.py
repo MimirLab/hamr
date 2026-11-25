@@ -202,3 +202,64 @@ def test_markdown_math_keeps_prices_literals_and_note_ownership(tmp_path):
     formulas = [span for span in body[0].locator['inline_semantics'] if span['kind']=='formula']
     assert [span['source'] for span in formulas]==['$x^2+1$']
     assert all(span['kind']!='formula' for span in body[1].locator['inline_semantics'])
+
+
+def test_local_math_macros_respect_arguments_scope_and_definition_locations(tmp_path):
+    defs = r'\newcommand{\pair}[2][A]{(#1, #2)}'
+    (tmp_path/'defs.tex').write_text(defs,encoding='utf-8')
+    main = tmp_path/'book.tex'
+    source = r"""\documentclass{article}
+\input{defs}
+\begin{document}
+First read $\pair{y''}$.
+
+\begin{quote}
+\renewcommand{\pair}[2][B]{(#1, #2)}
+Then read $\pair{x'}$.
+\end{quote}
+
+Finally read $\pair[C]{y}$ and $\pair{z}$.
+\end{document}
+"""
+    main.write_text(source,encoding='utf-8')
+    doc = inspect_source(main)
+    result = plan(doc)
+    assert not result['issues']
+    assert say(result)==[
+        'First read open parenthesis A comma y double prime close parenthesis.',
+        'Then read open parenthesis B comma x prime close parenthesis.',
+        'Finally read open parenthesis C comma y close parenthesis and open parenthesis A comma z close parenthesis.',
+    ]
+    formulas = [span for block in doc.blocks for span in block.locator.get('inline_semantics',())
+                if span['kind']=='formula']
+    assert len(formulas)==4
+    for span in formulas:
+        where = span['source_locator']
+        start,end = where['character_range']
+        assert source[start:end]==span['source']
+        origin, = span['macro_definitions']
+        start,end = origin['character_range']
+        original = defs if origin['source_file']=='defs.tex' else source
+        assert '\\pair' in original[start:end] and origin['command']=='pair'
+    assert [span['macro_definitions'][0]['source_file'] for span in formulas]==[
+        'defs.tex','book.tex','defs.tex','defs.tex']
+
+
+def test_math_macro_expansion_bounds_and_refuses_other_tex_operations(tmp_path):
+    main = tmp_path/'book.tex'
+    main.write_text(r"""\documentclass{article}
+\newcommand{\loop}[1]{\loop{#1}}
+\newcommand{\localfile}[1]{\input{#1}}
+\begin{document}
+This expression is $\loop{x}$.
+
+This expression is $\localfile{hidden}$.
+
+The regular prose is still present.
+\end{document}
+""",encoding='utf-8')
+    (tmp_path/'hidden.tex').write_text('Hidden data must remain outside this reading.',encoding='utf-8')
+    result = plan(inspect_source(main))
+    assert len(result['issues'])==2
+    assert 'budget' in result['issues'][0]['reason']
+    assert say(result)==['The regular prose is still present.']

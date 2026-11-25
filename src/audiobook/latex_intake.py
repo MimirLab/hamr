@@ -1,6 +1,7 @@
 """Project authored LaTeX structure into the shared manuscript preparation."""
 
 from bisect import bisect_right
+from contextlib import contextmanager
 from dataclasses import dataclass
 from html import escape
 from pathlib import PurePosixPath
@@ -19,7 +20,7 @@ from pylatexenc.latex2text import LatexNodes2Text
 
 from .core import Error
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, formula_span, html_read
-from .tex_math import tex_math
+from .tex_math import MathMacro, STANDARD_COMMANDS, tex_math
 
 
 DEPENDENCIES = re.compile(r'\\(?:input|include|includegraphics|bibliography|addbibresource)\b')
@@ -42,6 +43,8 @@ LITERAL = {'TeX':'TeX','LaTeX':'LaTeX','LaTeXe':'LaTeX two e',
 SPECIALS = {'~':' ','---':'—','--':'–',"``":'“',"''":'”'}
 ACCENTS = frozenset(("'",'`','^','"','~','=','.', 'u','v','H','c','k','r','b','d','t'))
 METADATA = {'title','author','date'}
+DEFINITION_COMMANDS = {'newcommand','renewcommand','providecommand'}
+OPAQUE_DEFINITIONS = {'def','gdef','edef','xdef','let','futurelet'}
 INCLUDES = {'input','include'}
 REFERENCES = {'ref','pageref','autoref','eqref','cite','citep','citet','parencite','textcite','footcite'}
 NAVIGATION = {'tableofcontents','listoffigures','listoftables','printindex','addcontentsline',
@@ -76,6 +79,7 @@ ARGUMENTS = {
 PARAGRAPH = re.compile(r'\n[ \t\r]*\n')
 CONTROLS = re.compile(r'[\x00-\x08\x0b\x0e-\x1f]')
 UNBRACED_PATH = re.compile(r'[^\s{}\\%#$&^~]+(?=\s|%|$)')
+DEFINITION_TARGET = re.compile(r'\s*\\([A-Za-z]+|[^\r\n])')
 
 
 def project_entry(prefix):
@@ -173,6 +177,8 @@ class Projection:
         self.notes = []
         self.metadata = {}
         self.definitions = {}
+        self.math_macros = {}
+        self.macro_origins = {}
         self.inventory = []
         self.selected = None
         self.remaining = 4*MAX_STRUCTURE
@@ -246,7 +252,10 @@ class Projection:
 
     def formula(self,file,node,raw,expression):
         loc = file.location(node)
-        span = formula_span(raw,lambda:tex_math(expression),0,'Authored LaTeX math',loc)
+        used = set()
+        span = formula_span(raw,lambda:tex_math(expression,self.math_macros,used),0,'Authored LaTeX math',loc)
+        if used:
+            span['macro_definitions'] = [self.macro_origins[name] for name in sorted(used)]
         return self.tag('span',loc,escape(raw),reading_span=span,inline_location=loc)
 
     def macro(self,file,node,depth):
@@ -269,7 +278,13 @@ class Projection:
             return '<code>'+escape(getattr(args[-1],'chars',file.raw(args[-1])))+'</code>'
         if name=='footnote' and args and not self.inside_notes:
             ident = f'latex-note-{len(self.notes)+1}'
-            self.notes.append((ident,file,args[-1]))
+            self.inside_notes = True
+            try:
+                note = self.inline(file,group(args[-1]),depth+1)
+            finally:
+                self.inside_notes = False
+            self.notes.append(self.tag('aside',file.location(args[-1]),'<p>'+note+'</p>',
+                                       attrs=f' role="doc-footnote" id="{ident}"'))
             loc = file.location(node)
             return self.tag('a',loc,'note',attrs=f' role="doc-noteref" href="#{ident}"',inline_location=loc)
         if name in ('href','url','nolinkurl') and args:
@@ -313,13 +328,45 @@ class Projection:
                 self.selected = {s.strip().removesuffix('.tex') for s in allowed.split(',') if s.strip()}
             else:
                 return self.issue(file,node,'LaTeX includeonly needs a literal list of source members.')
-        elif name in ('newcommand','renewcommand','providecommand') and len(args)==2:
-            lhs = group(args[0])
-            if len(lhs)==1 and isinstance(lhs[0],LatexMacroNode):
-                macro = lhs[0].macroname
-                if name!='providecommand' or macro not in self.definitions:
-                    self.definitions[macro] = (file,args[-1])
+        elif name in DEFINITION_COMMANDS:
+            self.define(file,node)
         return ''
+
+    def define(self,file,node):
+        _,target,count,default,value = node.nodeargd.argnlist
+        lhs = group(target)
+        if len(lhs)!=1 or not isinstance(lhs[0],LatexMacroNode):
+            return
+        name = lhs[0].macroname
+        if node.macroname=='providecommand' and (name in self.math_macros or name in STANDARD_COMMANDS
+                                                  or name in ARGUMENTS or name in LITERAL or name in LAYOUT):
+            return
+        self.definitions.pop(name,None)
+        arity = file.raw(count)[1:-1].strip() if count is not None else '0'
+        macro = None
+        if re.fullmatch(r'[0-9]',arity) and isinstance(value,LatexGroupNode) and (default is None or arity!='0'):
+            macro = MathMacro.bound(int(arity),file.raw(value)[1:-1],file.raw(default)[1:-1] if default else None)
+            if arity=='0':
+                self.definitions[name] = (file,value)
+        self.math_macros[name] = macro
+        self.macro_origins[name] = {'command':name,**file.location(node)}
+
+    def undefine_reading(self,file,node):
+        start = node.pos+node.len
+        if target:=DEFINITION_TARGET.match(file.text,start):
+            name = target[1]
+            self.definitions.pop(name,None)
+            self.math_macros[name] = None
+            self.macro_origins[name] = {'command':name,**file.location(node.pos,target.end())}
+
+    @contextmanager
+    def macro_scope(self):
+        definitions, macros, origins = self.definitions,self.math_macros,self.macro_origins
+        self.definitions,self.math_macros,self.macro_origins = definitions.copy(),macros.copy(),origins.copy()
+        try:
+            yield
+        finally:
+            self.definitions,self.math_macros,self.macro_origins = definitions,macros,origins
 
     def include_text(self,file,node,chain,preamble,flow=None):
         try:
@@ -401,13 +448,13 @@ class Projection:
             expression = file.text[nodes[0].pos:nodes[-1].pos+nodes[-1].len] if nodes else ''
             return self.tag('p',where,self.formula(file,node,file.raw(node),expression),source_role='equation')
         if name in ('itemize','enumerate','description','thebibliography'):
-            return self.items(file,node,chain)
+            with self.macro_scope():
+                return self.items(file,node,chain)
         if name in ('tabular','tabular*'):
             return self.table(file,node)
-        if name in TRANSPARENT:
-            return self.tag('div',where,self.render(file,node.nodelist,chain))
-        if name in ('quote','quotation','verse'):
-            return self.tag('blockquote',where,self.render(file,node.nodelist,chain))
+        if name in TRANSPARENT or name in ('quote','quotation','verse'):
+            with self.macro_scope():
+                return self.tag('div' if name in TRANSPARENT else 'blockquote',where,self.render(file,node.nodelist,chain))
         return self.issue(file,node,f'The LaTeX {name!r} environment needs a verified reading.')
 
     def assets(self,file,node):
@@ -465,8 +512,12 @@ class Projection:
             elif name in INCLUDES:
                 flush()
                 output.append(self.include_text(file,node,chain,preamble))
-            elif name in METADATA|{'includeonly','newcommand','renewcommand','providecommand'}:
+            elif name in METADATA|{'includeonly'}|DEFINITION_COMMANDS:
                 output.append(self.setup(file,node))
+            elif name in OPAQUE_DEFINITIONS:
+                self.undefine_reading(file,node)
+                if not preamble:
+                    append(node,self.issue(file,node,'This LaTeX declaration needs a verified reading.',True))
             elif name in {'addbibresource','bibliography'}:
                 flush()
                 output.append(self.assets(file,node))
@@ -534,11 +585,7 @@ def latex_document(text,name,sha,title,*,include=None,encoding=None):
         preamble = any(isinstance(node,LatexEnvironmentNode) and node.environmentname=='document' or
                        isinstance(node,LatexMacroNode) and node.macroname=='documentclass' for node in nodes)
         body = renderer.render(source,nodes,[name],preamble=preamble)
-        notes = []
-        renderer.inside_notes = True
-        for ident,file,arg in renderer.notes:
-            notes.append(renderer.tag('aside',file.location(arg),'<p>'+renderer.inline(file,group(arg))+'</p>',
-                                      attrs=f' role="doc-footnote" id="{ident}"'))
+        notes = renderer.notes
     except (LatexWalkerParseError,RecursionError) as exc:
         start = getattr(exc,'pos',0) or 0
         body = renderer.issue(source,start,f'The LaTeX syntax needs source review. {exc}')

@@ -146,10 +146,12 @@ def implementation(*, unified=True, rule_revision=None):
         return '62a3240b8f66419b85dad0c354292293032bd00e20f41f89a9064de6c177c31e'
     if rule_revision=='faithful-33':
         return '8afaf28d089c87fdf3ff603430a990aec513f41cd0d8c14faf42e4d91a309ed1'
+    if rule_revision=='faithful-34':
+        return '006f24afd267d795b8884a1b7df755bbc3698cfc810e8f66de8047417c564a50'
     return key({name: filehash(Path(__file__).with_name(name))
                 for name in ('context_config.py','contextual.py','context_grammar.py','context_candidate.py','context_forms.py','context_lexical.py','context_numbers.py',
                              'context_structure.py','context_reviewer.py','context_rules.json','abbreviations.py','boundaries.py','epub_semantics.py','epub_styles.py','linguistic.py','pronunciation.py',
                              'markdown_notes.py','pdf_formula.py','pdf_geometry.py','pdf_layout.py','pdf_overlays.py','pdf_rules.py','pdf_tables.py','pdf_table_readings.py',
                              'pdf_words.py','pdf_reading_spans.py','pdf_scripts.py','pdf_literals.py','source_passages.py','source_numbering.py',
-                             'source_math.py','source_arithmetic.py','source_notes.py','source_scripts.py',
+                             'source_math.py','source_arithmetic.py','source_notes.py','source_scripts.py','tex_math.py',
                              'epub_notes.py','html_notes.py','keyboard_readings.py','spoken_forms.py','table_readings.py','typed_readings.py')})

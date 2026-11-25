@@ -1,3 +1,9 @@
+# hamr 0.4.9.dev65
+
+- Read primes and bound sums and products in authored equations. TeX, MathML and Word equations use the shared math reader. Word keeps the author's limit visibility.
+- Read equations that use local LaTeX command definitions with literal argument lists. The plan retains both the equation and the definitions it used. [LaTeX intake](docs/INTAKE.md#latex)
+- Follow linked endnotes written as native list items in an HTML or EPUB endnote collection. [Document notes](docs/INTAKE.md#linked-notes)
+
 # hamr 0.4.9.dev64
 
 - Read explicitly introduced lists of symbols aloud, such as “dollar sign, ampersand, and number sign.” The plan preserves the exact source characters. Ordinary prices, conjunctions, and protected code keep their established readings.

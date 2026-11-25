@@ -58,6 +58,7 @@ def write_writer(path, body, *, href='./Object%201', embedded=HTML_POWER):
 
 WORD_POWER = omml(f'<m:sSup><m:e>{math_run("x")}</m:e><m:sup>{math_run("2")}</m:sup></m:sSup>')
 WORD_FRACTION = omml(f'<m:f><m:num>{math_run("3")}</m:num><m:den>{math_run("4")}</m:den></m:f>')
+WORD_PRIME = f'<m:sSup><m:e>{math_run("x")}</m:e><m:sup>{math_run("′")}</m:sup></m:sSup>'
 
 
 @pytest.mark.parametrize(('html_formula','word_formula','reading'), [
@@ -87,6 +88,37 @@ def test_equivalent_formula_prose(tmp_path,html_formula,word_formula,reading):
             assert span['source_locator'].startswith('Object 1/content.xml:')
         elif path==word:
             assert span['source_locator'].startswith('word/document.xml:')
+
+
+@pytest.mark.parametrize(('tex','markup','properties','upper','reading'), [
+    (r"\sum_{i=1}^{n}x'", '<munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow>'
+     '<mi>n</mi></munderover>', '', 'n', 'sum from i equals 1 to n of x prime'),
+    (r"\prod_{i=1}x'", '<munder><mo>∏</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow></munder>',
+     '<m:supHide/>', 'hidden', 'product over i equals 1 of x prime'),
+])
+def test_prime_and_operator_limits_share_preparation(tmp_path,tex,markup,properties,upper,reading):
+    latex,markdown,html,word,writer = (tmp_path/f'controls.{suffix}' for suffix in ('tex','md','html','docx','odt'))
+    latex.write_text(f'Read ${tex}$.',encoding='utf-8')
+    markdown.write_text(f'Read ${tex}$.',encoding='utf-8')
+    formula = f'<math><mrow>{markup}<msup><mi>x</mi><mo>′</mo></msup></mrow></math>'
+    html.write_text(f'<p>Read {formula}.</p>',encoding='utf-8')
+    operator = '∑' if tex.startswith(r'\sum') else '∏'
+    word_formula = omml(f'<m:nary><m:naryPr><m:chr m:val="{operator}"/>{properties}</m:naryPr>'
+                        f'<m:sub>{math_run("i=1")}</m:sub><m:sup>{math_run(upper)}</m:sup>'
+                        f'<m:e>{WORD_PRIME}</m:e></m:nary>')
+    write_word(word,word_p('Read ',word_formula))
+    write_writer(writer,'<text:p>Read FORMULA.</text:p>',embedded=formula)
+    for path in (latex,markdown,html,word,writer):
+        result = plan(inspect_source(path,offline=True))
+        assert not result['issues'], path
+        assert [unit['text'] for unit in result['utterances']]==[f'Read {reading}.'], path
+
+
+def test_unqualified_mathml_accents_still_hold_for_source_review(tmp_path):
+    path = tmp_path/'accent.html'
+    path.write_text('<p>See <math><mover accent="true"><mi>x</mi><mo>^</mo></mover></math>.</p>',encoding='utf-8')
+    result = plan(inspect_source(path,offline=True))
+    assert len(result['issues'])==1 and 'accent' in result['issues'][0]['reason']
 
 
 def test_note_and_cell_use_the_same_formula_reading(tmp_path):

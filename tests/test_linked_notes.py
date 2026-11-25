@@ -122,6 +122,36 @@ def test_epub_resolves_cross_resource_notes_and_keeps_original_fragments(tmp_pat
     assert (wind.locator['path'],wind.locator['anchor'])==('extra.xhtml','wind')
 
 
+@pytest.mark.parametrize('route',['html','epub'])
+def test_dpub_endnote_collections_bind_list_items_without_reading_backlinks(tmp_path,route):
+    from test_upstream_epub import book as epub_book
+
+    body = '<p>The harbor was quiet.<a role="doc-noteref" id="ref1" href="#tide">1</a></p>'
+    notes = ('<section role="doc-endnotes"><ol><li id="tide"><p>The tide was low.'
+             '<a role="doc-backlink" href="#ref1">Return</a></p></li></ol>'
+             '<section><div role="list"><div role="listitem" id="next">A second note.</div></div></section>'
+             '</section>')
+    source = tmp_path/f'book.{route}'
+    if route=='epub':
+        source.write_bytes(epub_book({'chapter':body+notes},['chapter']))
+    else:
+        source.write_text(body+notes,encoding='utf-8')
+    doc = inspect_source(source)
+    result = plan(doc)
+    assert not result['issues']
+    assert [unit['text'] for unit in result['utterances']]==[
+        'The harbor was quiet. Note. The tide was low. End note.']
+    reading = next(block for block in doc.blocks if block.role=='body')
+    assert reading.links[0]['reading']=='The tide was low.'
+    linked = next(block for block in doc.blocks if block.role=='note' and block.locator.get('anchor')=='tide')
+    assert 'source.html#'+linked.id in reading.links[0]['destinations']
+    if route=='epub':
+        with ZipFile(source) as package:
+            assert b'<li id="tide">' in package.read(linked.locator['path'])
+    else:
+        assert '<li id="tide">' in linked.locator['exact']
+
+
 def test_epub_does_not_pick_between_duplicate_note_ids(tmp_path):
     from test_upstream_epub import book as epub_book
 

@@ -294,9 +294,9 @@ class Resolver:
 
         self.doc=doc
         self.policy=policy
-        keyboard=rule_revision in ('faithful-31','faithful-32','faithful-33','faithful-34')
-        self.narrative_clocks=rule_revision in ('faithful-32','faithful-33','faithful-34')
-        character_inventories=rule_revision=='faithful-34'
+        keyboard=rule_revision in ('faithful-31','faithful-32','faithful-33','faithful-34','faithful-35')
+        self.narrative_clocks=rule_revision in ('faithful-32','faithful-33','faithful-34','faithful-35')
+        character_inventories=rule_revision in ('faithful-34','faithful-35')
         self.config=context_config.effective(policy.get('context'),keyboard=keyboard,narrative_clocks=self.narrative_clocks,
                                              character_inventories=character_inventories)
         self.implementation=context_config.implementation(unified=unified,rule_revision=rule_revision)
@@ -315,7 +315,7 @@ class Resolver:
         self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
         self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],
                                              self.config['cues']['price_noun'],self.config['native_names'],
-                                             precise_codes=rule_revision in ('faithful-27','faithful-28','faithful-29','faithful-30','faithful-31','faithful-32','faithful-33','faithful-34'),
+                                             precise_codes=keyboard or rule_revision in ('faithful-27','faithful-28','faithful-29','faithful-30'),
                                              keyboard=keyboard,character_inventories=character_inventories)
         self.definitions=defaultdict(list)
         self.chronologies=defaultdict(lambda:defaultdict(list))

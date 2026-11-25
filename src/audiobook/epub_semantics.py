@@ -16,7 +16,20 @@ def noteref(node):
     return getattr(node,'attrs',None) is not None and ('noteref' in str(node.get('epub:type','')) or node.get('role')=='doc-noteref')
 
 def note_container(node):
-    return hasattr(node,'get') and (any(value in str(node.get('epub:type','')).split() for value in ('footnote','endnote')) or node.get('role') in ('doc-footnote','doc-endnote'))
+    if not hasattr(node,'get'):
+        return False
+    if any(value in str(node.get('epub:type','')).split() for value in ('footnote','endnote')) or node.get('role') in ('doc-footnote','doc-endnote'):
+        return True
+    if node.parent is None or (node.name!='li' and node.get('role')!='listitem'):
+        return False
+    if node.parent.name not in ('ol','ul') and node.parent.get('role')!='list':
+        return False
+    for ancestor in node.parent.parents:
+        if ancestor.get('role')=='doc-endnotes':
+            return True
+        if ancestor.name=='li' or ancestor.get('role')=='listitem':
+            break
+    return False
 
 
 def language(node):

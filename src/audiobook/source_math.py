@@ -18,8 +18,13 @@ OPERATORS = {
     '≥':'greater than or equal to', '≤':'less than or equal to',
     '>':'greater than', '<':'less than', '≠':'does not equal',
     '(':'open parenthesis', ')':'close parenthesis', '[':'open bracket', ']':'close bracket',
-    ',':'comma', '∞':'infinity', '∣':'vertical bar', '′':'prime', '″':'double prime',
+    ',':'comma', '∞':'infinity', '∣':'vertical bar', '′':'prime', '″':'double prime', '‴':'triple prime',
 }
+LIMIT_OPERATORS = {'∑':'sum','∏':'product'}
+PRIME_MARKS = {'′':1,'″':2,'‴':3}
+GREEK_NAMES = {chr(code):('capital ' if ' CAPITAL ' in name else '')+name.rsplit(' ',1)[-1].lower().replace('lamda','lambda')
+               for code in range(0x391,0x3ca) if ' LETTER ' in (name:=unicodedata.name(chr(code),''))}
+GREEK_NAMES['ς'] = 'final sigma'
 TOKEN = re.compile(r'\d+(?:\.\d+)?|[^\W\d_]+|[^\s]', re.UNICODE)
 NUMBER = re.compile(r'\d+(?:\.\d+)?')
 ZERO_THICKNESS = re.compile(r'(?:0+\.?0*|\.0+)(?:%|[a-z]+)?', re.I)
@@ -35,17 +40,66 @@ class Expression:
     text: str = ''
 
 
+def ungroup(expr):
+    while expr.kind in ('math','mrow') and len(expr.children)==1:
+        expr = expr.children[0]
+    return expr
+
+
+def limit_operator(expr):
+    expr = ungroup(expr)
+    if expr.kind in ('msub','msup','msubsup'):
+        expr = ungroup(expr.children[0])
+    return LIMIT_OPERATORS.get(expr.text) if expr.kind=='mo' else None
+
+
+def prime_count(expr):
+    expr = ungroup(expr)
+    if expr.kind=='mo':
+        return PRIME_MARKS.get(expr.text,0)
+    if expr.kind=='mrow' and expr.children:
+        counts = [prime_count(child) for child in expr.children]
+        if all(counts):
+            return sum(counts)
+    return 0
+
+
+def variable(expr):
+    expr = ungroup(expr)
+    if expr.kind in ('msub','msup','msubsup'):
+        expr = ungroup(expr.children[0])
+    return expr.kind=='mi' and len(expr.text)==1 and expr.text.isalpha()
+
+
+def implied_product(left,right):
+    left = ungroup(left)
+    right = ungroup(right)
+    scripts = ('msub','msup','msubsup')
+    return variable(right) and (left.kind=='mn' or
+                                left.kind in scripts and right.kind in scripts and variable(left))
+
+
 def speak(expr):
     kind = expr.kind
     if kind == 'mn':
         return ''.join(str(unicodedata.decimal(char)) if char.isdecimal() else char for char in expr.text)
-    if kind in ('mi','mtext'):
+    if kind=='mi':
+        return GREEK_NAMES.get(expr.text,expr.text)
+    if kind=='mtext':
         return expr.text
     if kind == 'mo':
-        return OPERATORS.get(expr.text,expr.text)
+        return LIMIT_OPERATORS.get(expr.text,OPERATORS.get(expr.text,expr.text))
     children = tuple(speak(child) for child in expr.children)
     if kind in ('math','mrow'):
-        return ' '.join(children)
+        pieces = []
+        for index,(child,reading) in enumerate(zip(expr.children,children)):
+            if index and limit_operator(expr.children[index-1]) and (
+                    (term:=ungroup(child)).kind!='mo' or term.text in ('(','[')):
+                pieces.append('of')
+            elif index and implied_product(expr.children[index-1],child):
+                pieces.append('times')
+            pieces.append(reading)
+        return ' '.join(pieces)
     if kind == 'mfrac':
         a,b = children
         return 'the fraction with numerator '+a+' and denominator '+b
@@ -55,11 +109,18 @@ def speak(expr):
     if kind == 'mroot':
         a,b = children
         return 'the root with index '+b+' and radicand '+a
+    if kind in ('msup','msub','msubsup') and (operator:=limit_operator(expr.children[0])):
+        if kind=='msubsup':
+            return f'{operator} from {children[1]} to {children[2]}'
+        return operator+(' over ' if kind=='msub' else ' up to ')+children[1]
     def argument(index):
         value = children[index]
         return 'open parenthesis '+value+' close parenthesis' if compound(expr.children[index]) else value
 
     base = argument(0)
+    if kind in ('msup','msubsup') and (primes:=prime_count(expr.children[-1])):
+        name = {1:'prime',2:'double prime',3:'triple prime'}.get(primes,f'{primes} primes')
+        return base+(' subscript '+argument(1) if kind=='msubsup' else '')+' '+name
     if kind == 'msup':
         return base+' to the power of '+argument(1)
     if kind == 'msub':
@@ -70,9 +131,7 @@ def speak(expr):
 
 
 def compound(expr):
-    while expr.kind in ('math','mrow') and len(expr.children)==1:
-        expr = expr.children[0]
-    return bool(expr.children)
+    return bool(ungroup(expr).children)
 
 
 def mathml(node, depth=0):
@@ -104,6 +163,14 @@ def mathml(node, depth=0):
             raise ValueError('MathML semantics has no unique displayed expression')
     if tag=='mfrac' and ZERO_THICKNESS.fullmatch(node.get('linethickness','').strip()):
         raise ValueError('MathML stack has no fraction bar')
+    limits = {'munder':('msub',2),'mover':('msup',2),'munderover':('msubsup',3)}
+    if tag in limits:
+        kind,count = limits[tag]
+        if (len(elements)!=count or any(node.get(attr) not in (None,'false') for attr in ('accent','accentunder'))):
+            raise ValueError('MathML limits have ambiguous arguments or accents')
+        children = tuple(mathml(child,depth+1) for child in elements)
+        if ungroup(children[0]).kind=='mo' and limit_operator(children[0]):
+            return Expression(kind,children)
     argument_count = {'msup':2,'msub':2,'msubsup':3,'mfrac':2,'mroot':2}
     if (tag in ('math','mrow','mstyle','semantics','msqrt') and elements
             or tag in argument_count and len(elements)==argument_count[tag]):
@@ -202,7 +269,7 @@ def math_tokens(text):
             yield Expression('mn',text=token)
         elif token.isalpha():
             yield Expression('mi',text=token)
-        elif token in OPERATORS:
+        elif token in OPERATORS or token in LIMIT_OPERATORS:
             yield Expression('mo',text=token)
         else:
             raise ValueError('Unrecognized Office Math token: '+repr(token))
@@ -211,7 +278,8 @@ def math_tokens(text):
 def office_group(elements, depth):
     parts, pending = [], []
     for item in elements:
-        if office_tag(item)=='r':
+        role = office_tag(item)
+        if role=='r':
             value,literal = office_run(item)
             if not literal:
                 pending.append(value)
@@ -223,13 +291,44 @@ def office_group(elements, depth):
         else:
             parts.extend(math_tokens(''.join(pending)))
             pending.clear()
-            parts.append(office_math(item,depth+1))
+            expression = office_math(item,depth+1)
+            if role=='nary':
+                parts.extend(expression.children)
+            else:
+                parts.append(expression)
     parts.extend(math_tokens(''.join(pending)))
     if not parts:
         raise ValueError('An Office Math argument is empty')
     if len(parts)==1:
         return parts[0]
     return Expression('mrow',tuple(parts))
+
+
+def office_nary(fields,properties,depth):
+    if fields.keys()!={'sub','sup','e'} or properties is None:
+        raise ValueError('Office Math operator has unbound limits or operand.')
+    settings = {}
+    for prop in office_children(properties):
+        name = office_tag(prop)
+        if name not in ('chr','subHide','supHide'):
+            continue
+        if name in settings:
+            raise ValueError('Office Math operator has repeated limit properties.')
+        settings[name] = office_value(prop,'' if name=='chr' else '1')
+    if settings.get('chr') not in LIMIT_OPERATORS:
+        raise ValueError('Office Math operator needs a verified character reading.')
+    operator = Expression('mo',text=settings['chr'])
+    visible = []
+    for role in ('sub','sup'):
+        hidden = settings.get(role+'Hide','0')
+        if hidden not in ('1','0','on','off','true','false'):
+            raise ValueError('Office Math operator has an invalid limit visibility setting.')
+        if hidden in ('0','off','false'):
+            visible.append((role,office_math(fields[role],depth+1)))
+    if visible:
+        kind = 'msubsup' if len(visible)==2 else 'm'+visible[0][0]
+        operator = Expression(kind,(operator,*(value for _,value in visible)))
+    return Expression('mrow',(operator,office_math(fields['e'],depth+1)))
 
 
 def office_math(node, depth=0):
@@ -244,7 +343,7 @@ def office_math(node, depth=0):
         return office_math(equations[0],depth+1)
     if tag in ('oMath','e','num','den','sup','sub','deg'):
         return office_group((element for element in elements if office_tag(element)!='argPr'),depth)
-    if tag in SCRIPT_ROLES or tag=='rad':
+    if tag in SCRIPT_ROLES or tag in ('rad','nary'):
         fields = {}
         properties = None
         property_tag = tag+'Pr'
@@ -256,6 +355,8 @@ def office_math(node, depth=0):
                 properties = element
             else:
                 fields[role] = element
+        if tag=='nary':
+            return office_nary(fields,properties,depth)
         if tag in SCRIPT_ROLES:
             kind,roles = SCRIPT_ROLES[tag]
             if fields.keys()!=set(roles):

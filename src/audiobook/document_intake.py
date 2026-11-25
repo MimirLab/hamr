@@ -453,7 +453,8 @@ def html_read(data,builder, *, where='html', part=None, metadata=True, fragment=
             role = 'heading' if re.fullmatch(r'h[1-6]',node.name) else roles.get(node.name,'body')
             text_node(node,role,path)
             return
-        if not node.find(list(atomic)) and node.get_text(strip=True):
+        if (not node.find(list(atomic)) and not node.find(
+                lambda child: child.get('role')=='listitem' and note_container(child)) and node.get_text(strip=True)):
             text_node(node,'body',path)
             return
         for i,child in enumerate(node.children,1):
