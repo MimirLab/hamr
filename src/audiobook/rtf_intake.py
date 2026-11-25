@@ -1,5 +1,6 @@
 """Read RTF groups and project their visible text into shared source blocks."""
 
+from bisect import bisect_left
 import codecs
 from dataclasses import dataclass, field, replace
 import re
@@ -28,6 +29,8 @@ ENCODING_CONTROLS = frozenset(('ansicpg','mac','pc','pca','f','deff','cpg','plai
 ESCAPED = {'~':'\u00a0','_':'\u2011','-':'\u00ad','{':'{','}':'}','\\':'\\'}
 WORDS = {'line':'\n','tab':'\t','emdash':'—','endash':'–','bullet':'•',
          'lquote':'‘','rquote':'’','ldblquote':'“','rdblquote':'”'}
+TYPOGRAPHY = {'i':'italic','b':'bold'}
+LOW_SURROGATE = re.compile('[\udc00-\udfff]')
 
 
 def tokens(data):
@@ -76,6 +79,19 @@ def tokens(data):
             yield ('optional' if symbol=='*' else 'symbol'),None,start,position
 
 
+@dataclass(frozen=True)
+class StyleMark:
+    enabled: bool
+    byte: int
+    style_id: int | None = None
+
+    def definition(self):
+        location = {'byte':self.byte}
+        if self.style_id is not None:
+            location['id'] = self.style_id
+        return location
+
+
 @dataclass
 class Formatting:
     hidden: bool = False
@@ -87,6 +103,9 @@ class Formatting:
     codepage: str | None = None
     list_instance: int | None = None
     list_level: int = 0
+    character_style: int | None = None
+    italic: StyleMark | None = None
+    bold: StyleMark | None = None
 
 
 @dataclass
@@ -101,6 +120,40 @@ class Passage:
     spans: list
     outline: int | None
     list_context: tuple | None = None
+    typography: list = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class TextRun:
+    text: str
+    marks: tuple
+
+
+def typography_runs(runs,offset,marked):
+    raw = ''.join(run.text for run in runs)
+    if not any(run.marks for run in runs):
+        return raw
+    # RTF Unicode escapes are UTF-16 units. Give a split pair the style of
+    # its first unit and measure the resulting spans in decoded characters.
+    lows = [match.start() for match in LOW_SURROGATE.finditer(raw)]
+    index = 0
+    for run in runs:
+        start = offset+index-bisect_left(lows,index)
+        index += len(run.text)
+        end = offset+index-bisect_left(lows,index)
+        if start==end:
+            continue
+        for kind,mark in run.marks:
+            spans = marked[kind]
+            if spans and spans[-1]['source_end']==start:
+                spans[-1]['source_end'] = end
+            else:
+                span = {'kind':kind,'source_start':start,'source_end':end,
+                        'style_definition':mark.definition()}
+                if kind=='font_style':
+                    span['style'] = 'italic'
+                spans.append(span)
+    return raw
 
 
 @dataclass
@@ -113,10 +166,10 @@ class Flow:
     list_level: int = 0
     marker: tuple | None = None
 
-    def decode(self,encoding,position):
+    def decode(self,encoding,position,marks):
         if self.byte_run:
             try:
-                self.fragments.append(self.byte_run.decode(encoding))
+                self.fragments.append(TextRun(self.byte_run.decode(encoding),marks))
             except UnicodeError as exc:
                 raise Error('rtf_encoding',f'Could not decode RTF bytes at offset {position}.') from exc
             self.byte_run.clear()
@@ -128,20 +181,22 @@ class Flow:
                     part.target = target
                     return
                 break
-            if part.strip():
+            if part.text.strip():
                 break
         self.fragments.append(Reference(position,target))
 
     def take(self,position):
         parts,spans,pending = [],[],[]
+        marked = {'font_style':[], 'emphasis':[]}
         offset = 0
         for item in [*self.fragments,None]:
-            if isinstance(item,str):
+            if isinstance(item,TextRun):
                 pending.append(item)
                 continue
             if pending:
                 try:
-                    text = ''.join(pending).encode('utf-16-le','surrogatepass').decode('utf-16-le')
+                    raw = typography_runs(pending,offset,marked)
+                    text = raw.encode('utf-16-le','surrogatepass').decode('utf-16-le')
                 except UnicodeError as exc:
                     raise Error('rtf_encoding',f'Invalid Unicode in the RTF passage at byte {position}.') from exc
                 parts.append(text)
@@ -156,7 +211,14 @@ class Flow:
         for span in spans:
             index = min(len(text),max(0,span['source_start']-left))
             span.update(source_start=index,source_end=index)
-        result = Passage(text,spans,self.outline,(self.marker,self.list_instance,self.list_level))
+        typography = []
+        for values in marked.values():
+            for span in values:
+                start = max(0,span['source_start']-left)
+                end = min(len(text),span['source_end']-left)
+                if start<end and text[start:end].strip():
+                    typography.append({**span,'source_start':start,'source_end':end,'source':text[start:end]})
+        result = Passage(text,spans,self.outline,(self.marker,self.list_instance,self.list_level),typography)
         self.fragments.clear()
         self.outline = None
         self.started = False
@@ -189,8 +251,10 @@ class Group:
     optional: bool = False
     opened_note: bool = False
     style_id: int | None = None
+    character_style: bool = False
     base_style: int | None = None
     style_outline: int | None = None
+    style_marks: dict = field(default_factory=dict)
     font: int | None = None
     charset: int | None = None
     codepage: str | None = None
@@ -209,6 +273,8 @@ class Reader:
         self.stack = []
         self.styles = {}
         self.outlines = {}
+        self.character_styles = {}
+        self.resolved_characters = {}
         self.fonts = {}
         self.default_font = None
         self.notes = []
@@ -223,7 +289,40 @@ class Reader:
         fmt = self.group.formatting
         font = fmt.font if fmt.font is not None else self.default_font
         encoding = fmt.codepage or self.fonts.get(font) or fmt.encoding
-        self.group.flow.decode(encoding,self.position)
+        flow = self.group.flow
+        if flow.byte_run:
+            flow.decode(encoding,self.position,self.marks())
+
+    def character_marks(self,style):
+        current,chain = style,{}
+        resolved = self.resolved_characters
+        while current in self.character_styles and current not in resolved:
+            parent,marks = self.character_styles[current]
+            if current in chain:
+                # Keep only the explicit properties of an invalid cycle.
+                for invalid in tuple(chain)[chain[current]:]:
+                    resolved[invalid] = self.character_styles[invalid][1]
+                break
+            chain[current] = len(chain)
+            current = parent
+        for handle in reversed(chain):
+            if handle not in resolved:
+                parent,marks = self.character_styles[handle]
+                resolved[handle] = {**resolved.get(parent,{}),**marks}
+        return resolved.get(style,{})
+
+    def marks(self):
+        fmt = self.group.formatting
+        inherited = self.character_marks(fmt.character_style) if fmt.character_style is not None else {}
+        active = []
+        for attribute,kind in (('italic','font_style'),('bold','emphasis')):
+            mark = inherited.get(attribute)
+            direct = getattr(fmt,attribute)
+            if direct is not None and (mark is None or direct.enabled!=mark.enabled):
+                mark = direct
+            if mark and mark.enabled:
+                active.append((kind,mark))
+        return tuple(active)
 
     def outline(self):
         fmt = self.group.formatting
@@ -255,7 +354,7 @@ class Reader:
             group.flow.byte_run.extend(value)
         else:
             self.decode()
-            group.flow.fragments.append(value)
+            group.flow.fragments.append(TextRun(value,self.marks()))
 
     def flush_table(self):
         if not self.rows:
@@ -265,10 +364,15 @@ class Reader:
         values = [[cell.text for cell in row] for row in self.rows]
         spans = [cell_semantics(i,j,cell.text,cell.spans) for i,row in enumerate(self.rows)
                  for j,cell in enumerate(row) if cell.spans]
+        styled = any(cell.typography for row in self.rows for cell in row)
         issue = self.table_issue
         if len({len(row) for row in self.rows})>1:
             issue = issue or 'The RTF rows have different cell counts and need a verified reading.'
-        self.builder.table(values,f'rtf:{self.position}',headers=[],issue=issue,semantics=spans)
+        table = self.builder.table(values,f'rtf:{self.position}',headers=[],issue=issue,semantics=spans)
+        if table is not None and styled:
+            table.locator['table_cell_semantics'] = [
+                cell_semantics(i,j,cell.text,[*cell.spans,*cell.typography])
+                for i,row in enumerate(self.rows) for j,cell in enumerate(row) if cell.spans or cell.typography]
         self.rows.clear()
         self.table_issue = None
 
@@ -294,6 +398,8 @@ class Reader:
             value,marker = label
             loc.update(ordered_item=value,ordered_marker=marker)
         item = self.builder.add(passage.text,role,f'rtf:{self.position}',loc=loc,issue=issue)
+        if passage.typography:
+            item.locator['inline_semantics'] = [*passage.spans,*passage.typography]
         if '\n' in passage.text:
             item.locator['authored_line_breaks'] = True
 
@@ -313,7 +419,7 @@ class Reader:
         self.group.note.end = self.position
 
     def definition(self,note):
-        parts,spans = [],[]
+        parts,spans,typography = [],[],[]
         offset = 0
         for passage in note.passages:
             if parts:
@@ -321,27 +427,34 @@ class Reader:
             parts.append(passage.text)
             spans.extend({**span,'source_start':span['source_start']+offset,'source_end':span['source_end']+offset}
                          for span in passage.spans)
+            typography.extend({**span,'source_start':span['source_start']+offset,'source_end':span['source_end']+offset}
+                              for span in passage.typography)
             offset += len(passage.text)+1
         text = ' '.join(parts)
         loc = {'inline_semantics':spans,'note_kind':note.kind,'byte_range':[note.start,note.end]}
         if not text.strip():
             note.issue = note.issue or 'The RTF note contains no visible text.'
         block = self.builder.add(text,'note',f'rtf:{note.start}',loc=loc,issue=note.issue)
+        if typography:
+            block.locator['inline_semantics'] = [*spans,*typography]
         if note.issue:
             block.issue = None
             block.locator['note_issue'] = note.issue
         return Definition(block,note_text(block,terminal=True),note.issue)
 
-    def style_control(self,name,number):
+    def style_control(self,name,number,start):
         group = self.group
-        if group.mode!='style' or number is None:
+        if group.mode!='style':
             return
-        if name=='s':
+        if name in ('s','cs') and number is not None:
             group.style_id = number
+            group.character_style = name=='cs'
         elif name=='sbasedon':
             group.base_style = number
         elif name=='outlinelevel':
             group.style_outline = number
+        elif name in TYPOGRAPHY and group.character_style:
+            group.style_marks[TYPOGRAPHY[name]] = StyleMark(number!=0,start,group.style_id)
 
     def save_font(self):
         group = self.group
@@ -415,7 +528,7 @@ class Reader:
         if group.optional:
             group.optional = False
             if name not in ('footnote','stylesheet','fonttbl','nesttableprops','shpinst','shptxt','listtext','pntext') and not (
-                    group.mode=='style' and name=='s'):
+                    group.mode=='style' and name in ('s','cs')):
                 group.mode = 'skip'
         if group.mode=='skip':
             return
@@ -440,7 +553,7 @@ class Reader:
                     self.paragraph()
             return
         if group.mode!='body':
-            self.style_control(name,number)
+            self.style_control(name,number,start)
             return
         fmt = group.formatting
         if name=='stylesheet':
@@ -492,6 +605,13 @@ class Reader:
         elif name=='plain':
             fmt.hidden = False
             fmt.font = fmt.codepage = None
+            fmt.character_style = fmt.italic = fmt.bold = None
+        elif name=='cs' and number is not None:
+            self.decode()
+            fmt.character_style = number or None
+        elif name in TYPOGRAPHY:
+            self.decode()
+            setattr(fmt,TYPOGRAPHY[name],StyleMark(number!=0,start))
         elif name=='pard':
             fmt.style,fmt.outline = 0,None
             fmt.list_instance,fmt.list_level = None,0
@@ -550,8 +670,12 @@ class Reader:
                         elif self.in_row:
                             self.table_issue = self.table_issue or RTF_LIST_ISSUE
                     elif group.mode=='style' and group.style_id is not None:
-                        self.styles[group.style_id] = group.base_style,group.style_outline
-                        self.outlines.clear()
+                        if group.character_style:
+                            self.character_styles[group.style_id] = group.base_style,group.style_marks
+                            self.resolved_characters.clear()
+                        else:
+                            self.styles[group.style_id] = group.base_style,group.style_outline
+                            self.outlines.clear()
                     elif group.mode in ('fonts','font'):
                         self.save_font()
                     if group.opens_shape_text and not self.in_row:

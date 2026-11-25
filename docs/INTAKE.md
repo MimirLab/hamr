@@ -11,6 +11,8 @@ Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RT
 
 OpenDocument text and slides retain authored inline bold and italics, with the exact words and style definition in the companion. Explicit resets take effect inside nested spans. Eligible dialogue uses the ordinary emphasis guidance.
 
+RTF retains inline bold and italics set directly or through a character style. The same reader handles Scrivener manuscript text and RTF inside archives.
+
 `hamr agent capabilities` checks whether Linux converters can start their required Bubblewrap isolation. It distinguishes a missing worker, a missing Bubblewrap executable, and isolation that the host blocks.
 
 ## Source readers

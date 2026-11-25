@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev73
+
+- Preserve inline bold and italics from RTF documents and Scrivener manuscript text. Named style inheritance and local resets follow the exact words into the shared narration planner.
+
 # hamr 0.4.9.dev72
 
 - Carry bold, italic and oblique character styles from OpenDocument text and presentations into the same narration planner as Word, EPUB and HTML. Hamr follows inherited and nested text styles, respects explicit resets and keeps the style definition linked to its exact source words.
