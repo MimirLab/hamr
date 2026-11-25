@@ -54,6 +54,10 @@ def parse(path,source,sha,cache,title):
         from .scribus_intake import read_scribus
 
         return read_scribus(path,source,sha,title)
+    if source.route=='mif':
+        from .mif_intake import read_mif
+
+        return read_mif(path,source,sha,title)
     if source.route in ('rst','org','asciidoc','latex'):
         from .linked_text_intake import read_linked_archive, read_linked_file
 

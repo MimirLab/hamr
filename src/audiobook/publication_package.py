@@ -150,6 +150,7 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     from .gitbook_intake import archive_spaces
     from .indesign_package import archive_books as idml_books
     from .mdbook_intake import archive_books
+    from .mif_intake import archive_claims as mif_claims
     from .ncc_intake import archive_books as ncc_books
     from .odf_package import archive_books as odf_books
     from .opf_intake import archive_books as opf_books
@@ -216,5 +217,7 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     layout_sources = [item for item in remaining if item.index not in xml_members|plain]
     textile_members = textile_claims(archive,layout_sources)
     scribus_members = scribus_claims(archive,layout_sources)
+    mif_members = mif_claims(archive,layout_sources)
     return (packages,claimed | xps_members | fb3_members | idml_members | pptx_members | odf_members | pages_members |
-            owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain | textile_members | scribus_members)
+            owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain | textile_members |
+            scribus_members | mif_members)

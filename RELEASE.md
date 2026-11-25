@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev86
+
+- Open UTF-8 FrameMaker MIF manuscripts directly or in folders and ZIPs. Hamr follows saved body flows, reads anchored text and footnotes, and keeps exact source locations for unresolved figures or variables.
+
 # hamr 0.4.9.dev85
 
 - Open Scribus SLA and SLA.GZ manuscripts from files, folders, and ZIPs. Follow saved text-frame links once, keep paragraph and style cues, and recover the exact manuscript and local artwork from the finished book.

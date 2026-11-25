@@ -41,6 +41,7 @@ NATIVE = {
     '.textile':'textile',
     '.idml':'idml', '.icml':'icml',
     '.sla':'scribus', '.sla.gz':'scribus',
+    '.mif':'mif',
     '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
@@ -50,7 +51,7 @@ OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx',
                              'odp','odt','odf-master','pages','idml')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master','textile','scribus'))
+DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master','textile','scribus','mif'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -93,6 +94,13 @@ def image_magic(prefix):
 
 def probe(prefix, name):
     suffix = source_suffix(name)
+    if suffix=='.mif' or b'<MIFFile' in prefix:
+        from .mif_syntax import matches_header
+
+        if matches_header(prefix):
+            return 'mif'
+        if suffix=='.mif':
+            return None
     if prefix.startswith(b'\x1d\x7d\x00\x00') or suffix in ('.ws','.ws7'):
         from .wordstar_intake import matches_header
 
@@ -247,6 +255,7 @@ def publication_folder(path):
 def directory_members(root):
     from .classic_mac_intake import loose_fork, matches_header
     from .document_intake import xml_route
+    from .mif_intake import discover_loose_assets as mif_assets, mif_file
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
     from .pml_package import discover_loose_assets, is_pml
@@ -256,6 +265,7 @@ def directory_members(root):
 
     declared = set()
     markup_claimed = set()
+    layouts = ((is_textile,textile_assets),(scribus_file,scribus_assets),(mif_file,mif_assets))
     pages, other = [], []
     for folder, directories, files in os.walk(root, followlinks=False):
         here = Path(folder)
@@ -275,10 +285,9 @@ def directory_members(root):
             relative = path.relative_to(root).as_posix()
             if (is_pml(filename) and not filename.startswith('.') and not path.is_symlink() and path.is_file()):
                 declared.update((here/asset).relative_to(root).as_posix() for asset in discover_loose_assets(path))
-            text_layout = is_textile(filename)
-            if (text_layout or scribus_file(filename)) and not filename.startswith('.') and not path.is_symlink() and path.is_file():
-                discover = textile_assets if text_layout else scribus_assets
-                is_document = is_textile if text_layout else scribus_file
+            layout = next(((matches,discover) for matches,discover in layouts if matches(filename)),None)
+            if layout and not filename.startswith('.') and not path.is_symlink() and path.is_file():
+                is_document,discover = layout
                 linked = {asset for asset in discover(path,root) if asset!=relative and not is_document(asset)}
                 declared.update(linked)
                 markup_claimed.update(linked)
@@ -311,7 +320,7 @@ def directory_members(root):
             suffix = source_suffix(path.name)
             if suffix in IMAGE_SUFFIXES:
                 pages.append(relative)
-            elif suffix in PALM_SUFFIXES and not path.is_symlink() and path.is_file():
+            elif suffix in (*PALM_SUFFIXES,'.mif') and not path.is_symlink() and path.is_file():
                 with path.open('rb') as stream:
                     if route:=probe(stream.read(512),path.name):
                         other.append((relative,route))
@@ -503,7 +512,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
             with archive.open_member(item) as stream:
                 detected = xml_route(stream)
         elif (not name.name.startswith('.') and
-              (kind=='zip' and not detected or suffix in ('.asc','.cwk','.hqx','.lrf','.lit',*PALM_SUFFIXES))):
+              (kind=='zip' and not detected or suffix in ('.asc','.cwk','.hqx','.lrf','.lit','.mif',*PALM_SUFFIXES))):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
             detected = probe(prefix,item.name)
@@ -550,7 +559,7 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
     if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar','textile',*PALM_ROUTES):
         raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, Textile, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml','scribus',*PALM_ROUTES) and source.member_name is None:
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml','scribus','mif',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -628,7 +637,7 @@ def _describe(path,entry,format,offline):
             if result.kind=='directory' and result.route in DESCRIPTOR_FOLDERS and selected.is_file():
                 parent = selected.parent.relative_to(path)
                 return replace(result,member_name=parent.as_posix() if parent.parts else None)
-            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex','odf-master','textile','scribus') else result
+            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex','odf-master','textile','scribus','mif') else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
@@ -699,6 +708,9 @@ def _describe(path,entry,format,offline):
     if not route:
         from .wordstar_intake import WORDSTAR_SUFFIXES
 
+        if suffix=='.mif':
+            raise Error('source_mif_signature','The input does not identify an Adobe FrameMaker MIF document.',
+                        'Open a FrameMaker MIF export. Geographic MapInfo MIF uses a different format.')
         if suffix in WORDSTAR_SUFFIXES or prefix.startswith(b'\x1d\x7d\x00\x00'):
             raise Error('source_wordstar_version','The file does not identify a supported WordStar 7 document.',
                         'Open the original WordStar 7 document or use a readable text export.')
@@ -708,7 +720,7 @@ def _describe(path,entry,format,offline):
 
 
 def _local_source(path, options, source=None):
-    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master','xml-book','textile','scribus') and source.member_name:
+    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master','xml-book','textile','scribus','mif') and source.member_name:
         return relative_file(path,source.member_name)
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if (source.route=='scrivener' or source.route in DESCRIPTOR_FOLDERS) and path.is_file():
@@ -947,6 +959,10 @@ def capture_dependencies(path,target_dir,source,*,root=None):
         from .scribus_intake import capture_scribus
 
         return capture_scribus(path,target_dir,source,scope=root)
+    if source.kind=='file' and source.route=='mif':
+        from .mif_intake import capture_mif
+
+        return capture_mif(path,target_dir,source,scope=root)
     if source.kind=='file' and source.route=='xml-book':
         from .xml_package import capture_xml
 

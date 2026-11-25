@@ -36,6 +36,7 @@ Word follows tracked paragraph joins, deleted rows and cells, and supported vert
 | Textile | Open a `.textile` manuscript, folder, or ZIP. Hamr reads numbered footnotes, named notes, tables, and authored image descriptions. [Textile intake](#textile) |
 | InDesign and InCopy | Open an InDesign exchange package (`.idml`) or a saved InCopy story (`.icml`), including from a folder or ZIP. [InDesign and InCopy intake](#indesign-and-incopy) |
 | Scribus | Open the `.sla` or `.sla.gz` file, its folder, or a ZIP. Hamr follows saved text-frame links and keeps paragraph styles, notes, and table cells. [Scribus intake](#scribus) |
+| FrameMaker | Open a UTF-8 FrameMaker `.mif` export from a file, folder, or ZIP. Hamr reads body flows, anchored text, tables, and footnotes. [FrameMaker intake](#framemaker) |
 | LaTeX | Open a `.tex` manuscript, a source folder, or an archive. The built-in reader follows local chapter includes and reads authored headings, prose, notes, lists, simple tables and supported equations. [LaTeX intake](#latex) |
 | WordStar 7 for DOS | Open an original `.ws` or `.ws7` manuscript, a folder containing one, or an archive. Hamr also recognizes the saved file header. [WordStar intake](#wordstar-7) |
 | Scrivener projects and backups | Open the `.scriv` folder, its root `.scrivx` file, or the backup ZIP. Hamr reads the manuscript’s RTF documents in Draft binder order, using the binder labels for chapter navigation. |
@@ -164,6 +165,12 @@ Use `.icml` for an individual InCopy story. Hamr reads the saved paragraphs, sty
 ## Scribus
 
 Keep local illustrations at their saved relative paths, then open the SLA file, its enclosing folder, or a ZIP. Hamr reads a linked story once and preserves its source frames. Master-page and hidden-layer text remain in the companion. A placed image with no description or a broken story link appears at its saved location in source review.
+
+## FrameMaker
+
+Open a FrameMaker MIF export saved as version 8 or newer. Hamr joins visual line wraps within each paragraph and preserves hard returns. It follows the saved body and anchored frames, including footnotes and tables. Keep linked artwork in the source folder or ZIP at its saved relative paths. A figure or variable that needs a reading appears at its original line in source review.
+
+For binary FrameMaker files or earlier MIF encodings, save a current MIF export or open a tagged PDF export.
 
 ## LaTeX
 
