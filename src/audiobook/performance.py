@@ -1500,6 +1500,8 @@ def rebase(previous, mapping, fallbacks, source_digest):
     for unit in previous.values():
         candidate = unit['performance_candidate']
         source = candidate['source']
+        if source['block'] not in mapping:
+            continue
         new_candidate = {**candidate,'source':{**source,'block':mapping[source['block']]}}
         new_id = candidate_id(source_digest,new_candidate)
         new_candidate['id'] = new_id
@@ -1508,7 +1510,12 @@ def rebase(previous, mapping, fallbacks, source_digest):
             new_unit['performance'] = {**unit['performance'],'source':new_candidate['source'],'id':new_id}
         rebased[new_id] = new_unit
     for entry in fallbacks:
+        if entry.get('retired_after_reimport'):
+            continue
         source = entry['source']
+        if source['block'] not in mapping:
+            entry['retired_after_reimport'] = True
+            continue
         entry['source'] = {**source,'block':mapping[source['block']]}
         entry['candidate'] = candidate_id(source_digest,entry)
     return rebased
@@ -1553,8 +1560,9 @@ def bind(plan, backend, voice, *, fallbacks=(), previous=None):
         return False
     registry = loadjson(RULES_FILE)
     previous = previous or {}
-    fallback_ids = {entry['candidate'] for entry in fallbacks if not entry.get('variant')}
-    instructions_only = {entry['candidate'] for entry in fallbacks if entry.get('variant')=='instruction_only'}
+    current_fallbacks = [entry for entry in fallbacks if not entry.get('retired_after_reimport')]
+    fallback_ids = {entry['candidate'] for entry in current_fallbacks if not entry.get('variant')}
+    instructions_only = {entry['candidate'] for entry in current_fallbacks if entry.get('variant')=='instruction_only'}
     # A queue created before backend setup still needs to bind its saved direction.
     compatible_registry = summary['registry_sha256'] in (key(registry), *registry.get('compatible_registry_sha256', ()))
     platform = backend.get('runtime_platform',sys.platform)
@@ -1689,7 +1697,7 @@ def request_identity(unit):
 
 def status(job):
     if details:=job['plan'].get('performance'):
-        history=job.get('performance_fallbacks',())
+        history=[entry for entry in job.get('performance_fallbacks',()) if not entry.get('retired_after_reimport')]
         return {**details,'fallbacks':sum(not record.get('variant') for record in history),
                 'instruction_only_retries':sum(record.get('variant')=='instruction_only' for record in history)}
     return None

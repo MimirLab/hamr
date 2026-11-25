@@ -118,6 +118,44 @@ def test_hidden_paragraph_mark_separates_visible_text(tmp_path):
     assert [block.source for block in doc.blocks]==['C','D','E']
 
 
+def test_rtf_final_revisions_keep_insertions_and_remove_deleted_breaks(tmp_path):
+    raw = (br'{\revtbl{Unknown;}{Editor;}}'
+           br'A {\revised warm}{\deleted cold{ \plain removed}} wind lifted.\par '
+           br'The road was {\deleted\line}quiet as dawn broke.\par '
+           br'The trail led {\deleted\par}over the hill.\par '
+           br'{\v\par}The keeper waited. {\deleted wrong\deleted0 Then she left.}\par')
+    doc = inspect_source(source(tmp_path,raw))
+    assert [block.source for block in doc.blocks]==[
+        'A warm wind lifted.','The road was quiet as dawn broke.',
+        'The trail led over the hill.','The keeper waited. Then she left.']
+    assert not plan(doc)['issues']
+
+
+def test_rtf_final_revisions_keep_only_current_notes_and_table_words(tmp_path):
+    raw = (br'The caf{\deleted\uc2\u97??}\uc1\u233? had closed'
+           br'{\deleted\chftn{\footnote\chftn An old note.}{\pict picture data}}'
+           br'{\revised\chftn{\footnote\chftn The keeper {\deleted lost}{\revised kept} the key.}}.\par'
+           br'\trowd\cellx500\cellx1000\intbl \deleted North\cell\deleted0 South\cell\row\pard')
+    doc = inspect_source(source(tmp_path,raw))
+    result = plan(doc)
+    assert not result['issues']
+    body,table,note = doc.blocks
+    assert body.source=='The café had closed.'
+    assert body.links[0]['destination']=='source.html#'+note.id
+    assert note.source=='The keeper kept the key.'
+    assert table.locator['rows']==[['','South']]
+    assert all('North' not in utterance['text'] for utterance in result['utterances'])
+
+
+def test_rtf_final_revisions_keep_move_destinations(tmp_path):
+    raw = (br'Before {\*\mvfmf Move1 0100768baa46}{\mvf\deleted the light}{\*\mvfml Move1}'
+           br'the gate opened.\par Then {\*\mvtof Move1 0100768baa46}{\mvt\revised the light}'
+           br'{\*\mvtol Move1} came on.\par')
+    doc = inspect_source(source(tmp_path,raw))
+    assert [block.source for block in doc.blocks]==['Before the gate opened.','Then the light came on.']
+    assert not plan(doc)['issues']
+
+
 def test_rtf_reads_author_text_shape_but_keeps_shape_properties_out(tmp_path):
     raw = (br'\pard Before dawn.\par {\shp{\*\shpinst\shpleft0\shpright4000'
            br'{\sp{\sn displayName}{\sv Internal shape name}}'

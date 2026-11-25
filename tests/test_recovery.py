@@ -253,6 +253,108 @@ def test_reimport_rebases_retaken_source_and_cleanup_keeps_the_new_audio_pin(job
     assert conflict.value.code=='repair_rebase_conflict'
     assert store.get(original['id'])==snapshot and valid_clip(store,keep)
 
+@pytest.mark.parametrize('legacy',[True,False])
+def test_reimport_retires_obsolete_automatic_takes_and_keeps_reusable_selections(job,monkeypatch,legacy):
+    from copy import deepcopy
+    from audiobook import jobs
+
+    store,original,_ = job
+    changed,unchanged = original['plan']['utterances'][0],original['plan']['utterances'][-1]
+    automatic = {'limit':8,'reasons':['critical_word']}
+    repair(store,original['id'],retake=changed['id'],automatic=automatic)
+    repair(store,original['id'],retake=unchanged['id'],automatic=automatic)
+    if not legacy:
+        repair(store,original['id'],retake=unchanged['id'])
+    saved = store.get(original['id'])
+    if legacy:
+        for record in saved['automatic_retakes']:
+            record.pop('seed')
+        store.save(saved)
+    selected = saved['plan']['utterances'][-1]
+    fresh = jobs.document(deepcopy(original))
+    old = next(block for block in fresh.blocks if block.id==changed['sources'][0])
+    old.source = 'The dose is zero point zero eight milligrams.'
+    stable = next(block for block in fresh.blocks if block.id==unchanged['sources'][0])
+    stable.id = 'reimported-'+stable.id
+    monkeypatch.setattr(jobs,'cached_inspect',lambda *args:deepcopy(fresh))
+
+    repair(store,original['id'],reimport=True)
+    final = store.get(original['id'])
+    new = next(unit for unit in final['plan']['utterances'] if 'The dose' in unit['text'])
+    retained = next(unit for unit in final['plan']['utterances'] if stable.id in unit['sources'])
+    assert new.get('seed',42)==42
+    assert retained['seed']==selected['seed'] and clip_key(retained,final)==clip_key(selected,saved)
+    assert jobs.take_selection(changed) not in final['retakes']
+    assert final['automatic_retakes'][0]==saved['automatic_retakes'][0]
+
+
+def test_reimport_protects_a_manual_retake_after_an_automatic_one(job,monkeypatch):
+    from copy import deepcopy
+    from audiobook import jobs
+
+    store,original,_ = job
+    selected = original['plan']['utterances'][1]
+    repair(store,original['id'],retake=selected['id'],automatic={'limit':8,'reasons':['critical_word']})
+    repair(store,original['id'],retake=selected['id'])
+    fresh = jobs.document(deepcopy(original))
+    next(block for block in fresh.blocks if block.id==selected['sources'][0]).source = 'A revised passage.'
+    monkeypatch.setattr(jobs,'cached_inspect',lambda *args:deepcopy(fresh))
+    previous = store.get(original['id'])
+    with pytest.raises(Error) as error:
+        repair(store,original['id'],reimport=True)
+    assert error.value.code=='repair_rebase_conflict'
+    assert store.get(original['id'])==previous
+
+
+@pytest.mark.parametrize('direction',['automatic','fallback','manual'])
+def test_reimport_rebases_automatic_directions_and_protects_authored_policy(tmp_path,direction):
+    from audiobook import jobs,performance,planner
+
+    source = tmp_path/'dialogue.rtf'
+    source.write_bytes(br'{\rtf1\ansi\u8220?Did {\i you} see the {\deleted cold}{\revised warm} lantern?'
+                       br'\u8221? she asked.\par}')
+    store = Store(tmp_path/'state')
+    saved = store.get(create(store,source,output=tmp_path)['job'])
+    old = jobs.document(saved)
+    block, = old.blocks
+    block.source = block.source.replace('the warm lantern','the coldwarm lantern')
+    policy = saved['plan']['policy']
+    if direction=='manual':
+        document_policy = policy.setdefault('document',{'source_sha256':old.source_sha256})
+        document_policy['performance'] = {'passage_instructions':{
+            block.id:{'text':block.source,'instruction':'Put stress on “you”.'},
+        }}
+    saved['document'] = old.json()
+    saved['plan'] = planner.plan(old,policy)
+    runtime,models,archives = performance.pinned_backends()
+    saved['backend'] = {'profile':'cpu-q8','runtime_revision':runtime,'runtime_platform':'linux_x86_64',
+                        'runtime_archive_sha256':archives['linux_x86_64'],'model_sha256':models['cpu-q8'],
+                        'settings':{'device':'cpu'}}
+    saved['voice'] = {'name':'Control','reference_sha256':'e'*64,'transcript':'Reference words.'}
+    candidate = next(u['performance_candidate'] for u in saved['plan']['utterances'] if 'performance_candidate' in u)
+    history = [{**candidate,'candidate':candidate['id']}] if direction=='fallback' else []
+    saved['performance_fallbacks'] = history
+    performance.bind(saved['plan'],saved['backend'],saved['voice'],fallbacks=history)
+    store.save(saved)
+
+    if direction=='manual':
+        previous = store.get(saved['id'])
+        with pytest.raises(Error) as error:
+            repair(store,saved['id'],reimport=True)
+        assert error.value.code=='repair_rebase_conflict'
+        assert store.get(saved['id'])==previous
+        return
+    repair(store,saved['id'],reimport=True)
+    final = store.get(saved['id'])
+    current = next(u for u in final['plan']['utterances'] if 'lantern' in u['text'])
+    assert current['text']=='“Did you see the warm lantern?” she asked.'
+    assert current['performance']['recipe']=='contrastive_emphasis'
+    assert current['performance']['evidence'][0]['target_span']==[5,8]
+    assert current['performance_candidate']['id']!=candidate['id']
+    if history:
+        assert final['performance_fallbacks']==[{**history[0],'retired_after_reimport':True}]
+
+
 def test_repair_pins_old_rule_until_explicit_upgrade(job):
     from audiobook.jobs import document
     from audiobook.planner import plan

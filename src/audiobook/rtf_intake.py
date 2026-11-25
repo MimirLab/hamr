@@ -18,6 +18,7 @@ DESTINATIONS = frozenset((
     'themedata','datastore','xmlnstbl','listtext','listname','leveltext','levelnumbers','pntext',
     'annotation','object','pict','nonshppict','shppict','shprslt','nonesttables',
     'ftnsep','ftnsepc','ftncn','aftnsep','aftnsepc','aftncn',
+    'revtbl','mvfmf','mvfml','mvtof','mvtol',
 ))
 OBJECTS = frozenset(('object','pict'))
 MERGES = frozenset(('clmgf','clmrg','clvmgf','clvmrg'))
@@ -95,6 +96,8 @@ class StyleMark:
 @dataclass
 class Formatting:
     hidden: bool = False
+    deleted: bool = False
+    moved_from: bool = False
     fallback: int = 1
     encoding: str = 'cp1252'
     style: int = 0
@@ -106,6 +109,14 @@ class Formatting:
     character_style: int | None = None
     italic: StyleMark | None = None
     bold: StyleMark | None = None
+
+    @property
+    def removed(self):
+        return self.deleted or self.moved_from
+
+    @property
+    def visible(self):
+        return not (self.hidden or self.removed)
 
 
 @dataclass
@@ -343,7 +354,7 @@ class Reader:
 
     def glyph(self,value):
         group = self.group
-        if group.formatting.hidden:
+        if not group.formatting.visible:
             return
         if not group.flow.started and value.strip():
             group.flow.started = True
@@ -532,12 +543,20 @@ class Reader:
                 group.mode = 'skip'
         if group.mode=='skip':
             return
+        fmt = group.formatting
+        if group.mode in ('body','list_marker'):
+            if name=='deleted':
+                fmt.deleted = number!=0
+                return
+            if name=='mvf':
+                fmt.moved_from = True
+                return
         if group.mode=='list_marker':
             if name=='uc' and number is not None:
-                group.formatting.fallback = max(0,number)
+                fmt.fallback = max(0,number)
             elif name=='u' and number is not None:
                 self.glyph(chr(number&0xffff))
-                self.skip_fallback = group.formatting.fallback
+                self.skip_fallback = fmt.fallback
             elif name in WORDS:
                 self.glyph(WORDS[name])
             return
@@ -555,30 +574,29 @@ class Reader:
         if group.mode!='body':
             self.style_control(name,number,start)
             return
-        fmt = group.formatting
         if name=='stylesheet':
             group.mode = 'stylesheet'
         elif name=='fonttbl':
             group.mode = 'fonts'
         elif name=='shpinst':
-            if fmt.hidden:
+            if not fmt.visible:
                 group.mode = 'skip'
             else:
                 group.mode = 'shape'
                 group.shape = Shape(start)
                 group.owns_shape = True
-        elif name=='footnote' and not fmt.hidden:
+        elif name=='footnote' and fmt.visible:
             self.open_note(start)
-        elif name=='ftnalt' and group.note is not None:
+        elif name=='ftnalt' and fmt.visible and group.note is not None:
             group.note.kind = 'endnote'
         elif name=='nesttableprops':
             self.table_control(name,number)
-        elif name in ('listtext','pntext') and not fmt.hidden:
+        elif name in ('listtext','pntext') and fmt.visible:
             group.mode = 'list_marker'
             group.marker = name,start
             group.flow = Flow()
         elif name in DESTINATIONS or name=='footnote':
-            if name in OBJECTS and not fmt.hidden:
+            if name in OBJECTS and fmt.visible:
                 self.embedded_issue(f'RTF contains an embedded {name} requiring source review.',f'rtf:{start}')
             group.mode = 'skip'
         elif name=='uc' and number is not None:
@@ -586,7 +604,7 @@ class Reader:
         elif name=='u' and number is not None:
             self.glyph(chr(number & 0xffff))
             self.skip_fallback = fmt.fallback
-        elif name=='chftn' and not fmt.hidden and (group.note is None or group.flow.started):
+        elif name=='chftn' and fmt.visible and (group.note is None or group.flow.started):
             self.decode()
             group.flow.fragments.append(Reference(start))
         elif name=='ansicpg' and number:
@@ -624,8 +642,10 @@ class Reader:
         elif name=='outlinelevel' and number is not None:
             fmt.outline = number
         elif name in ('par','page','sect'):
-            # Character visibility can hide a paragraph mark, but it still
-            # separates the surrounding visible source text.
+            # A deleted paragraph mark joins its neighbors in the final text.
+            # Hidden layout marks and section boundaries keep their structure.
+            if name=='par' and fmt.removed:
+                return
             if self.in_row and group.note is None:
                 self.glyph('\n')
             else:

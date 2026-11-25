@@ -1,3 +1,9 @@
+# hamr 0.4.9.dev74
+
+- Read the current text of tracked RTF edits. Insertions and moved text are read in their final locations, and deleted words, note anchors, and breaks are omitted. The original file remains available from the companion.
+- Reimport can repair planned text after automatic retakes have tried the old wording. Unchanged take selections and the attempt history are kept. User-selected takes still require an exact match.
+- Recompute automatic narration directions when reimport changes their source. Passage-specific directions supplied by the reader remain bound to their exact source.
+
 # hamr 0.4.9.dev73
 
 - Preserve inline bold and italics from RTF documents and Scrivener manuscript text. Named style inheritance and local resets follow the exact words into the shared narration planner.

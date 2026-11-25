@@ -786,6 +786,17 @@ def take_selection(u):
     return key(identity)
 
 
+def automatic_take_selections(job):
+    history = job.get('automatic_retakes',())
+    selections = job.get('retakes',{})
+    # Older jobs recorded the origin without the seed. A job with only
+    # automatic retakes, or an attempt at its current revision, proves origin.
+    automatic_only = len(history)==sum(edit['kind']=='retake' for edit in job['repairs'])
+    return {entry['identity'] for entry in history
+            if ('seed' in entry and entry['seed']==selections.get(entry['identity'])
+                or 'seed' not in entry and (automatic_only or entry.get('revision')==job['revision']))}
+
+
 def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,reimport=False,upgrade_rules=False,document_policy=None,metadata=None,chapters=None,*,expect_revision=None,context=None,context_review=None,context_reviewer=None,automatic=None,performance_mode=None,mastering_mode=None):
     with store.lock():
         from .core import check_revision
@@ -795,7 +806,7 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
         old_plan=j['plan']['plan_sha256'];old_voice=j['voice'];old_output=final_path(j)
         pinned_directions={u['performance_candidate']['id']:u for u in j['plan']['utterances']
                            if 'performance_state' in u}
-        takes=j.get('retakes',{});rebased_takes={}
+        takes=j.get('retakes',{});rebased_takes={};rebased_automatic={}
         target=None
         blocked_reading=None
         if retake:
@@ -826,17 +837,25 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
             if fresh.source_sha256!=previous_doc.source_sha256: raise Error('snapshot_changed','Reimport source identity differs from the saved revision.')
             from .source_rebase import rebase
             selected={take_selection(u):u for u in j['plan']['utterances'] if take_selection(u) in takes}
-            retained={bid for unit in selected.values() for bid in unit['sources']}
-            retained.update(u['performance_candidate']['source']['block'] for u in pinned_directions.values())
-            retained.update(entry['source']['block'] for entry in j.get('performance_fallbacks',()))
+            automatic_selections=automatic_take_selections(j)
+            retained={bid for identity,unit in selected.items() if identity not in automatic_selections for bid in unit['sources']}
+            optional={bid for identity,unit in selected.items() if identity in automatic_selections for bid in unit['sources']}
+            optional.update(u['performance_candidate']['source']['block'] for u in pinned_directions.values())
+            optional.update(entry['source']['block'] for entry in j.get('performance_fallbacks',())
+                            if not entry.get('retired_after_reimport'))
             if target:retained.update(target['sources'])
             stored=None if document_policy is not None else j['plan']['policy'].get('document')
-            j['repairs'],rebased_policy,mapping=rebase(previous_doc,fresh,j['repairs'],stored,retain_sources=retained)
+            j['repairs'],rebased_policy,mapping=rebase(previous_doc,fresh,j['repairs'],stored,
+                                                      retain_sources=retained,optional_sources=optional)
             for original,unit in selected.items():
+                seed=takes.pop(original)
+                if not all(bid in mapping for bid in unit['sources']):
+                    continue
                 replacement=take_selection({**unit,'sources':[mapping[bid] for bid in unit['sources']]})
-                rebased_takes[replacement]=takes[original]
-                if replacement!=original:takes.pop(original)
-            takes.update(rebased_takes)
+                if original in automatic_selections:
+                    rebased_automatic[replacement]=seed
+                else:
+                    rebased_takes[replacement]=seed
             if target:target={**target,'sources':[mapping[bid] for bid in target['sources']]}
             pinned_directions=performance.rebase(pinned_directions,mapping,j.get('performance_fallbacks',()),fresh.source_sha256)
             for record in j.get('automatic_retakes',[]):
@@ -875,6 +894,7 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
                         original['word_disagreement'] = witness
                 history.append({'identity':identity,'utterance':retake,'reasons':automatic['reasons'],'at':time.time(),
                                 'text':target['text'],'sources':target['sources'],'revision':j['revision']+1,
+                                'seed':takes[identity],
                                 **original,
                                 **({'performance':target['performance']} if target.get('performance') else {})})
             j['repairs'].append({'kind':'retake','utterance':retake,'seed':takes[identity]})
@@ -912,11 +932,13 @@ def repair(store,jid,alias=None,block_id=None,text=None,voice=None,retake=None,r
                                                    delivery_context=delivery_context)
             performance.bind(j['plan'],j['backend'],j['voice'],fallbacks=j.get('performance_fallbacks',()),
                              previous=pinned_directions if performance_mode is None and not (upgrade_rules or voice) else None)
-        if rebased_takes:
+        if rebased_takes or rebased_automatic:
             from collections import Counter
             from .source_rebase import conflict
             destinations=Counter(take_selection(u) for u in j['plan']['utterances'])
             if any(destinations[identity]!=1 for identity in rebased_takes):conflict()
+            takes.update((identity,seed) for identity,seed in rebased_automatic.items() if destinations[identity]==1)
+            takes.update(rebased_takes)
         if j['plan'].get('document_title'):j['document']['title']=j['plan']['document_title']
         if replan:
             for u in j['plan']['utterances']:
