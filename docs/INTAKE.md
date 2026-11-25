@@ -137,6 +137,8 @@ Hamr reads the source without running a TeX compiler. Equations can use local co
 
 Keep local style files with the manuscript. Hamr reads literal package references and supported text commands declared with `\newcommand` or `\NewDocumentCommand`. Required arguments, optional arguments and star choices can supply visible text and familiar formatting. The companion preserves both the style file and the place where the command was used. Code listings use the usual companion policy. Source review locates unresolved commands, citations, missing includes, and generated content whose reading depends on compilation. For those passages, the author's compiled PDF or verified HTML export can supply the published reading. [LaTeX source documentation](https://latex-project.org/help/documentation/source2e.pdf)
 
+Inline examples in `\mintinline`, `\lstinline`, `\Verb`, and literal `\newmintinline` declarations keep their code within the authored delimiters. Supported wrappers that add only formatting preserve the prose inside them. Some example packages collect verbatim input and generate a separate display. Hamr keeps that source in the companion and puts the generated reading in source review. [minted documentation](https://ctan.org/pkg/minted)
+
 ## WordStar 7
 
 ```sh

@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev67
+
+- Open LaTeX chapters with inline verbatim commands and locally declared code readers. A code example containing `\begin` or unmatched braces stays bound to its own source range. Formatting-only environments retain their prose, and verified code displays follow the ordinary companion policy. Generated example input stays recoverable and its rendered output has a scoped source-review entry. [LaTeX intake](docs/INTAKE.md#latex)
+
 # hamr 0.4.9.dev66
 
 - Read supported LaTeX text commands declared in the manuscript or a local style file. Hamr follows fixed argument lists, optional text and star branches when their visible output can be read from the source. It keeps the original style files and command locations in the companion. Generated content that needs verification appears in source review. [LaTeX intake](docs/INTAKE.md#latex)

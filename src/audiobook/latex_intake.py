@@ -22,13 +22,16 @@ from pylatexenc.latex2text import LatexNodes2Text
 from .core import Error
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, formula_span, html_read
 from .latex_declarations import (
-    CLASSIC, DECLARATIONS, OPAQUE_DEFINITIONS, PACKAGE_COMMANDS, PARAMETER, document_signature, package_statements,
+    CLASSIC, CLASSIC_ENVIRONMENTS, CODE_SETTINGS, DECLARATIONS, ENVIRONMENT_DECLARATIONS,
+    INLINE_CODE, INLINE_DECLARATIONS, OPAQUE_DEFINITIONS, PACKAGE_COMMANDS, PARAMETER,
+    document_signature, layout_environment, package_statements, verbatim_environment,
 )
 from .tex_math import MathMacro, STANDARD_COMMANDS, tex_math
 
 
 DEPENDENCIES = re.compile(r'\\(?:input|include|includegraphics|bibliography|addbibresource|usepackage|RequirePackage)\b')
 ENTRY = re.compile(rb'\\documentclass\s*(?:\[[^\]\n]*\]\s*)?\{')
+DOCUMENT_START = re.compile(r'\\begin\s*\{document\}')
 HEADINGS = {name:f'h{min(level,6)}' for level,name in enumerate(
     ('part','chapter','section','subsection','subsubsection','paragraph','subparagraph'),1)}
 STYLE = {'emph':'em','textit':'em','textsl':'em','textbf':'strong','texttt':'code',
@@ -74,18 +77,19 @@ ARGUMENTS = {
     'includegraphics':'*[{','caption':'*[{','footnote':'[{','item':'[',
     'href':'{{','enquote':'*{','newcommand':'*{[[{','renewcommand':'*{[[{','providecommand':'*{[[{',
     **dict.fromkeys(DECLARATIONS-CLASSIC,'{{{'), **BRANCHES,
-    'newenvironment':'*{[[{{','renewenvironment':'*{[[{{',
     'bibliography':'{','bibliographystyle':'{','addbibresource':'[{','printbibliography':'[',
     'bibitem':'[{','addcontentsline':'{{{','pdfbookmark':'[{{',
     'framebox':'[[{','parbox':'[[[{{','resizebox':'*{{{','scalebox':'{[{',
     'textcolor':'[{{', 'ifthenelse':'{{{', 'InputIfFileExists':'{{{', 'IfFileExists':'{{{',
     'hspace':'*{','vspace':'*{','setlength':'{{','addtolength':'{{','enlargethispage':'*{',
     'thispagestyle':'{','pagestyle':'{','multicolumn':'{{{','cline':'{',
+    'setminted':'[{','setmintedinline':'[{','lstset':'{','newmintinline':'[{{',
 }
 PARAGRAPH = re.compile(r'\n[ \t\r]*\n')
 CONTROLS = re.compile(r'[\x00-\x08\x0b\x0e-\x1f]')
 UNBRACED_PATH = re.compile(r'[^\s{}\\%#$&^~]+(?=\s|%|$)')
 DEFINITION_TARGET = re.compile(r'\s*\\([A-Za-z]+|[^\r\n])')
+CODE_ESCAPE = re.compile(r'(?:^|,)\s*(escapeinside|escapechar|mathescape|texcl|texcomments)\s*(?:=\s*(\{[^{}]*\}|[^,]*))?(?=,|$)')
 
 
 def project_entry(prefix):
@@ -116,19 +120,79 @@ class InputArgs(MacroStandardArgsParser):
 
 
 class LiteralEnvironmentArgs(MacroStandardArgsParser):
-    def __init__(self,name,argspec):
+    def __init__(self,name,argspec,*,line_end=False):
         super().__init__(argspec)
         self.end = r'\end{'+name+'}'
+        self.line_end = (re.compile(r'(?m)^[ \t]*(?P<end>'+re.escape(self.end)+r')[ \t]*(?:%[^\r\n]*)?\r?$')
+                         if line_end else None)
 
     def parse_args(self,w,pos,parsing_state=None):
         _, start, size = super().parse_args(w,pos,parsing_state)
         start += size
-        end = w.s.find(self.end,start)
+        if self.line_end:
+            marker = self.line_end.search(w.s,start)
+            end = marker.start('end') if marker else -1
+        else:
+            end = w.s.find(self.end,start)
         if end<0:
             raise LatexWalkerParseError(s=w.s,pos=start,msg=f'Expected {self.end}')
         chars = w.make_node(LatexCharsNode,parsing_state=parsing_state,
                             chars=w.s[start:end],pos=start,len=end-start)
         return ParsedVerbatimArgs(verbatim_chars_node=chars), pos, end-pos
+
+
+class EnvironmentDeclarationArgs(MacroStandardArgsParser):
+    def parse_args(self,w,pos,parsing_state=None):
+        args,start,size = super().parse_args(w,pos,parsing_state)
+        end = start+size
+        templates = []
+        # Opening and closing templates can contain unmatched environment tokens.
+        # Only their two enclosing TeX groups need to balance here.
+        for _ in range(2):
+            token = w.get_token(end,environments=False,parsing_state=parsing_state)
+            while token.tok=='comment':
+                token = w.get_token(token.pos+token.len,environments=False,parsing_state=parsing_state)
+            if token.tok!='brace_open':
+                raise LatexWalkerParseError(s=w.s,pos=token.pos,msg='Expected a LaTeX environment template')
+            left = token.pos
+            levels = 1
+            while levels:
+                token = w.get_token(token.pos+token.len,environments=False,parsing_state=parsing_state)
+                levels += (token.tok=='brace_open') - (token.tok=='brace_close')
+            end = token.pos+token.len
+            templates.append(w.make_node(LatexCharsNode,parsing_state=parsing_state,
+                                         chars=w.s[left+1:token.pos],pos=left,len=end-left))
+        return ParsedMacroArgs(argspec=self.argspec+'{{',argnlist=args.argnlist+templates),start,end-start
+
+
+class InlineCodeArgs(MacroStandardArgsParser):
+    def parse_args(self,w,pos,parsing_state=None):
+        args,start,size = super().parse_args(w,pos,parsing_state)
+        left = start+size
+        while left<len(w.s) and w.s[left] in ' \t':
+            left += 1
+        limit = w.s.find('\n',left)
+        if limit<0:
+            limit = len(w.s)
+        opening = w.s[left:left+1]
+        if left>=limit or opening.isspace() or opening.isalnum() or opening in ('\\','%','}'):
+            return args,start,left-start
+        if opening=='{':
+            levels = 1
+            right = left+1
+            while right<limit and levels:
+                levels += (w.s[right]=='{') - (w.s[right]=='}')
+                if levels:
+                    right += 1
+            if levels:
+                return args,start,left-start
+        else:
+            right = w.s.find(opening,left+1,limit)
+            if right<0:
+                return args,start,left-start
+        chars = w.make_node(LatexCharsNode,parsing_state=parsing_state,
+                            chars=w.s[left+1:right],pos=left+1,len=right-left-1)
+        return ParsedMacroArgs(argspec=self.argspec+'{',argnlist=args.argnlist+[chars]),start,right+1-start
 
 
 def context():
@@ -141,6 +205,10 @@ def context():
                         for name,args in VERBATIM.items())
     macros = [MacroSpec(name,args) for name,args in ARGUMENTS.items() if name!='input']
     macros.append(MacroSpec('input',args_parser=InputArgs('{')))
+    macros.extend(MacroSpec(name,args_parser=EnvironmentDeclarationArgs(
+        '*{[[' if name in CLASSIC_ENVIRONMENTS else '{{')) for name in ENVIRONMENT_DECLARATIONS)
+    macros.extend(MacroSpec(name,args_parser=InlineCodeArgs(signature)) for name,signature in
+                  {'mintinline':'*[{','Verb':'*[','lstinline':'['}.items())
     db.add_context_category('hamr-source',macros=macros,environments=environments,prepend=True)
     return db
 
@@ -151,6 +219,10 @@ def arguments(node):
 
 def group(node):
     return node.nodelist if isinstance(node,LatexGroupNode) else [node]
+
+
+def condition_start(name):
+    return bool(name and name.startswith('if') and name!='ifthenelse')
 
 
 @dataclass(frozen=True)
@@ -188,6 +260,12 @@ class Expansion:
     expl3: bool
 
 
+@dataclass(frozen=True)
+class EnvironmentLayout:
+    tag: str | None
+    definition: dict
+
+
 class Projection:
     def __init__(self,include,encoding,root):
         self.include = include
@@ -198,6 +276,9 @@ class Projection:
         self.notes = []
         self.metadata = {}
         self.definitions = {}
+        self.layouts = {}
+        self.code_settings = {}
+        self.inline_aliases = {}
         self.math_macros = {}
         self.macro_origins = {}
         self.inventory = []
@@ -281,6 +362,35 @@ class Projection:
             self.walkers[file.name] = LatexWalker(file.text,latex_context=self.db,tolerant_parsing=False)
         return self.walkers[file.name]
 
+    def render_entry(self,file,chain,*,preamble=False):
+        # Bootstrap literal readers declared before the document begins.
+        if DOCUMENT_START.search(file.text):
+            walker = self.walker(file)
+            prefix = []
+            start = 0
+            conditional = 0
+            while start<len(file.text):
+                try:
+                    token = walker.get_token(start)
+                except LatexWalkerEndOfStream:
+                    break
+                if not conditional and token.tok=='begin_environment' and token.arg=='document':
+                    front = self.render(file,prefix,chain,preamble=True)
+                    body = walker.get_latex_nodes(pos=token.pos,read_max_nodes=1)[0]
+                    return front+self.render(file,body,chain,preamble=True)
+                part,pos,size = walker.get_latex_nodes(pos=start,read_max_nodes=1)
+                if not size:
+                    break
+                for node in part:
+                    if isinstance(node,LatexMacroNode):
+                        name = node.macroname
+                        conditional = max(0,conditional+condition_start(name)-(name=='fi'))
+                prefix.extend(part)
+                start = pos+size
+        nodes = self.parsed(file)
+        return self.render(file,nodes,chain,preamble=preamble or any(
+            isinstance(node,LatexMacroNode) and node.macroname=='documentclass' for node in nodes))
+
     def bound_nodes(self,file,nodes):
         """Bind calls in reading order, retaining the original source interval."""
         cursor = 0
@@ -350,8 +460,15 @@ class Projection:
             return self.branch(file,node,depth)
         if self.expansion_depth:
             return self.issue(file,node,f'The LaTeX command \\{name} needs a verified reading.',True)
-        if name=='verb' and args:
-            return '<code>'+escape(getattr(args[-1],'chars',file.raw(args[-1])))+'</code>'
+        if name in INLINE_CODE or name in self.inline_aliases:
+            value = self.inline_code(file,node)
+            if value is None:
+                return self.issue(file,node,'This LaTeX code example needs its literal boundaries or escapes verified.',True)
+            where = file.location(node)
+            declaration = self.inline_aliases.get(name)
+            if declaration:
+                self.inventory.append({'kind':'latex_inline_code','definition':declaration[2],**where})
+            return self.tag('code',where,escape(value),inline_location=where)
         if name=='footnote' and args and not self.inside_notes:
             ident = f'latex-note-{len(self.notes)+1}'
             self.inside_notes = True
@@ -437,7 +554,11 @@ class Projection:
         name = node.macroname
         if name.startswith('IfBoolean') and mode!='*':
             raise ValueError('A LaTeX boolean test needs a declared star argument.')
-        matched = value is None if name.startswith('IfNoValue') else value is not None
+        if name.startswith('IfBoolean'):
+            matched = value is not None
+        else:
+            missing = value is None and mode!='*'
+            matched = missing if name.startswith('IfNoValue') else not missing
         if len(branches)==2:
             return self.inline(file,group(branches[0 if matched else 1]),depth+1)
         return self.inline(file,group(branches[0]),depth+1) if matched==name.endswith('T') else ''
@@ -453,6 +574,9 @@ class Projection:
         for index,(mode,value) in enumerate(zip(command.signature,supplied)):
             if index==0 and value is None and command.default is not None:
                 bindings.append((command.file,command.default,None,mode))
+            elif previous is not None and mode!='*' and isinstance(value,LatexGroupNode) and (
+                    slot:=PARAMETER.fullmatch(file.raw(value)[1:-1])):
+                bindings.append(self.argument(int(slot[1])))
             else:
                 bindings.append((file,value,previous,mode))
         self.parameters = Expansion(bindings,command.expl3)
@@ -484,7 +608,107 @@ class Projection:
                 return self.issue(file,node,'LaTeX includeonly needs a literal list of source members.')
         elif name in DECLARATIONS:
             self.define(file,node)
+        elif name in ENVIRONMENT_DECLARATIONS:
+            self.define_environment(file,node)
+        elif name in CODE_SETTINGS:
+            self.set_code_options(file,node)
+        elif name in INLINE_DECLARATIONS:
+            self.define_inline_code(file,node)
         return ''
+
+    def set_code_options(self,file,node):
+        args = node.nodeargd.argnlist
+        language = file.raw(args[0])[1:-1].strip() if len(args)==2 and args[0] is not None else ''
+        options = self.code_settings.setdefault((node.macroname,language),{})
+        options.update(self.code_options(file.raw(args[-1])[1:-1]))
+
+    @staticmethod
+    def code_options(text):
+        options = {}
+        for key,value in CODE_ESCAPE.findall(text):
+            value = (value or 'true').strip()
+            braced = re.fullmatch(r'\{([^{}]*)\}',value)
+            options[key] = braced[1] if braced else value
+        return options
+
+    def define_inline_code(self,file,node):
+        alias,lexer,option_set = node.nodeargd.argnlist
+        language = file.raw(lexer)[1:-1].strip()
+        name = file.raw(alias)[1:-1].strip() if alias is not None else language+'inline'
+        if not re.fullmatch(r'[A-Za-z]+',name) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9_+-]*',language):
+            return
+        if self.db.get_macro_spec(name) is not None or name in self.definitions:
+            return
+        options = self.code_options(file.raw(option_set)[1:-1])
+        self.inline_aliases[name] = (language,options,file.location(node))
+        self.db.add_context_category('hamr-inline-'+name,prepend=True,
+                                     macros=[MacroSpec(name,args_parser=InlineCodeArgs('*['))])
+
+    def inline_code(self,file,node):
+        name = node.macroname
+        if name=='verb':
+            return getattr(node.nodeargd,'verbatim_text',None)
+        if not isinstance(node.nodeargd,ParsedMacroArgs):
+            return None
+        args = node.nodeargd.argnlist
+        alias = self.inline_aliases.get(name)
+        count = 3 if alias else {'mintinline':4,'Verb':3,'lstinline':2}[name]
+        if len(args)!=count or not isinstance(args[-1],LatexCharsNode):
+            return None
+        opt = args[-3] if name=='mintinline' else args[-2]
+        options = {}
+        if name=='mintinline' or alias:
+            language = alias[0] if alias else file.raw(args[-2])[1:-1].strip()
+            for key in ('setminted','setmintedinline'):
+                options.update(self.code_settings.get((key,''),{}))
+                options.update(self.code_settings.get((key,language),{}))
+            if alias:
+                options.update(alias[1])
+        elif name=='lstinline':
+            options.update(self.code_settings.get(('lstset',''),{}))
+        if opt is not None:
+            options.update(self.code_options(file.raw(opt)[1:-1]))
+        code = args[-1].chars
+        for key,value in options.items():
+            if value in ('','false','none'):
+                continue
+            if key=='mathescape' and '$' in code:
+                return None
+            if key in ('texcl','texcomments'):
+                return None
+            if key in ('escapeinside','escapechar'):
+                marks = re.findall(r'\{([^{}]+)\}',value) or list(value)
+                if any(mark in code for mark in marks):
+                    return None
+        return code
+
+    def define_environment(self,file,node):
+        args = node.nodeargd.argnlist
+        opening,closing = args[-2:]
+        signature = None
+        if node.macroname in CLASSIC_ENVIRONMENTS:
+            _,target,count,default = args[:-2]
+            argless = default is None and (count is None or file.raw(count)[1:-1].strip()=='0')
+        else:
+            target,spec = args[:-2]
+            spec = file.raw(spec)[1:-1]
+            argless = not spec.strip()
+            signature = verbatim_environment(opening.chars,closing.chars,spec)
+        name = file.raw(target)[1:-1].strip()
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9*@-]*',name):
+            return
+        if node.macroname=='ProvideDocumentEnvironment' and (
+                name in self.layouts or name in TRANSPARENT|EQUATIONS|VERBATIM.keys()
+                or self.db.get_environment_spec(name) is not None):
+            return
+        tag = layout_environment(opening.chars,closing.chars) if (
+            argless and opening.len+closing.len<=4096) else None
+        if signature is not None and self.db.get_environment_spec(name) is None:
+            self.db.add_context_category('hamr-verbatim-'+name,prepend=True,
+                                         environments=[EnvironmentSpec(name,args_parser=LiteralEnvironmentArgs(
+                                             name,signature,line_end=True))])
+            tag = 'verbatim_source'
+        self.layouts[name] = EnvironmentLayout(tag,file.location(node))
 
     def define(self,file,node,*,expl3=False):
         if node.macroname in CLASSIC:
@@ -518,17 +742,35 @@ class Projection:
         if target:=DEFINITION_TARGET.match(file.text,start):
             name = target[1]
             self.definitions.pop(name,None)
+            self.layouts.pop(name,None)
+            if name.startswith('end'):
+                self.layouts.pop(name[3:],None)
             self.math_macros[name] = None
             self.macro_origins[name] = {'command':name,**file.location(node.pos,target.end())}
 
     @contextmanager
     def macro_scope(self):
-        definitions, macros, origins = self.definitions,self.math_macros,self.macro_origins
+        definitions, macros, origins, layouts = self.definitions,self.math_macros,self.macro_origins,self.layouts
+        settings = self.code_settings
         self.definitions,self.math_macros,self.macro_origins = definitions.copy(),macros.copy(),origins.copy()
+        self.layouts = layouts.copy()
+        self.code_settings = {key:value.copy() for key,value in settings.items()}
         try:
             yield
         finally:
-            self.definitions,self.math_macros,self.macro_origins = definitions,macros,origins
+            self.definitions,self.math_macros,self.macro_origins,self.layouts = definitions,macros,origins,layouts
+            self.code_settings = settings
+
+    def literal_end(self,file,start,end):
+        try:
+            nodes,_,_ = self.walker(file).get_latex_nodes(pos=start,read_max_nodes=1)
+            if nodes and nodes[0].nodeargd and nodes[0].nodeargd.argnlist[-1:] and (
+                    isinstance(nodes[0].nodeargd.argnlist[-1],LatexCharsNode)):
+                return nodes[0].pos+nodes[0].len
+        except (LatexWalkerParseError,RecursionError):
+            pass
+        line = file.text.find('\n',end)
+        return len(file.text) if line<0 else line
 
     def package(self,file,node,chain):
         names = self.literal_arg(node,file)
@@ -548,7 +790,8 @@ class Projection:
             except Error:
                 continue
             self.inventory.append({'kind':'latex_style_package','target':path,**file.location(node)})
-            for position,expl3 in package_statements(style.text):
+            for position,expl3 in package_statements(
+                    style.text,lambda start,end:self.literal_end(style,start,end),self.inline_aliases):
                 try:
                     statements,_,_ = self.walker(style).get_latex_nodes(pos=position,read_max_nodes=1)
                 except (LatexWalkerParseError,RecursionError):
@@ -560,6 +803,12 @@ class Projection:
                     self.package(style,declaration,[*chain,path])
                 elif declaration.macroname in DECLARATIONS:
                     self.define(style,declaration,expl3=expl3)
+                elif declaration.macroname in ENVIRONMENT_DECLARATIONS:
+                    self.define_environment(style,declaration)
+                elif declaration.macroname in CODE_SETTINGS:
+                    self.set_code_options(style,declaration)
+                elif declaration.macroname in INLINE_DECLARATIONS:
+                    self.define_inline_code(style,declaration)
                 elif declaration.macroname in OPAQUE_DEFINITIONS:
                     self.undefine_reading(style,declaration)
 
@@ -573,10 +822,15 @@ class Projection:
             if name in chain or len(chain)>=24:
                 raise Error('latex_include',f'Circular or deeply nested LaTeX include {name!r}.')
             child = File.make(name,decode_latex(data,self.encoding))
-            nodes = self.parsed(child)
+            if preamble:
+                body = self.render_entry(child,[*chain,name],preamble=True)
+            else:
+                nodes = self.parsed(child)
         except (Error,LatexWalkerParseError,RecursionError) as exc:
             return self.issue(file,node,f'LaTeX include needs source review. {exc}')
         self.inventory.append({'kind':'latex_include','status':'included','target':name,**file.location(node)})
+        if preamble:
+            return body
         return self.render(child,nodes,[*chain,name],preamble=preamble,flow=flow)
 
     def table(self,file,node):
@@ -635,6 +889,18 @@ class Projection:
     def environment(self,file,node,chain):
         name = node.environmentname
         where = file.location(node)
+        if layout:=self.layouts.get(name):
+            if layout.tag=='verbatim_source' and isinstance(node.nodeargd,ParsedVerbatimArgs):
+                code = self.tag('pre',where,escape(node.nodeargd.verbatim_text),source_control=True,
+                                environment_definition=layout.definition)
+                return code+self.issue(file,node,f'The generated output of LaTeX {name!r} needs a verified reading.')
+            if layout.tag and name not in VERBATIM and (body:=self.code_display(file,node.nodelist)):
+                return self.tag('pre',where,body,environment_definition=layout.definition)
+            if layout.tag in ('div','blockquote') and name not in VERBATIM:
+                with self.macro_scope():
+                    body = self.render(file,node.nodelist,chain)
+                return self.tag(layout.tag,where,body,environment_definition=layout.definition)
+            return self.issue(file,node,f'The LaTeX {name!r} environment needs a verified reading.')
         if name in VERBATIM:
             arg = getattr(node.nodeargd,'verbatim_text','')
             return self.tag('pre',where,escape(arg))
@@ -651,6 +917,25 @@ class Projection:
             with self.macro_scope():
                 return self.tag('div' if name in TRANSPARENT else 'blockquote',where,self.render(file,node.nodelist,chain))
         return self.issue(file,node,f'The LaTeX {name!r} environment needs a verified reading.')
+
+    def code_display(self,file,nodes):
+        pieces = []
+        for item in nodes:
+            if isinstance(item,LatexCommentNode) or isinstance(item,LatexCharsNode) and not item.chars.strip():
+                continue
+            if not isinstance(item,LatexMacroNode):
+                return None
+            if item.macroname=='\\':
+                pieces.append('\n')
+            elif (item.macroname in INLINE_CODE or item.macroname in self.inline_aliases) and (
+                    code:=self.inline_code(file,item)) is not None:
+                pieces.append(escape(code))
+            elif item.macroname=='texttt' and arguments(item) and all(
+                    isinstance(child,LatexCharsNode) for child in group(arguments(item)[-1])):
+                pieces.append(self.inline(file,group(arguments(item)[-1])))
+            else:
+                return None
+        return ''.join(pieces).strip('\n')
 
     def assets(self,file,node):
         try:
@@ -687,7 +972,7 @@ class Projection:
         for node in self.bound_nodes(file,nodes):
             name = node.macroname if isinstance(node,LatexMacroNode) else None
             args = arguments(node) if name else ()
-            opens_condition = name and (name=='if' or name.startswith('if') and name!='ifthenelse')
+            opens_condition = condition_start(name)
             if conditional:
                 conditional += bool(opens_condition) - (name=='fi')
                 continue
@@ -709,8 +994,13 @@ class Projection:
                 output.append(self.include_text(file,node,chain,preamble))
             elif name in PACKAGE_COMMANDS:
                 self.package(file,node,chain)
-            elif name in METADATA|{'includeonly'}|DECLARATIONS:
+            elif name in METADATA|{'includeonly'}|DECLARATIONS|ENVIRONMENT_DECLARATIONS|CODE_SETTINGS:
                 output.append(self.setup(file,node))
+            elif name in INLINE_DECLARATIONS:
+                if preamble:
+                    output.append(self.setup(file,node))
+                else:
+                    append(node,self.issue(file,node,'This inline LaTeX code declaration needs source review.',True))
             elif name in OPAQUE_DEFINITIONS:
                 self.undefine_reading(file,node)
                 if not preamble:
@@ -722,6 +1012,12 @@ class Projection:
                     output.append(self.issue(file,node,'Generated bibliography needs an authored or exported reading.'))
             elif preamble or isinstance(node,LatexCommentNode):
                 continue
+            elif isinstance(node,LatexEnvironmentNode) and (
+                    layout:=self.layouts.get(node.environmentname)) and layout.tag=='transparent':
+                self.inventory.append({'kind':'latex_layout_environment','definition':layout.definition,
+                                       **file.location(node)})
+                with self.macro_scope():
+                    self.render(file,node.nodelist,chain,flow=(output,paragraph))
             elif name=='printbibliography':
                 flush()
                 output.append(self.issue(file,node,'Generated bibliography needs an authored or exported reading.'))
@@ -778,10 +1074,7 @@ def latex_document(text,name,sha,title,*,include=None,encoding=None):
     renderer = Projection(include,encoding,name)
     source = File.make(name,text)
     try:
-        nodes = renderer.parsed(source)
-        preamble = any(isinstance(node,LatexEnvironmentNode) and node.environmentname=='document' or
-                       isinstance(node,LatexMacroNode) and node.macroname=='documentclass' for node in nodes)
-        body = renderer.render(source,nodes,[name],preamble=preamble)
+        body = renderer.render_entry(source,[name])
         notes = renderer.notes
     except (LatexWalkerParseError,RecursionError) as exc:
         start = getattr(exc,'pos',0) or 0

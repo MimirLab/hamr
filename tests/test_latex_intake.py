@@ -356,3 +356,146 @@ The value is \value.
     result = plan(inspect_source(main))
     assert not result['issues']
     assert say(result)==['The value is x to the power of 2.']
+
+
+def test_inline_literals_and_layout_wrappers_preserve_source_order(tmp_path):
+    main = tmp_path/'book.tex'
+    source = r"""\documentclass{article}
+\usepackage{sample}
+\begin{document}
+\begin{chapterintro}
+The sea is still.
+\end{chapterintro}
+
+The \begin{spellout}\mintinline{latex}|\begin|\end{spellout} marker is literal.
+
+\begin{commands}
+\texsnippet|\end{document}|\\
+\lstinline!}{!
+\end{commands}
+
+The harbor lights come on.
+\end{document}
+"""
+    main.write_text(source,encoding='utf-8')
+    style = r"""\newmintinline[texsnippet]{latex}{}
+\NewDocumentEnvironment{spellout}{}{}{}
+\newenvironment{chapterintro}{\sffamily}{\vspace{2em minus 1em}}
+\NewDocumentEnvironment{commands}{}{
+ \begin{trivlist}\item\relax
+ \begin{tabular}{|l|}\hline\ignorespaces
+}{\\\hline\end{tabular}\end{trivlist}}
+\verb|\RequirePackage{ignored}|
+"""
+    (tmp_path/'sample.sty').write_text(style,encoding='utf-8')
+    (tmp_path/'ignored.sty').write_text(r'\newcommand{\marker}{Secret}',encoding='utf-8')
+    archive = tmp_path/'edition.zip'
+    with ZipFile(archive,'w') as target:
+        target.writestr('edition/book.tex',source)
+        target.writestr('edition/sample.sty',style)
+    for path in (main,tmp_path,archive):
+        document = inspect_source(path)
+        result = plan(document)
+        assert not result['issues']
+        assert len(result['utterances'])==4
+        assert result['utterances'][0]['text']=='The sea is still.'
+        assert result['utterances'][-1]['text']=='The harbor lights come on.'
+        prose = next(block for block in document.blocks if 'marker is literal' in block.source)
+        assert prose.source==r'The \begin marker is literal.'
+        assert any(span['kind']=='literal' and span['source']==r'\begin'
+                   for span in prose.locator['inline_semantics'])
+        code = next(block for block in document.blocks if block.role=='code')
+        assert code.source=='\\end{document}\n}{'
+        origin = code.locator['environment_definition']
+        assert Path(origin['source_file']).name=='sample.sty'
+        start,end = origin['character_range']
+        assert style[start:end].startswith(r'\NewDocumentEnvironment{commands}')
+        assert not any(Path(row['member']).name=='ignored.sty' for row in document.metadata['source_resources'])
+
+
+def test_generated_example_preserves_raw_input_without_lexing_it_as_book(tmp_path):
+    main = tmp_path/'book.tex'
+    main.write_text(r"""\documentclass{book}
+\usepackage{sample}
+\begin{document}
+The first sentence is complete.
+
+\begin{demo}[narrow]
+\end{document}
+Unbalanced { input and example text \end{demo} are literal.
+\end{demo}
+
+The next sentence is still present.
+\end{document}
+""",encoding='utf-8')
+    (tmp_path/'sample.sty').write_text(r"""\ExplSyntaxOn
+\NewDocumentEnvironment{demo}{!o}{
+  \verbatim_set_processline:N \collect_example:n
+  \verbatim_start:
+}{\produce_example:}
+\ExplSyntaxOff
+""",encoding='utf-8')
+    document = inspect_source(main)
+    result = plan(document)
+    assert len(result['issues'])==1
+    assert result['issues'][0]['reason']=="The generated output of LaTeX 'demo' needs a verified reading."
+    assert say(result)==['The first sentence is complete.','The next sentence is still present.']
+    example = next(block for block in document.blocks if 'Unbalanced' in block.source)
+    assert example.role=='navigation'
+    assert example.source.startswith(r'\end{document}')
+    assert example.locator['source_control'] is True
+
+
+def test_forwarded_missing_empty_and_star_arguments_have_distinct_meaning(tmp_path):
+    main = tmp_path/'book.tex'
+    main.write_text(r"""\documentclass{article}
+\NewDocumentCommand{\labeltext}{m}{\IfNoValueTF{#1}{absent}{present}}
+\NewDocumentCommand{\wrapper}{o}{\labeltext{#1}}
+\NewDocumentCommand{\startext}{m}{\IfBooleanTF{#1}{open}{closed}}
+\NewDocumentCommand{\starwrapper}{s}{\startext{#1}}
+\begin{document}
+The option is \wrapper. The empty option is \wrapper[].
+The gate is \starwrapper*. The door is \starwrapper.
+\end{document}
+""",encoding='utf-8')
+    result = plan(inspect_source(main))
+    assert not result['issues']
+    assert ' '.join(say(result))=='The option is absent. The empty option is present. The gate is open. The door is closed.'
+
+
+def test_literal_display_retains_unverified_rendered_escapes_and_layout_text(tmp_path):
+    main = tmp_path/'book.tex'
+    main.write_text(r"""\documentclass{article}
+\setminted{escapeinside=«»}
+\NewDocumentEnvironment{dynamic}{}{\sffamily The beginning.}{}
+\begin{document}
+This example uses \mintinline{latex}|«\textbf{an escape}»|.
+
+\begin{dynamic}The middle.\end{dynamic}
+
+The ending is present.
+\end{document}
+""",encoding='utf-8')
+    result = plan(inspect_source(main))
+    assert len(result['issues'])==2
+    assert 'escapes verified' in result['issues'][0]['reason']
+    assert "LaTeX 'dynamic' environment" in result['issues'][1]['reason']
+    assert say(result)==['The ending is present.']
+
+
+def test_document_bootstrap_keeps_conditional_body_unresolved_and_ignores_suffix(tmp_path):
+    main = tmp_path/'book.tex'
+    main.write_text(r"""\documentclass{article}
+\iffalse
+\begin{document}This branch is unverified.\end{document}
+\fi
+\newmintinline[snippet]{latex}{}
+\begin{document}
+The \snippet|\begin| marker appears here.
+\end{document}
+\begin{ignored
+""",encoding='utf-8')
+    result = plan(inspect_source(main))
+    assert len(result['issues'])==1
+    assert 'conditional' in result['issues'][0]['reason']
+    assert say(result)==[r'The \begin marker appears here.']
