@@ -127,6 +127,8 @@ Turn an Org manuscript into an audiobook with its chosen outline, footnotes, tab
 
 Read AsciiDoc books with their chapter includes, tables, footnotes, and callout explanations. The parser ships with Hamr and works offline. [AsciiDoc intake](docs/INTAKE.md#asciidoc)
 
+Open LaTeX manuscripts or ZIPs of their sources. Hamr follows local chapter includes, keeps sentences together across files, and reads supported notes and equations through the usual narration pipeline. [LaTeX intake](docs/INTAKE.md#latex)
+
 Open WordStar 7 manuscripts with their saved headings, quotes, and supported notes. The built-in reader also works with WordStar documents stored in ZIP archives. [WordStar intake](docs/INTAKE.md#wordstar-7)
 
 FictionBook 2 and 3 keep linked notes and verse in the authored reading. Open a FictionBook 3 archive directly to follow its chapter text and retain linked illustrations in the source companion. [FictionBook intake](docs/INTAKE.md#source-readers)

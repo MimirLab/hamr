@@ -34,7 +34,7 @@ NATIVE = {
     '.wpd':'wordperfect', '.wp':'wordperfect', '.wp4':'wordperfect', '.wp5':'wordperfect', '.wp6':'wordperfect',
     '.hqx':'classic-mac',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
-    '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc',
+    '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc', '.tex':'latex',
     '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
@@ -43,7 +43,7 @@ PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp','pages')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','xml-book','pml','classic-mac'))
+DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -392,7 +392,7 @@ def zip_source(path, entry, override):
                         return Source(route)
             return archive_publications(archive,'zip',entry,scan_only=override=='scan',
                                         textpack=path.suffix.casefold()=='.textpack' or override=='textbundle',
-                                        package_route=package_route)
+                                        package_route=package_route, latex_only=override=='latex')
     except BadZipFile as exc:
         raise Error('unreadable_archive', 'The ZIP archive could not be read.') from exc
 
@@ -402,10 +402,11 @@ def wrapped_source(path,kind,entry,override=None):
 
     with containers(path,kind) as archive:
         return archive_publications(archive,kind,entry,scan_only=path.suffix.lower() in ('.cb7','.cbr','.cbt'),
-                                    package_route=override if override in PACKAGE_FOLDERS else None)
+                                    package_route=override if override in PACKAGE_FOLDERS else None,
+                                    latex_only=override=='latex')
 
 
-def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,package_route=None):
+def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,package_route=None,latex_only=False):
     from .classic_mac_intake import archive_books as mac_books
     from .document_intake import xml_route
     from .publication_package import archive_packages
@@ -455,6 +456,18 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
             images.append(item)
         elif detected and not scan_only:
             documents.append((item,detected))
+    if latex_only:
+        manifests,images,packages=[],[],[]
+        documents=[item for item in documents if item[1]=='latex']
+    if entry is None and any(route=='latex' for _,route in documents):
+        from .latex_intake import project_entry
+
+        def latex_root(item):
+            with archive.open_member(item) as stream:
+                return project_entry(stream.read(64*1024))
+        roots = [item.index for item,route in documents if route=='latex' and latex_root(item)]
+        if roots:
+            documents=[(item,route) for item,route in documents if route!='latex' or item.index in roots]
     candidates = {}
     if manifests:
         for item in manifests:
@@ -480,9 +493,9 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','pml','rocket','wordstar',*PALM_ROUTES):
-        raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','org','asciidoc','pml','wordstar',*PALM_ROUTES) and source.member_name is None:
+    if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar',*PALM_ROUTES):
+        raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','org','asciidoc','latex','pml','wordstar',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -525,6 +538,19 @@ def _describe(path,entry,format,offline):
             read_manifest(manifest)
             return Source('scan','directory',route_override=format,offline=offline)
         pages,books = directory_members(path)
+        if format=='latex':
+            pages,books=[],[(name,route) for name,route in books if route=='latex']
+        if entry is None and any(route=='latex' for _,route in books):
+            from .latex_intake import project_entry
+
+            roots = []
+            for name,route in books:
+                if route=='latex':
+                    with relative_file(path,name).open('rb') as stream:
+                        if project_entry(stream.read(64*1024)):
+                            roots.append(name)
+            if roots:
+                books=[(name,route) for name,route in books if route!='latex' or name in roots]
         if format in DESCRIPTOR_FOLDERS:
             pages,books = [],[(name,route) for name,route in books if route==format]
         inputs = ([('pages',f'Image sequence ({len(pages)} files)')] if pages else [])
@@ -547,7 +573,7 @@ def _describe(path,entry,format,offline):
             if result.kind=='directory' and result.route in DESCRIPTOR_FOLDERS and selected.is_file():
                 parent = selected.parent.relative_to(path)
                 return replace(result,member_name=parent.as_posix() if parent.parts else None)
-            return replace(result,member_name=name) if result.kind=='directory' or result.route=='xml-book' else result
+            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex') else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
@@ -627,6 +653,8 @@ def _describe(path,entry,format,offline):
 
 
 def _local_source(path, options, source=None):
+    if path.is_dir() and source and source.kind=='file' and source.route=='latex' and source.member_name:
+        return relative_file(path,source.member_name)
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if (source.route=='scrivener' or source.route in DESCRIPTOR_FOLDERS) and path.is_file():
             return path.parent
@@ -847,7 +875,7 @@ def preview(path,cache,**options):
 
 
 def capture_dependencies(path,target_dir,source):
-    if source.kind=='file' and source.route in ('rst','org','asciidoc'):
+    if source.kind=='file' and source.route in ('rst','org','asciidoc','latex'):
         from .linked_text_intake import capture_dependencies as linked
 
         return linked(path,target_dir,source)

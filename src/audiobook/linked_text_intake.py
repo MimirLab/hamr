@@ -23,6 +23,10 @@ def adapter(route):
         from .asciidoc_intake import DEPENDENCIES, asciidoc_document, decode_asciidoc
 
         return decode_asciidoc,asciidoc_document,DEPENDENCIES
+    if route=='latex':
+        from .latex_intake import DEPENDENCIES, decode_latex, latex_document
+
+        return decode_latex,latex_document,DEPENDENCIES
     if route=='rst':
         from .rst_intake import decode_rst, rst_document
 
@@ -132,6 +136,9 @@ def read_linked_archive(path,source,sha):
         origin = used.get(block.locator.get('source_file'),main)
         block.locator.update(member=origin.name,archive_entry=origin.index,
                              location_id=key([sha,origin.index,block.id])[:20])
+        for fragment in block.locator.get('source_fragments',()):
+            if member:=used.get(fragment.get('source_file')):
+                fragment.update(member=member.name,archive_entry=member.index)
     doc.metadata['archive_entry'] = {'index':main.index,'name':main.name}
     if len(used)>1:
         resources = [member_location(sha,item,'text' if name==logical else 'include')|

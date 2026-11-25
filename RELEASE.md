@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev63
+
+- Open a LaTeX manuscript, source folder, or archive with the built-in reader. Hamr follows literal chapter includes and reads supported notes, lists, equations, and tables through the shared planner. Text that spans an input file stays together in narration and points back to its source locations. [LaTeX intake](docs/INTAKE.md#latex)
+
 # hamr 0.4.9.dev62
 
 - Honor explicitly decorative EPUB images while keeping missing descriptions and damaged text in source review. Retain an authored em-dash cutoff at the end of a spine item before reviewing damage in the next item.

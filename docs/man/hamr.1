@@ -274,7 +274,11 @@ The resident WordStar 7 reader opens .ws and .ws7 manuscripts directly,
 from a folder, or in an archive. It follows saved paragraph styles and
 keeps exact byte ranges in the audio companion.
 .PP
-For plain text, AsciiDoc, Org, reStructuredText, TextBundle, WordStar, or compiled HTML Help with a known character encoding, pass
+The built-in LaTeX reader opens .tex files, folders, and archives and follows
+literal local chapter includes. It reads prose, notes, lists, supported
+equations, and simple tables. Source review locates unresolved content.
+.PP
+For plain text, AsciiDoc, Org, LaTeX, reStructuredText, TextBundle, WordStar, or compiled HTML Help with a known character encoding, pass
 \fB\-\-encoding NAME\fR, for example \fB\-\-encoding windows-1252\fR.
 .PP
 .B hamr source BOOK_DIRECTORY LOCATION_ID --output FILE

@@ -46,7 +46,7 @@ def materialized_member(path,kind,index,work):
 def parse(path,source,sha,cache,title):
     from .importers import ADAPTERS, MAX_INPUT, markdown, plain
 
-    if source.route in ('rst','org','asciidoc'):
+    if source.route in ('rst','org','asciidoc','latex'):
         from .linked_text_intake import read_linked_archive, read_linked_file
 
         if source.kind.endswith('-member'):

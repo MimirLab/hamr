@@ -27,6 +27,7 @@ Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RT
 | reStructuredText and Sphinx projects | Hamr reads paragraphs, notes, equations and local includes in `.rst` documents. Open a Sphinx source folder or archive to follow its declared page order. A built single-file HTML export also works. |
 | Org mode | Open an `.org` file, a folder, or a ZIP. Hamr follows selected headings, notes, lists, tables and local includes. [Org mode intake](#org-mode) |
 | AsciiDoc | Open an `.adoc`, `.asciidoc` or recognized `.asc` book, including from a folder or archive. [AsciiDoc intake](#asciidoc) |
+| LaTeX | Open a `.tex` manuscript, a source folder, or an archive. The built-in reader follows local chapter includes and reads authored headings, prose, notes, lists, simple tables and supported equations. [LaTeX intake](#latex) |
 | WordStar 7 for DOS | Open an original `.ws` or `.ws7` manuscript, a folder containing one, or an archive. Hamr also recognizes the saved file header. [WordStar intake](#wordstar-7) |
 | Scrivener projects and backups | Open the `.scriv` folder, its root `.scrivx` file, or the backup ZIP. Hamr reads the manuscript’s RTF documents in Draft binder order, using the binder labels for chapter navigation. |
 | DTBook and NIMAS | Open DTBook XML, a NIMAS source folder or `.opf`, or the original ZIP. Hamr follows the package's declared reading order. Printed page numbers and the marked table of contents stay in the companion. |
@@ -121,6 +122,16 @@ hamr open ~/Documents/Manuscript.adoc --voice cast:james-burke --output ~/Audiob
 The bundled parser follows the manuscript's local attributes, conditionals, includes, notes, tables, captions, and callout explanations. For a loose manuscript, keep local include files beside it or below it. Use an archive of the common parent if it includes files from sibling folders. If the archive contains several eligible manuscripts, choose the main file from Hamr's list. The companion can recover the complete original included files after the book is moved.
 
 Hamr recognizes `.asc` when it finds clear AsciiDoc source syntax. For an older file with an ambiguous header, use `--format asciidoc`. The parser runs locally. Unavailable includes appear in source review with their location. Open the author's rendered HTML or EPUB when the edition depends on remote includes or custom extensions. [AsciiDoc includes](https://docs.asciidoctor.org/asciidoc/latest/directives/include/)
+
+## LaTeX
+
+```sh
+hamr open ~/Documents/Manuscript/main.tex --voice cast:james-burke --output ~/Audiobooks
+```
+
+Keep the included files with the main manuscript. You can open the source folder or ZIP directly. Hamr looks for a manuscript that begins with a `\documentclass` declaration. If several publications are available, use `--entry` to select one. The reader follows literal local `\input` and `\include` paths in authored order and honors `\includeonly`. The companion keeps the source files and locations. Use `--encoding` for a project with a known legacy encoding.
+
+Hamr reads the source without running a TeX compiler. Code listings use the usual companion policy. Source review locates unresolved commands, citations, missing includes, and constructs that need a verified reading. For manuscripts that rely on custom packages or generated text, open the author's compiled PDF or a verified HTML export. [LaTeX source documentation](https://latex-project.org/help/documentation/source2e.pdf)
 
 ## WordStar 7
 
