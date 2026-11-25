@@ -275,3 +275,20 @@ def test_scoped_name_spelling_preserves_other_words_and_name_positions():
     assert notation_observation(expected,'A simple, simple example.')=='A simple, simple example.'
     assert notation_observation(expected,'A complex simpy example.')=='A complex simpy example.'
     assert notation_observation('A simple SimPy example.','A simple simpy example.')=='A simple simpy example.'
+
+
+def test_audio_comparison_matches_apostrophe_s_at_the_same_word_site():
+    from audiobook.speech_compare import notation_observation, shared_residual_sites
+
+    expected = "Everything was the dinosaur’s: Cohen saw the world now."
+    fluid = 'Everything was the dinosaurs, Cohen saw the world now.'
+    whisper = 'Everything was the dinosaurs. Cohen saw the world now.'
+    assert c(notation_observation(expected, fluid)) == c(expected)
+    assert c(notation_observation(fluid, expected)) == c(fluid)
+    assert shared_residual_sites(expected, fluid, whisper) == set()
+    assert c(fluid) != c(expected)
+    for wrong in (fluid.replace('dinosaurs', 'dinosaur'), fluid.replace('dinosaurs', 'monsters'),
+                  fluid.replace('Cohen', 'Morgan'), fluid.replace('was', 'was not')):
+        assert c(notation_observation(expected, wrong)) != c(expected)
+    assert notation_observation("The dinosaur's eyes.", 'Dinosaur saw the dinosaurs.') == 'Dinosaur saw the dinosaurs.'
+    assert notation_observation("We’re done.", 'Were done.') == 'Were done.'

@@ -35,6 +35,7 @@ NATIVE = {
     '.hqx':'classic-mac',
     '.sxw':'office-legacy', '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc',
+    '.ws':'wordstar', '.ws7':'wordstar',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
 PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
@@ -85,6 +86,10 @@ def image_magic(prefix):
 
 def probe(prefix, name):
     suffix = source_suffix(name)
+    if prefix.startswith(b'\x1d\x7d\x00\x00') or suffix in ('.ws','.ws7'):
+        from .wordstar_intake import matches_header
+
+        return 'wordstar' if matches_header(prefix) else None
     if prefix.startswith(b'AT&TFORM') and prefix[12:16] in (b'DJVU',b'DJVM'):
         return 'djvu'
     if prefix.startswith(b'ITSF') and len(prefix)>=8 and int.from_bytes(prefix[4:8],'little') in (2,3):
@@ -467,9 +472,9 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','pml','rocket',*PALM_ROUTES):
-        raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','org','asciidoc','pml',*PALM_ROUTES) and source.member_name is None:
+    if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','pml','rocket','wordstar',*PALM_ROUTES):
+        raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','org','asciidoc','pml','wordstar',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -603,6 +608,11 @@ def _describe(path,entry,format,offline):
     if route=='legacy-ebook' and not prefix.startswith((b'L\0R\0F\0',b'ITOLITLS')):
         raise Error('unsupported_format','The file does not identify a supported legacy ebook.')
     if not route:
+        from .wordstar_intake import WORDSTAR_SUFFIXES
+
+        if suffix in WORDSTAR_SUFFIXES or prefix.startswith(b'\x1d\x7d\x00\x00'):
+            raise Error('source_wordstar_version','The file does not identify a supported WordStar 7 document.',
+                        'Open the original WordStar 7 document or use a readable text export.')
         raise Error('unsupported_format', f'Hamr has no reader for {path.name}.',
                     'Choose EPUB, PDF, an image sequence, or another format listed by hamr agent capabilities.')
     return Source(route,route_override=format,offline=offline)

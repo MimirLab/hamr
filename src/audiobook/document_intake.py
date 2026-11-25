@@ -826,6 +826,10 @@ def read_document(path,source,sha,cache,title):
         elif route=='rtf':
             from .rtf_intake import read_rtf
             read_rtf(data,builder)
+        elif route=='wordstar':
+            from .wordstar_intake import read_wordstar
+
+            read_wordstar(data,builder,source,source.member_name or path.name)
         elif route in ('mhtml','mail'):
             mime_read(data,builder,route)
         elif route=='csv':

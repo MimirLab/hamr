@@ -11,7 +11,7 @@ from .context_forms import MONTHS, duration_pair, money_words
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v48'
+POLICY='bounded-english-composed-scale-typed-v49'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -59,6 +59,7 @@ SPOKEN_CODE_PAIR=re.compile(
     rf'({SPOKEN_DIGIT}(?: {SPOKEN_DIGIT}){{1,7}})\b')
 NAME_OBSERVATIONS = ((re.compile(r'\bSymPy\b'),re.compile(r'\bsimpy\b',re.I)),)
 LEGACY_POSSESSIVE = re.compile(r"(?<=[A-Za-z])\u0313(?=[sS](?!\w))")
+APOSTROPHE_S = re.compile(r"(?P<stem>[a-z]{2,})(?P<mark>['’]?)s", re.I)
 DOTTED_US = re.compile(r'(?<![\w.])U\.S\.(?!\w)')
 SECONDS_MERIDIEM = re.compile(r'(\bseconds?[ \t]+)([AP])[. \t]+M\.?(?!\w)',re.I)
 SHA_LABEL = re.compile(r'(?<!\w)sha[-‐‑– \t]?(1|2|3(?:-(?:224|256|384|512))?|224|256|384|512(?:/(?:224|256))?)'
@@ -132,6 +133,30 @@ def name_observation(expected,observed):
     return observed
 
 
+def apostrophe_s_observation(expected, observed):
+    """Match a written apostrophe at the same spoken stem and s suffix."""
+    expected = LEGACY_POSSESSIVE.sub("'", expected)
+    if not any(mark in expected or mark in observed for mark in ("'", '’')):
+        return observed
+    spellings = {}
+    for token in LEX.finditer(expected):
+        suffix = APOSTROPHE_S.fullmatch(token[0])
+        if suffix and any(context := word_context(expected, *token.span())):
+            key = (suffix['stem'].lower(), context)
+            spellings.setdefault(key, {})[bool(suffix['mark'])] = token[0]
+
+    def match_spelling(token):
+        suffix = APOSTROPHE_S.fullmatch(token[0])
+        if suffix:
+            key = (suffix['stem'].lower(), word_context(observed, *token.span()))
+            forms = spellings.get(key, {})
+            if len(forms) == 1:
+                return forms.get(not bool(suffix['mark']), token[0])
+        return token[0]
+
+    return LEX.sub(match_spelling, observed)
+
+
 def code_pair_observation(expected,observed):
     def digits(words):
         return ''.join(str(SMALL_VALUES[word]) for word in words.split())
@@ -152,6 +177,7 @@ def notation_observation(expected, observed):
     observed=contextual_years(expected,observed)
     observed=domain_notation(expected,observed)
     observed=name_observation(expected,observed)
+    observed=apostrophe_s_observation(expected,observed)
     observed=code_pair_observation(expected,observed)
     families = {match[1]+match[2].lower() for match in SHA_LABEL.finditer(expected)}
     if families:

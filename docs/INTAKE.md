@@ -26,6 +26,7 @@ Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RT
 | reStructuredText and Sphinx projects | Hamr reads paragraphs, notes, equations and local includes in `.rst` documents. Open a Sphinx source folder or archive to follow its declared page order. A built single-file HTML export also works. |
 | Org mode | Open an `.org` file, a folder, or a ZIP. Hamr follows selected headings, notes, lists, tables and local includes. [Org mode intake](#org-mode) |
 | AsciiDoc | Open an `.adoc`, `.asciidoc` or recognized `.asc` book, including from a folder or archive. [AsciiDoc intake](#asciidoc) |
+| WordStar 7 for DOS | Open an original `.ws` or `.ws7` manuscript, a folder containing one, or an archive. Hamr also recognizes the saved file header. [WordStar intake](#wordstar-7) |
 | Scrivener projects and backups | Open the `.scriv` folder, its root `.scrivx` file, or the backup ZIP. Hamr reads the manuscript’s RTF documents in Draft binder order, using the binder labels for chapter navigation. |
 | DTBook and NIMAS | Open DTBook XML, a NIMAS source folder or `.opf`, or the original ZIP. Hamr follows the package's declared reading order. Printed page numbers and the marked table of contents stay in the companion. |
 | Text-bearing DAISY 3 | Open a DAISY 3 folder, `.opf` or ZIP. Hamr reads the DTBook passages in declared SMIL order. Keep the existing audio and synchronization files with the original package. |
@@ -111,6 +112,16 @@ hamr open ~/Documents/Manuscript.adoc --voice cast:james-burke --output ~/Audiob
 The bundled parser follows the manuscript's local attributes, conditionals, includes, notes, tables, captions, and callout explanations. For a loose manuscript, keep local include files beside it or below it. Use an archive of the common parent if it includes files from sibling folders. If the archive contains several eligible manuscripts, choose the main file from Hamr's list. The companion can recover the complete original included files after the book is moved.
 
 Hamr recognizes `.asc` when it finds clear AsciiDoc source syntax. For an older file with an ambiguous header, use `--format asciidoc`. The parser runs locally. Unavailable includes appear in source review with their location. Open the author's rendered HTML or EPUB when the edition depends on remote includes or custom extensions. [AsciiDoc includes](https://docs.asciidoctor.org/asciidoc/latest/directives/include/)
+
+## WordStar 7
+
+```sh
+hamr open ~/Documents/Manuscript.WS --voice cast:james-burke --output ~/Audiobooks
+```
+
+Hamr reads hard paragraphs and soft word wraps, saved heading and quote styles, and supported embedded notes. Print headers and formatting commands stay in the companion. The original document and exact byte ranges remain recoverable after moving the finished book. Use `--encoding cp437` or `--encoding cp850` when you know the intended extended character set.
+
+The reader identifies the WordStar 7 for DOS header, so the original extension can be missing. Graphics stored in separate files and commands that can change the printed content appear in source review. For early or headerless WordStar editions, open a readable text export. [WordStar 7 file format](https://sfwriter.com/wsformat.txt)
 
 ## Numbered passages
 

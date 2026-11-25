@@ -48,7 +48,7 @@ jobs:
       - name: Validate Windows runtime contracts
         run: |
           uv sync --frozen --python 3.12 --extra test
-          uv run --no-sync python -m pytest -q tests/test_runtime_portability.py tests/test_profile_dispatch.py tests/test_org_intake.py tests/test_asciidoc_intake.py tests/test_styled_powers.py tests/test_technical_intake.py
+          uv run --no-sync python -m pytest -q tests/test_runtime_portability.py tests/test_profile_dispatch.py tests/test_org_intake.py tests/test_asciidoc_intake.py tests/test_styled_powers.py tests/test_technical_intake.py tests/test_wordstar_intake.py
           uv build --wheel
           ./install.ps1
           $hamr = Join-Path $env:LOCALAPPDATA 'hamr-app\venv\Scripts\hamr.exe'

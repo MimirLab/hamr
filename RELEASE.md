@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev58
+
+- Open WordStar 7 for DOS manuscripts directly, from a folder, or within an archive. The built-in reader follows saved paragraph styles and notes, restores prose across soft line endings, and preserves the original byte ranges. [WordStar intake](docs/INTAKE.md#wordstar-7)
+- Treat a written apostrophe before the same spoken s suffix as a spelling difference during speech verification. A missing suffix or changed word still needs inspection.
+
 # hamr 0.4.9.dev57
 
 - Compare `50%`, “fifty percent” and “fifty per cent” as the same spoken rate. Preserve a missing unit or changed value. Match plural SHA spellings and equivalent Git terminology during speech checks.
