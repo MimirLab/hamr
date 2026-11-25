@@ -50,6 +50,10 @@ def parse(path,source,sha,cache,title):
         from .textile_intake import read_textile
 
         return read_textile(path,source,sha,title)
+    if source.route=='scribus':
+        from .scribus_intake import read_scribus
+
+        return read_scribus(path,source,sha,title)
     if source.route in ('rst','org','asciidoc','latex'):
         from .linked_text_intake import read_linked_archive, read_linked_file
 

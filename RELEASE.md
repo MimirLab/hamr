@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev85
+
+- Open Scribus SLA and SLA.GZ manuscripts from files, folders, and ZIPs. Follow saved text-frame links once, keep paragraph and style cues, and recover the exact manuscript and local artwork from the finished book.
+
 # hamr 0.4.9.dev84
 
 - Open InDesign IDML exports and InCopy ICML stories directly, in folders, and in ZIPs. Follow article order and page placement, read threaded text once, and retain the original story and layout parts with the audiobook.

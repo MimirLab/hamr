@@ -1,6 +1,7 @@
 """Original member access and snapshots shared by source publications."""
 
 import os
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 import posixpath
 import shutil
@@ -49,6 +50,29 @@ def capture_folder(root,target,files,*,verify=None,include_root=True):
                 copy_stream(source,destination)
         if (verify(listed) if verify else files())!=listed:
             raise Error('source_changed','Publication members changed during capture.')
+
+
+def capture_linked_members(path,area,source,scope,expected,requested):
+    part = path.relative_to(scope).as_posix()
+
+    def listed():
+        result = {part:stamp(relative_file(scope,part).stat())}
+        for target in requested-{part}:
+            try:
+                result[target] = stamp(relative_file(scope,target).stat())
+            except (FileNotFoundError,Error) as error:
+                if isinstance(error,Error) and error.code!='source_member_missing':
+                    raise
+        return result
+
+    members = listed()
+    if members[part]!=expected:
+        raise Error('source_changed','The source manuscript changed while reading its references.')
+    if len(members)==1:
+        return None
+    destination = area/'source.zip'
+    capture_folder(scope,destination,lambda:members,include_root=False,verify=lambda _:listed())
+    return destination,replace(source,kind='zip-member',entry=sorted(members).index(part)+1,member_name=None)
 
 
 def member_bytes(archive,member,limit):
@@ -132,6 +156,7 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     from .pages_intake import archive_books as pages_books
     from .presentation_intake import archive_books as pptx_books
     from .pml_package import archive_books as pml_books
+    from .scribus_intake import archive_claims as scribus_claims
     from .scrivener_intake import archive_books as scrivener_books
     from .sphinx_intake import archive_books as sphinx_books
     from .textbundle import archive_scopes
@@ -188,6 +213,8 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     packages.extend(('xml-book',descriptor,title) for descriptor,title in editions)
     spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in xml_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
-    textile_members = textile_claims(archive,[item for item in remaining if item.index not in xml_members|plain])
+    layout_sources = [item for item in remaining if item.index not in xml_members|plain]
+    textile_members = textile_claims(archive,layout_sources)
+    scribus_members = scribus_claims(archive,layout_sources)
     return (packages,claimed | xps_members | fb3_members | idml_members | pptx_members | odf_members | pages_members |
-            owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain | textile_members)
+            owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain | textile_members | scribus_members)

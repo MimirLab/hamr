@@ -40,6 +40,7 @@ NATIVE = {
     '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc', '.tex':'latex',
     '.textile':'textile',
     '.idml':'idml', '.icml':'icml',
+    '.sla':'scribus', '.sla.gz':'scribus',
     '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
@@ -49,7 +50,7 @@ OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx',
                              'odp','odt','odf-master','pages','idml')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master','textile'))
+DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master','textile','scribus'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -77,7 +78,7 @@ def natural(name):
 
 def source_suffix(name):
     filename = Path(name).name.lower()
-    for compound in ('.abw.gz','.abw.bz2'):
+    for compound in ('.abw.gz','.abw.bz2','.sla.gz'):
         if filename.endswith(compound):
             return compound
     return Path(filename).suffix
@@ -249,6 +250,7 @@ def directory_members(root):
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
     from .pml_package import discover_loose_assets, is_pml
+    from .scribus_intake import discover_loose_assets as scribus_assets, scribus_file
     from .textile_intake import discover_loose_assets as textile_assets, is_textile
     from .xml_package import SUFFIXES as XML_SUFFIXES, loose_assets, loose_document
 
@@ -273,8 +275,11 @@ def directory_members(root):
             relative = path.relative_to(root).as_posix()
             if (is_pml(filename) and not filename.startswith('.') and not path.is_symlink() and path.is_file()):
                 declared.update((here/asset).relative_to(root).as_posix() for asset in discover_loose_assets(path))
-            if is_textile(filename) and not filename.startswith('.') and not path.is_symlink() and path.is_file():
-                linked = {asset for asset in textile_assets(path,root) if asset!=relative and not is_textile(asset)}
+            text_layout = is_textile(filename)
+            if (text_layout or scribus_file(filename)) and not filename.startswith('.') and not path.is_symlink() and path.is_file():
+                discover = textile_assets if text_layout else scribus_assets
+                is_document = is_textile if text_layout else scribus_file
+                linked = {asset for asset in discover(path,root) if asset!=relative and not is_document(asset)}
                 declared.update(linked)
                 markup_claimed.update(linked)
             if (filename.startswith('.') or relative in declared or path.suffix.lower() not in XML_SUFFIXES
@@ -545,7 +550,7 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
     if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar','textile',*PALM_ROUTES):
         raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, Textile, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml',*PALM_ROUTES) and source.member_name is None:
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml','scribus',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -623,7 +628,7 @@ def _describe(path,entry,format,offline):
             if result.kind=='directory' and result.route in DESCRIPTOR_FOLDERS and selected.is_file():
                 parent = selected.parent.relative_to(path)
                 return replace(result,member_name=parent.as_posix() if parent.parts else None)
-            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex','odf-master','textile') else result
+            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex','odf-master','textile','scribus') else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
@@ -703,7 +708,7 @@ def _describe(path,entry,format,offline):
 
 
 def _local_source(path, options, source=None):
-    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master','xml-book','textile') and source.member_name:
+    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master','xml-book','textile','scribus') and source.member_name:
         return relative_file(path,source.member_name)
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if (source.route=='scrivener' or source.route in DESCRIPTOR_FOLDERS) and path.is_file():
@@ -938,6 +943,10 @@ def capture_dependencies(path,target_dir,source,*,root=None):
         from .textile_intake import capture_textile
 
         return capture_textile(path,target_dir,source,scope=root)
+    if source.kind=='file' and source.route=='scribus':
+        from .scribus_intake import capture_scribus
+
+        return capture_scribus(path,target_dir,source,scope=root)
     if source.kind=='file' and source.route=='xml-book':
         from .xml_package import capture_xml
 
@@ -955,5 +964,5 @@ def capture_dependencies(path,target_dir,source,*,root=None):
 def original_name(snapshot,source):
     if source and source.get('kind')=='bundle':
         return 'original.hamr.zip'
-    suffix = source_suffix(snapshot) if source and source.get('route')=='abiword' else Path(snapshot).suffix
+    suffix = source_suffix(snapshot) if source and source.get('route') in ('abiword','scribus') else Path(snapshot).suffix
     return 'original'+suffix

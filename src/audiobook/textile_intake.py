@@ -1,7 +1,6 @@
 """Project resident Textile output into the common structured reading pipeline."""
 
 from collections import defaultdict
-from dataclasses import replace
 from html import escape, unescape
 from pathlib import PurePosixPath
 import re
@@ -12,8 +11,8 @@ from bs4 import BeautifulSoup
 from .core import Error, digest
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, bounded_read, html_read
 from .opf_intake import target
-from .publication_package import bind_member_block, capture_folder, member_bytes, member_location
-from .source_bundle import relative_file, stamp
+from .publication_package import bind_member_block, capture_linked_members, member_bytes, member_location
+from .source_bundle import stamp
 
 
 IMAGE_SYNTAX = re.compile(rb'!|<img\b',re.I)
@@ -240,28 +239,8 @@ def capture_textile(path,area,source,*,scope=None):
     scope = scope if scope is not None else path.parent
     part = path.relative_to(scope).as_posix()
     original = stamp(path.stat())
-    requested = asset_names(bounded_read(path),part,source.encoding)
-
-    def listed():
-        paths = {part:stamp(relative_file(scope,part).stat())}
-        for name in requested-{part}:
-            if is_textile(name):
-                continue
-            try:
-                paths[name] = stamp(relative_file(scope,name).stat())
-            except (Error,FileNotFoundError) as error:
-                if isinstance(error,Error) and error.code!='source_member_missing':
-                    raise
-        return paths
-
-    members = listed()
-    if members[part]!=original:
-        raise Error('source_changed','The Textile manuscript changed while reading its references.')
-    if len(members)==1:
-        return None
-    destination = area/'source.zip'
-    capture_folder(scope,destination,lambda:members,include_root=False,verify=lambda _:listed())
-    return destination,replace(source,kind='zip-member',entry=sorted(members).index(part)+1,member_name=None)
+    requested = {name for name in asset_names(bounded_read(path),part,source.encoding) if not is_textile(name)}
+    return capture_linked_members(path,area,source,scope,original,requested)
 
 
 def read_textile(path,source,sha,title):
