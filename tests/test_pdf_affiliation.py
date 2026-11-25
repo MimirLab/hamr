@@ -47,3 +47,23 @@ def test_independent_caption_and_pause_do_not_supply_a_missing_body_prefix():
     p=plan(Document('Book','pdf','source',blocks),{'document':policy})
     assert {i['block'] for i in p['issues']}=={'hole','tail'}
     assert [u['text'] for u in p['utterances']]==['Illustration caption. a fox by its den.']
+
+
+def test_resolving_caption_affiliation_removes_only_its_import_hold():
+    finding = {'block':'caption','source_blocks':['a','caption','b'],'reason':'An isolated region interrupts the sentence.'}
+    blocks = [
+        Block('a','A complete idea continues',{'format':'pdf','page':1,'rect':[30,15,320,34],'flow_review':finding},issue=finding['reason']),
+        Block('caption','A separate illustration.',{'format':'pdf','page':2,'rect':[20,160,160,194],'flow_review':finding},issue=finding['reason']),
+        Block('b','on the next line.',{'format':'pdf','page':2,'rect':[20,100,350,142],'flow_review':finding},issue=finding['reason']),
+    ]
+    doc=Document('Book','pdf','source',blocks)
+    policy={'document':{'source_sha256':'source','blocks':{
+        'caption':{'action':'speak','verified':True,'expected_source_sha256':digest(blocks[1].source.encode()),
+                   'placement':'caption_after_paragraph','reason':'The illustration has its own caption.'}}}}
+    fresh=plan(doc,policy)
+    assert [u['text'] for u in fresh['utterances']]==[
+        'A complete idea continues on the next line.','Illustration caption. A separate illustration.']
+    assert not fresh['issues']
+    blocks[2].issue='A digit is still unresolved.'
+    held=plan(doc,policy)
+    assert any(i['block']=='b' and 'digit' in i['reason'] for i in held['issues'])

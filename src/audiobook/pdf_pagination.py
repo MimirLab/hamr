@@ -3,10 +3,11 @@
 Only corroborated margin numbers with stable neighbouring sequences qualify.
 The result is a source-review lead, not proof of an edition's completeness.
 """
+from difflib import SequenceMatcher
 import re
 
 
-def gaps(blocks,inventory):
+def folio_values(blocks, inventory):
     pages={i['page']:i for i in inventory};observed={}
     for b in blocks:
         page=b.locator.get('page');rect=b.locator.get('rect');text=b.source.strip()
@@ -17,7 +18,12 @@ def gaps(blocks,inventory):
         final=re.search(r'(?<!\d)(\d{1,4})\s*$',native)
         if not final or final[1]!=text:continue
         observed.setdefault(page,[]).append(int(text))
-    values={page:entries[0] for page,entries in observed.items() if len(entries)==1};result=[]
+    return {page:entries[0] for page,entries in observed.items() if len(entries)==1}
+
+
+def gaps(blocks,inventory):
+    values=folio_values(blocks,inventory)
+    result=[]
     for page in sorted(values):
         if page+1 not in values or values[page+1]<=values[page]+1:continue
         # Missing recognition of one folio does not erase sequence support:
@@ -30,3 +36,35 @@ def gaps(blocks,inventory):
                        'next_printed_folio':values[page+1],'unavailable_printed_pages':[values[page]+1,values[page+1]-1],
                        'reason':'Corroborated printed page numbering skips a range between adjacent PDF pages. Verify source completeness or provide the missing material; no text is reconstructed.'})
     return result
+
+
+def repeats(blocks, inventory):
+    """Report a repeated printed sequence while preserving both sets of pages."""
+    from .pdf_words import words
+
+    values = folio_values(blocks, inventory)
+    pages = {entry['page']:entry for entry in inventory}
+    def matches(left,right):
+        for field in ('native_observation','ocr_observation'):
+            a,b = (words(page.get(field,'')) for page in (left,right))
+            if min(len(a),len(b))<60 or SequenceMatcher(None,a,b,autojunk=False).ratio()<.94:
+                return False
+        return True
+
+    findings = []
+    for first,start in sorted(values.items()):
+        for length in range(2,5):
+            repeated = first+length
+            if values.get(repeated+length)!=start+length:
+                continue
+            if any(values.get(first+i)!=start+i or values.get(repeated+i)!=start+i for i in range(length)):
+                continue
+            if not all(matches(pages[first+i],pages[repeated+i]) for i in range(length)):
+                continue
+            findings.append({'page':repeated,'prior_PDF_page':first,
+                             'first_PDF_pages':[first,repeated-1],
+                             'repeated_PDF_pages':[repeated,repeated+length-1],
+                             'printed_folios':[start,start+length-1],
+                             'reason':'A sequence of printed folios and its text recur in the PDF. Verify which scan to narrate; both are preserved.'})
+            break
+    return findings

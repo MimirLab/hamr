@@ -96,3 +96,37 @@ def test_print_page_marker_is_lookup_data_without_changing_neighboring_words():
 def test_standalone_image_uses_its_authored_aria_description():
     p=plan(epub(book({'c':'<img aria-label="SOURCE_DESCRIPTION"/>'},['c'])))
     assert speech(p)=='SOURCE_DESCRIPTION' and not p['issues']
+
+
+def test_explicit_empty_image_alt_preserves_text_and_missing_descriptions_are_reviewed():
+    body = ('<img src="ornament.jpg" alt=""/>'
+            '<p>A sentence <img src="separator.jpg" alt=""/> continues here.</p>'
+            '<p><img src="chart.jpg" alt="" aria-label="The ratio increases."/></p>'
+            '<img src="diagram.jpg"/>'
+            '<p><a href="#destination"><img src="control.jpg" alt=""/></a></p>'
+            '<p id="destination">The final words are present.</p>')
+    doc = epub(book({'c':body},['c']))
+    result = plan(doc)
+    assert 'A sentence continues here.' in speech(result)
+    assert 'The ratio increases.' in speech(result)
+    assert 'The final words are present.' in speech(result)
+    assert 'Decorative image' not in speech(result)
+    ornament = next(b for b in doc.blocks if b.locator.get('image_resource')=='ornament.jpg')
+    assert next(d for d in result['decisions'] if d['block']==ornament.id)['action']=='companion'
+    assert sum('has no authored' in issue['reason'] for issue in result['issues'])==2
+
+
+def test_written_cutoff_at_spine_boundary_stays_audible_before_a_damaged_item():
+    body = {'a':'<p>She ran to the door. “Wait, I can expl—”</p>',
+            'b':'<p>From: Sender&#xfffd;</p><p>The final message is intact.</p>'}
+    doc = epub(book(body,['a','b']))
+    result = plan(doc)
+    assert '“Wait, I can expl—”' in speech(result)
+    assert len(result['issues'])==1 and 'unmapped' in result['issues'][0]['reason']
+    prior = plan(doc,rule_revision='faithful-32')
+    assert not any('expl—' in u['text'] for u in prior['utterances'])
+    assert plan(doc,prior['policy'],rule_revision='faithful-32')['plan_sha256']==prior['plan_sha256']
+    body['a']='<p>She ran to the door. It led to a space without</p>'
+    held=plan(epub(book(body,['a','b'])))
+    assert 'space without' not in speech(held)
+    assert any('unfinished source' in i['reason'] for i in held['issues'])

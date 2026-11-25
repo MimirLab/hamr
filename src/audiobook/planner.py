@@ -3,8 +3,8 @@ import re
 from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-32'
-TASK_LABEL_RULES=('faithful-28','faithful-29','faithful-30','faithful-31',RULES)
+RULES='faithful-33'
+TASK_LABEL_RULES=('faithful-28','faithful-29','faithful-30','faithful-31','faithful-32',RULES)
 NUMBERING_RULES=('faithful-26','faithful-27',*TASK_LABEL_RULES)
 TABLE_PASSAGE_RULES=('faithful-25',*NUMBERING_RULES)
 AUTHORED_LINE_RULES=('faithful-24',*TABLE_PASSAGE_RULES)
@@ -328,6 +328,11 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         action='speak'; reason='Preserve authored content and qualifiers.'; connector=False;force_pause=False;cells=()
         source_readings = SourceReadings(b)
         source_issue = b.issue
+        if rule_revision=='faithful-33' and (flow := b.locator.get('flow_review')):
+            placement = overrides.get(flow['block'],{})
+            if source_issue==flow['reason'] and (placement.get('action')=='companion'
+                    or placement.get('placement')=='caption_after_paragraph'):
+                source_issue = None
         if projected_source:
             source_issue = source_issue or source_readings.binding_issue()
             if source_readings.has_formula():
@@ -489,7 +494,20 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
             if continuous and utterances:utterances[-1]['pause_samples']=36000
             chapter=block_chapter;chapter_id=block_chapter_id
         heading=continuous and (b.role=='heading' or b.id in heading_ids)
-        if continuous and action=='unreadable':flush(hold_tail=rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE));flush_captions()
+        if continuous and action=='unreadable':
+            hold = rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
+            if rule_revision=='faithful-33' and source_ids:
+                previous = doc.blocks[source_positions[source_ids[-1]]]
+                left,right = previous.locator,b.locator
+                # An authored last line cut off with an em dash can be read
+                # through its printed ending before the next spine item.
+                if (left.get('occurrence') is not None and right.get('occurrence') is not None
+                        and left['occurrence']!=right['occurrence'] and left.get('path')!=right.get('path')
+                        and left.get('page') is None and right.get('page') is None
+                        and previous.source.rstrip().rstrip('”’"»').endswith('—')):
+                    hold = False
+            flush(hold_tail=hold)
+            flush_captions()
         placement=overrides.get(b.id,{}).get('placement')
         if placement is not None and (placement not in ('caption_after_paragraph','standalone') or action!='speak'):
             raise Error('delivery_policy','Caption or standalone placement requires a verified speech reading.')

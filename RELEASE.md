@@ -1,3 +1,10 @@
+# hamr 0.4.9.dev62
+
+- Honor explicitly decorative EPUB images while keeping missing descriptions and damaged text in source review. Retain an authored em-dash cutoff at the end of a spine item before reviewing damage in the next item.
+- Recognize a scanned PDF bibliography when the heading and author-year citation structure agree in the native and visual observations. Respect the existing reference-reading setting. Flag corroborated repeated page sequences and keep both scans in the source.
+- When a source-bound caption decision resolves a PDF reading-order hold, clear that hold from the adjoining prose. Keep independent OCR findings.
+- Compare British and American spellings such as “behaviour,” “traveller,” and “defence” without treating them as changed speech. Preserve the original verifier text.
+
 # hamr 0.4.9.dev61
 
 - Review flagged speech in a local browser with source text, the intended reading, verifier transcripts, and exact recordings. Filter or sample recurring disagreements, see likely missing speech and changed values first, and revisit saved decisions. Use `hamr review JOB` for a short summary and playback and export commands. [Speech review](docs/USAGE.md#review-saved-speech)

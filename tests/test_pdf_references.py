@@ -49,3 +49,39 @@ def test_reference_disagreement_is_retained_in_companion_but_essential_body_stil
     p=plan(Document('Book','pdf','source',blocks))
     assert p['decisions'][0]['source']=='Alpha, 8' and p['decisions'][0]['source_warning']=='Native reads 3; OCR reads 8.'
     assert [i['block'] for i in p['issues']]==['b']
+
+
+def test_bibliography_preserves_readable_notes_and_stops_before_a_new_section():
+    from audiobook.pdf_references import mark_bibliographies
+
+    citations='Smith, A. 1976. One important survey.\nContinued publication details.\nClark, T. 1978b. Another study.\nParker, C. 1982. A final source.'
+    text=['Notes\nA narrative note describes the first experiment.',
+          'Bibliography\n'+citations,citations,'Methods\n'+citations,citations]
+    blocks = [Block(f'p{n}-{i}',line,{'format':'pdf','page':n},issue='Source uncertainty.' if i else None)
+              for n,page in enumerate(text,1) for i,line in enumerate(page.splitlines())]
+    inventory = [{'page':n,'route':'visual_ocr','rotation':0,'native_geometry_qualified':True,
+                  'native_observation':page,'ocr_observation':page} for n,page in enumerate(text,1)]
+    mark_bibliographies(blocks,inventory)
+    assert {b.locator['page'] for b in blocks if b.role=='reference'}=={2,3}
+    doc=Document('A source','pdf','source',blocks)
+    default,read_refs=plan(doc),plan(doc,{'references':'speak'})
+    assert any(d.get('source_warning') for d in default['decisions'] if d['block']=='p2-1')
+    assert 'p2-1' not in {i['block'] for i in default['issues']}
+    assert 'p2-1' in {i['block'] for i in read_refs['issues']}
+    assert 'p4-1' in {i['block'] for i in default['issues']}
+
+
+def test_bibliography_author_repeat_at_page_start_can_be_a_weak_dash_observation():
+    from audiobook.pdf_references import citation_page
+
+    subject = '1976. The first long study.\nPublisher and journal information.\nRice, K. 1978. A second study.\nLee, B. 1982. Another source.'
+    assert citation_page('-. '+subject)==citation_page('. '+subject)==(True,False)
+    assert citation_page('Analysis begins here.\nA separate section reports changes.\n'+subject)==(False,False)
+
+
+def test_mixed_bibliography_and_following_prose_is_not_excluded():
+    from audiobook.pdf_references import citation_page
+
+    mixed = ('Bibliography\nSmith, A. 1976. One study.\nClark, T. 1978. Another study.\n'
+             'Methods\nThe next experiment tested a different hypothesis.')
+    assert citation_page(mixed)==(False,False)

@@ -294,8 +294,8 @@ class Resolver:
 
         self.doc=doc
         self.policy=policy
-        keyboard=rule_revision in ('faithful-31','faithful-32')
-        self.narrative_clocks=rule_revision=='faithful-32'
+        keyboard=rule_revision in ('faithful-31','faithful-32','faithful-33')
+        self.narrative_clocks=rule_revision in ('faithful-32','faithful-33')
         self.config=context_config.effective(policy.get('context'),keyboard=keyboard,narrative_clocks=self.narrative_clocks)
         self.implementation=context_config.implementation(unified=unified,rule_revision=rule_revision)
         self.readings={block.id:reading_evidence(block,unified=unified) for block in doc.blocks}
@@ -313,7 +313,7 @@ class Resolver:
         self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
         self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],
                                              self.config['cues']['price_noun'],self.config['native_names'],
-                                             precise_codes=rule_revision in ('faithful-27','faithful-28','faithful-29','faithful-30','faithful-31','faithful-32'),
+                                             precise_codes=rule_revision in ('faithful-27','faithful-28','faithful-29','faithful-30','faithful-31','faithful-32','faithful-33'),
                                              keyboard=keyboard)
         self.definitions=defaultdict(list)
         self.chronologies=defaultdict(lambda:defaultdict(list))

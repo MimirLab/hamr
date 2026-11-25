@@ -334,7 +334,8 @@ class DocBook(XMLProjection):
         if len(descriptions)>1:
             return self.review(node,'This DocBook visual has several distinct descriptions. Supply the intended reading.')
         image = next((item for item in node.iter() if name(item) in ('graphic','inlinegraphic','imagedata')),node)
-        attrs = {'alt':descriptions[0] if descriptions else ''}
+        label_text = descriptions[0] if descriptions else None
+        attrs = {'alt':label_text} if label_text else {}
         if href:=image.get('fileref'):
             owner = self.includes.owner(image)
             path = local_target(owner,image,href)
@@ -343,13 +344,13 @@ class DocBook(XMLProjection):
         parent = node.getparent()
         if parent is not None and name(parent) in ('figure','informalfigure'):
             label = header(parent,'title')
-            if label is not None and attrs['alt'] and attrs['alt']==element_text(label):
+            if label is not None and label_text==element_text(label):
                 result.set('aria-hidden','true')
         if (caption:=first(node,'caption')) is None or name(node)=='inlinemediaobject':
             return result
         figure = self.element(node,'figure')
         figure.append(self.children(caption,self.element(caption,'figcaption'),depth=depth))
-        if attrs['alt'] and attrs['alt']==element_text(caption):
+        if label_text==element_text(caption):
             result.set('aria-hidden','true')
         figure.append(result)
         return figure

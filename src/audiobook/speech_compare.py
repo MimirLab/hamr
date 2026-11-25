@@ -13,7 +13,7 @@ from .keyboard_readings import observation as keyboard_observation
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v51'
+POLICY='bounded-english-composed-scale-typed-v52'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -21,7 +21,14 @@ SPECIAL_NEGATIVES={"can't":'can',"won't":'will',"shan't":'shall'}
 SPELLING_VARIANTS={'harbour':'harbor','harbours':'harbors','harboured':'harbored','harbouring':'harboring',
                    'café':'cafe','cafés':'cafes','fulfilment':'fulfillment','fulfilments':'fulfillments',
                    'colour':'color','colours':'colors','coloured':'colored','colouring':'coloring',
-                   'dialogue':'dialog','dialogues':'dialogs'}
+                   'dialogue':'dialog','dialogues':'dialogs',
+                   'behaviour':'behavior','behaviours':'behaviors',
+                   'defence':'defense','defences':'defenses',
+                   'favour':'favor','favours':'favors','favourable':'favorable',
+                   'gonorrhoea':'gonorrhea','mould':'mold','moulds':'molds',
+                   'odour':'odor','odours':'odors',
+                   'maximise':'maximize','recognise':'recognize',
+                   'traveller':'traveler','travellers':'travelers'}
 COMPOUND_SPELLINGS={'dustbowl':('dust','bowl'),'mathml':('math','ml'),'dtbook':('dt','book'),
                     'textbox':('text','box'),'textboxes':('text','boxes'),
                     'shortname':('short','name'),'shortnames':('short','names'),

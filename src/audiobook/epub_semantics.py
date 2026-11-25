@@ -48,6 +48,18 @@ def accessible_label(node):
     return ''
 
 
+def decorative_image(node):
+    """Identify an explicit null text alternative on an otherwise unnamed image."""
+    if node.name not in ('img','image') or node.get('alt')!='':
+        return False
+    if node.get('role') not in (None,'','none','presentation'):
+        return False
+    if any(node.get(attr) for attr in ('title','aria-label','aria-labelledby','aria-describedby','aria-details','longdesc')):
+        return False
+    link=node.find_parent(['a','button'])
+    return link is None or bool(link.get_text(' ',strip=True) or accessible_label(link))
+
+
 def table_headers(rows, identifiers):
     """Bind simple column labels and explicit same-table header references."""
     cell_ids={f'{row}:{column}':element['id'] for row,cells in enumerate(rows)
@@ -239,7 +251,7 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None, note_ma
         label=accessible_label(n);href=n.get('src') or n.get('xlink:href') or n.get('href')
         asset=resolve_asset(href) if href and resolve_asset else None
         cover=asset in cover_assets if asset else False
-        decorative=n.get('role') in ('presentation','none') and n.has_attr('alt') and not n['alt'].strip()
+        decorative=decorative_image(n) and not label
         # A wrapper around an image delegates to that image if no label exists.
         if n.name=='svg' and not label and n.find(['img','image']):return
         spans.append({'source_start':start,'source_end':position,'kind':'object_label','source':'',

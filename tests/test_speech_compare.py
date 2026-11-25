@@ -324,3 +324,13 @@ def test_read_email_keeps_each_address_field_and_occurrence():
                   'Send it to editor.name at examples.com tomorrow.',
                   'Send it to editor.name at example.com soon.'):
         assert c(notation_observation(expected,wrong)) != c(expected)
+
+
+def test_common_english_spelling_variants_preserve_changed_words():
+    assert c('The traveller favours mould and notices an odour.') == c(
+        'The traveler favors mold and notices an odor.')
+    assert c('Recognise the favourable behaviour and maximise the defences.') == c(
+        'Recognize the favorable behavior and maximize the defenses.')
+    assert c('Two travellers favour the new defences.') != c('Two travellers fear the new offences.')
+    assert c('Descent from a common ancestor.') != c('Dissent from a common ancestor.')
+    assert c('The fox caches food.') != c('The fox catches food.')

@@ -135,7 +135,7 @@ class Article(XMLProjection):
     def image(self,node,description=''):
         descriptions = [element_text(child) for child in node if name(child) in ('alt-text','long-desc')]
         desc = description or ' '.join(dict.fromkeys(text for text in descriptions if text))
-        attrs = {'alt':desc}
+        attrs = {'alt':desc} if desc else {}
         if href:=node.get(XLINK_HREF):
             attrs['src'] = href
         return self.element(node,'img',attributes=attrs)

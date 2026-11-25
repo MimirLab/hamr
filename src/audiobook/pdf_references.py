@@ -48,3 +48,58 @@ def mark_indexes(blocks,inventory):
             if b.role not in ('body','heading'):continue
             b.role='reference';b.locator['reference_classification']=evidence
             b.evidence.append(evidence['basis'])
+
+
+BIBLIOGRAPHY = re.compile(r'(?i:bibliography|references|literature cited|works cited)')
+FOLLOWING_SECTION = re.compile(r'(?i:appendix(?: [A-Z0-9]+)?|index|glossary|about the author|photo credits|notes|'
+                               r'methods|results|conclusions?|acknowledgments?|chapter [0-9IVXLCDM]+(?:[ .:–—-].*)?)')
+CITATION_START = re.compile(r"^(?:[\-–—]+[.,]?|[.]|[^\W\d_][^;:!?]{0,89})[ \t]+(?:1[6-9]\d{2}|20\d{2})[a-z]?\.", re.I)
+
+
+def citation_page(text):
+    """Require repeated author-year entries occupying a substantial part of a page."""
+    lines = [line.strip() for line in text.splitlines() if line.strip() and not line.strip().isdigit()]
+    heading = bool(lines and BIBLIOGRAPHY.fullmatch(lines[0]))
+    if heading:
+        lines = lines[1:]
+    starts = [i for i,line in enumerate(lines) if CITATION_START.match(line)]
+    # The first entry can be preceded by a short continuation from the prior page.
+    # A section heading or other prose introducing the list breaks that evidence.
+    if (len(starts) < 2 or len(lines) < 3 or starts[0] > 2 or len(starts)*5 < len(lines)
+            or len(lines)-starts[-1]>6 or any(FOLLOWING_SECTION.fullmatch(line) for line in lines)):
+        return False, False
+    if starts[0] and (heading or any(
+            re.fullmatch(r'[\w -]{3,55}',line) and line[:1].isupper() for line in lines[:starts[0]])):
+        return False, False
+    return True, heading
+
+
+def mark_bibliographies(blocks, inventory):
+    """Bind an explicit bibliography heading and consecutive citation-shaped pages."""
+    by_page = defaultdict(list)
+    for block in blocks:
+        by_page[block.locator.get('page')].append(block)
+    anchor = previous = None
+    for entry in sorted(inventory,key=lambda page:page['page']):
+        page = entry['page']
+        if entry.get('route')!='visual_ocr' or entry.get('rotation')!=0 or not entry.get('native_geometry_qualified'):
+            anchor = previous = None
+            continue
+        native,visual = (citation_page(entry.get(field,'')) for field in ('native_observation','ocr_observation'))
+        if not (native[0] and visual[0]):
+            anchor = previous = None
+            continue
+        substantive = [block for block in by_page[page] if block.role in ('body','heading') and block.source.strip()]
+        if native[1] and visual[1] and substantive and BIBLIOGRAPHY.fullmatch(substantive[0].source.strip()):
+            anchor = page
+        elif anchor is None or previous!=page-1 or native[1] or visual[1]:
+            anchor = previous = None
+            continue
+        evidence = {'kind':'printed_bibliography','scope':'page','heading_pages':[anchor],
+                    'basis':'Corroborated bibliography heading followed by dense author-year references in native and visual text.'}
+        entry['reference_classification'] = evidence
+        for block in substantive:
+            block.role = 'reference'
+            block.locator['reference_classification'] = evidence
+            block.evidence.append(evidence['basis'])
+        previous = page

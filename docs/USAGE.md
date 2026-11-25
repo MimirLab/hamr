@@ -72,13 +72,13 @@ hamr resume JOB
 hamr play JOB
 ```
 
-Listen mode preserves claims/qualifiers, speaks tables with explicit headers, inserts linked notes beside their claim, and keeps exact code in the companion. Study mode also speaks reference sections. Procedure mode speaks literal blocks. Explicit category choices override mode defaults. These deterministic modes do not summarize or infer content. Exact-heading section policies are available; sophisticated note placement and bibliography recognition beyond labeled sections remain limited.
+Listen mode preserves claims/qualifiers, speaks tables with explicit headers, inserts linked notes beside their claim, and keeps exact code in the companion. Study mode also speaks reference sections. Procedure mode speaks literal blocks. Explicit category choices override mode defaults. These deterministic modes do not summarize or infer content. Exact-heading section policies are available. When a scanned PDF has a corroborated bibliography heading and matching citation structure on consecutive pages, listen mode keeps those references in the companion. Use `--references speak` to include them in speech.
 
 Use `--notes after_paragraph|inline|companion` to control linked notes. `--chapters '5,2-3,2'` selects chapters 2, 3 and 5 in source order. Use `hamr repair JOB --chapters all` to restore the complete selection.
 
 ### Check how a document will be read
 
-Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-17` rules. When a plain paragraph needs two requests, Hamr can move a complete sentence across the split so the final sentence keeps some preceding context.
+Run `hamr plan DOCUMENT --json` before speech setup to inspect the source decisions, planned utterances and review locations. Use the source block IDs to trace a planned passage back to its extraction and any review finding. The command runs without synthesis. The plan keeps the extracted `source` and final `spoken` text separately. New plans use the `faithful-17` rules. When a plain paragraph needs two requests, Hamr can move a complete sentence across the split so the final sentence keeps some preceding context.
 
 - Markdown note definitions can contain several paragraphs or list items. A code span containing a note marker stays literal. Missing, duplicate and nested note targets need review when selected for speech.
 - Plain `.txt` files accept UTF-8 or BOM-marked UTF-16/UTF-32. Blank lines separate paragraphs. The source locations retain exact decoded lines and line endings. Convert files from other encodings before opening them.

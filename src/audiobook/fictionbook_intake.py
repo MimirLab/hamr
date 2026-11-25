@@ -122,7 +122,7 @@ class FictionBook(XMLProjection):
             return self.stanza(node,depth)
         if kind in ('img','image'):
             href = node.get('src') or node.get(XLINK_HREF)
-            attrs = {'alt':node.get('alt','')}
+            attrs = {'alt':node.attrib['alt']} if 'alt' in node.attrib else {}
             if href:
                 attrs['src'] = href
             return self.element(node,'img',attributes=attrs)

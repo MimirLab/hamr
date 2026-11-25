@@ -148,10 +148,11 @@ class AbiWord(XMLProjection):
             item.update(status='retained',asset_location=self.location(assets[0]),
                         media_type=assets[0].get('mime-type'))
         self.media.append(item)
-        attrs = {'alt':node.get('alt') or node.get('title') or ''}
+        label = node.get('alt') or node.get('title')
+        attrs = {'alt':label} if label else {}
         if ident:
             attrs['src'] = 'abiword-data:'+quote(ident,safe='')
-        if len(assets)==1 or attrs['alt']:
+        if len(assets)==1 or label:
             return self.element(node,'img',attributes=attrs)
         return self.review(node,'This AbiWord illustration has no readable description or unique embedded original.')
 

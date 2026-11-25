@@ -41,3 +41,21 @@ def test_one_native_observation_is_not_misrepresented_as_independent_ocr_corrobo
     blocks,inventory=observed([129,130,131,134,135,136])
     for i in inventory:i['route']='native'
     assert not gaps(blocks,inventory)
+
+
+def test_two_scans_of_the_same_folios_are_reported_without_dropping_content():
+    from audiobook.pdf_pagination import repeats
+
+    values=[135,136,137,136,137,138]
+    blocks,inventory=observed(values)
+    first='The migration starts when cool weather reaches the highlands and the mountain plants go dormant.'
+    second='Nine independent groups were followed across the winter before the researchers repeated their measurements.'
+    texts=['before '*60,first*6,second*6,first*6,second*6,'after '*60]
+    for number,entry in enumerate(inventory):
+        entry['native_observation']=entry['ocr_observation']=texts[number]+'\n'+str(values[number])
+    found=repeats(blocks,inventory)
+    assert len(found)==1 and found[0]['first_PDF_pages']==[2,3]
+    assert found[0]['repeated_PDF_pages']==[4,5]
+    assert [block.source for block in blocks]==list(map(str,values))
+    inventory[4]['ocr_observation']='Different body text. '*30
+    assert not repeats(blocks,inventory)

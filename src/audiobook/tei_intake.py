@@ -162,7 +162,7 @@ class Edition(XMLProjection):
 
     def image(self,node,label=''):
         href = node.get('url')
-        fields = {'alt':label}
+        fields = {'alt':label} if label else {}
         if href:
             fields['src'] = href
         return self.element(node,'img',attributes=fields)

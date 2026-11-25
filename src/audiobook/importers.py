@@ -336,7 +336,7 @@ def epub(data:bytes|Path)->Document:
                 if src and label:
                     target,anchor=archive_path(posixpath.dirname(path),src[0]); chapter_labels[(target,anchor)]=label[0]
                     navigation.append({'path':target,'anchor':anchor,'label':label[0],'origin':path})
-    from .epub_semantics import AUDIT_SPANS,EMBEDDED,NON_TEXT,describe,language,uncertainty,hidden,accessible_label,note_container,table_headers
+    from .epub_semantics import AUDIT_SPANS,EMBEDDED,NON_TEXT,describe,language,uncertainty,hidden,accessible_label,decorative_image,note_container,table_headers
     from .epub_notes import EpubNotes
     from .epub_semantics import noteref
     from .source_numbering import bind_ordered, html_ordered_items
@@ -383,7 +383,7 @@ def epub(data:bytes|Path)->Document:
                 text=accessible_label(node); issue=None if text else 'Image has no authored description; verify whether it carries essential content.'
                 if image_resource in cover_assets:
                     role='cover'; text=text or 'Cover image'; issue=None
-                elif node.get('role') in ('presentation','none') and node.has_attr('alt') and not node['alt'].strip():
+                elif decorative_image(node) and not text:
                     role='hidden';text='Decorative image';issue=None
                 # The direct image source is its literal authored label, not
                 # a zero-width position inside its containing paragraph.
@@ -885,8 +885,9 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
     out=tagged.project(out,block)
     from .pdf_layout import mark_folios
     mark_folios(out,inventory)
-    from .pdf_references import mark_indexes
+    from .pdf_references import mark_bibliographies,mark_indexes
     mark_indexes(out,inventory)
+    mark_bibliographies(out,inventory)
     from .pdf_headers import mark_headers
     mark_headers(out,inventory)
     from .pdf_flow import insertions,overlaps
@@ -899,11 +900,11 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
         for bid in finding['source_blocks']:
             by_id[bid].locator['flow_review']=finding
             if not by_id[bid].issue:by_id[bid].issue=finding['reason']
-    from .pdf_pagination import gaps
-    for finding in gaps(out,inventory):
+    from .pdf_pagination import gaps,repeats
+    for finding in [*gaps(out,inventory),*repeats(out,inventory)]:
         loc={'format':'pdf','page':finding['page'],'prior_PDF_page':finding['prior_PDF_page'],'pagination_review':finding}
         at=next(i for i,b in enumerate(out) if b.locator.get('page',0)>=finding['page'])
-        out.insert(at,block('',loc,'unreadable',out[at].chapter,['Competing printed-folio observations and stable neighbouring sequences'],finding['reason']))
+        out.insert(at,block('',loc,'unreadable',out[at].chapter,['Corroborated printed folios and neighbouring page evidence'],finding['reason']))
     from .pdf_navigation import apply as outline_navigation
     if outlines:
         outline_navigation(out,inventory,outlines)
@@ -929,7 +930,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-34'
+IMPORT_REVISION='import-35'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 

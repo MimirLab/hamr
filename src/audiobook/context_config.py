@@ -136,6 +136,8 @@ def implementation(*, unified=True, rule_revision=None):
         return 'df772e6534764093c6bd95de9ac806fad6c9f617b2791f7f4369a9bd586faf8d'
     if rule_revision=='faithful-29':
         return 'badb69c8d1a7854caec4656673fde7b12efee39930e3f2a10c674ff92df6b925'
+    if rule_revision=='faithful-32':
+        return '2054a5539eea86174aa51033fc7776137e7e16b73317e88debe0257a6d4f2492'
     if rule_revision=='faithful-31':
         return 'cad5c7c3d09fed2d8ca3f1957b9d354dec6f0fbe5f0b7cca54cea6358b066ad7'
     if rule_revision=='faithful-30':
