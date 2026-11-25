@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev87
+
+- Read Adobe PageMaker publications with the PageMaker 6 and 6.5–7 record layouts. Follow the stored byte ranges of threaded text across pages, keep independently authored repeats, and preserve the original publication in the finished book.
+
 # hamr 0.4.9.dev86
 
 - Open UTF-8 FrameMaker MIF manuscripts directly or in folders and ZIPs. Hamr follows saved body flows, reads anchored text and footnotes, and keeps exact source locations for unresolved figures or variables.

@@ -42,10 +42,13 @@ NATIVE = {
     '.idml':'idml', '.icml':'icml',
     '.sla':'scribus', '.sla.gz':'scribus',
     '.mif':'mif',
+    '.pmd':'pagemaker', '.p65':'pagemaker', '.pm6':'pagemaker',
+    '.pmt':'pagemaker', '.t65':'pagemaker', '.pt6':'pagemaker',
     '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
 PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
+PAGEMAKER_SUFFIXES = frozenset(suffix for suffix,route in NATIVE.items() if route=='pagemaker')
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
@@ -94,6 +97,13 @@ def image_magic(prefix):
 
 def probe(prefix, name):
     suffix = source_suffix(name)
+    if suffix in PAGEMAKER_SUFFIXES or prefix[6:8] in (b'\xff\x99',b'\x99\xff'):
+        from .pagemaker_binary import COMPOUND, byte_order
+
+        if byte_order(prefix) or suffix in PAGEMAKER_SUFFIXES and prefix.startswith(COMPOUND):
+            return 'pagemaker'
+        if suffix in PAGEMAKER_SUFFIXES:
+            return None
     if suffix=='.mif' or b'<MIFFile' in prefix:
         from .mif_syntax import matches_header
 
@@ -320,9 +330,11 @@ def directory_members(root):
             suffix = source_suffix(path.name)
             if suffix in IMAGE_SUFFIXES:
                 pages.append(relative)
-            elif suffix in (*PALM_SUFFIXES,'.mif') and not path.is_symlink() and path.is_file():
+            elif suffix in (*PALM_SUFFIXES,'.mif',*PAGEMAKER_SUFFIXES) and not path.is_symlink() and path.is_file():
                 with path.open('rb') as stream:
                     if route:=probe(stream.read(512),path.name):
+                        if route=='pagemaker' and not verified_pagemaker_candidate(stream):
+                            continue
                         other.append((relative,route))
             elif suffix=='.xml' and not path.is_symlink() and path.is_file():
                 with path.open('rb') as stream:
@@ -338,7 +350,7 @@ def directory_members(root):
                         route = 'classic-mac'
                     elif route=='classic-mac':
                         route = None
-                    elif suffix=='.asc':
+                    elif suffix=='.asc' or prefix[6:8] in (b'\xff\x99',b'\x99\xff'):
                         route = probe(prefix,path.name)
                 if route:
                     other.append((relative,route))
@@ -462,6 +474,17 @@ def wrapped_source(path,kind,entry,override=None):
                                     latex_only=override=='latex')
 
 
+def verified_pagemaker_candidate(stream):
+    from .pagemaker_binary import COMPOUND, is_pagemaker_compound
+
+    stream.seek(0)
+    prefix = stream.read(len(COMPOUND))
+    if prefix!=COMPOUND:
+        return True
+    stream.seek(0)
+    return is_pagemaker_compound(stream)
+
+
 def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,package_route=None,latex_only=False):
     from .classic_mac_intake import archive_books as mac_books
     from .document_intake import xml_route
@@ -512,10 +535,17 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
             with archive.open_member(item) as stream:
                 detected = xml_route(stream)
         elif (not name.name.startswith('.') and
-              (kind=='zip' and not detected or suffix in ('.asc','.cwk','.hqx','.lrf','.lit','.mif',*PALM_SUFFIXES))):
+              (kind=='zip' and not detected or suffix in ('.asc','.cwk','.hqx','.lrf','.lit','.mif',*PALM_SUFFIXES,*PAGEMAKER_SUFFIXES))):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
             detected = probe(prefix,item.name)
+            if detected=='pagemaker' and suffix in PAGEMAKER_SUFFIXES:
+                from .pagemaker_binary import COMPOUND, is_pagemaker_compound
+
+                if prefix.startswith(COMPOUND):
+                    with archive.open_member(item) as stream:
+                        if not is_pagemaker_compound(stream):
+                            detected = None
         if detected=='scan':
             images.append(item)
         elif detected and not scan_only:
@@ -559,7 +589,7 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
     if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar','textile',*PALM_ROUTES):
         raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, Textile, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml','scribus','mif',*PALM_ROUTES) and source.member_name is None:
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml','scribus','mif','pagemaker',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -711,6 +741,9 @@ def _describe(path,entry,format,offline):
         if suffix=='.mif':
             raise Error('source_mif_signature','The input does not identify an Adobe FrameMaker MIF document.',
                         'Open a FrameMaker MIF export. Geographic MapInfo MIF uses a different format.')
+        if suffix in PAGEMAKER_SUFFIXES:
+            raise Error('source_pagemaker_signature','The input does not identify an Adobe PageMaker publication.',
+                        'Choose an original PageMaker file. Other formats also use the PMD extension.')
         if suffix in WORDSTAR_SUFFIXES or prefix.startswith(b'\x1d\x7d\x00\x00'):
             raise Error('source_wordstar_version','The file does not identify a supported WordStar 7 document.',
                         'Open the original WordStar 7 document or use a readable text export.')

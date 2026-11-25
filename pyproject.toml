@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hamr"
-version = "0.4.9.dev86"
+version = "0.4.9.dev87"
 description = "hamr: local audiobooks with recoverable jobs, character voices and source provenance"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -25,6 +25,7 @@ dependencies = [
     "quickjs-ng==0.18.0.2",
     "pylatexenc==2.10",
     "textile==4.0.5",
+    "olefile==0.47",
 ]
 
 [project.optional-dependencies]
