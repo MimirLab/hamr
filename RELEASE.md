@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev70
+
+- Speech review accepts an exact filename written compactly by a verifier when the planned reading spells out its extension at the same location. Different names, extensions and paths still require review. Run `hamr qa JOB --recheck` to apply the comparison to saved recordings.
+
 # hamr 0.4.9.dev69
 
 - Keep two short displayed commands inside their written either-or sentence. This works in structured source and in native PDF with matching framed, fixed-pitch lines. The companion keeps the exact locations of the pieces. Standalone code blocks follow the selected code policy.

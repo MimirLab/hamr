@@ -71,3 +71,24 @@ def test_observed_punctuation_and_spelling_keep_the_same_words(expected,observed
 ])
 def test_equivalent_written_forms_preserve_disputed_words_and_am_pm(expected,observed):
     assert c(expected)!=c(notation_observation(expected,observed))
+
+
+def test_compact_filenames_match_only_the_planned_stem_extension_and_site():
+    expected = 'Open the file foo dot T E X and save it as test1 dot m d.'
+    exact = 'Open the file foo.tex and save it as test1.md.'
+    assert c(notation_observation(expected, exact)) == c(expected)
+    assert notation_observation('foo dot T E X.', 'Foo.tex.') == 'foo dot T E X.'
+    assert notation_observation('Use the file cover dot m 4 b.', 'Use the file cover.m4b.') == 'Use the file cover dot m 4 b.'
+
+    for wrong in ('foo.txt', 'food.tex', 'foo.tex.bak', 'foo.tex.b', './foo.tex', 'foo.tex:17', 'foo'):
+        observed = exact.replace('foo.tex', wrong)
+        assert c(notation_observation(expected, observed)) != c(expected), wrong
+    swapped = 'Open the file test1.md and save it as foo.tex.'
+    assert notation_observation(expected, swapped) == swapped
+    assert notation_observation(expected, 'Open the foo.tex and save it as test1.md.').startswith('Open the foo.tex')
+
+    named = 'Open the filename test1 dot m d in Pandoc. Save it under the filename test1 dot h t m l.'
+    printed = 'Open the file name, test1.md in Pandoc. Save it under the file name, test1.html.'
+    assert c(notation_observation(named, printed)) == c(named)
+    wrong_label = printed.replace('file name, test1.md', 'section name, test1.md')
+    assert c(notation_observation(named, wrong_label)) != c(named)

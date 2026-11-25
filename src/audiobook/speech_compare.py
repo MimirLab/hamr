@@ -13,7 +13,7 @@ from .keyboard_readings import observation as keyboard_observation
 from .planner import SMALL,TENS
 from .spoken_forms import roman
 
-POLICY='bounded-english-composed-scale-typed-v52'
+POLICY='bounded-english-composed-scale-typed-v53'
 LEX=re.compile(r"(?<!\w)[+-]?\d+(?:[.,]\d+)*|[\w]+(?:[.'’][\w]+)*")
 SMALL_VALUES={s:n for n,s in enumerate(SMALL)}
 TENS_VALUES={s:n*10 for n,s in enumerate(TENS) if s}
@@ -33,7 +33,8 @@ COMPOUND_SPELLINGS={'dustbowl':('dust','bowl'),'mathml':('math','ml'),'dtbook':(
                     'textbox':('text','box'),'textboxes':('text','boxes'),
                     'shortname':('short','name'),'shortnames':('short','names'),
                     'reflog':('ref','log'),'reflogs':('ref','logs'),
-                    'wordstar':('word','star'),'touchtypable':('touch','typable')}
+                    'wordstar':('word','star'),'touchtypable':('touch','typable'),
+                    'filename':('file','name')}
 ORDINALS={word:i for i,word in enumerate(['zeroth','first','second','third','fourth','fifth','sixth','seventh','eighth','ninth','tenth','eleventh','twelfth','thirteenth','fourteenth','fifteenth','sixteenth','seventeenth','eighteenth','nineteenth','twentieth'])}
 ORDINALS.update(thirtieth=30,fortieth=40,fiftieth=50,sixtieth=60,seventieth=70,eightieth=80,ninetieth=90)
 SCALES={'thousand':1000,'million':10**6,'billion':10**9}
@@ -63,6 +64,10 @@ DOMAIN_START=r'(?<![\w@.])'
 DOMAIN_END=r'(?![\w-]|\.[a-z0-9])'
 WWW_DOMAIN=re.compile(DOMAIN_START+r'www\.(?:[a-z0-9-]+\.){1,6}[a-z]{2,20}'+DOMAIN_END,re.I)
 WRITTEN_EMAIL=re.compile(EMAIL_HEAD+r'(?:[a-z0-9-]+\.)+[a-z]{2,20}'+DOMAIN_END,re.I)
+FILENAME_START = r'(?<![\w@./\\:+-])'
+FILENAME_END = r'(?![\w@/\\+-]|\.[\w.]|:[0-9]|[?#][\w=])'
+WRITTEN_FILENAME = re.compile(FILENAME_START+r'([a-z0-9_-]+(?:\.[a-z0-9_-]+)*)\.([a-z0-9]{2,8})'+FILENAME_END,re.I)
+SPLIT_FILENAME_LABEL = re.compile(r'\bfile[ \t]+name\W*\Z',re.I)
 SPOKEN_PADDED_CODE=re.compile(r'\bzero(?:[ \t]+(?:'+'|'.join(SMALL[:10])+r')){1,7}\b',re.I)
 PRINTED_PADDED_CODE=re.compile(r'(?<![\w/.:+−-])0[0-9]{1,7}(?![\w/:-]|\.\d)')
 SPOKEN_DIGIT='(?:'+'|'.join(SMALL[:10])+')'
@@ -148,6 +153,30 @@ def email_notation(expected,observed):
         observed = re.sub(spoken,lambda match:address if word_context(observed,*match.span()) in sites else match[0],
                           observed,flags=re.I)
     return observed
+
+
+def filename_notation(expected, observed):
+    """Read a compact transcript spelling back as its exact planned filename."""
+    if ' dot ' not in expected.casefold():
+        return observed
+
+    def context_at(text, start, end):
+        left, right = word_context(text, start, end)
+        if left == 'name' and SPLIT_FILENAME_LABEL.search(text[max(0, start-90):start]):
+            left = 'filename'
+        return left, right
+
+    def exact_spelling(match):
+        stem, extension = match.groups()
+        spelled = r'[ \t]+'.join(map(re.escape, (stem, 'dot', *extension)))
+        pattern = FILENAME_START + spelled + FILENAME_END
+        context = context_at(observed, *match.span())
+        for site in re.finditer(pattern, expected, re.I):
+            if context_at(expected, *site.span()) == context:
+                return site[0]
+        return match[0]
+
+    return WRITTEN_FILENAME.sub(exact_spelling, observed)
 
 
 def name_observation(expected,observed):
@@ -259,6 +288,7 @@ def notation_observation(expected, observed):
     observed=contextual_years(expected,observed)
     observed=domain_notation(expected,observed)
     observed=email_notation(expected,observed)
+    observed=filename_notation(expected,observed)
     observed=name_observation(expected,observed)
     observed=apostrophe_s_observation(expected,observed)
     observed=keyboard_observation(expected,observed,word_context)
