@@ -743,9 +743,9 @@ def publish(store,j,*,record_run_metrics=None):
             label = html.escape(variant['source_file']+' · line '+str(variant['lines'][0]))
             source+=f'<details><summary>{label}</summary><ul>'
             for reading in variant['readings']:
-                witnesses = ' '.join(reading['witnesses'])
                 qualifier = 'Read in this edition' if reading['selected'] else 'Alternate reading'
-                detail = html.escape(qualifier+(' · '+witnesses if witnesses else ''))
+                labels = [qualifier,' '.join(reading.get('witnesses',())),reading.get('expression')]
+                detail = html.escape(' · '.join(filter(None,labels)))
                 value = html.escape(reading['text'])
                 source+=f'<li><strong>{detail}</strong> {value}</li>'
             source+='</ul></details>'

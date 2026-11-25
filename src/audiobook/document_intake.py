@@ -71,13 +71,14 @@ def xml_route(stream):
     from .docbook_intake import is_docbook
     from .odf_content import flat_text
     from .odf_presentation import flat_presentation
+    from .zedai_intake import is_zedai
 
     element = xml_start(stream)
     if flat_text(element):
         return 'odt'
     if flat_presentation(element):
         return 'odp'
-    if element is not None and (name(element) in BOOK_ROOTS or is_docbook(element,'')):
+    if element is not None and (name(element) in BOOK_ROOTS or is_docbook(element,'') or is_zedai(element)):
         return 'xml-book'
 
 

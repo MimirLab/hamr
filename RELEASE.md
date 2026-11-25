@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev81
+
+- Open DAISY Z39.98 authoring books (ZedAI) from `.xml`, `.zai`, a folder, or a ZIP. Hamr follows authored talking-book alternatives, preserves verse lines and linked notes, and reads the author's descriptions of figures. Index entries follow the ordinary reference setting.
+- When opening a folder of publishing XML, keep relative links to chapters, illustrations, and descriptions inside the selected folder. Hamr now resolves links across its subfolders the same way it does inside a ZIP.
+
 # hamr 0.4.9.dev80
 
 - Open original OpenOffice.org Writer templates (`.stw`) and master documents (`.sxg`). For master sections, Hamr follows the older Writer links to nearby chapters and retains the exact files for recovery.

@@ -30,6 +30,7 @@ NATIVE = {
     '.abw.gz':'abiword', '.abw.bz2':'abiword',
     '.dbk':'xml-book', '.docbook':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
     '.jats':'xml-book', '.tei':'xml-book', '.nimas':'xml-book', '.bits':'xml-book', '.nxml':'xml-book',
+    '.zai':'xml-book',
     '.csv':'csv', '.xlsx':'xlsx', '.pptx':'pptx', '.odp':'odp', '.otp':'odp', '.fodp':'odp',
     '.opml':'outline', '.svg':'outline', '.tsv':'csv', '.ipynb':'notebook', '.mhtml':'mhtml', '.mht':'mhtml',
     '.eml':'mail', '.tcr':'tcr', '.guide':'amigaguide', '.rb':'rocket', '.snb':'snb', '.mobi':'mobi', '.azw':'mobi', '.azw3':'mobi', '.azw4':'mobi', '.lrf':'legacy-ebook', '.lit':'legacy-ebook', '.pml':'pml', '.pmlz':'pml', '.doc':'office-legacy', '.wps':'office-legacy',
@@ -246,6 +247,7 @@ def directory_members(root):
     from .xml_package import SUFFIXES as XML_SUFFIXES, loose_assets, loose_document
 
     declared = set()
+    xml_claimed = set()
     pages, other = [], []
     for folder, directories, files in os.walk(root, followlinks=False):
         here = Path(folder)
@@ -275,8 +277,9 @@ def directory_members(root):
                     raise
                 continue
             if document is not None:
-                declared.update((here/asset).relative_to(root).as_posix()
-                                for _,asset in loose_assets(path,document) if asset and asset!=filename)
+                linked = {asset for _,asset in loose_assets(path,document,root) if asset and asset!=relative}
+                declared.update(linked)
+                xml_claimed.update(linked)
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
                           and name != '__MACOSX' and not (here/name).is_symlink()
                           and not (here/name).is_junction()]
@@ -315,6 +318,8 @@ def directory_members(root):
                         route = probe(prefix,path.name)
                 if route:
                     other.append((relative,route))
+    pages = [name for name in pages if name not in xml_claimed]
+    other = [(name,route) for name,route in other if name not in xml_claimed]
     masters = [name for name,route in other if route=='odf-master']
     if masters:
         from .odf_master import folder_claims
@@ -680,7 +685,7 @@ def _describe(path,entry,format,offline):
 
 
 def _local_source(path, options, source=None):
-    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master') and source.member_name:
+    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master','xml-book') and source.member_name:
         return relative_file(path,source.member_name)
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if (source.route=='scrivener' or source.route in DESCRIPTOR_FOLDERS) and path.is_file():
@@ -913,7 +918,7 @@ def capture_dependencies(path,target_dir,source,*,root=None):
     if source.kind=='file' and source.route=='xml-book':
         from .xml_package import capture_xml
 
-        return capture_xml(path,target_dir,source)
+        return capture_xml(path,target_dir,source,scope=root)
     if source.kind=='file' and source.route=='classic-mac':
         from .classic_mac_intake import capture_classic_mac
 

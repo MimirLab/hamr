@@ -9,7 +9,7 @@ from .core import Error
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, bounded_read, name, xml, xml_start
 from .xml_projection import element_text
 
-SUFFIXES = ('.xml','.nxml','.jats','.tei','.bits','.dbk','.docbook')
+SUFFIXES = ('.xml','.nxml','.jats','.tei','.bits','.dbk','.docbook','.zai')
 ROOTS = ('article','article-set','TEI','teiCorpus','book','book-part-wrapper')
 XML_DEPENDENCIES = frozenset(('xml_include','xml_chapter'))
 
@@ -24,7 +24,7 @@ class Reader:
 
 
 def reader_for(root,part):
-    from . import bits_intake, docbook_intake, jats_intake, tei_intake
+    from . import bits_intake, docbook_intake, jats_intake, tei_intake, zedai_intake
     from .xml_includes import XMLIncludes
 
     if bits_intake.is_bits(root):
@@ -37,6 +37,9 @@ def reader_for(root,part):
     if docbook_intake.is_docbook(root,part):
         return Reader('docbook',docbook_intake.read_docbook,docbook_intake.asset_links,XMLIncludes,
                       docbook_intake.publication_label)
+    if zedai_intake.is_zedai(root):
+        return Reader('zedai',zedai_intake.read_zedai,zedai_intake.asset_links,zedai_intake.DescriptionResources,
+                      zedai_intake.publication_label)
     return None
 
 
@@ -47,7 +50,6 @@ def include_graph(root,part,load=None):
 
 
 def assets(root,part,includes=None):
-    from .opf_intake import target
     from .xml_includes import local_target
 
     reader = reader_for(root,part)
@@ -62,7 +64,7 @@ def assets(root,part,includes=None):
                 continue
             reference = {'kind':reader.kind+'_asset','href':href,'member':owner,
                          'xml_path':node.getroottree().getpath(node),'line':node.sourceline}
-            yield reference,local_target(owner,node,href) if includes is not None else target(owner,href)
+            yield reference,local_target(owner,node,href)
 
 
 def read_projected(root,builder,part,*,includes=None,collect_resources=False):
@@ -92,11 +94,12 @@ def publication_label(root,part,includes=None):
 
 def candidate(stream,filename):
     from .docbook_intake import is_docbook
+    from .zedai_intake import is_zedai
 
     if PurePosixPath(filename).suffix.lower() not in SUFFIXES:
         return False
     root = xml_start(stream)
-    return root is not None and (name(root) in ROOTS or is_docbook(root,filename))
+    return root is not None and (name(root) in ROOTS or is_docbook(root,filename) or is_zedai(root))
 
 
 def loose_document(path):
@@ -125,27 +128,29 @@ def local_xml(folder,part,stamps=None):
     return raw
 
 
-def loose_assets(path,root):
-    includes = include_graph(root,path.name,lambda name:local_xml(path.parent,name))
-    return assets(root,path.name,includes)
+def loose_assets(path,root,scope):
+    part = path.relative_to(scope).as_posix()
+    includes = include_graph(root,part,lambda name:local_xml(scope,name))
+    return assets(root,part,includes)
 
 
-def declared_files(path,root):
+def declared_files(path,root,scope):
     from .source_bundle import relative_file, stamp
 
-    result = {path.name:stamp(path.stat())}
-    includes = include_graph(root,path.name,lambda name:local_xml(path.parent,name,result))
-    for _,target in assets(root,path.name,includes):
+    part = path.relative_to(scope).as_posix()
+    result = {part:stamp(path.stat())}
+    includes = include_graph(root,part,lambda name:local_xml(scope,name,result))
+    for _,target in assets(root,part,includes):
         if target and target not in result:
             try:
-                result[target] = stamp(relative_file(path.parent,target).stat())
+                result[target] = stamp(relative_file(scope,target).stat())
             except Error as exc:
                 if exc.code!='source_member_missing':
                     raise
     return result
 
 
-def capture_xml(path,target_dir,source):
+def capture_xml(path,target_dir,source,*,scope=None):
     from .publication_package import capture_folder
     from .source_bundle import relative_file, stamp
 
@@ -153,9 +158,11 @@ def capture_xml(path,target_dir,source):
     root = loose_document(path)
     if root is None:
         return None
-    anchor = relative_file(path.parent,path.name)
-    listed = declared_files(anchor,root)
-    if listed[path.name]!=before:
+    scope = scope if scope is not None else path.parent
+    part = path.relative_to(scope).as_posix()
+    anchor = relative_file(scope,part)
+    listed = declared_files(anchor,root,scope)
+    if listed[part]!=before:
         raise Error('source_changed','The selected XML edition changed before capture.')
     if len(listed)==1:
         return None
@@ -164,10 +171,10 @@ def capture_xml(path,target_dir,source):
     def verify(_):
         # Publication capture checks every current member stamp, then checks
         # whether an authored dependency appeared or disappeared.
-        return declared_files(anchor,root)
+        return declared_files(anchor,root,scope)
 
-    capture_folder(path.parent,output,lambda:listed,verify=verify,include_root=False)
-    return output,replace(source,kind='zip',entry=sorted(listed).index(path.name)+1,member_name=None)
+    capture_folder(scope,output,lambda:listed,verify=verify,include_root=False)
+    return output,replace(source,kind='zip',entry=sorted(listed).index(part)+1,member_name=None)
 
 
 def archive_books(archive,members):
