@@ -38,6 +38,7 @@ NATIVE = {
     '.hqx':'classic-mac',
     '.hwp':'office-legacy', '.srt':'subtitles', '.vtt':'subtitles',
     '.rst':'rst', '.rest':'rst', '.org':'org', '.adoc':'asciidoc', '.asciidoc':'asciidoc', '.tex':'latex',
+    '.textile':'textile',
     '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
@@ -47,7 +48,7 @@ OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx',
                              'odp','odt','odf-master','pages')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master'))
+DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master','textile'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -244,10 +245,11 @@ def directory_members(root):
     from .ncc_intake import descriptor_name, folder_books, folder_descriptors
     from .opf_intake import folder_packages
     from .pml_package import discover_loose_assets, is_pml
+    from .textile_intake import discover_loose_assets as textile_assets, is_textile
     from .xml_package import SUFFIXES as XML_SUFFIXES, loose_assets, loose_document
 
     declared = set()
-    xml_claimed = set()
+    markup_claimed = set()
     pages, other = [], []
     for folder, directories, files in os.walk(root, followlinks=False):
         here = Path(folder)
@@ -267,6 +269,10 @@ def directory_members(root):
             relative = path.relative_to(root).as_posix()
             if (is_pml(filename) and not filename.startswith('.') and not path.is_symlink() and path.is_file()):
                 declared.update((here/asset).relative_to(root).as_posix() for asset in discover_loose_assets(path))
+            if is_textile(filename) and not filename.startswith('.') and not path.is_symlink() and path.is_file():
+                linked = {asset for asset in textile_assets(path,root) if asset!=relative and not is_textile(asset)}
+                declared.update(linked)
+                markup_claimed.update(linked)
             if (filename.startswith('.') or relative in declared or path.suffix.lower() not in XML_SUFFIXES
                     or path.is_symlink() or not path.is_file()):
                 continue
@@ -279,7 +285,7 @@ def directory_members(root):
             if document is not None:
                 linked = {asset for _,asset in loose_assets(path,document,root) if asset and asset!=relative}
                 declared.update(linked)
-                xml_claimed.update(linked)
+                markup_claimed.update(linked)
         directories[:] = [name for name in sorted(directories) if not name.startswith('.')
                           and name != '__MACOSX' and not (here/name).is_symlink()
                           and not (here/name).is_junction()]
@@ -318,8 +324,8 @@ def directory_members(root):
                         route = probe(prefix,path.name)
                 if route:
                     other.append((relative,route))
-    pages = [name for name in pages if name not in xml_claimed]
-    other = [(name,route) for name,route in other if name not in xml_claimed]
+    pages = [name for name in pages if name not in markup_claimed]
+    other = [(name,route) for name,route in other if name not in markup_claimed]
     masters = [name for name,route in other if route=='odf-master']
     if masters:
         from .odf_master import folder_claims
@@ -525,9 +531,9 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
 
 def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
-    if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar',*PALM_ROUTES):
-        raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar',*PALM_ROUTES) and source.member_name is None:
+    if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar','textile',*PALM_ROUTES):
+        raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, Textile, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -605,7 +611,7 @@ def _describe(path,entry,format,offline):
             if result.kind=='directory' and result.route in DESCRIPTOR_FOLDERS and selected.is_file():
                 parent = selected.parent.relative_to(path)
                 return replace(result,member_name=parent.as_posix() if parent.parts else None)
-            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex','odf-master') else result
+            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex','odf-master','textile') else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
@@ -685,7 +691,7 @@ def _describe(path,entry,format,offline):
 
 
 def _local_source(path, options, source=None):
-    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master','xml-book') and source.member_name:
+    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master','xml-book','textile') and source.member_name:
         return relative_file(path,source.member_name)
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if (source.route=='scrivener' or source.route in DESCRIPTOR_FOLDERS) and path.is_file():
@@ -915,6 +921,11 @@ def capture_dependencies(path,target_dir,source,*,root=None):
         from .pml_package import capture_pml
 
         return capture_pml(path,target_dir,source)
+
+    if source.kind=='file' and source.route=='textile':
+        from .textile_intake import capture_textile
+
+        return capture_textile(path,target_dir,source,scope=root)
     if source.kind=='file' and source.route=='xml-book':
         from .xml_package import capture_xml
 

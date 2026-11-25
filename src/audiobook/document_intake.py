@@ -453,10 +453,10 @@ def html_read(data,builder, *, where='html', part=None, metadata=True, fragment=
                         source = html_text(cell).strip()
                     cells.append(source)
                 rows.append(cells)
-            block = builder.table(rows,path,headers=headers,issue=issue,semantics=entries)
-            preserve_resources(block,node)
             if caption:=node.find('caption',recursive=False):
                 visit(caption,path+'/caption')
+            block = builder.table(rows,path,headers=headers,issue=issue,semantics=entries)
+            preserve_resources(block,node)
             return
         if node.name in atomic and not (node.name in ('li','blockquote') and node.find(list(atomic))):
             roles = {'pre':'code','figcaption':'caption','caption':'caption','img':'figure','svg':'figure'}

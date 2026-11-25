@@ -134,6 +134,7 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     from .scrivener_intake import archive_books as scrivener_books
     from .sphinx_intake import archive_books as sphinx_books
     from .textbundle import archive_scopes
+    from .textile_intake import archive_claims as textile_claims
     from .xml_package import archive_books as xml_books
     from .xps_intake import archive_books as xps_books
 
@@ -183,5 +184,6 @@ def archive_packages(archive,members,*,textpack=False,explicit_pages=False):
     packages.extend(('xml-book',descriptor,title) for descriptor,title in editions)
     spaces,plain = archive_spaces(archive,[item for item in remaining if item.index not in xml_members],declared=False)
     packages.extend(('gitbook',item,book.root or 'GitBook') for book,item in spaces)
+    textile_members = textile_claims(archive,[item for item in remaining if item.index not in xml_members|plain])
     return (packages,claimed | xps_members | fb3_members | pptx_members | odf_members | pages_members |
-            owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain)
+            owned | project_members | opf_members | ncc_members | pml_members | xml_members | plain | textile_members)

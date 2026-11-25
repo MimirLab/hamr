@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev82
+
+- Open Textile manuscripts from a `.textile` file, folder, or ZIP. Numbered footnotes and named notes use the usual note settings. Local illustrations stay with the source, and code blocks follow the selected reading mode.
+- Read a simple table's authored caption before its rows. The source companion keeps the caption at its original location.
+
 # hamr 0.4.9.dev81
 
 - Open DAISY Z39.98 authoring books (ZedAI) from `.xml`, `.zai`, a folder, or a ZIP. Hamr follows authored talking-book alternatives, preserves verse lines and linked notes, and reads the author's descriptions of figures. Index entries follow the ordinary reference setting.
