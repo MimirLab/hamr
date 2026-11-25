@@ -43,7 +43,7 @@ def stacked_digits(rect, glyphs):
     return {'above':above,'below':below} if above and below else None
 
 
-def vertical_runs(segments):
+def vertical_runs(segments,minimum=24):
     runs = []
     by_x = defaultdict(list)
     for index, (left, bottom, right, top) in segments.items():
@@ -61,12 +61,12 @@ def vertical_runs(segments):
             indices.append(index)
         if indices:
             runs.append((x, start, end, indices))
-    return [row for row in runs if row[2]-row[1] >= 24]
+    return [row for row in runs if row[2]-row[1] >= minimum]
 
 
-def framed_panels(vertical, horizontal):
+def framed_panels(vertical, horizontal, *, minimum_height=24):
     """Use a continuous pair of sides and two connected end rules as witnesses."""
-    runs = vertical_runs(vertical)
+    runs = vertical_runs(vertical,minimum_height)
     panels = []
     accepted = set()
     for at, (left, bottom, top, sides) in enumerate(runs):

@@ -1,6 +1,6 @@
 """Recognize boxed terminal transcripts using text and print geometry."""
 
-from ctypes import byref, c_double, c_int
+from ctypes import byref, c_double, c_float, c_int
 from statistics import median
 import re
 
@@ -36,6 +36,68 @@ def overlaps(a,b):
 
 def contains(box,line):
     return box[0]<=line[0] and box[1]<=line[1] and line[2]<=box[2] and line[3]<=box[3]
+
+
+def frame_edges(path):
+    count = raw.FPDFPath_CountSegments(path)
+    if count<2 or count>6:
+        return ()
+    matrix = path.get_matrix()
+    x,y = c_float(),c_float()
+    start = previous = None
+    edges = []
+    for index in range(count):
+        segment = raw.FPDFPath_GetPathSegment(path,index)
+        if not segment or not raw.FPDFPathSegment_GetPoint(segment,byref(x),byref(y)):
+            return ()
+        point = (matrix.a*x.value+matrix.c*y.value+matrix.e,
+                 matrix.b*x.value+matrix.d*y.value+matrix.f)
+        kind = raw.FPDFPathSegment_GetType(segment)
+        if kind==raw.FPDF_SEGMENT_MOVETO:
+            start = point
+        elif kind==raw.FPDF_SEGMENT_LINETO and previous is not None:
+            edges.append((previous,point))
+        else:
+            return ()
+        if raw.FPDFPathSegment_GetClose(segment) and start is not None:
+            edges.append((point,start))
+        previous = point
+    return edges
+
+
+def observe_command_frames(page,textpage,segments):
+    """Mark a sole fixed-pitch line inside a closed orthogonal frame."""
+    from .pdf_rules import framed_panels
+    from .source_commands import EITHER, short_command
+
+    if not (any(EITHER.search(row['text']) for row in segments)
+            and any(row['text'].lower()=='or' for row in segments)):
+        return
+    candidates = [row for row in segments if not row.get('issue') and row.get('glyphs')
+                  and short_command(row['text'])]
+    if not candidates:
+        return
+    vertical,horizontal = {},{}
+    fill,stroke = c_int(),c_int()
+    for item in page.get_objects(filter=[raw.FPDF_PAGEOBJ_PATH]):
+        if not raw.FPDFPath_GetDrawMode(item,byref(fill),byref(stroke)) or fill.value or not stroke.value:
+            continue
+        for (x,y),(right,top) in frame_edges(item):
+            box = (min(x,right),min(y,top),max(x,right),max(y,top))
+            if abs(x-right)<.02 and abs(y-top)>=6:
+                vertical[len(vertical)] = box
+            elif abs(y-top)<.02 and abs(x-right)>=24:
+                horizontal[len(horizontal)] = box
+    panels,_ = framed_panels(vertical,horizontal,minimum_height=6)
+    frames = [panel['rect'] for panel in panels if len(panel['rule_levels'])==2]
+    for row in candidates:
+        found = [box for box in frames if contains(box,row['rect'])]
+        if len(found)!=1 or sum(overlaps(found[0],item['rect']) for item in segments)!=1:
+            continue
+        if terminal_width(textpage,row['glyphs']) is not None:
+            indices = [glyph[-1] for glyph in row['glyphs']]
+            row.setdefault('locator',{}).update(literal_display_frame=found[0],
+                                               native_ranges=[[min(indices),max(indices)+1]])
 
 
 def group_terminal_transcripts(page,textpage,segments):

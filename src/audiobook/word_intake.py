@@ -9,9 +9,10 @@ from .source_scripts import prepare as prepare_scripts
 from .source_math import office_math, office_tag, office_text
 from .source_notes import Definition, NoteGraph, note_text
 from .source_numbering import embed_ordered_label
+from .source_commands import literal_paragraph_location, literal_spans, literal_style
 from .table_grid import Grid, count, passage, passages, simple_matrix
 from .word_stories import ALTERNATE, MISSING_BRANCH, TEXTBOX, Stories, branch, enabled, excluded_kind, properties, visible
-from .word_numbering import Numbering
+from .word_numbering import Numbering, value as style_value
 
 
 @dataclass
@@ -282,6 +283,15 @@ def read_word(path,builder):
                 style = next((attr(n,'val') for n in props if name(n)=='pStyle'),None) or ''
                 role = 'heading' if style.lower().startswith(('heading','title')) or any(
                     name(n)=='outlineLvl' for n in props) else 'body'
+                if role=='body' and not (content.issue or content.numbering or content.stories) and literal_spans(content.spans):
+                    for ident,definition in numbering.style_chain(style):
+                        if attr(definition,'type')!='paragraph':
+                            break
+                        if literal_style(style_value(definition,'name')):
+                            role = 'code'
+                            provenance.update(literal_paragraph_location(
+                                node,'word/document.xml',definition,numbering.paths['styles'],ident))
+                            break
                 if content.excluded:
                     builder.doc.inventory.append({'location':loc,'selected_edition':'visible final',
                                                   'excluded_runs':content.excluded})

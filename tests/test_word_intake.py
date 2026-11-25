@@ -14,16 +14,18 @@ def package(path,body,notes='',numbering='',styles=''):
         book.writestr('word/document.xml',f'<w:document {NS}><w:body>{body}</w:body></w:document>')
         if notes:
             book.writestr('word/footnotes.xml',f'<w:footnotes {NS}>{notes}</w:footnotes>')
-        if numbering:
+        if numbering or styles:
             relationship = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
-            entry = f'<Relationship Id="numbering" Type="{relationship}numbering" Target="lists/numbering.xml"/>'
+            entry = ''
+            if numbering:
+                entry += f'<Relationship Id="numbering" Type="{relationship}numbering" Target="lists/numbering.xml"/>'
+                book.writestr('word/lists/numbering.xml',f'<w:numbering {NS}>{numbering}</w:numbering>')
             if styles:
                 entry += f'<Relationship Id="styles" Type="{relationship}styles" Target="styles.xml"/>'
                 book.writestr('word/styles.xml',f'<w:styles {NS}>{styles}</w:styles>')
             book.writestr('word/_rels/document.xml.rels',
                           '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
                           +entry+'</Relationships>')
-            book.writestr('word/lists/numbering.xml',f'<w:numbering {NS}>{numbering}</w:numbering>')
     return path
 
 

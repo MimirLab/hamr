@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev69
+
+- Keep two short displayed commands inside their written either-or sentence. This works in structured source and in native PDF with matching framed, fixed-pitch lines. The companion keeps the exact locations of the pieces. Standalone code blocks follow the selected code policy.
+- Recognize declared paragraph styles for preformatted text and source code in Word and OpenDocument. Consecutive code paragraphs within the same source container retain their lines as one quiet companion reference in listen mode.
+
 # hamr 0.4.9.dev68
 
 - Source review, interrupted jobs and speech-review findings print follow-up commands for the Hamr installation and state folder that opened the job. This also works with custom state paths that contain spaces or apostrophes.

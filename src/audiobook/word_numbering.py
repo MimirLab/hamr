@@ -89,15 +89,19 @@ class Numbering:
         self.definitions = {}
         self.counters = defaultdict(dict)
 
-    def styled_instance(self, style):
+    def style_chain(self, style):
         visited = set()
         while style in self.styles and style not in visited:
             visited.add(style)
             node = self.styles[style]
+            yield style,node
+            style = value(node,'basedOn')
+
+    def styled_instance(self, style):
+        for style,node in self.style_chain(style):
             ident,_ = declaration(properties(node,'pPr'))
             if ident is not None:
                 return ident,style
-            style = value(node,'basedOn')
         return None,None
 
     def levels(self, ident):

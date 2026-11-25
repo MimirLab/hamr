@@ -688,14 +688,16 @@ def odt(path,builder,source_file=None):
             document = xml(read('content.xml'))
             metadata = read('meta.xml',required=False)
             styled = next(document.iter(TEXT+'span',TEXT+'list',TEXT+'numbered-paragraph'),None)
-            styles = read('styles.xml',required=False) if styled is not None else None
+            has_paragraph_styles = any(node.get(TEXT+'style-name') for node in document.iter(TEXT+'p'))
+            styles = read('styles.xml',required=False) if styled is not None or has_paragraph_styles else None
             _odt_body(document,builder,Content(read),xml(metadata) if metadata else None,
                       xml(styles) if styles else None)
 
 
 def _odt_body(document,builder,content,metadata,styles=None):
-    from .odf_content import DRAW, OFFICE, Styles
+    from .odf_content import DRAW, OFFICE, STYLE, TEXT, Styles
     from .odf_numbering import authored_marks
+    from .source_commands import literal_paragraph_location, literal_spans, literal_style
     from .table_grid import simple_matrix
 
     if metadata is not None:
@@ -717,8 +719,18 @@ def _odt_body(document,builder,content,metadata,styles=None):
         if tag in ('p','h') or node.tag in (MATH_ROOT,DRAW+'frame'):
             stories = []
             text,spans,links,issue = content.paragraph(node,body=True,stories=stories)
-            item = builder.add(text,'heading' if tag=='h' else 'body',loc,
-                               loc={'inline_semantics':[span for span in spans if span['kind']!='line_break']},
+            role = 'heading' if tag=='h' else 'body'
+            provenance = {'inline_semantics':[span for span in spans if span['kind']!='line_break']}
+            if tag=='p' and not (links or issue or stories or node in content.numbering) and literal_spans(spans):
+                for style in content.styles.inheritance('paragraph',node.get(TEXT+'style-name'),strict=False):
+                    ident = style.get(STYLE+'name')
+                    if literal_style(style.get(STYLE+'display-name') or ident):
+                        role = 'code'
+                        tree = style.getroottree()
+                        member = 'styles.xml' if tree.getroot() is styles else content.source_file
+                        provenance.update(literal_paragraph_location(node,content.source_file,style,member,ident))
+                        break
+            item = builder.add(text,role,loc,loc=provenance,
                                links=links,issue=issue)
             if item and (label:=content.numbering.get(node)):
                 value,marker = label

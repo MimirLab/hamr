@@ -184,6 +184,7 @@ def parse(path,source,sha,cache,title):
 def inspect_saved(path,source,cache=None,*,title=None):
     from .importers import IMPORT_REVISION
     from .source_passages import prepare_navigation
+    from .source_commands import prepare as prepare_commands
 
     path = Path(path)
     source = Source(**source) if isinstance(source,dict) else source
@@ -201,7 +202,7 @@ def inspect_saved(path,source,cache=None,*,title=None):
         directory = Path(__file__).parent
         implementation = {p.name:filehash(p) for p in directory.glob('*.py')
                           if p.name in ('importers.py','pronunciation.py','markdown_notes.py','text_source.py',
-                                        'text_evidence.py','source_math.py','source_arithmetic.py','source_notes.py','source_scripts.py','intake.py','table_grid.py')
+                                        'text_evidence.py','source_math.py','source_arithmetic.py','source_notes.py','source_scripts.py','source_commands.py','intake.py','table_grid.py')
                           or p.name.startswith(('epub_','pdf_','visual_table_'))}
         identity = key([sha,source.route,source.encoding,IMPORT_REVISION,dependencies,implementation])
         target = cache/(identity+'.json')
@@ -215,6 +216,7 @@ def inspect_saved(path,source,cache=None,*,title=None):
         except (OSError,ValueError,KeyError,TypeError):
             pass
     doc = parse(path,source,sha,cache,title)
+    prepare_commands(doc)
     from .source_arithmetic import observe
 
     observe(doc)

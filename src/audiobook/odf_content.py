@@ -61,18 +61,25 @@ class Styles:
                 if node.tag in (STYLE+'style',STYLE+'master-page',STYLE+'page-layout') and (label:=node.get(STYLE+'name')):
                     self.nodes[node.tag,node.get(STYLE+'family'),label] = node
 
-    def properties(self,family,label,tag):
-        values,seen = {},set()
+    def inheritance(self,family,label,*,strict=True):
+        seen = set()
         while label:
             if label in seen:
-                raise Error('source_style','OpenDocument style inheritance is cyclic.')
+                if strict:
+                    raise Error('source_style','OpenDocument style inheritance is cyclic.')
+                break
             seen.add(label)
             style = self.nodes.get((STYLE+'style',family,label))
             if style is None:
                 break
+            yield style
+            label = style.get(STYLE+'parent-style-name')
+
+    def properties(self,family,label,tag):
+        values = {}
+        for style in self.inheritance(family,label):
             if (node:=style.find(STYLE+tag)) is not None:
                 values = dict(node.attrib)|values
-            label = style.get(STYLE+'parent-style-name')
         return values
 
     def position(self,label):

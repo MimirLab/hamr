@@ -72,7 +72,7 @@ hamr resume JOB
 hamr play JOB
 ```
 
-Listen mode preserves claims/qualifiers, speaks tables with explicit headers, inserts linked notes beside their claim, and keeps exact code in the companion. Study mode also speaks reference sections. Procedure mode speaks literal blocks. Explicit category choices override mode defaults. These deterministic modes do not summarize or infer content. Exact-heading section policies are available. When a scanned PDF has a corroborated bibliography heading and matching citation structure on consecutive pages, listen mode keeps those references in the companion. Use `--references speak` to include them in speech.
+Listen mode preserves claims and qualifiers, speaks tables with explicit headers, and inserts linked notes beside their claim. Short displayed commands that complete an explicit either-or sentence read inline. Standalone code stays in the companion. Study mode also speaks reference sections. Procedure mode speaks literal blocks. Explicit category choices override mode defaults. These deterministic modes do not summarize or infer content. Exact-heading section policies are available. When a scanned PDF has a corroborated bibliography heading and matching citation structure on consecutive pages, listen mode keeps those references in the companion. Use `--references speak` to include them in speech.
 
 Use `--notes after_paragraph|inline|companion` to control linked notes. `--chapters '5,2-3,2'` selects chapters 2, 3 and 5 in source order. Use `hamr repair JOB --chapters all` to restore the complete selection.
 

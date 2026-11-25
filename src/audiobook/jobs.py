@@ -672,6 +672,12 @@ def publish(store,j,*,record_run_metrics=None):
     block_locations = {b['id']:b['locator'].get('location_id') or b['id'] for b in j['document']['blocks']}
     source_locations = {block_locations[b['id']]:{**b['locator'],'location_id':block_locations[b['id']]}
                         for b in j['document']['blocks']}
+    for block in j['document']['blocks']:
+        for fragment in block['locator'].get('source_fragments',()):
+            if source_block:=fragment.get('source_block'):
+                location = fragment.get('location_id') or source_block
+                source_locations.setdefault(location,{**fragment,'location_id':location})
+                block_locations.setdefault(source_block,location)
     resources = j['document'].get('metadata',{}).get('source_resources',())
     source_locations.update((resource['location_id'],resource) for resource in resources)
     aliases = {block_id:location for block_id,location in block_locations.items() if block_id!=location}

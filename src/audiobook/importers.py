@@ -843,9 +843,10 @@ def pdf(data:bytes|Path,ocr_cache:Path|None=None,ocr_config=None)->Document:
                         segments.append(segment)
             if not panels:
                 if full_geometry and not (overlays or table_tags):
-                    from .pdf_literals import group_terminal_transcripts
+                    from .pdf_literals import group_terminal_transcripts, observe_command_frames
 
                     segments = group_terminal_transcripts(page,tp,segments)
+                    observe_command_frames(page,tp,segments)
                 from .pdf_layout import column_order
                 def uncertain_boundary(row):
                     for item in row:
@@ -954,7 +955,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-39'
+IMPORT_REVISION='import-40'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 
