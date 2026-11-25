@@ -1,6 +1,7 @@
 """Project a Word package into Hamr's common reading blocks."""
 from collections import defaultdict
 from dataclasses import dataclass, field
+from functools import cache
 
 from .document_intake import (attr, formula_span, name,
                               plain_xml_text, structured_zip, xml)
@@ -69,6 +70,19 @@ def read_word(path,builder):
         document = xml(read('word/document.xml'))
         numbering = Numbering(read,members)
         drawing_parts = {'document':Stories(document)}
+
+        @cache
+        def character_marks(style):
+            marks = defaultdict(list)
+            for ident,definition in numbering.style_chain(style):
+                if attr(definition,'type')!='character':
+                    break
+                for field in properties(definition,'rPr'):
+                    if name(field) in ('i','b'):
+                        marks[name(field)].append((ident,definition,enabled(attr(field,'val'))))
+            # Repeated toggle settings need the complete visual style context.
+            return {key:items[0][:2] for key,items in marks.items() if len(items)==1 and items[0][2]}
+
         meta = read('docProps/core.xml',required=False)
         if meta:
             title = next((plain_xml_text(item) for item in xml(meta) if name(item)=='title'),None)
@@ -115,8 +129,17 @@ def read_word(path,builder):
                     for child in item:
                         if name(child)!='rPr':
                             walk(child)
-                    if any(name(n) in ('i','b') and enabled(attr(n,'val')) for n in props):
+                    direct = {name(n):enabled(attr(n,'val')) for n in props if name(n) in ('i','b')}
+                    if any(direct.values()):
                         spans.append({'kind':'emphasis','source_start':start,'source_end':offset})
+                    elif offset>start:
+                        for key,(ident,definition) in character_marks(style_value(props,'rStyle')).items():
+                            if key in direct:
+                                continue
+                            spans.append({'kind':'emphasis','source_start':start,'source_end':offset,
+                                          'style_definition':{'id':ident,'source_file':numbering.paths['styles'],
+                                                              'xml_path':definition.getroottree().getpath(definition)}})
+                            break
                     if align:=next((attr(n,'val') for n in props if name(n)=='vertAlign'),None):
                         if align in ('superscript','subscript') and start<offset:
                             spans.append({'kind':align,'source_start':start,'source_end':offset})
@@ -296,8 +319,11 @@ def read_word(path,builder):
                     builder.doc.inventory.append({'location':loc,'selected_edition':'visible final',
                                                   'excluded_runs':content.excluded})
                 spans = [span for span in content.spans if span['kind']!='line_break']
-                item = builder.add(content.text,role,loc,loc={**provenance,'inline_semantics':spans},
+                identity_spans = [span for span in spans if 'style_definition' not in span]
+                item = builder.add(content.text,role,loc,loc={**provenance,'inline_semantics':identity_spans},
                                    issue=content.issue)
+                if item:
+                    item.locator['inline_semantics'] = spans
                 if item and content.numbering:
                     value,marker = content.numbering
                     item.locator.update(ordered_item=value,ordered_marker=marker)

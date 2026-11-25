@@ -214,11 +214,11 @@ def describe(node,resolve_asset=None,cover_assets=(), *, projected=None, note_ma
             spans.append({**data,'kind':'abbreviation_label','expansion':n['title']})
         if n.name in ('em','strong','cite'):
             spans.append({**data,'kind':'title_style' if n.name=='cite' else 'emphasis','element':n.name})
-        from .epub_styles import properties
+        from .epub_styles import font_style, properties
         transform=properties(n).get('text-transform',{})
         if transform.get('value') in ('uppercase','lowercase','capitalize'):
             spans.append({**data,'kind':'display_case','transform':transform['value'],'origin':transform['origin']})
-        font=properties(n).get('font-style')
+        font=font_style(n)
         if font or n.name=='i':
             style=font['value'].casefold() if font else 'italic'
             if style.split()[:1] in (['italic'],['oblique'],['normal']):

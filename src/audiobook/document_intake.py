@@ -224,6 +224,8 @@ def html_read(data,builder, *, where='html', part=None, metadata=True, fragment=
     from .source_notes import Definition, NoteGraph, note_text
     from .source_numbering import bind_ordered, html_ordered_items
 
+    structural_audit = AUDIT_SPANS - ({'hyperlink'} if collect_links else set())
+    narration_audit = structural_audit - {'emphasis','font_style','title_style'}
     soup,recovered = html_tree(data,encoding)
     if recovered:
         builder.doc.inventory.append({'kind':'html_structure_recovered','element':where,
@@ -323,18 +325,20 @@ def html_read(data,builder, *, where='html', part=None, metadata=True, fragment=
         return next((span['issue'] for span in spans if span['kind']=='source_review'),None) or uncertainty(spans)
 
     def text_node(node,role,where):
-        source,spans = annotated_semantics(node,note_body=role=='note')
-        if role=='body' and not source and any(span.get('description_source') for span in spans):
+        source,semantics = annotated_semantics(node,note_body=role=='note')
+        if role=='body' and not source and any(span.get('description_source') for span in semantics):
             role = 'caption'
-        spans = [span for span in spans if span['kind'] not in AUDIT_SPANS or
-                 collect_links and span['kind']=='hyperlink']
-        local_notes(spans)
+        spans = [span for span in semantics if span['kind'] not in structural_audit]
+        local_notes(semantics)
         issue = source_issue(spans)
         loc = {'anchor':node.get('id'),'inline_semantics':spans,'exact':str(node)}
         names = [tag['name'] for tag in node.find_all('a',attrs={'name':True}) if tag['name']]
         if names:
             loc['container_anchors'] = list(dict.fromkeys(names))
         block = builder.add(source,role,where,loc=loc,issue=None if role=='note' else issue)
+        if block:
+            # Keep the source identity stable while passing authored phrasing marks to narration.
+            block.locator['inline_semantics'] = [span for span in semantics if span['kind'] not in narration_audit]
         if block and role=='heading' and projected and any(id(child) in projected for child in node.find_all(True)):
             if label:=reading(block):
                 block.chapter = builder.chapter = label

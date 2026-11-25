@@ -13,6 +13,20 @@ LAYOUT_DISPLAY={'block','inline','inline-block','flex','inline-flex','grid','inl
 def properties(node):return vars(node).get('_audiobook_css',{})
 
 
+def font_style(node):
+    if authored:=properties(node).get('font-style'):
+        return authored
+    inline = node.get('style','')
+    if 'font-style' not in inline.casefold():
+        return None
+    selected = None
+    for declaration in tinycss2.parse_declaration_list(inline,skip_comments=True,skip_whitespace=True):
+        if declaration.type=='declaration' and declaration.lower_name=='font-style' and (
+                selected is None or declaration.important or not selected.important):
+            selected = declaration
+    return {'value':tinycss2.serialize(selected.value).strip(),'origin':'inline style'} if selected else None
+
+
 def issues(node):
     return [message for parent in [node,*node.parents] for message in vars(parent).get('_audiobook_css_issues',[])]
 

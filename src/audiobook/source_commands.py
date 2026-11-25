@@ -40,7 +40,7 @@ def scope(block):
 
 
 def display(block):
-    return short_command(block.source.strip()) and (block.role=='code' or (
+    return not block.locator.get('alternate_rendering') and short_command(block.source.strip()) and (block.role=='code' or (
         block.role=='body' and block.locator.get('literal_display_frame')))
 
 

@@ -33,6 +33,22 @@ def paragraph(text):
     return f'<w:p><w:r><w:t>{text}</w:t></w:r></w:p>'
 
 
+def test_word_character_style_marks_the_owned_word_and_respects_explicit_off(tmp_path):
+    styles = ('<w:style w:type="character" w:styleId="Authored"><w:rPr><w:i/></w:rPr></w:style>'
+              '<w:style w:type="character" w:styleId="Alias"><w:basedOn w:val="Authored"/></w:style>')
+    first = '<w:p><w:r><w:t xml:space="preserve">“Did </w:t></w:r><w:r><w:rPr>'
+    last = '</w:rPr><w:t>you</w:t></w:r><w:r><w:t xml:space="preserve"> see who left?” the doctor asked.</w:t></w:r></w:p>'
+    reference = '<w:rStyle w:val="Alias"/>'
+    source = package(tmp_path/'dialogue.docx',first+reference+last+first+reference+'<w:i w:val="off"/>'+last,
+                     styles=styles)
+    document = inspect_source(source)
+    mark, = document.blocks[0].locator['inline_semantics']
+    assert mark['source']=='you'
+    assert mark['style_definition']['id']=='Authored'
+    assert not document.blocks[1].locator['inline_semantics']
+    assert plan(document)['performance']['candidates']==1
+
+
 def numbered(text,num=None,level=None,style=None):
     style_xml = f'<w:pStyle w:val="{style}"/>' if style else ''
     numbering = f'<w:numId w:val="{num}"/>' if num is not None else ''

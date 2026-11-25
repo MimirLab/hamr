@@ -446,6 +446,79 @@ The next sentence is still present.
     assert example.locator['source_control'] is True
 
 
+def test_verified_example_reads_output_and_keeps_code_and_formatting_separate(tmp_path, monkeypatch):
+    from hashlib import sha256
+    from audiobook import latex_examples
+
+    style = br"""\ExplSyntaxOn
+\NewDocumentEnvironment{example}{!o}{
+  \verbatim_set_processline:N \collect_example:n
+  \verbatim_start:
+}{\produce_example:}
+\ExplSyntaxOff
+"""
+    (tmp_path/'sample.sty').write_bytes(style)
+    main = tmp_path/'book.tex'
+    authored = r"""\documentclass{book}
+\usepackage{sample}
+\begin{document}
+\begin{example}
+\itshape%!hide
+Shown command only%!show
+Keep \emph{this} line.
+\end{example}
+\begin{example}
+\RenewCommandCopy{\emph}{\strong}%!hide
+Read \emph{this} aloud.
+\end{example}
+\begin{example}
+A speed of 299~792~458~m/s
+\end{example}
+
+The next paragraph stays separate.
+
+\begin{example}[standalone]
+Hold this output.
+\end{example}
+\begin{example}
+The \input{extra} result.
+\end{example}
+\LshortExampleSetup{standalone}
+\begin{example}
+Hold later output.
+\end{example}
+\end{document}
+"""
+    main.write_text(authored,encoding='utf-8')
+    assert not any(block.locator.get('example_role') for block in inspect_source(main).blocks)
+    monkeypatch.setattr(latex_examples,'LSHORT_EXAMPLE',sha256(style).hexdigest())
+    document = inspect_source(main)
+    pieces = [block for block in document.blocks if block.locator.get('example_role')]
+    assert [block.role for block in pieces]==['code','body']*3
+    assert pieces[0].source=='Shown command only%!show\nKeep \\emph{this} line.'
+    assert pieces[1].source=='Keep this line.'
+    assert pieces[2].source==r'Read \emph{this} aloud.'
+    assert pieces[3].source=='Read this aloud.'
+    assert pieces[5].source=='A speed of 299\u00a0792\u00a0458\u00a0m/s'
+    for displayed,output,element in ((pieces[0],pieces[1],'em'),(pieces[2],pieces[3],'strong')):
+        assert displayed.locator['example_source']==output.locator['example_source']
+        start,end = output.locator['example_source']['character_range']
+        assert r'\emph{this}' in authored[start:end]
+        mark, = [span for span in output.locator['inline_semantics'] if span['kind']=='emphasis']
+        assert mark['element']==element
+        assert output.source[mark['source_start']:mark['source_end']]=='this'
+    inverse, = [span for span in pieces[1].locator['inline_semantics']
+                if span['kind']=='font_style' and span['style']=='normal']
+    assert pieces[1].source[inverse['source_start']:inverse['source_end']]=='this'
+    # A changed package, standalone output or an unprojectable expression retains the existing hold.
+    default = plan(document)
+    held = [issue for issue in default['issues'] if 'generated output' in issue['reason']]
+    assert len(held)==3
+    assert say(default)[:4]==['Keep this line.','Read this aloud.',
+                            'A speed of two hundred ninety nine million seven hundred ninety two thousand four hundred fifty eight meters per second',
+                            'The next paragraph stays separate.']
+
+
 def test_forwarded_missing_empty_and_star_arguments_have_distinct_meaning(tmp_path):
     main = tmp_path/'book.tex'
     main.write_text(r"""\documentclass{article}

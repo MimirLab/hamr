@@ -28,6 +28,9 @@ UNIT_NAMES = {'kg':'kilograms','g':'grams','mg':'milligrams','km':'kilometers','
               'MB':'megabytes','Mb':'megabits','kB':'kilobytes','kb':'kilobits','V':'volts','mV':'millivolts',
               'µV':'microvolts','μV':'microvolts','kPa':'kilopascals'}
 UNIT_PATTERN = '|'.join(map(re.escape, sorted(UNIT_NAMES,key=len,reverse=True)))
+COMPOUND_AMOUNT = rf'(?:{context_numbers.SIGNED}{context_numbers.SPACE_GROUPS}|{SIGNED})'
+COMPOUND_UNIT = rf'{COMPOUND_AMOUNT}[^\S\r\n]*(?:{UNIT_PATTERN})/(?:{UNIT_PATTERN})'
+COMPOUND_FIELDS = re.compile(rf'({COMPOUND_AMOUNT})[^\S\r\n]*({UNIT_PATTERN})/({UNIT_PATTERN})')
 UNCERTAINTY = re.compile(rf'({context_numbers.MEASUREMENT_AMOUNT})\(([0-9]{{1,6}})\)'
                          rf'(?:[^\S\r\n]+({UNIT_PATTERN})(?![\w/·^²³]))?')
 NAMED_CURRENCIES = '|'.join(CURRENCIES)
@@ -294,7 +297,8 @@ def lab_forms(kind,raw,env):
         unit={'°C':'celsius','°F':'fahrenheit','°':'degree'}[symbol]
         return [Candidate('angle' if symbol=='°' else 'temperature',{'value':amount,'unit':unit},number_spoken(amount)+' '+UNIT_NAMES[symbol],learned)]
     if kind=='compound_unit':
-        amount=parts[0];a,b=raw[len(amount):].strip().split('/')
+        raw_amount,a,b = COMPOUND_FIELDS.fullmatch(raw).groups()
+        amount = context_numbers.digits(raw_amount)
         denominator={'meters':'meter','seconds':'second','hours':'hour','liters':'liter','milliliters':'milliliter'}.get(UNIT_NAMES[b],UNIT_NAMES[b].removesuffix('s'))
         return [Candidate('compound_measurement',{'value':amount,'numerator_unit':a,'denominator_unit':b},number_spoken(amount)+' '+UNIT_NAMES[a]+' per '+denominator,learned)]
     if kind in ('range','measurement_range'):

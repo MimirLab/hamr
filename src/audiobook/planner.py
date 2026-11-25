@@ -3,8 +3,8 @@ import re
 from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-35'
-CONTINUITY_RULES=('faithful-33','faithful-34',RULES)
+RULES='faithful-36'
+CONTINUITY_RULES=('faithful-33','faithful-34','faithful-35',RULES)
 TASK_LABEL_RULES=('faithful-28','faithful-29','faithful-30','faithful-31','faithful-32',*CONTINUITY_RULES)
 NUMBERING_RULES=('faithful-26','faithful-27',*TASK_LABEL_RULES)
 TABLE_PASSAGE_RULES=('faithful-25',*NUMBERING_RULES)
@@ -365,7 +365,10 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         elif b.locator.get('supplemental_note') and note_policy=='companion':
             action='companion'; reason='Supplemental note retained in the companion by the selected notes policy.';text=''
         elif b.role=='code' and effective['code']=='companion':
-            action='companion'; reason='Exact literal retained in timed companion.'; text='A literal block is available in the companion.'; connector=True
+            action='companion'; reason='Exact literal retained in timed companion.'; text=''
+            if not b.locator.get('alternate_rendering'):
+                text='A literal block is available in the companion.'
+                connector=True
         elif b.role=='code':
             text='Literal block. '+b.source; reason='Follow a procedure: speak the exact literal block by explicit policy.'; connector=True
         elif b.role=='table':
@@ -512,6 +515,8 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         placement=overrides.get(b.id,{}).get('placement')
         if placement is not None and (placement not in ('caption_after_paragraph','standalone') or action!='speak'):
             raise Error('delivery_policy','Caption or standalone placement requires a verified speech reading.')
+        if placement is None and action=='speak' and b.locator.get('standalone_passage'):
+            placement = 'standalone'
         if continuous and placement=='caption_after_paragraph':
             captions.append((spoken,b.id));continue
         if continuous and placement=='standalone':flush();flush_captions()

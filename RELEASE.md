@@ -1,3 +1,9 @@
+# hamr 0.4.9.dev71
+
+- Read simple text examples from the verified lshort LaTeX package. The generated result is read in order and its exact source stays linked beside the printed code. The code is quiet in listen mode and available to the procedure reading. Examples that need a separate compilation still appear in source review.
+- Preserve explicit emphasis and font-shape marks in HTML-derived documents and clearly defined Word character styles. Eligible dialogue uses the same expressive narration in both.
+- Read nonbreaking digit groups with compound units as one measurement. For example, 299 792 458 m/s reads as a single speed.
+
 # hamr 0.4.9.dev70
 
 - Speech review accepts an exact filename written compactly by a verifier when the planned reading spells out its extension at the same location. Different names, extensions and paths still require review. Run `hamr qa JOB --recheck` to apply the comparison to saved recordings.

@@ -4,6 +4,7 @@ from bisect import bisect_right
 from contextlib import contextmanager
 from copy import copy
 from dataclasses import dataclass
+from hashlib import sha256
 from html import escape
 from pathlib import PurePosixPath
 import re
@@ -19,6 +20,7 @@ from pylatexenc.macrospec import (
 )
 from pylatexenc.latex2text import LatexNodes2Text
 
+from . import latex_examples
 from .core import Error
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, formula_span, html_read
 from .latex_declarations import (
@@ -127,7 +129,7 @@ class LiteralEnvironmentArgs(MacroStandardArgsParser):
                          if line_end else None)
 
     def parse_args(self,w,pos,parsing_state=None):
-        _, start, size = super().parse_args(w,pos,parsing_state)
+        options, start, size = super().parse_args(w,pos,parsing_state)
         start += size
         if self.line_end:
             marker = self.line_end.search(w.s,start)
@@ -138,7 +140,9 @@ class LiteralEnvironmentArgs(MacroStandardArgsParser):
             raise LatexWalkerParseError(s=w.s,pos=start,msg=f'Expected {self.end}')
         chars = w.make_node(LatexCharsNode,parsing_state=parsing_state,
                             chars=w.s[start:end],pos=start,len=end-start)
-        return ParsedVerbatimArgs(verbatim_chars_node=chars), pos, end-pos
+        parsed = ParsedVerbatimArgs(verbatim_chars_node=chars)
+        parsed.environment_options = tuple(arg for arg in options.argnlist if arg is not None)
+        return parsed, pos, end-pos
 
 
 class EnvironmentDeclarationArgs(MacroStandardArgsParser):
@@ -264,6 +268,7 @@ class Expansion:
 class EnvironmentLayout:
     tag: str | None
     definition: dict
+    example: bool = False
 
 
 class Projection:
@@ -291,6 +296,8 @@ class Projection:
         self.packages = set()
         self.parameters = None
         self.expansion_depth = 0
+        self.example_context = None
+        self.example_defaults = True
 
     def count(self,nodes):
         self.nodes_left -= len(nodes)
@@ -682,7 +689,7 @@ class Projection:
                     return None
         return code
 
-    def define_environment(self,file,node):
+    def define_environment(self,file,node,*,example_package=False):
         args = node.nodeargd.argnlist
         opening,closing = args[-2:]
         signature = None
@@ -708,7 +715,8 @@ class Projection:
                                          environments=[EnvironmentSpec(name,args_parser=LiteralEnvironmentArgs(
                                              name,signature,line_end=True))])
             tag = 'verbatim_source'
-        self.layouts[name] = EnvironmentLayout(tag,file.location(node))
+        self.layouts[name] = EnvironmentLayout(tag,file.location(node),
+                                               example_package and name=='example' and tag=='verbatim_source')
 
     def define(self,file,node,*,expl3=False):
         if node.macroname in CLASSIC:
@@ -790,6 +798,7 @@ class Projection:
             except Error:
                 continue
             self.inventory.append({'kind':'latex_style_package','target':path,**file.location(node)})
+            example_package = sha256(data).hexdigest()==latex_examples.LSHORT_EXAMPLE
             for position,expl3 in package_statements(
                     style.text,lambda start,end:self.literal_end(style,start,end),self.inline_aliases):
                 try:
@@ -804,7 +813,7 @@ class Projection:
                 elif declaration.macroname in DECLARATIONS:
                     self.define(style,declaration,expl3=expl3)
                 elif declaration.macroname in ENVIRONMENT_DECLARATIONS:
-                    self.define_environment(style,declaration)
+                    self.define_environment(style,declaration,example_package=example_package)
                 elif declaration.macroname in CODE_SETTINGS:
                     self.set_code_options(style,declaration)
                 elif declaration.macroname in INLINE_DECLARATIONS:
@@ -886,11 +895,29 @@ class Projection:
             markup.append(self.tag('li',file.location(start.pos,end),label+self.render(file,body,chain),attrs=attrs))
         return f'<{tag}>'+''.join(markup)+f'</{tag}>'
 
+    def project_example(self,file,node,layout,where):
+        if not self.example_defaults or node.nodeargd.environment_options or latex_examples.COMMANDS & self.macro_origins.keys():
+            return None
+        printed,typeset = latex_examples.channels(node.nodeargd.verbatim_text)
+        if not self.example_context:
+            self.example_context = latex_examples.parser_context()
+        output = latex_examples.prose_output(typeset,self.example_context,lambda tokens:self.inline(file,tokens))
+        if not output:
+            return None
+        body = file.location(node.nodeargd.argnlist[0])
+        evidence = {'environment_definition':layout.definition,'example_source':body}
+        code = self.tag('pre',where,escape(printed),example_role='displayed_code',
+                        alternate_rendering=True,**evidence)
+        return code+self.tag('p',body,output,example_role='rendered_output',
+                             standalone_passage=True,**evidence)
+
     def environment(self,file,node,chain):
         name = node.environmentname
         where = file.location(node)
         if layout:=self.layouts.get(name):
             if layout.tag=='verbatim_source' and isinstance(node.nodeargd,ParsedVerbatimArgs):
+                if layout.example and (example:=self.project_example(file,node,layout,where)):
+                    return example
                 code = self.tag('pre',where,escape(node.nodeargd.verbatim_text),source_control=True,
                                 environment_definition=layout.definition)
                 return code+self.issue(file,node,f'The generated output of LaTeX {name!r} needs a verified reading.')
@@ -994,6 +1021,10 @@ class Projection:
                 output.append(self.include_text(file,node,chain,preamble))
             elif name in PACKAGE_COMMANDS:
                 self.package(file,node,chain)
+            elif name=='LshortExampleSetup':
+                self.example_defaults = False
+                if not preamble:
+                    append(node,self.inline(file,[node]))
             elif name in METADATA|{'includeonly'}|DECLARATIONS|ENVIRONMENT_DECLARATIONS|CODE_SETTINGS:
                 output.append(self.setup(file,node))
             elif name in INLINE_DECLARATIONS:
