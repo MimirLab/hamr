@@ -24,7 +24,7 @@ Word follows tracked paragraph joins, deleted rows and cells, and supported vert
 | PDF, EPUB, Markdown and plain text | The ordinary Hamr readers preserve the original source, planned narration and companion. Searchable PDFs retain native structure. For a known legacy text encoding, pass `--encoding windows-1252` or the actual encoding of the file. |
 | Loose scans, individual images, TIFF and CBZ | The shared raster reader handles supported JPEG, PNG and TIFF page images, expands frames, and preserves crops and ordering. English OCR and its runtime are in the Linux x86-64 and Windows x64 packages. |
 | Supplied OCR and ordered archives | Local hOCR, ALTO, PAGE XML, TSV and selected ABBYY XML sidecars can supply text for a scan. ABBYY XML uses one text page with original unrotated coordinates. A physical METS map or a local IIIF Presentation 3 sequence can name the pages. Binding and dimensions are checked before reuse. |
-| HTML, OpenDocument and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. OpenDocument Writer uses the same reader for `.odt`, `.oth` and Flat OpenDocument text (`.fodt`). Selected complex objects that require a verified reading appear in source review. |
+| HTML, OpenDocument and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. OpenDocument Writer uses the same reader for `.odt`, `.ott`, `.oth` and Flat OpenDocument text (`.fodt`). Master documents (`.odm`) can include local Writer chapters. [Writer master documents](#writer-master-documents) |
 | Word documents (DOCX) | Read editable DrawingML and VML text boxes in the selected Word compatibility branch. Hamr reads each story after its anchor paragraph and follows linked frames in their authored order. Visible revisions, notes, equations and simple tables use the shared preparation step. |
 | Apple Pages | Read tested XML and IWA `.pages` files, package folders and archived publications with the bundled Linux x86-64 reader. [Apple Pages intake](#apple-pages) |
 | TextBundle folders and TextPack archives | Hamr opens the descriptor's text payload and preserves its companion files. Version 1 uses Markdown. Version 2 can declare Markdown, plain text, HTML, or RTF. |
@@ -86,6 +86,12 @@ When a searchable PDF establishes an equation, raised script or scientific table
 `hamr agent capabilities` reports registered routes and host availability. The recognized file type and the exact variant it can read are different. Hamr reports an unreadable variant or missing helper with the saved source intact.
 
 For a CHM with a known legacy encoding, pass `--encoding windows-1252` or the actual source encoding. The resident CHM decoder runs locally with Bubblewrap. Its tested path uses a readable HTML contents file inside the CHM. Binary-only contents and popup controls without a local HTML target still need qualification.
+
+## Writer master documents
+
+Open the `.odm` with its chapters beside it or in subfolders. If chapters live in a shared parent folder, open that folder or ZIP the whole publication with its relative paths. The reading follows Writer's section order and can select a named section from a linked chapter. A copy that Writer saved inside the master supplies that section's reading. The companion can return the original master and each chapter Hamr used.
+
+If an unsaved section has a missing chapter, a circular reference, or a link outside the supplied files, the plan marks that section for source review. To include a chapter from elsewhere, save it inside the publication and update the link in Writer, or save a reading copy with the section contents included.
 
 ## Apple Pages
 

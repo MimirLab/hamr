@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev77
+
+- Open Writer templates (`.ott`) as text. Templates use the same reading and source companion as ordinary Writer documents.
+- Open a Writer master document (`.odm`), its folder of chapters, or a ZIP containing both. Hamr reads saved sections and follows local chapter references in Writer's order, including named sections. The companion retains the source files used for reading. Missing or unreadable chapters appear at their place in source review.
+
 # hamr 0.4.9.dev76
 
 - Read tracked row and column deletions in LibreOffice Writer ODT and Flat ODF. Surviving merged cells, inserted rows, and deliberately blank positions follow the visible table. The source companion records the deleted locations.

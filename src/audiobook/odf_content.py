@@ -32,6 +32,7 @@ TEXT_MEDIA = frozenset((
     'application/vnd.oasis.opendocument.text-template',
     'application/vnd.oasis.opendocument.text-web',
 ))
+MASTER_MEDIA = 'application/vnd.oasis.opendocument.text-master'
 TEXT_BOX_CONTENT = frozenset((TEXT+'p',TEXT+'h',TEXT+'list',TEXT+'numbered-paragraph',
                               TEXT+'section',TABLE+'table'))
 TABLE_REVISION_FAMILY = {TABLE+'table-row':'table-row', TABLE+'table-cell':'table-cell',

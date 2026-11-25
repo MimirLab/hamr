@@ -684,28 +684,50 @@ def semantic_xml(root,builder,part):
         visit(child)
 
 
-def odt(path,builder,source_file=None):
-    from .odf_content import Content, OFFICE, TEXT, flat_text
+@contextmanager
+def odf_parts(stream):
+    from .odf_content import flat_text
 
-    with path.open('rb') as stream:
-        flat = flat_text(xml_start(stream))
+    flat = flat_text(xml_start(stream))
+    stream.seek(0)
     if flat:
-        document = xml(bounded_read(path))
-        _odt_body(document,builder,Content(None,source_file or path.name),document.find(OFFICE+'meta'))
+        data = stream.read(MAX_STRUCTURE+1)
+        if len(data)>MAX_STRUCTURE:
+            raise Error('source_structure_size','Flat OpenDocument exceeds its reading budget.')
+        yield xml(data),None
     else:
-        with structured_zip(path) as (read,_):
-            document = xml(read('content.xml'))
-            metadata = read('meta.xml',required=False)
+        with structured_zip(stream) as (read,_):
+            yield xml(read('content.xml')),read
+
+
+def odt(path,builder,source_file=None):
+    with path.open('rb') as stream:
+        visit_odf(stream,builder,source_file or path.name)
+
+
+def visit_odf(stream,builder,flat_name,*,region=None,link_section=None,use_title=True):
+    from .odf_content import Content, OFFICE, TEXT
+
+    with odf_parts(stream) as (document,read):
+        if read is None:
+            content = Content(None,flat_name)
+            metadata = document.find(OFFICE+'meta') if use_title else None
+            styles = None
+        else:
+            content = Content(read)
+            raw_meta = read('meta.xml',required=False) if use_title else None
+            metadata = xml(raw_meta) if raw_meta else None
             styled = next(document.iter(TEXT+'span',TEXT+'list',TEXT+'numbered-paragraph'),None)
             has_paragraph_styles = any(node.get(TEXT+'style-name') for node in document.iter(TEXT+'p'))
             tracked = next(document.iter(TEXT+'tracked-changes'),None) is not None
-            styles = read('styles.xml',required=False) if styled is not None or has_paragraph_styles or tracked else None
-            _odt_body(document,builder,Content(read),xml(metadata) if metadata else None,
-                      xml(styles) if styles else None)
+            raw_styles = read('styles.xml',required=False) if styled is not None or has_paragraph_styles or tracked else None
+            styles = xml(raw_styles) if raw_styles else None
+        _odt_body(document,builder,content,metadata,styles,region=region,link_section=link_section)
 
 
-def _odt_body(document,builder,content,metadata,styles=None):
+def _odt_body(document,builder,content,metadata,styles=None,*,region=None,link_section=None):
     from .odf_content import DRAW, OFFICE, STYLE, TEXT, Styles, TableRevisions
+    from .odf_sections import body_region, linked_source, saved_content, visible_section
     from .odf_numbering import authored_marks
     from .source_commands import literal_paragraph_location, literal_spans, literal_style
     from .table_grid import simple_matrix
@@ -717,6 +739,7 @@ def _odt_body(document,builder,content,metadata,styles=None):
     body = document.find(OFFICE+'body')
     if body is None:
         raise Error('source_xml','OpenDocument has no document body.')
+    selected = body_region(body,region) if region else body
     declarations = [('styles.xml',styles)] if styles is not None else []
     content.styles = Styles(document,styles,source_file=content.source_file)
     if next(body.iter(TEXT+'changed-region'),None) is not None:
@@ -728,6 +751,16 @@ def _odt_body(document,builder,content,metadata,styles=None):
     def visit(node):
         tag = name(node)
         loc = content.source_file+':'+node.getroottree().getpath(node)
+        if node.tag==TEXT+'section':
+            if not visible_section(node):
+                return
+            if (source:=linked_source(node)) is not None:
+                if link_section is not None:
+                    if link_section(node,source,loc):
+                        return
+                elif not saved_content(node):
+                    builder.issue('This linked Writer section has no saved content. Open the complete master document or save a reading copy with the link included.',loc)
+                    return
         if tag in ('p','h') or node.tag in (MATH_ROOT,DRAW+'frame'):
             stories = []
             text,spans,links,issue = content.paragraph(node,body=True,stories=stories)
@@ -761,7 +794,7 @@ def _odt_body(document,builder,content,metadata,styles=None):
         elif tag not in ('tracked-changes','annotation','deletion','scripts','forms','number'):
             for child in node:
                 visit(child)
-    visit(body)
+    visit(selected)
 
 
 def mime_read(data,builder,route):

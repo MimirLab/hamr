@@ -23,7 +23,8 @@ NATIVE = {
     '.txt':'text', '.text':'text', '.asc':'text', '.nfo':'text', '.md':'markdown', '.markdown':'markdown', '.epub':'epub', '.pdf':'pdf',
     '.xps':'xps', '.oxps':'xps',
     '.textpack':'textbundle',
-    '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx', '.odt':'odt', '.oth':'odt', '.fodt':'odt',
+    '.djvu':'djvu', '.djv':'djvu', '.chm':'chm', '.html':'html', '.htm':'html', '.xhtml':'html', '.docx':'docx',
+    '.odt':'odt', '.ott':'odt', '.oth':'odt', '.fodt':'odt', '.odm':'odf-master',
     '.abw':'abiword', '.awt':'abiword', '.zabw':'abiword', '.bzabw':'abiword',
     '.abw.gz':'abiword', '.abw.bz2':'abiword',
     '.dbk':'xml-book', '.docbook':'xml-book', '.fb2':'fb2', '.fb3':'fb3', '.rtf':'rtf', '.dtbook':'xml-book', '.xml':'xml-book',
@@ -43,7 +44,7 @@ PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
 PACKAGE_FOLDERS = frozenset(('textbundle','mdbook','gitbook','sphinx','scrivener','fb3','xps','pptx','odp','pages')) | DESCRIPTOR_FOLDERS
-DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac'))
+DEPENDENCY_SOURCES = frozenset(('rst','org','asciidoc','latex','xml-book','pml','classic-mac','odf-master'))
 BUNDLE_SCHEMA = 'hamr.source-bundle.v1'
 CHUNK = 1024*1024
 MAX_MANIFEST = 16*CHUNK
@@ -312,6 +313,12 @@ def directory_members(root):
                         route = probe(prefix,path.name)
                 if route:
                     other.append((relative,route))
+    masters = [name for name,route in other if route=='odf-master']
+    if masters:
+        from .odf_master import folder_claims
+
+        claimed = folder_claims(root,masters)
+        other = [(name,route) for name,route in other if name not in claimed]
     return sorted(pages,key=natural), sorted(other,key=lambda row:natural(row[0]))
 
 
@@ -350,6 +357,7 @@ def zip_members(archive):
 
 def zip_source(path, entry, override):
     from .archive_intake import ZipMembers
+    from .odf_content import MASTER_MEDIA, TEXT_MEDIA
     from .odf_presentation import MEDIA as ODF_PRESENTATION_TYPES
     from .pml_package import pmlz_parts
 
@@ -381,7 +389,8 @@ def zip_source(path, entry, override):
                 ('META-INF/container.xml' in names or media==b'application/epub+zip','epub'),
                 ('word/document.xml' in names,'docx'),
                 ('xl/workbook.xml' in names,'xlsx'),
-                (media in (b'application/vnd.oasis.opendocument.text',b'application/vnd.oasis.opendocument.text-web'),'odt'),
+                (media.decode('ascii',errors='replace') in TEXT_MEDIA,'odt'),
+                (media==MASTER_MEDIA.encode(),'odf-master'),
             ):
                 if predicate:
                     if route=='epub' and 'META-INF/container.xml' in names:
@@ -423,6 +432,10 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
         raise Error('source_format','The selected publication is a TextPack.')
     if textpack and not packages:
         raise Error('source_textbundle','The TextPack has no info.json descriptor next to its text payload.')
+    if not (scan_only or textpack or package_route or latex_only):
+        from .odf_master import archive_claims
+
+        claimed |= archive_claims(archive,[item for item in members if item.index not in claimed])
     manifests, images, documents = [], [], []
     for item in members:
         if textpack or package_route or item.index in claimed:
@@ -573,7 +586,7 @@ def _describe(path,entry,format,offline):
             if result.kind=='directory' and result.route in DESCRIPTOR_FOLDERS and selected.is_file():
                 parent = selected.parent.relative_to(path)
                 return replace(result,member_name=parent.as_posix() if parent.parts else None)
-            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex') else result
+            return replace(result,member_name=name) if result.kind=='directory' or result.route in ('xml-book','latex','odf-master') else result
         return Source('scan','directory',route_override=format,offline=offline)
     if not path.is_file():
         raise Error('source_type', 'Choose a regular file or folder.')
@@ -653,7 +666,7 @@ def _describe(path,entry,format,offline):
 
 
 def _local_source(path, options, source=None):
-    if path.is_dir() and source and source.kind=='file' and source.route=='latex' and source.member_name:
+    if path.is_dir() and source and source.kind=='file' and source.route in ('latex','odf-master') and source.member_name:
         return relative_file(path,source.member_name)
     if source and source.kind=='directory' and source.route in PACKAGE_FOLDERS:
         if (source.route=='scrivener' or source.route in DESCRIPTOR_FOLDERS) and path.is_file():
@@ -792,7 +805,7 @@ def make_bundle(path,kind,target):
 def capture(path,target_dir,**options):
     source = describe(path,**options)
     local = _local_source(path,options,source)
-    prepared = capture_dependencies(local,target_dir,source)
+    prepared = capture_dependencies(local,target_dir,source,root=path if path.is_dir() else None)
     if prepared:
         target,source = prepared
     elif source.kind=='directory' and source.route in DESCRIPTOR_FOLDERS:
@@ -869,12 +882,12 @@ def preview(path,cache,**options):
     elif source.kind=='file' and source.route in DEPENDENCY_SOURCES:
         local = _local_source(path,options,source)
         with tempfile.TemporaryDirectory(prefix='source-preview-',dir=cache) as directory:
-            yield capture_dependencies(local,Path(directory),source) or (local,source)
+            yield capture_dependencies(local,Path(directory),source,root=path if path.is_dir() else None) or (local,source)
     else:
         yield _local_source(path,options,source),source
 
 
-def capture_dependencies(path,target_dir,source):
+def capture_dependencies(path,target_dir,source,*,root=None):
     if source.kind=='file' and source.route in ('rst','org','asciidoc','latex'):
         from .linked_text_intake import capture_dependencies as linked
 
@@ -891,6 +904,10 @@ def capture_dependencies(path,target_dir,source):
         from .classic_mac_intake import capture_classic_mac
 
         return capture_classic_mac(path,target_dir,source)
+    if source.kind=='file' and source.route=='odf-master':
+        from .odf_master import capture_master
+
+        return capture_master(path,target_dir,source,root=root)
 
 
 def original_name(snapshot,source):
