@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hamr"
-version = "0.4.9.dev88"
+version = "0.4.9.dev89"
 description = "hamr: local audiobooks with recoverable jobs, character voices and source provenance"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -15,7 +15,8 @@ dependencies = [
     "markdown-it-py==4.0.0",
     "mdit-py-plugins==0.5.0",
     "pypdfium2==5.1.0",
-    "Pillow==12.0.0",
+    "Pillow==13.0.0",
+    "pillow-heif==1.9.0",
     "httpx==0.28.1",
     "numpy==2.3.4",
     "mutagen==1.48.1",

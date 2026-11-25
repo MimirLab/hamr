@@ -16,7 +16,11 @@ from zipfile import BadZipFile, ZIP_STORED, ZipFile, ZipInfo
 from .core import Error, filehash, key, syncdir
 
 IMAGE_SUFFIXES = frozenset(('.jpg', '.jpeg', '.jfif', '.png', '.tif', '.tiff', '.bmp',
-                            '.pnm', '.pbm', '.pgm', '.ppm', '.jp2', '.j2k', '.webp', '.gif'))
+                            '.pnm', '.pbm', '.pgm', '.ppm', '.jp2', '.j2k', '.webp', '.gif',
+                            '.heic', '.heif', '.hif', '.avif'))
+HEIF_STILLS = frozenset((b'heic', b'heix', b'heim', b'heis', b'mif1'))
+HEIF_SEQUENCES = frozenset((b'hevc', b'hevx', b'hevm', b'hevs', b'msf1'))
+IMAGE_BRANDS = HEIF_STILLS | HEIF_SEQUENCES | {b'avif', b'avis'}
 SIDECAR_SUFFIXES = frozenset(('.xml', '.hocr', '.alto', '.page', '.tsv'))
 SIDECAR_ENDINGS = ('.alto.xml','.page.xml','.abbyy.xml','.hocr','.tsv')
 NATIVE = {
@@ -90,11 +94,17 @@ def source_suffix(name):
     return Path(filename).suffix
 
 
+def image_brand(prefix):
+    if len(prefix)>=12 and prefix[4:8]==b'ftyp' and prefix[8:12] in IMAGE_BRANDS:
+        return prefix[8:12]
+
+
 def image_magic(prefix):
     return (prefix.startswith((b'\xff\xd8\xff', b'\x89PNG\r\n\x1a\n', b'II*\0', b'MM\0*',
                                b'II+\0', b'MM\0+', b'GIF87a', b'GIF89a',
                                b'\0\0\0\x0cjP  \r\n\x87\n', b'\xffO\xffQ'))
-            or prefix.startswith(b'RIFF') and prefix[8:12]==b'WEBP')
+            or prefix.startswith(b'RIFF') and prefix[8:12]==b'WEBP'
+            or image_brand(prefix) is not None)
 
 
 def probe(prefix, name):
@@ -359,6 +369,9 @@ def directory_members(root):
                         route = 'classic-mac'
                     elif route=='classic-mac':
                         route = None
+                    elif image_magic(prefix):
+                        pages.append(relative)
+                        continue
                     elif suffix=='.asc' or prefix[6:8] in (b'\xff\x99',b'\x99\xff') or prefix[4:7]==b'XPR':
                         route = probe(prefix,path.name)
                 if route:

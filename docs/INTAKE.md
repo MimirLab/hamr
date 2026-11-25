@@ -7,6 +7,8 @@ hamr open ~/Downloads/novel.zip --voice cast:nigel-thornberry --output ~/Audiobo
 
 A folder or ZIP of loose page images is one book. Hamr uses an enclosed page manifest when present and otherwise sorts filenames naturally, so `page2.jpg` comes before `page10.jpg`. The plan lists the page sequence. An archive containing one recognized document opens that document. If several publications are available, Hamr prints their entry IDs. Repeat with `--entry ID` to select one. The selected contents determine what Hamr can read.
 
+HEIC and HEIF still photos use the container’s designated primary image and display orientation. A page manifest can also select another still image by its zero-based `frame` index. Hamr keeps embedded thumbnails and alternate images with the original file. For a timed HEIF sequence, export the pages you intend to read as still images. For images above 16 megapixels, supply a smaller copy of each page.
+
 Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RTF uses its saved marker text and list type. For example, both `3.` and `III.` can read as “Number three.” The plan records the label value and source location. An unfamiliar explicit marker appears in source review.
 
 OpenDocument text and slides retain authored inline bold and italics, with the exact words and style definition in the companion. Explicit resets take effect inside nested spans. Eligible dialogue uses the ordinary emphasis guidance.
@@ -22,7 +24,7 @@ Word follows tracked paragraph joins, deleted rows and cells, and supported vert
 | Source | How Hamr reads it |
 | --- | --- |
 | PDF, EPUB, Markdown and plain text | The ordinary Hamr readers preserve the original source, planned narration and companion. Searchable PDFs retain native structure. For a known legacy text encoding, pass `--encoding windows-1252` or the actual encoding of the file. |
-| Loose scans, individual images, TIFF and CBZ | The shared raster reader handles supported JPEG, PNG and TIFF page images, expands frames, and preserves crops and ordering. English OCR and its runtime are in the Linux x86-64 and Windows x64 packages. |
+| Loose scans, individual images, TIFF and CBZ | The shared raster reader handles JPEG, PNG, TIFF, HEIC/HEIF still photos and AVIF, preserves crops and ordering, and expands TIFF frames. English OCR and its runtime are in the Linux x86-64 and Windows x64 packages. |
 | Supplied OCR and ordered archives | Local hOCR, ALTO, PAGE XML, TSV and selected ABBYY XML sidecars can supply text for a scan. ABBYY XML uses one text page with original unrotated coordinates. A physical METS map or a local IIIF Presentation 3 sequence can name the pages. Binding and dimensions are checked before reuse. |
 | HTML, OpenDocument and RTF | Resident readers preserve supported paragraphs, headings, visible revisions, notes and simple tables. Writer text opens from `.odt`, `.ott`, `.oth`, `.fodt`, and expanded packages in folders or ZIPs. The same reader handles the OpenOffice.org 1.x Writer dialect (`.sxw`). [Writer packages](#writer-packages) · [Writer master documents](#writer-master-documents) |
 | Word documents (DOCX) | Read editable DrawingML and VML text boxes in the selected Word compatibility branch. Hamr reads each story after its anchor paragraph and follows linked frames in their authored order. Visible revisions, notes, equations and simple tables use the shared preparation step. |

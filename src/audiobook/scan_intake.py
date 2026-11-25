@@ -1,5 +1,6 @@
 """Read page sets directly and keep the source position of every observation."""
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
+from functools import partial
 import shutil
 import tempfile
 import math
@@ -12,13 +13,16 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .core import Document, Error, fault, key
 from .pdf_headers import mark_headers
 from .pdf_layout import mark_folios, paragraphs
-from .pdf_visual import MAX_PIXELS, Observer, read_words
+from .pdf_visual import Observer, read_words
 from .source_bundle import (
-    BUNDLE_SCHEMA, CHUNK, IMAGE_SUFFIXES, MAX_MANIFEST, SIDECAR_ENDINGS,
-    image_magic, manifest_data, natural, safe_name,
+    BUNDLE_SCHEMA, CHUNK, HEIF_SEQUENCES, HEIF_STILLS, IMAGE_SUFFIXES, MAX_MANIFEST, SIDECAR_ENDINGS,
+    image_brand, image_magic, manifest_data, natural, safe_name,
 )
 
 MAX_MEMBER_SPOOL = 384*1024*1024
+MAX_SCAN_PIXELS = 16_000_000
+# The HEIF decoder reads a stream into memory before opening any of its images.
+MAX_HEIF_MEMBER = 32*1024*1024
 CHAPTER = re.compile(r'\s*(?:chapter|book|part)\s+(?:[ivxlcdm]+|[0-9]+)\s*[.!]?\s*',re.I)
 
 
@@ -147,13 +151,57 @@ def sequence(path,source):
             yield None,pages,member,None
 
 
-def prepare_image(image,frame,crop):
+def check_image_size(size):
+    if size[0]*size[1]>MAX_SCAN_PIXELS:
+        raise Error('ocr_pixels', 'This page exceeds the 16-megapixel scan limit. Supply a smaller copy of the same page.')
+
+
+def read_heif(stream,page):
+    from pillow_heif import open_heif
+
+    try:
+        source = open_heif(bounded(stream,MAX_HEIF_MEMBER))
+    except (EOFError, SyntaxError, RuntimeError) as exc:
+        raise Error('source_image_decode', f'The HEIF decoder could not open this image. {exc}') from exc
+    if not len(source):
+        raise Error('source_image_decode', 'This HEIF file has no readable still image.')
+    frame = page.get('frame',source.primary_index)
+    if type(frame) is not int or frame<0:
+        raise Error('source_frame', 'A frame number must be a nonnegative integer.')
+    if frame>=len(source):
+        raise Error('source_frame', f'This HEIF image collection has no image at index {frame}.')
+    item = source[frame]
+    check_image_size(item.size)
+    try:
+        return frame,item.to_pillow()
+    except (EOFError, SyntaxError, RuntimeError) as exc:
+        raise Error('source_image_decode', f'The HEIF decoder could not read this image. {exc}') from exc
+
+
+@contextmanager
+def frame_reader(stream,page):
+    brand = image_brand(stream.read(12))
+    stream.seek(0)
+    if brand in HEIF_SEQUENCES:
+        raise Error('source_image_sequence',
+                    'This HEIF file contains a timed sequence. Export the intended pages as still images.')
+    if brand in HEIF_STILLS:
+        frame,image = read_heif(stream,page)
+        with image:
+            yield [frame],lambda _frame,crop:prepare_image(image,0,crop,heif=True)
+        return
+    with Image.open(stream) as image:
+        frames = [page['frame']] if 'frame' in page else range(getattr(image,'n_frames',1))
+        yield frames,partial(prepare_image,image)
+
+
+def prepare_image(image,frame,crop,*,heif=False):
     image.seek(frame)
     raw_size = image.size
-    if raw_size[0]*raw_size[1]>MAX_PIXELS:
-        raise Error('ocr_pixels', 'This page exceeds the per-image decode budget. Supply a smaller scan of the same page.')
-    orientation = image.getexif().get(274,1)
-    oriented = ImageOps.exif_transpose(image)
+    check_image_size(raw_size)
+    # Libheif has already applied the container's display transform.
+    orientation = (image.info.get('original_orientation') if heif else image.getexif().get(274)) or 1
+    oriented = ImageOps.exif_transpose(image) if not heif and orientation!=1 else image
     try:
         width,height = oriented.size
         bounds = [0,0,width,height]
@@ -164,7 +212,7 @@ def prepare_image(image,frame,crop):
                 raise Error('source_crop', 'Expected a nonempty normalized [left, top, right, bottom] crop.')
             bounds = [math.floor(crop[0]*width),math.floor(crop[1]*height),
                       math.ceil(crop[2]*width),math.ceil(crop[3]*height)]
-        with oriented.crop(bounds) as portion:
+        with (oriented.crop(bounds) if crop is not None else nullcontext(oriented)) as portion:
             if portion.mode in ('RGBA','LA','PA') or 'transparency' in portion.info:
                 with portion.convert('RGBA') as foreground:
                     result = Image.new('RGB',foreground.size,'white')
@@ -173,7 +221,8 @@ def prepare_image(image,frame,crop):
             else:
                 result = portion.convert('RGB')
         return result,{'raw_size':list(raw_size),'oriented_size':[width,height],'orientation':orientation,
-                       'crop_pixels':bounds,'coordinate_space':'EXIF-oriented top-left pixels'}
+                       'crop_pixels':bounds,
+                       'coordinate_space':'HEIF display-oriented top-left pixels' if heif else 'EXIF-oriented top-left pixels'}
     finally:
         if oriented is not image:
             oriented.close()
@@ -212,8 +261,7 @@ def scan(path,source,sha,cache=None,title=None):
                             spool.write(chunk)
                         spool.seek(0)
                         opened = spool
-                    with Image.open(opened) as image:
-                        frames = range(getattr(image,'n_frames',1)) if 'frame' not in page else [page['frame']]
+                    with frame_reader(opened,page) as (frames,prepare):
                         for frame in frames:
                             ordinal = len(inventory)+1
                             occurrence = page['occurrence']
@@ -229,7 +277,7 @@ def scan(path,source,sha,cache=None,title=None):
                             if type(frame) is not int or frame<0:
                                 raise Error('source_frame', 'A frame number must be a nonnegative integer.')
                             try:
-                                picture, transform = prepare_image(image,frame,page.get('crop'))
+                                picture, transform = prepare(frame,page.get('crop'))
                             except (EOFError, OSError, Error, ValueError) as exc:
                                 add_failure(blocks,inventory,entry,chapter,chapter_id,exc)
                                 continue
@@ -287,7 +335,9 @@ def scan(path,source,sha,cache=None,title=None):
                                 blocks.append(item)
                             inventory.append({**entry,**evidence})
                             fault('after_intake_page')
-            except (Error, UnidentifiedImageError, Image.DecompressionBombError, BadZipFile, OSError, ValueError) as exc:
+            except (Error, UnidentifiedImageError, Image.DecompressionBombError, BadZipFile, OSError, ValueError, MemoryError) as exc:
+                if isinstance(exc,MemoryError):
+                    exc = Error('ocr_memory', 'Available memory was insufficient to decode this page. Supply a smaller copy.')
                 add_failure(blocks,inventory,{'format':'scan','page':len(inventory)+1,'member':page['path'],
                     'occurrence':page['occurrence'],'archive_entry':page.get('entry'),'frame':page.get('frame')},
                             chapter,chapter_id,exc)

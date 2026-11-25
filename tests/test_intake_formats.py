@@ -39,6 +39,73 @@ def test_corrupt_zip_page_is_held_and_unknown_image_suffix_can_be_read(tmp_path,
     assert document.blocks[-1].issue
 
 
+def test_heif_uses_declared_primary_and_crops_in_display_coordinates(tmp_path,monkeypatch):
+    import pillow_heif
+    import pytest
+    from audiobook.pdf_visual import Observer
+
+    if not pillow_heif.libheif_info()['HEIF']:
+        pytest.skip('The pinned codec wheel on this platform has a decoder but no HEIC encoder.')
+    folder = tmp_path/'Pages'
+    folder.mkdir()
+    source = folder/'page2.asset'
+    with Image.new('RGB',(80,60),'red') as alternate, Image.new('RGB',(160,100),'blue') as primary:
+        exif = Image.Exif()
+        exif[274] = 6
+        collection = pillow_heif.from_pillow(alternate)
+        collection.add_from_pillow(primary).info['exif'] = exif.tobytes()
+        collection.save(source,primary_index=1)
+
+    def observe(self,open_image,_text,entry,_rect,**_):
+        image = open_image()
+        color = image.getpixel((0,0))
+        assert color[2]>200 if entry['frame']==1 else color[0]>200
+        return ([{'text':'This page is in reading order.', 'locator':{'rect':[4,4,60,35]}, 'issue':None}],
+                {'status':'observed'})
+
+    monkeypatch.setattr(Observer,'read_raster',observe)
+    raw = source.read_bytes()
+    archive = tmp_path/'Scans.zip'
+    package(archive,{'page2.asset':raw})
+    for path in (source,folder,archive):
+        doc = inspect_source(path,offline=True)
+        page, = doc.inventory
+        assert (page['frame'],page['size'])==(1,[100,160])
+        assert page['image_transform']['orientation']==6
+        assert doc.blocks[0].source=='This page is in reading order.'
+
+    manifest = {'schema':'hamr.page-sequence.v1','pages':[
+        {'path':source.name,'frame':1,'crop':[0,0,1,.5]},
+        {'path':source.name,'frame':0},
+        {'path':source.name,'frame':2}]}
+    package(archive,{source.name:raw,'pages.hamr.json':json.dumps(manifest)})
+    doc = inspect_source(archive,offline=True)
+    assert [(p['frame'],p['status']) for p in doc.inventory]==[(1,'observed'),(0,'observed'),(2,'failed')]
+    assert doc.inventory[0]['image_transform']['crop_pixels']==[0,0,100,80]
+    assert doc.blocks[0].locator['source_region']==[4,45,60,76]
+    assert doc.blocks[-1].issue
+
+
+def test_still_avif_and_unsupported_timed_heif_stay_in_page_inventory(tmp_path,monkeypatch):
+    from audiobook.pdf_visual import Observer
+
+    def observe(self,open_image,_text,entry,_rect,**_):
+        assert open_image().size==(160,100)
+        return ([{'text':'An AVIF scan.', 'locator':{'rect':[4,4,70,35]}, 'issue':None}],
+                {'status':'observed'})
+
+    monkeypatch.setattr(Observer,'read_raster',observe)
+    still = io.BytesIO()
+    with Image.new('RGB',(160,100),'white') as image:
+        image.save(still,format='AVIF')
+    archive = tmp_path/'Pages.zip'
+    package(archive,{'page1.scan':still.getvalue(),'page2.HEIC':b'\0\0\0\x18ftypmsf1\0\0\0\0hevcmsf1'})
+    doc = inspect_source(archive,offline=True)
+    assert [(p['member'],p['status']) for p in doc.inventory]==[('page1.scan','observed'),('page2.HEIC','failed')]
+    assert doc.blocks[0].source=='An AVIF scan.'
+    assert 'timed sequence' in doc.blocks[1].issue
+
+
 def test_scan_repair_identity_is_the_same_before_and_after_capture(tmp_path):
     from audiobook.intake import inspect_saved
     from audiobook.source_bundle import capture

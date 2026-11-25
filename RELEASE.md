@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev89
+
+- Open HEIC and HEIF still photos and AVIF scans directly, in scan folders, or in ZIPs. Hamr follows the designated primary HEIF image and its display orientation, and keeps the exact original file with the book.
+- Raise the page image limit to 16 megapixels so standard 12-megapixel phone photos can go straight into OCR.
+
 # hamr 0.4.9.dev88
 
 - Read English QuarkXPress 3.1, 3.2 and 3.3 publications from files, folders and ZIPs. Follow saved story chains across pages, keep distinct repeats, and retain the original publication and source byte ranges.

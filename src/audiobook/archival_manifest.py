@@ -3,7 +3,7 @@ from urllib.parse import unquote, urlsplit
 
 from .core import Error
 from .document_intake import attr, name, xml
-from .source_bundle import safe_name
+from .source_bundle import IMAGE_SUFFIXES, safe_name, source_suffix
 
 
 def resource(value, mapping):
@@ -79,7 +79,7 @@ def mets(data):
         if any(item is None for item in paths):
             raise Error('source_member_missing',f'METS page {index} refers to an unavailable member.')
         pictures = [item for item in paths if item[2].startswith('image/')
-                    or isinstance(item[0],str) and item[0].lower().endswith(('.jpg','.jpeg','.tif','.tiff','.png','.jp2'))]
+                    or isinstance(item[0],str) and source_suffix(item[0]) in IMAGE_SUFFIXES]
         masters = [item for item in pictures if 'master' in item[1].lower()]
         if len(masters or pictures)!=1:
             raise Error('source_manifest',f'METS page {index} needs one selected image.')
