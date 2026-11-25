@@ -1,3 +1,8 @@
+# hamr 0.4.9.dev83
+
+- Open historical Rails Guides Textile sources. Hamr reads the guide's title, introduction, and body, and preserves the authored programming examples for the usual code settings.
+- Keep an embedded HTML example from taking over the title or reading order of an enclosing HTML fragment.
+
 # hamr 0.4.9.dev82
 
 - Open Textile manuscripts from a `.textile` file, folder, or ZIP. Numbered footnotes and named notes use the usual note settings. Local illustrations stay with the source, and code blocks follow the selected reading mode.

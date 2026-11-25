@@ -151,6 +151,8 @@ Hamr recognizes `.asc` when it finds clear AsciiDoc source syntax. For an older 
 
 Open a `.textile` manuscript or its enclosing folder or ZIP. Keep local illustrations at their written relative paths. The parser installs with Hamr. Footnotes, tables, and code blocks follow the usual reading settings. Known project badge rows stay in the companion. An illustration that needs a description appears in source review. [Textile Reference Manual](https://textile-lang.com/)
 
+Hamr also reads the historical Rails Guides Textile sources. It keeps the title and introduction and preserves literal Ruby, ERB, shell, and HTML examples in the companion. Use the usual code settings to hear those examples.
+
 ## LaTeX
 
 ```sh

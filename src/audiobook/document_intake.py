@@ -236,17 +236,30 @@ def html_read(data,builder, *, where='html', part=None, metadata=True, fragment=
     if recovered:
         builder.doc.inventory.append({'kind':'html_structure_recovered','element':where,
                                       'basis':'HTML recovery preserved the parsed words and references in order'})
+    # A fragment can contain a nested HTML example. Only a document-level
+    # shell supplies publication metadata or replaces the reading root.
+    root = soup.find('html',recursive=False)
+    container = root or soup
+    head = container.find('head',recursive=False)
+    title = (head or container).find('title',recursive=False)
+    body = container.find('body',recursive=False)
+    if title is None and body is not None:
+        # Some legacy publications put their head immediately inside body.
+        legacy_head = body.find('head',recursive=False)
+        title = (legacy_head or body).find('title',recursive=False)
+    body = body or soup
     sphinx = any(item.get('src','').split('?',1)[0].endswith('/documentation_options.js')
                  or item.get('id')=='documentation_options' for item in soup.find_all('script'))
-    for node in soup.find_all(['script','style','template','noscript']):
-        node.decompose()
-    if metadata and soup.title and soup.title.get_text(strip=True):
-        builder.doc.title = soup.title.get_text(' ',strip=True)
-    if metadata and soup.html and soup.html.get('lang'):
-        builder.doc.language = soup.html['lang']
+    if metadata and title and title.get_text(strip=True):
+        builder.doc.title = title.get_text(' ',strip=True)
+    if metadata and root and root.get('lang'):
+        builder.doc.language = root['lang']
     if soup.find('link',rel='stylesheet'):
         builder.doc.warnings.append('External stylesheet retained as a reference. Its remote contents were not fetched.')
-    body = soup.body or soup
+    if title:
+        title.decompose()
+    for node in soup.find_all(['head','script','style','template','noscript']):
+        node.decompose()
     if not fragment:
         main = body.select('div#mdbook-content.content > main')
         if len(main)==1:

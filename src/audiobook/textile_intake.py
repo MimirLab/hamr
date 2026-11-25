@@ -2,6 +2,7 @@
 
 from collections import defaultdict
 from dataclasses import replace
+from html import escape, unescape
 from pathlib import PurePosixPath
 import re
 from urllib.parse import urlsplit
@@ -16,6 +17,15 @@ from .source_bundle import relative_file, stamp
 
 
 IMAGE_SYNTAX = re.compile(rb'!|<img\b',re.I)
+RAILS_TITLE = re.compile(r'\Ah2\.[ \t]+\S')
+RAILS_PROLOGUE = re.compile(r'^endprologue\.[ \t]*$',re.M)
+RAILS_SECTION = re.compile(r'^h[3-6]\.[ \t]+',re.M)
+RAILS_EXAMPLE = re.compile(r'^[ \t]*<(/?)(yaml|shell|ruby|erb|html|sql|plain|code)(?:[ \t]+[^<>\n]+)?>[ \t]*$',re.M)
+RUBY_ANNOTATION = re.compile(r'</?(?:rb|rt|rp|rtc)(?:[\s/>])',re.I)
+RAILS_MONOSPACE = re.compile(r'<tt>(.*?)</tt>',re.S)
+RAILS_INLINE = re.compile(r'(?<!\w)\+([^\s+](?:[^+\n]*?[^\s+])?)\+')
+RAILS_ADMONITION = re.compile(r'^(TIP|IMPORTANT|CAUTION|WARNING|NOTE|INFO)[.:][ \t]*',re.M)
+RAILS_TABLE_ROW = re.compile(r'^[ \t]*\|[^\n]+\|[ \t]*$',re.M)
 BADGE_PATHS = {
     'img.shields.io':'/',
     'sonarcloud.io':'/api/project_badges/',
@@ -25,6 +35,45 @@ BADGE_PATHS = {
 
 def is_textile(name):
     return PurePosixPath(name).suffix.casefold()=='.textile'
+
+
+def rails_guide(text):
+    """Prepare the historical Rails Guides extensions before standard Textile."""
+    text = text.replace('\r\n','\n').replace('\r','\n')
+    if not RAILS_TITLE.match(text.lstrip()) or not (prologue:=RAILS_PROLOGUE.search(text)):
+        return None
+    if RAILS_SECTION.search(text,0,prologue.start()):
+        return None
+    # The producer displays the prologue above the body. Keep those words
+    # and remove the reserved section delimiter.
+    text = text[:prologue.start()]+text[prologue.end():]
+    parts = []
+    start = 0
+    opened = None
+    for marker in RAILS_EXAMPLE.finditer(text):
+        ending,language = marker.groups()
+        if opened is None:
+            if not ending:
+                opened = marker
+            continue
+        if not ending or language!=opened[2]:
+            continue
+        literal = text[opened.end():marker.start()].strip('\n')
+        if language=='ruby' and RUBY_ANNOTATION.search(literal):
+            opened = None
+            continue
+        parts.append(text[start:opened.start()])
+        literal = literal.replace('<plus>','+')
+        content = escape(literal,quote=False).replace('\n','&#10;')
+        parts.append(f'\n\nnotextile. <pre><code class="language-{language}">{content}</code></pre>\n\n')
+        start = marker.end()
+        opened = None
+    if opened is not None:
+        line = text.count('\n',0,opened.start())+1
+        raise Error('source_textile',f'The <{opened[2]}> example at line {line} is missing its closing tag.',
+                    'Close the example in the Textile source or open a rendered HTML edition.')
+    parts.append(text[start:])
+    return RAILS_ADMONITION.sub(lambda m: f'p(rails-{m[1].lower()}). ',''.join(parts))
 
 
 def render(raw,encoding=None):
@@ -37,6 +86,24 @@ def render(raw,encoding=None):
             # that distinct from a null alternative declared in source HTML.
             return image.replace(' alt=""','',1) if match.group(4) is None else image
 
+    class RailsReader(Reader):
+        unrestricted_url_schemes = Reader.unrestricted_url_schemes+('irc','ircs')
+
+        def code(self,text):
+            text = super().code(text)
+
+            def literal(match):
+                value = unescape(match[1].replace('<plus>','+'))
+                return self.shelve(f'<code>{escape(value,quote=False)}</code>')
+
+            text = RAILS_MONOSPACE.sub(literal,text)
+            text = RAILS_INLINE.sub(literal,text)
+            return text.replace('<plus>',self.shelve('+')) if '<plus>' in text else text
+
+        def table(self,text):
+            text = RAILS_TABLE_ROW.sub(lambda row: re.sub(r'\|_\.(?=\S)','|_. ',row[0]),text)
+            return super().table(text)
+
     try:
         text = raw.decode(encoding or 'utf-8-sig')
     except (UnicodeError,LookupError) as exc:
@@ -46,14 +113,20 @@ def render(raw,encoding=None):
     prefix = 'hamr-'+digest(raw)[:16]+'-'
     while prefix in text:
         prefix += 'ref-'
-    parser = Reader(get_sizes=False)
+    guide = rails_guide(text)
+    parser = (RailsReader if guide is not None else Reader)(get_sizes=False)
     parser.linkPrefix = prefix
     try:
-        output = parser.parse(text)
+        output = parser.parse(text if guide is None else guide)
     except (RecursionError,ValueError) as exc:
         raise Error('source_textile','The Textile structure could not be read.',
                     'Open a smaller authored section or a rendered HTML edition.') from exc
-    return BeautifulSoup(output,'html.parser'),prefix
+    soup = BeautifulSoup(output,'html.parser')
+    if guide is not None and (heading:=soup.find('h2',recursive=False)):
+        title = soup.new_tag('title')
+        title.string = heading.get_text(' ',strip=True)
+        soup.insert(0,title)
+    return soup,prefix
 
 
 def project_notes(soup,prefix):

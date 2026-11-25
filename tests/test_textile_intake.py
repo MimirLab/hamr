@@ -119,3 +119,105 @@ The gate opened at dawn.
     issue, = plan(document)['issues']
     assert 'authored accessible description' in issue['reason']
     assert 'The gate opened at dawn.' in speech(document)
+
+
+def test_rails_guide_uses_shared_literal_and_ruby_semantics(tmp_path):
+    folder = tmp_path/'Guide'
+    folder.mkdir()
+    source = folder/'guide.textile'
+    source.write_text('''h2. The Harbor Guide
+
+The river was still.
+
+endprologue.
+
+h3. View templates
+
+TIP: Save the view before you reload it.
+
+<erb>
+<!DOCTYPE html>
+<html lang="fr">
+<head><title>A sample only</title></head>
+<body>
+
+<%= 2 <plus> 3 %>
+</body>
+</html>
+</erb>
+
+<ruby>
+puts "AN EXAMPLE"
+</ruby>
+
+Use +status_code+ to check the response.
+
+Use <tt>RAILS_ENV=production</tt> for this run.
+
+|_.File |_.Purpose|
+|gate.rb | Opens the gate.|
+
+Ask in the "support channel":irc://irc.example.invalid/harbor.
+
+<code class="html">
+<h1>Watch the harbor</h1>
+</code>
+
+<ruby>
+gate<rt role="definition">entrance</rt>
+</ruby>
+
+h3. At the gate
+
+"Quiet now," she whispered.
+''')
+    archive = tmp_path/'Guide.zip'
+    with ZipFile(archive,'w') as package:
+        package.write(source,'Guide/guide.textile')
+    documents = [inspect_source(path,offline=True) for path in (source,folder,archive)]
+    assert speech(documents[0])==speech(documents[1])==speech(documents[2])
+    for document in documents:
+        spoken = speech(document)
+        assert document.title=='The Harbor Guide'
+        assert document.language!='fr'
+        assert 'The river was still.' in spoken and 'Save the view before you reload it.' in spoken
+        assert 'File: gate.rb; Purpose: Opens the gate.' in spoken
+        assert 'Ask in the support channel.' in spoken and 'irc.example.invalid' not in spoken
+        assert 'A sample only' not in spoken and 'endprologue' not in spoken
+        blocks = [block.source for block in document.blocks if block.role=='code']
+        assert len(blocks)==3
+        assert '<body>\n\n<%= 2 + 3 %>' in blocks[0]
+        assert blocks[1:] == ['puts "AN EXAMPLE"','<h1>Watch the harbor</h1>']
+        spans = [span for block in document.blocks for span in block.locator.get('inline_semantics',())]
+        assert any(span['kind']=='literal' and span['source']=='status_code' for span in spans)
+        assert any(span['kind']=='literal' and span['source']=='RAILS_ENV=production' for span in spans)
+        assert any(span['kind']=='ruby' and span['annotation']=='entrance' for span in spans)
+        narration = plan(document)
+        assert not narration['issues']
+        assert any('Whisper' in option.get('instruction','') for unit in narration['utterances']
+                   if (option:=unit.get('performance_candidate')))
+
+
+def test_rails_guide_missing_example_end_is_localized(tmp_path):
+    source = tmp_path/'unfinished.textile'
+    source.write_text('h2. Guide\n\nendprologue.\n\nh3. Start\n\n<erb>\n<p>Example!</p>\n')
+    with pytest.raises(Error) as report:
+        inspect_source(source,offline=True)
+    assert report.value.code=='source_textile'
+    assert '<erb> example at line 7' in str(report.value)
+
+
+def test_embedded_html_body_does_not_replace_its_source_fragment(tmp_path):
+    source = tmp_path/'Fragment.html'
+    source.write_text('''<h1>Harbor Watch</h1>
+<p>The lookout spoke first.</p>
+<aside><html lang="fr"><head><title>Sample Metadata</title></head><body></body></html></aside>
+<p>The lookout spoke again.</p>''')
+    fragment = inspect_source(source,offline=True)
+    assert fragment.title=='Fragment' and fragment.language!='fr'
+    assert speech(fragment)=='Harbor Watch The lookout spoke first. The lookout spoke again.'
+    source.write_text('''<html lang="en-CA"><head><title>Document title</title></head>
+<body><p>The real document survived.</p></body></html>''')
+    full = inspect_source(source,offline=True)
+    assert (full.title,full.language)==('Document title','en-CA')
+    assert speech(full)=='The real document survived.'
