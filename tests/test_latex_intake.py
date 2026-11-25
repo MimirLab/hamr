@@ -168,3 +168,37 @@ def test_latex_input_within_sentence_keeps_continuity_and_both_sources(tmp_path)
                                     ('The keeper ','watched the harbor',' through the mist.')):
             start,end = span['character_range']
             assert text[start:end]==expected
+
+
+def test_markdown_math_uses_the_same_reading_as_latex_and_mathml(tmp_path):
+    sources = {
+        'md':'Dr. Lane found $x^2+1$ on the page.',
+        'tex':'Dr. Lane found $x^2+1$ on the page.',
+        'html':('<p>Dr. Lane found <math><mrow><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo>'
+                '<mn>1</mn></mrow></math> on the page.</p>'),
+    }
+    for extension,source in sources.items():
+        path = tmp_path/f'formula.{extension}'
+        path.write_text(source,encoding='utf-8')
+        result = plan(inspect_source(path))
+        assert not result['issues']
+        assert say(result)==['Doctor Lane found x to the power of 2 plus 1 on the page.']
+
+
+def test_markdown_math_keeps_prices_literals_and_note_ownership(tmp_path):
+    path = tmp_path/'control.md'
+    path.write_text(
+        'She paid $15 and wrote $x^2+1$.[^a]\n\n'
+        'The price was $5 and C$. Keep `$x$` as written.\n\n'
+        '[^a]: Here $y$ is the constant.\n',encoding='utf-8')
+    doc = inspect_source(path)
+    result = plan(doc)
+    assert not result['issues']
+    speech = ' '.join(say(result))
+    assert 'She paid fifteen dollars and wrote x to the power of 2 plus 1.' in speech
+    assert 'Note. Here y is the constant. End note.' in speech
+    assert 'The price was five dollars and C$. Keep $x$ as written.' in speech
+    body = [item for item in doc.blocks if item.role=='body']
+    formulas = [span for span in body[0].locator['inline_semantics'] if span['kind']=='formula']
+    assert [span['source'] for span in formulas]==['$x^2+1$']
+    assert all(span['kind']!='formula' for span in body[1].locator['inline_semantics'])

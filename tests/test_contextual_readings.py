@@ -80,6 +80,42 @@ def test_literal_scopes_do_not_expand_machine_syntax_or_abbreviation():
     assert 'open parenthesis sigh close parenthesis' in speech(reading('This says `(sigh)`.'))
 
 
+def test_authored_character_inventory_is_shared_and_keeps_exact_symbols(tmp_path):
+    from html import escape
+    from audiobook.intake import inspect_source
+
+    text = 'The following seven are printed by typing a backslash in front of them: $ & # % _ { and }.'
+    expected = ('The following seven are printed by typing a backslash in front of them: '
+                'dollar sign, ampersand, number sign, percent sign, underscore, left brace, and right brace.')
+    authored = {
+        'txt':text,
+        'md':text,
+        'html':f'<p>{escape(text)}</p>',
+        'tex':text.replace('$ & # % _ { and }',r'\$ \& \# \% \_ \{ and \}'),
+    }
+    for extension,source in authored.items():
+        path = tmp_path/f'characters.{extension}'
+        path.write_text(source,encoding='utf-8')
+        doc = inspect_source(path)
+        result = plan(doc)
+        assert speech(result)==expected and not result['issues']
+        inventory, = [item for item in events(result) if item['event_id']=='CR-L051']
+        start,end = inventory['expression_span']
+        assert doc.blocks[0].source[start:end]==inventory['source']
+        assert inventory['source'].strip()=='$ & # % _ { and }'
+        assert selected(inventory)['fields']['characters']==list('$&#%_{}')
+        assert speech(plan(doc,rule_revision='faithful-33'))==text
+
+
+def test_named_characters_require_prose_evidence_and_keep_the_authored_choice():
+    assert speech(reading('Allowed symbols: @ or #.'))=='Allowed symbols: at sign or number sign.'
+    assert speech(reading('The price is $20 and the shop is Smith & Sons.'))==(
+        'The price is twenty dollars and the shop is Smith and Sons.')
+    for source in ('Allowed symbols: `$ & #`.','The template reads: @ # %.','The formula is: +, -2.'):
+        assert all(item['event_id']!='CR-L051' for item in events(reading(source)))
+    assert speech(reading('Allowed symbols: @ or #.',cues={'character_inventory':[]}))=='Allowed symbols: @ or #.'
+
+
 def test_keyboard_notation_keeps_sequential_and_simultaneous_keys_distinct(tmp_path):
     from html import escape
     from audiobook.intake import inspect_source

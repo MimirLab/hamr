@@ -25,6 +25,7 @@
     "fallback": 0
   },
   "cues": {
+    "character_inventory": ["special characters", "reserved characters", "literal characters", "characters", "symbols", "glyphs", "delimiters", "punctuation marks", "are printed", "are typed", "are entered", "are escaped"],
     "date": ["hearing is on", "appointment is on", "meeting is on", "dated", "on the date", "date is", "due on", "appointment date", "delivery date", "signed on", "date of birth", "issued on"],
     "date_topic": ["hearing", "appointment", "meeting", "appointment date", "deadline"],
     "date_link": ["on", "by", "for"],

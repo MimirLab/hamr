@@ -6,14 +6,37 @@ from urllib.parse import urlsplit,unquote
 from bs4 import BeautifulSoup
 from lxml import etree
 from markdown_it import MarkdownIt
+from mdit_py_plugins.dollarmath.index import math_inline_dollar
 from mdit_py_plugins.footnote import footnote_plugin
 from .core import Block,Document,Error,digest,filehash,run
 from .text_source import physical_lines, plain
 
 MAX_INPUT=200*1024*1024
+MARKDOWN_DOLLAR = math_inline_dollar(allow_space=False,allow_digits=False)
+TEX_COMMAND = re.compile(r'\\[A-Za-z]+')
+MARKDOWN_MATH_BODY = re.compile(r'[\w\s.,=+*/^_{}()<>\[\]−×÷±∞|\x27-]+')
 
 def block(text,loc,role='body',chapter='Opening',evidence=None,issue=None,links=None):
     return Block('b'+digest(str(loc).encode())[:16],text,loc,role,chapter,evidence or [],issue,links or [])
+
+def qualified_markdown_math(state,silent):
+    """Recognize inline math with expression evidence beyond balanced dollars."""
+    start = state.pos
+    if state.src[start]!='$' or not MARKDOWN_DOLLAR(state,True):
+        return False
+    end, state.pos = state.pos,start
+    if end>state.posMax or end-start>4096:
+        return False
+    body = state.src[start+1:end-1]
+    visible = TEX_COMMAND.sub('',body)
+    # A price followed by a later dollar sign can look like a delimiter pair.
+    # Ordinary words inside that pair are not TeX expression evidence.
+    if re.search(r'[^\W\d_]{2,}',visible) or visible and not MARKDOWN_MATH_BODY.fullmatch(visible):
+        return False
+    if not (TEX_COMMAND.search(body) or re.fullmatch(r'[^\W\d_]',body)
+            or re.search(r'[=+*/^_{}()<>\[\]−×÷±∞|\x27-]',body)):
+        return False
+    return MARKDOWN_DOLLAR(state,silent)
 
 def markdown(data:bytes, *, collect_resources=False, first_note_definition=False, configure=None)->Document:
     from itertools import accumulate
@@ -31,6 +54,7 @@ def markdown(data:bytes, *, collect_resources=False, first_note_definition=False
     lines=[match[0] for match in physical_lines(text)]
     offsets=list(accumulate(map(len, lines),initial=0))
     md=MarkdownIt('commonmark',{'html':False}).enable('table').use(footnote_plugin,move_to_end=False,always_match_refs=True)
+    md.inline.ruler.before('escape','qualified_math',qualified_markdown_math)
     md.inline.ruler.before('html_inline','styled_script',markdown_notes.styled_script)
     if configure:
         configure(md)
@@ -930,7 +954,7 @@ def inspect(path:Path)->Document:
     return inspect_source(path)
 
 
-IMPORT_REVISION='import-35'
+IMPORT_REVISION='import-36'
 def cached_inspect(path:Path,cache:Path)->Document:
     from .intake import inspect_source
 

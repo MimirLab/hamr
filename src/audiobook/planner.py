@@ -3,8 +3,9 @@ import re
 from .abbreviations import EMAIL_LOCAL
 from .core import Document,key,Error,digest
 
-RULES='faithful-33'
-TASK_LABEL_RULES=('faithful-28','faithful-29','faithful-30','faithful-31','faithful-32',RULES)
+RULES='faithful-34'
+CONTINUITY_RULES=('faithful-33',RULES)
+TASK_LABEL_RULES=('faithful-28','faithful-29','faithful-30','faithful-31','faithful-32',*CONTINUITY_RULES)
 NUMBERING_RULES=('faithful-26','faithful-27',*TASK_LABEL_RULES)
 TABLE_PASSAGE_RULES=('faithful-25',*NUMBERING_RULES)
 AUTHORED_LINE_RULES=('faithful-24',*TABLE_PASSAGE_RULES)
@@ -328,7 +329,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         action='speak'; reason='Preserve authored content and qualifiers.'; connector=False;force_pause=False;cells=()
         source_readings = SourceReadings(b)
         source_issue = b.issue
-        if rule_revision=='faithful-33' and (flow := b.locator.get('flow_review')):
+        if rule_revision in CONTINUITY_RULES and (flow := b.locator.get('flow_review')):
             placement = overrides.get(flow['block'],{})
             if source_issue==flow['reason'] and (placement.get('action')=='companion'
                     or placement.get('placement')=='caption_after_paragraph'):
@@ -496,7 +497,7 @@ def plan(doc:Document,policy=None,aliases=None,rule_revision=RULES,*,context_rev
         heading=continuous and (b.role=='heading' or b.id in heading_ids)
         if continuous and action=='unreadable':
             hold = rule_revision in ('faithful-9','faithful-10','faithful-11',*SOURCE_STRUCTURE)
-            if rule_revision=='faithful-33' and source_ids:
+            if rule_revision in CONTINUITY_RULES and source_ids:
                 previous = doc.blocks[source_positions[source_ids[-1]]]
                 left,right = previous.locator,b.locator
                 # An authored last line cut off with an em dash can be read

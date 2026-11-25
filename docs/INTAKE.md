@@ -69,7 +69,9 @@ In a searchable PDF or scan, visible intersecting rules can establish cell bound
 
 When grouped labels or incomplete boundaries leave competing cell assignments, source review points to the affected table and retains its visible rows. Other ambiguous layouts can still use the ordinary page reading. Use the plan to check the reading where the page alone gives little structural evidence.
 
-Structured XML such as JATS can supply the same readings through one authored MathML rendition. Hamr keeps the other renditions in the original article.
+Structured XML such as JATS can supply the same readings through one authored MathML rendition. Hamr keeps the other renditions in the original article. Inline Markdown equations such as `$x^2+1$` use the same expression reader when their contents establish a mathematical reading. Currency, ordinary prose, and code spans keep their usual handling.
+
+Prose that explicitly lists printed symbols can read as a list of character names. For example, “Allowed symbols: @ or #” reads “Allowed symbols: at sign or number sign.” The companion retains the exact symbols and the wording that identifies them.
 
 When a searchable PDF establishes an equation, raised script or scientific table cell from its printed layout, Hamr carries that reading into the same preparation step. The companion retains the exact glyph range and cell location. Source review identifies geometry that leaves the reading unresolved.
 

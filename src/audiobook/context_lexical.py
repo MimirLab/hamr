@@ -14,8 +14,23 @@ FILENAME = r'[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?:md|txt|pdf|epub|csv|json|to
 OPAQUE_PATTERNS = {'email':('CR-L035',EMAIL),'path':('CR-L036',PATH)}
 OPAQUE = re.compile('|'.join(f'(?P<{kind}>{pattern})' for kind,(_,pattern) in OPAQUE_PATTERNS.items()))
 PICTOGRAPH = r'[\U0001F300-\U0001FAFF]\ufe0f?[\U0001F3FB-\U0001F3FF]?'
+CHARACTER_NAMES = {
+    '$':'dollar sign', '£':'pound sign', '€':'euro sign', '&':'ampersand',
+    '#':'number sign', '%':'percent sign', '_':'underscore', '@':'at sign',
+    '{':'left brace', '}':'right brace', '[':'left bracket', ']':'right bracket',
+    '(':'left parenthesis', ')':'right parenthesis', '\\':'backslash', '/':'slash',
+    '^':'caret', '*':'asterisk', '+':'plus sign', '=':'equals sign', '-':'hyphen',
+    '|':'vertical bar', '<':'less-than sign', '>':'greater-than sign', '~':'tilde',
+}
+CHARACTER = '['+re.escape(''.join(CHARACTER_NAMES))+']'
+CHARACTER_GAP = r'(?:[ \t]*,[ \t]*|[ \t\r\n]+)'
+CHARACTER_INVENTORY = (r'(?<=:)[ \t\r\n]*'+CHARACTER+
+                       rf'(?:{CHARACTER_GAP}{CHARACTER}){{0,30}}'
+                       rf'{CHARACTER_GAP}(?:(?i:and|or)[ \t\r\n]+)?{CHARACTER}'
+                       r'(?=[ \t]*(?:[.!?;]|$|\r?\n))')
 
 PATTERNS = {
+    'character_inventory': ('CR-L051', CHARACTER_INVENTORY),
     'keyboard': ('CR-L050', keyboard_readings.EXPRESSION),
     'corporate': ('CR-L003', r'(?i:Inc\.|Corp\.|Ltd\.)(?!\w)'),
     'initials': ('CR-L005', r'(?:[A-Z]\. ){1,4}[A-Z][a-z]+'),
@@ -47,8 +62,12 @@ PATTERNS = {
 }
 
 
-def expressions(left, right, abbreviations, native_names=(), *, keyboard=False):
+def expressions(left, right, abbreviations, native_names=(), *, keyboard=False, character_inventories=False):
     for kind, (_, pattern) in PATTERNS.items():
+        if kind=='character_inventory':
+            if character_inventories:
+                yield kind,pattern
+            continue
         if kind=='keyboard' and not keyboard:
             continue
         if kind=='acronym':
@@ -84,6 +103,8 @@ def literal_candidate(kind,raw,env):
 
 
 def candidates(kind,raw,env):
+    if kind=='character_inventory':
+        return character_inventory(raw,env)
     if kind=='keyboard':
         if raw.startswith('^'):
             if (env.nearby('pattern_syntax',side='either') or env.setting('notation') in ('ASCII_power','ASCII_subscript')
@@ -231,6 +252,26 @@ def candidates(kind,raw,env):
         fields={'exact_identifier':raw,'retain_extension':extension}
         return [Candidate('filename',fields,stem+' dot '+' '.join(extension),('governor',))]
     return []
+
+
+def character_inventory(raw,env):
+    start,prefix = env.preceding_text(144)
+    # The list must follow prose identifying these as literal symbols. A
+    # run of glyphs alone can be an operator, delimiter or layout ornament.
+    intro = re.search(r'[^.!?;:\n]+:\Z',prefix)
+    if not intro:
+        return []
+    cue = env.resolver.cues['character_inventory']['nearby'].search(intro[0])
+    if not cue:
+        return []
+    first = start+intro.start()+cue.start()
+    env.governors.add(('character_inventory','left',cue[0],first,first+len(cue[0])))
+    characters = re.findall(CHARACTER,raw)
+    names = [CHARACTER_NAMES[char] for char in characters]
+    connector = ' or ' if re.search(r'\bor\b',raw,re.I) else ' and '
+    lead = ', '.join(names[:-1])+(',' if len(names)>2 else '')
+    return [Candidate('named_character_inventory',{'characters':characters},' '+lead+connector+names[-1],
+                      ('syntax','governor'))]
 
 
 def opaque_reading(kind, raw, env):

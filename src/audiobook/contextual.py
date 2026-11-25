@@ -294,9 +294,11 @@ class Resolver:
 
         self.doc=doc
         self.policy=policy
-        keyboard=rule_revision in ('faithful-31','faithful-32','faithful-33')
-        self.narrative_clocks=rule_revision in ('faithful-32','faithful-33')
-        self.config=context_config.effective(policy.get('context'),keyboard=keyboard,narrative_clocks=self.narrative_clocks)
+        keyboard=rule_revision in ('faithful-31','faithful-32','faithful-33','faithful-34')
+        self.narrative_clocks=rule_revision in ('faithful-32','faithful-33','faithful-34')
+        character_inventories=rule_revision=='faithful-34'
+        self.config=context_config.effective(policy.get('context'),keyboard=keyboard,narrative_clocks=self.narrative_clocks,
+                                             character_inventories=character_inventories)
         self.implementation=context_config.implementation(unified=unified,rule_revision=rule_revision)
         self.readings={block.id:reading_evidence(block,unified=unified) for block in doc.blocks}
         saved = policy.get('context_implementation',self.implementation)
@@ -313,8 +315,8 @@ class Resolver:
         self.identity=key([self.config,self.implementation,self.document_conventions,self.chapters,self.tables])
         self.expressions=grammar.expressions(self.config['lexicon'],self.config['initialisms'],
                                              self.config['cues']['price_noun'],self.config['native_names'],
-                                             precise_codes=rule_revision in ('faithful-27','faithful-28','faithful-29','faithful-30','faithful-31','faithful-32','faithful-33'),
-                                             keyboard=keyboard)
+                                             precise_codes=rule_revision in ('faithful-27','faithful-28','faithful-29','faithful-30','faithful-31','faithful-32','faithful-33','faithful-34'),
+                                             keyboard=keyboard,character_inventories=character_inventories)
         self.definitions=defaultdict(list)
         self.chronologies=defaultdict(lambda:defaultdict(list))
         self.number_anchors=defaultdict(lambda:defaultdict(dict))
@@ -502,7 +504,7 @@ class Resolver:
                             and value==block.source and match[0]==self.chronology_entries.get(block.id) else None)
                 inferred=self.chronologies.get(self.scope(block),{}) if chronology else anchors.get(header_column,{})
                 wrapped=(self.readings[block.id].soft_wraps and view['kind']=='block_source'
-                         and match.lastgroup in ('heteronym','colon','keyboard'))
+                         and match.lastgroup in ('heteronym','colon','keyboard','character_inventory'))
                 env=Evidence(self,value,match.start(),match.end(),header,inferred,chapter,chapter_id,
                              block.id if row is not None else None,header_column,chronology,
                              header_by_id=authored_header,wrapped_prose=wrapped,header_path=path)
@@ -514,7 +516,7 @@ class Resolver:
                 defines=any(item['block']==block.id and item['token_span']==[a,b] for item in env.definitions)
                 if defines:
                     options=[grammar.literal(match[0],' '.join(match[0][:-1].upper()))]
-                elif env.literal_mention() and match.lastgroup not in ('censoring','stage_direction','shell_token'):
+                elif env.literal_mention() and match.lastgroup not in ('censoring','stage_direction','shell_token','character_inventory'):
                     if (match.lastgroup in ('money','money_modifier','money_rate','slash') and
                             (env.cue('literal_tail',side='right') or env.before.strip().endswith(('“','"')))):
                         options=[grammar.literal_notation(match[0])]
