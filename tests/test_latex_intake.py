@@ -263,3 +263,96 @@ The regular prose is still present.
     assert len(result['issues'])==2
     assert 'budget' in result['issues'][0]['reason']
     assert say(result)==['The regular prose is still present.']
+
+
+def test_linked_style_projects_declared_arguments_in_prose_and_retains_definition_bytes(tmp_path):
+    root = tmp_path/'project'
+    root.mkdir()
+    main = root/'book.tex'
+    style = root/'terms.sty'
+    source = r"""\documentclass{article}
+\usepackage{terms}
+\begin{document}
+The \term{harbor master} opens the gate. A \term*{keeper} can wait.
+
+Use the \choice{safe lane} and the \choice[eastern]{light}.
+\end{document}
+"""
+    declarations = r"""\ExplSyntaxOn
+\NewDocumentCommand{\term}{sm}{
+  \IfBooleanTF{#1}{\textbf{#2}}{\texttt{#2}}
+}
+\ExplSyntaxOff
+\newcommand{\choice}[2][western]{#1 #2}
+"""
+    main.write_bytes(source.encode())
+    style.write_bytes(declarations.encode())
+    archive = tmp_path/'book.zip'
+    with ZipFile(archive,'w') as output:
+        output.write(style,'edition/terms.sty')
+        output.write(main,'edition/book.tex')
+    for path in (main,root,archive):
+        doc = inspect_source(path)
+        result = plan(doc)
+        assert not result['issues']
+        assert say(result)==[
+            'The harbor master opens the gate. A keeper can wait.',
+            'Use the western safe lane and the eastern light.',
+        ]
+        term = next(row for row in doc.inventory if row.get('kind')=='latex_declared_text')
+        start,end = term['character_range']
+        assert source[start:end]==r'\term{harbor master}'
+        definition = term['definition']
+        start,end = definition['character_range']
+        assert Path(definition['source_file']).name=='terms.sty'
+        assert declarations[start:end].startswith(r'\NewDocumentCommand{\term}{sm}')
+        assert any(Path(row['member']).name=='terms.sty' for row in doc.metadata['source_resources'])
+
+    target = tmp_path/'snapshot'
+    target.mkdir()
+    saved,source_ref = capture(main,target)
+    style.write_text('The working style changed.',encoding='utf-8')
+    assert any('western safe lane' in item for item in say(plan(inspect_saved(saved,source_ref))))
+
+
+def test_style_template_never_loads_generated_paths_or_declarations_in_literal_examples(tmp_path):
+    main = tmp_path/'book.tex'
+    main.write_text(r"""\documentclass{article}
+\usepackage{terms}
+\begin{document}
+This needs \dynamic{secret}.
+
+This example cannot activate \listed{the gate}.
+
+The published body remains readable.
+\end{document}
+""",encoding='utf-8')
+    (tmp_path/'terms.sty').write_text(r"""\NewDocumentCommand{\dynamic}{m}{\input{#1}}
+\begin{verbatim}
+\RequirePackage{other}
+\NewDocumentCommand{\listed}{m}{Do not emit #1}
+\end{verbatim}
+""",encoding='utf-8')
+    (tmp_path/'other.sty').write_text(r'\NewDocumentCommand{\listed}{m}{Do not emit #1}',encoding='utf-8')
+    (tmp_path/'secret.tex').write_text('Hidden material.',encoding='utf-8')
+    destination = tmp_path/'snapshot'
+    destination.mkdir()
+    saved,source = capture(main,destination)
+    with ZipFile(saved) as snapshot:
+        assert set(snapshot.namelist())=={'book.tex','terms.sty'}
+    report = plan(inspect_saved(saved,source))
+    assert len(report['issues'])==2
+    assert say(report)==['The published body remains readable.']
+
+
+def test_an_existing_literal_shorthand_can_contain_authored_math(tmp_path):
+    main = tmp_path/'book.tex'
+    main.write_text(r"""\documentclass{article}
+\newcommand{\value}{$x^2$}
+\begin{document}
+The value is \value.
+\end{document}
+""",encoding='utf-8')
+    result = plan(inspect_source(main))
+    assert not result['issues']
+    assert say(result)==['The value is x to the power of 2.']

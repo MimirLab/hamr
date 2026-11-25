@@ -2,6 +2,7 @@
 
 from bisect import bisect_right
 from contextlib import contextmanager
+from copy import copy
 from dataclasses import dataclass
 from html import escape
 from pathlib import PurePosixPath
@@ -10,7 +11,7 @@ import re
 from pylatexenc.latexwalker import (
     LatexCharsNode, LatexCommentNode, LatexEnvironmentNode, LatexGroupNode,
     LatexMacroNode, LatexMathNode, LatexSpecialsNode, LatexWalker,
-    LatexWalkerParseError, get_default_latex_context_db,
+    LatexWalkerEndOfStream, LatexWalkerParseError, get_default_latex_context_db,
 )
 from pylatexenc.macrospec import (
     EnvironmentSpec, MacroSpec, MacroStandardArgsParser, ParsedMacroArgs,
@@ -20,10 +21,13 @@ from pylatexenc.latex2text import LatexNodes2Text
 
 from .core import Error
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, formula_span, html_read
+from .latex_declarations import (
+    CLASSIC, DECLARATIONS, OPAQUE_DEFINITIONS, PACKAGE_COMMANDS, PARAMETER, document_signature, package_statements,
+)
 from .tex_math import MathMacro, STANDARD_COMMANDS, tex_math
 
 
-DEPENDENCIES = re.compile(r'\\(?:input|include|includegraphics|bibliography|addbibresource)\b')
+DEPENDENCIES = re.compile(r'\\(?:input|include|includegraphics|bibliography|addbibresource|usepackage|RequirePackage)\b')
 ENTRY = re.compile(rb'\\documentclass\s*(?:\[[^\]\n]*\]\s*)?\{')
 HEADINGS = {name:f'h{min(level,6)}' for level,name in enumerate(
     ('part','chapter','section','subsection','subsubsection','paragraph','subparagraph'),1)}
@@ -40,11 +44,12 @@ LITERAL = {'TeX':'TeX','LaTeX':'LaTeX','LaTeXe':'LaTeX two e',
            'ss':'ß','l':'ł','L':'Ł','i':'ı','j':'ȷ','enspace':' ','quad':' ','qquad':' ',
            'hfill':' ','hfil':' ', ',':' ',':':' ',';':' ','!':'','/':'',
            '-':'','@':'','\\':' ','newline':' ','linebreak':' '}
+LITERAL.update(textlangle='〈',textrangle='〉')
 SPECIALS = {'~':' ','---':'—','--':'–',"``":'“',"''":'”'}
 ACCENTS = frozenset(("'",'`','^','"','~','=','.', 'u','v','H','c','k','r','b','d','t'))
 METADATA = {'title','author','date'}
-DEFINITION_COMMANDS = {'newcommand','renewcommand','providecommand'}
-OPAQUE_DEFINITIONS = {'def','gdef','edef','xdef','let','futurelet'}
+BRANCHES = {**dict.fromkeys(('IfBooleanTF','IfValueTF','IfNoValueTF'),'{{{'),
+            **dict.fromkeys(('IfBooleanT','IfBooleanF','IfValueT','IfValueF','IfNoValueT','IfNoValueF'),'{{')}
 INCLUDES = {'input','include'}
 REFERENCES = {'ref','pageref','autoref','eqref','cite','citep','citet','parencite','textcite','footcite'}
 NAVIGATION = {'tableofcontents','listoffigures','listoftables','printindex','addcontentsline',
@@ -68,6 +73,7 @@ ARGUMENTS = {
     'documentclass':'[{','usepackage':'[{','RequirePackage':'[{','inputencoding':'{',
     'includegraphics':'*[{','caption':'*[{','footnote':'[{','item':'[',
     'href':'{{','enquote':'*{','newcommand':'*{[[{','renewcommand':'*{[[{','providecommand':'*{[[{',
+    **dict.fromkeys(DECLARATIONS-CLASSIC,'{{{'), **BRANCHES,
     'newenvironment':'*{[[{{','renewenvironment':'*{[[{{',
     'bibliography':'{','bibliographystyle':'{','addbibresource':'[{','printbibliography':'[',
     'bibitem':'[{','addcontentsline':'{{{','pdfbookmark':'[{{',
@@ -167,6 +173,21 @@ class File:
                 'lines':[bisect_right(self.newlines,start-1)+1,bisect_right(self.newlines,max(start,end-1))+1]}
 
 
+@dataclass(frozen=True)
+class ProseCommand:
+    file: File
+    value: LatexGroupNode
+    signature: str
+    default: LatexGroupNode | None = None
+    expl3: bool = False
+
+
+@dataclass(frozen=True)
+class Expansion:
+    bindings: list
+    expl3: bool
+
+
 class Projection:
     def __init__(self,include,encoding,root):
         self.include = include
@@ -185,6 +206,10 @@ class Projection:
         self.nodes_left = 500_000
         self.inside_notes = False
         self.files = {}
+        self.walkers = {}
+        self.packages = set()
+        self.parameters = None
+        self.expansion_depth = 0
 
     def count(self,nodes):
         self.nodes_left -= len(nodes)
@@ -198,6 +223,8 @@ class Projection:
         return f'<{name} data-hamr-node="{ident}"{attrs}>{body}</{name}>'
 
     def issue(self,file,node,message,inline=False):
+        if self.expansion_depth:
+            raise ValueError(message)
         where = file.location(node)
         if inline:
             raw = file.raw(node)
@@ -246,9 +273,52 @@ class Projection:
 
     def parsed(self,file):
         if file.name not in self.files:
-            self.files[file.name] = LatexWalker(file.text,latex_context=self.db,
-                tolerant_parsing=False).get_latex_nodes()[0]
+            self.files[file.name] = self.walker(file).get_latex_nodes()[0]
         return self.files[file.name]
+
+    def walker(self,file):
+        if file.name not in self.walkers:
+            self.walkers[file.name] = LatexWalker(file.text,latex_context=self.db,tolerant_parsing=False)
+        return self.walkers[file.name]
+
+    def bound_nodes(self,file,nodes):
+        """Bind calls in reading order, retaining the original source interval."""
+        cursor = 0
+        while cursor<len(nodes):
+            node = nodes[cursor]
+            cursor += 1
+            command = self.definitions.get(node.macroname) if isinstance(node,LatexMacroNode) else None
+            if not command or not command.signature or getattr(node,'hamr_bound',False):
+                yield node
+                continue
+            start = node.pos+1+len(node.macroname)
+            try:
+                args,pos,size = MacroStandardArgsParser(command.signature).parse_args(
+                    self.walker(file),start,parsing_state=node.parsing_state)
+            except (LatexWalkerEndOfStream,LatexWalkerParseError,ValueError):
+                yield node
+                continue
+            end = max(pos+size,node.pos+node.len)
+            if end>nodes[-1].pos+nodes[-1].len:
+                yield node
+                continue
+            stop = cursor
+            while stop<len(nodes) and nodes[stop].pos+nodes[stop].len<=end:
+                stop += 1
+            tail = nodes[stop] if stop<len(nodes) and nodes[stop].pos<end else None
+            if tail is not None and not isinstance(tail,LatexCharsNode):
+                yield node
+                continue
+            call = copy(node)
+            call.nodeargd,call.len,call.hamr_bound = args,end-node.pos,True
+            cursor = stop
+            yield call
+            if tail is not None:
+                cursor += 1
+                rest = copy(tail)
+                rest.pos,rest.len = end,tail.pos+tail.len-end
+                rest.chars = file.raw(rest)
+                yield rest
 
     def formula(self,file,node,raw,expression):
         loc = file.location(node)
@@ -272,8 +342,14 @@ class Projection:
         if name in LAYOUT:
             return ''
         if name in self.definitions:
-            owner,value = self.definitions[name]
-            return self.inline(owner,group(value),depth+1)
+            command = self.definitions[name]
+            if not command.signature and not command.expl3 and not self.expansion_depth:
+                return self.inline(command.file,group(command.value),depth+1)
+            return self.invoke(file,node,command,depth)
+        if name in BRANCHES and self.expansion_depth:
+            return self.branch(file,node,depth)
+        if self.expansion_depth:
+            return self.issue(file,node,f'The LaTeX command \\{name} needs a verified reading.',True)
         if name=='verb' and args:
             return '<code>'+escape(getattr(args[-1],'chars',file.raw(args[-1])))+'</code>'
         if name=='footnote' and args and not self.inside_notes:
@@ -298,14 +374,18 @@ class Projection:
     def inline(self,file,nodes,depth=0):
         self.count(nodes)
         if depth>=24:
+            if self.expansion_depth:
+                raise ValueError('The LaTeX text expansion exceeds its reading depth.')
             raise Error('latex_depth','Nested LaTeX text exceeds the supported reading depth.')
         pieces = []
-        for node in nodes:
+        for node in self.bound_nodes(file,nodes):
             if isinstance(node,LatexCharsNode):
-                pieces.append(escape(re.sub(r'[\r\n\t ]+',' ',node.chars)))
+                pieces.append(self.template_text(node.chars,depth))
             elif isinstance(node,LatexGroupNode):
                 pieces.append(self.inline(file,node.nodelist,depth+1))
             elif isinstance(node,LatexMathNode):
+                if self.expansion_depth:
+                    raise ValueError('A generated LaTeX formula needs its source reading verified.')
                 raw = file.raw(node)
                 left,right = node.delimiters
                 pieces.append(self.formula(file,node,raw,raw[len(left):-len(right)]))
@@ -316,6 +396,80 @@ class Projection:
             elif not isinstance(node,LatexCommentNode):
                 pieces.append(self.issue(file,node,'This LaTeX inline structure needs a verified reading.',True))
         return ''.join(pieces)
+
+    def argument(self,index):
+        if self.parameters is None or index>len(self.parameters.bindings):
+            raise ValueError('The LaTeX command has an unbound parameter.')
+        return self.parameters.bindings[index-1]
+
+    def template_text(self,text,depth):
+        def plain(value):
+            space = '' if self.parameters is not None and self.parameters.expl3 else ' '
+            return escape(re.sub(r'[\r\n\t ]+',space,value))
+        if self.parameters is None:
+            return plain(text)
+        result = []
+        start = 0
+        for match in PARAMETER.finditer(text):
+            result.append(plain(text[start:match.start()]))
+            owner,value,parameters,mode = self.argument(int(match[1]))
+            if value is None or mode=='*':
+                raise ValueError('This LaTeX template prints a control value that needs review.')
+            outer = self.parameters
+            self.parameters = parameters
+            try:
+                result.append(self.inline(owner,group(value),depth+1))
+            finally:
+                self.parameters = outer
+            start = match.end()
+        result.append(plain(text[start:]))
+        return ''.join(result)
+
+    def branch(self,file,node,depth):
+        parts = arguments(node)
+        if not parts or len(parts)!=len(BRANCHES[node.macroname]):
+            raise ValueError('A LaTeX branch has missing content.')
+        condition,*branches = parts
+        slot = PARAMETER.fullmatch(file.raw(condition)[1:-1].strip())
+        if not slot:
+            raise ValueError('A LaTeX branch needs a literal parameter test.')
+        _,value,_,mode = self.argument(int(slot[1]))
+        name = node.macroname
+        if name.startswith('IfBoolean') and mode!='*':
+            raise ValueError('A LaTeX boolean test needs a declared star argument.')
+        matched = value is None if name.startswith('IfNoValue') else value is not None
+        if len(branches)==2:
+            return self.inline(file,group(branches[0 if matched else 1]),depth+1)
+        return self.inline(file,group(branches[0]),depth+1) if matched==name.endswith('T') else ''
+
+    def invoke(self,file,node,command,depth):
+        if command.signature and not getattr(node,'hamr_bound',False):
+            return self.issue(file,node,'A LaTeX command is missing its declared arguments.',True)
+        if self.expansion_depth>=12:
+            raise ValueError('The LaTeX text expansion exceeds its reading depth.')
+        previous = self.parameters
+        bindings = []
+        supplied = node.nodeargd.argnlist if command.signature else ()
+        for index,(mode,value) in enumerate(zip(command.signature,supplied)):
+            if index==0 and value is None and command.default is not None:
+                bindings.append((command.file,command.default,None,mode))
+            else:
+                bindings.append((file,value,previous,mode))
+        self.parameters = Expansion(bindings,command.expl3)
+        self.expansion_depth += 1
+        problem = None
+        try:
+            output = self.inline(command.file,group(command.value),depth+1)
+        except (ValueError,LatexWalkerParseError) as error:
+            problem = str(error)
+        finally:
+            self.expansion_depth -= 1
+            self.parameters = previous
+        if problem is not None:
+            return self.issue(file,node,problem,True)
+        self.inventory.append({'kind':'latex_declared_text','command':node.macroname,
+                               'definition':self.macro_origins[node.macroname],**file.location(node)})
+        return output
 
     def setup(self,file,node):
         name = node.macroname
@@ -328,26 +482,34 @@ class Projection:
                 self.selected = {s.strip().removesuffix('.tex') for s in allowed.split(',') if s.strip()}
             else:
                 return self.issue(file,node,'LaTeX includeonly needs a literal list of source members.')
-        elif name in DEFINITION_COMMANDS:
+        elif name in DECLARATIONS:
             self.define(file,node)
         return ''
 
-    def define(self,file,node):
-        _,target,count,default,value = node.nodeargd.argnlist
+    def define(self,file,node,*,expl3=False):
+        if node.macroname in CLASSIC:
+            _,target,count,default,value = node.nodeargd.argnlist
+            arity = file.raw(count)[1:-1].strip() if count is not None else '0'
+            signature = None
+            if re.fullmatch(r'[0-9]',arity) and (default is None or arity!='0'):
+                signature = ('['+'{'*(int(arity)-1)) if default is not None else '{'*int(arity)
+        else:
+            target,spec,value = node.nodeargd.argnlist
+            signature = document_signature(file.raw(spec)[1:-1])
+            default = None
         lhs = group(target)
         if len(lhs)!=1 or not isinstance(lhs[0],LatexMacroNode):
             return
         name = lhs[0].macroname
-        if node.macroname=='providecommand' and (name in self.math_macros or name in STANDARD_COMMANDS
+        if node.macroname in ('providecommand','ProvideDocumentCommand') and (name in self.math_macros or name in STANDARD_COMMANDS
                                                   or name in ARGUMENTS or name in LITERAL or name in LAYOUT):
             return
         self.definitions.pop(name,None)
-        arity = file.raw(count)[1:-1].strip() if count is not None else '0'
         macro = None
-        if re.fullmatch(r'[0-9]',arity) and isinstance(value,LatexGroupNode) and (default is None or arity!='0'):
-            macro = MathMacro.bound(int(arity),file.raw(value)[1:-1],file.raw(default)[1:-1] if default else None)
-            if arity=='0':
-                self.definitions[name] = (file,value)
+        if signature is not None and isinstance(value,LatexGroupNode):
+            self.definitions[name] = ProseCommand(file,value,signature,default,expl3)
+            if all(kind=='{' or index==0 and default is not None and kind=='[' for index,kind in enumerate(signature)):
+                macro = MathMacro.bound(len(signature),file.raw(value)[1:-1],file.raw(default)[1:-1] if default else None)
         self.math_macros[name] = macro
         self.macro_origins[name] = {'command':name,**file.location(node)}
 
@@ -367,6 +529,39 @@ class Projection:
             yield
         finally:
             self.definitions,self.math_macros,self.macro_origins = definitions,macros,origins
+
+    def package(self,file,node,chain):
+        names = self.literal_arg(node,file)
+        if not names:
+            return
+        for part in names.split(','):
+            name = part.strip()
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*',name) or '..' in PurePosixPath(name).parts:
+                continue
+            member = name if name.endswith('.sty') else name+'.sty'
+            if member in self.packages or len(chain)>=24:
+                continue
+            self.packages.add(member)
+            try:
+                path,data = self.load([member])
+                style = File.make(path,decode_latex(data,self.encoding))
+            except Error:
+                continue
+            self.inventory.append({'kind':'latex_style_package','target':path,**file.location(node)})
+            for position,expl3 in package_statements(style.text):
+                try:
+                    statements,_,_ = self.walker(style).get_latex_nodes(pos=position,read_max_nodes=1)
+                except (LatexWalkerParseError,RecursionError):
+                    continue
+                if len(statements)!=1 or not isinstance(statements[0],LatexMacroNode):
+                    continue
+                declaration = statements[0]
+                if declaration.macroname in PACKAGE_COMMANDS:
+                    self.package(style,declaration,[*chain,path])
+                elif declaration.macroname in DECLARATIONS:
+                    self.define(style,declaration,expl3=expl3)
+                elif declaration.macroname in OPAQUE_DEFINITIONS:
+                    self.undefine_reading(style,declaration)
 
     def include_text(self,file,node,chain,preamble,flow=None):
         try:
@@ -489,7 +684,7 @@ class Projection:
                 paragraph.clear()
         def append(node,text):
             paragraph.append((file,node.pos,node.pos+node.len,text))
-        for node in nodes:
+        for node in self.bound_nodes(file,nodes):
             name = node.macroname if isinstance(node,LatexMacroNode) else None
             args = arguments(node) if name else ()
             opens_condition = name and (name=='if' or name.startswith('if') and name!='ifthenelse')
@@ -512,7 +707,9 @@ class Projection:
             elif name in INCLUDES:
                 flush()
                 output.append(self.include_text(file,node,chain,preamble))
-            elif name in METADATA|{'includeonly'}|DEFINITION_COMMANDS:
+            elif name in PACKAGE_COMMANDS:
+                self.package(file,node,chain)
+            elif name in METADATA|{'includeonly'}|DECLARATIONS:
                 output.append(self.setup(file,node))
             elif name in OPAQUE_DEFINITIONS:
                 self.undefine_reading(file,node)

@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev66
+
+- Read supported LaTeX text commands declared in the manuscript or a local style file. Hamr follows fixed argument lists, optional text and star branches when their visible output can be read from the source. It keeps the original style files and command locations in the companion. Generated content that needs verification appears in source review. [LaTeX intake](docs/INTAKE.md#latex)
+
 # hamr 0.4.9.dev65
 
 - Read primes and bound sums and products in authored equations. TeX, MathML and Word equations use the shared math reader. Word keeps the author's limit visibility.
