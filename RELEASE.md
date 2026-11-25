@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev68
+
+- Source review, interrupted jobs and speech-review findings print follow-up commands for the Hamr installation and state folder that opened the job. This also works with custom state paths that contain spaces or apostrophes.
+
 # hamr 0.4.9.dev67
 
 - Open LaTeX chapters with inline verbatim commands and locally declared code readers. A code example containing `\begin` or unmatched braces stays bound to its own source range. Formatting-only environments retain their prose, and verified code displays follow the ordinary companion policy. Generated example input stays recoverable and its rendered output has a scoped source-review entry. [LaTeX intake](docs/INTAKE.md#latex)

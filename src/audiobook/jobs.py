@@ -9,6 +9,7 @@ from .core import Block,Document,Error,RATE,Store,atomic,digest,dumps,fault,file
 from .importers import inspect,cached_inspect,IMPORT_REVISION
 from .planner import plan,RULES
 from .source_bundle import capture, copy_snapshot, original_name
+from .installation import command
 from .backend import Engine,validate_pcm,validate_request
 from .cast import resolve_voice
 from . import mastering,mastering_continuity,performance,quote_timing
@@ -248,17 +249,16 @@ def review_error(store,j):
     code=(error or {}).get('code')
     jid=j['id']
     if code in ('speech_qa_review','listening_review') or (not code and j.get('audio_review')):
-        from .installation import command
         return {'code':code or 'speech_qa_review',
                 'message':'Flagged audio needs a listening check before publication. The saved narration is retained.',
                 'action':'Open the local listening review with:\n'+command(store.root,'review',jid,'--serve')}
     if code=='source_review' or (code in (None,'speech_qa_pending') and j['plan']['issues']):
         return {'code':'source_review',
                 'message':'Some source passages need to be resolved before Hamr can finish the audiobook.',
-                'action':f'Run hamr show {jid} --content to find those passages.'}
+                'action':'Inspect the source passages and their repair IDs with this command.\n'
+                         + command(store.root,'show',jid,'--content')}
     if code in (None,'speech_qa_pending'):
         from .checks_setup import configured, recovery
-        from .installation import command
         error=speech_check_pending(jid)
         if not configured(store):
             error['action']=recovery(store, job=jid)
@@ -268,6 +268,7 @@ def review_error(store,j):
 
 
 def summary(store,j):
+    resume_command = command(store.root,'resume',j['id'])
     if j['status'] in ('rendering','assembling'):
         try:
             # Kernel locks disappear after a crash/reboot; stale PID-file contents do not matter.
@@ -276,7 +277,7 @@ def summary(store,j):
                 current=store.get(j['id'])
                 if current['status'] in ('rendering','assembling'):
                     stamp=current['updated'];current['status']='paused'
-                    current['error']={'code':'worker_interrupted','message':'The rendering worker stopped; committed takes are retained.','action':f'hamr resume {j["id"]}'}
+                    current['error']={'code':'worker_interrupted','message':'The rendering worker stopped; committed takes are retained.','action':resume_command}
                     store.save_if_current(current,stamp)
                 j=store.get(j['id'])
         except Error as e:
@@ -292,7 +293,9 @@ def summary(store,j):
     for r in j.get('audio_review',[]):
         locations=[{k:v for k,v in locators[bid].items() if k not in ('exact','rows')} for bid in r['sources'] if bid in locators]
         planned=r.get('kind')=='planned_reading' or (r['clip_key'],r.get('pcm_sha256')) in reported_readings
-        reviews.append({'utterance':r['utterance'],'location':locations,'reason':' '.join(r['flags']),'report':r['report'],'repair':f'hamr show {j["id"]} --content' if planned else f'hamr repair {j["id"]} --retake {r["utterance"]}',
+        repair_command = (command(store.root,'show',j['id'],'--content') if planned
+                          else command(store.root,'repair',j['id'],'--retake',r['utterance']))
+        reviews.append({'utterance':r['utterance'],'location':locations,'reason':' '.join(r['flags']),'report':r['report'],'repair':repair_command,
                         **({'residual_word_edits':r['residual_word_edits']} if r.get('residual_word_edits') else {})})
     qa_progress=None
     try:
@@ -321,9 +324,10 @@ def summary(store,j):
             pipeline_progress['automatic_retakes_used']=len(recorded.get('retakes',[]))
     except (OSError,ValueError,KeyError):pass
     error=review_error(store,j) if j['status']=='needs_review' else j['error']
-    if error and error['code'] in ('speech_checks_required', 'asr_profile_unavailable'):
+    if error and error['code'] in ('worker_interrupted','pipeline_interrupted'):
+        error={**error,'action':resume_command}
+    elif error and error['code'] in ('speech_checks_required', 'asr_profile_unavailable'):
         from .checks_setup import configured, recovery
-        from .installation import command
         if error['code']=='speech_checks_required' and configured(store):
             error={**error,'message':'The speech checker is now installed. Resume the saved book.',
                    'action':command(store.root, 'resume', j['id'])}
@@ -335,9 +339,8 @@ def summary(store,j):
             error={**error,'action':action}
     metrics = {**j.get('metrics', {}), 'semantic_qa':speech_check_status(j)}
     checked = {k:valid_clip(store,k) for k in set(j['clips'].values())}
-    result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(r is not None for r in checked.values()),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':f'hamr resume {j["id"]}','metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
+    result={'schema_version':1,'job':j['id'],'status':j['status'],'revision':j['revision'],'title':j['document']['title'],'source_sha256':j['document']['source_sha256'],'plan_sha256':j['plan']['plan_sha256'],'utterances':len(j['plan']['utterances']),'verified_clips':sum(r is not None for r in checked.values()),'needs_review':reviews,'listening_findings':j.get('listening_findings',[]),'error':error,'output':str(final) if j['status']=='ready' else None,'planned_output':str(final/'book.m4b'),'resume':resume_command,'metrics':metrics,'progress':j.get('progress',{}),'qa_progress':qa_progress,'pipeline_progress':pipeline_progress,'failed_take':j.get('failed_take')}
     if j.get('audio_review'):
-        from .installation import command
         jid=j['id']; rev=j['revision']
         first=[r['utterance'] for r in j['audio_review'][:3]]
         uid=first[0]

@@ -86,6 +86,33 @@ def test_checkout_recovery_selects_the_checkout_and_same_state(tmp_path, capsys,
     assert parsed.home == home and parsed.checks_only and parsed.backend_profile is None
 
 
+@pytest.mark.parametrize(('status','code','followup'),[
+    ('needs_review','source_review',('show','--content')),
+    ('paused','worker_interrupted',('resume',)),
+    ('paused','pipeline_interrupted',('resume',)),
+])
+def test_saved_job_followups_use_the_invoking_installation_and_state(
+        tmp_path,capsys,monkeypatch,status,code,followup):
+    launcher = tmp_path/'current installation'/('hamr.exe' if sys.platform=='win32' else 'hamr')
+    launcher.parent.mkdir()
+    launcher.touch()
+    monkeypatch.setattr(sys,'argv',[str(launcher)])
+    home = tmp_path/"reader's book state"
+    store = Store(home)
+    source = tmp_path/'Book.md'
+    source.write_text('The book starts here.',encoding='utf-8')
+    job = store.get(jobs.create(store,source,output=tmp_path)['job'])
+    job['status'] = status
+    job['error'] = {'code':code,'message':'Saved job checkpoint.','action':'hamr command'}
+    store.save(job)
+
+    row = invoke(home,capsys,'status',job['id'])
+    saved = [str(launcher),'--home',str(home)]
+    action = installation.shell_command([*saved,followup[0],job['id'],*followup[1:]])
+    assert action in row['error']['action'].splitlines()
+    assert row['resume']==installation.shell_command([*saved,'resume',job['id']])
+
+
 def test_open_uses_automatically_selected_fluid_for_publication(tmp_path,capsys,monkeypatch):
     from audiobook import asr_fluid, qa_cache
     from audiobook.core import filehash, loadjson
