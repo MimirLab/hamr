@@ -42,16 +42,21 @@ def test_default_styled_power_reading_preserves_source_offsets(tmp_path,suffix):
 
 
 def odf_source(source):
-    ns = (' xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"'
-          ' xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"'
-          ' xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"')
-    media = 'application/vnd.oasis.opendocument.text'
     styles = ('<office:styles><style:style style:name="Parent" style:family="text">'
               '<style:text-properties style:text-position="super 58%"/></style:style>'
               '<style:style style:name="Exponent" style:family="text" style:parent-style-name="Parent"/>'
               '</office:styles>')
-    body = ('<office:body><office:text><text:p>Compute 10<text:span text:style-name="Exponent">3</text:span>'
-            ' to check the result.</text:p></office:text></office:body>')
+    write_odf(source,styles,'<text:p>Compute 10<text:span text:style-name="Exponent">3</text:span>'
+              ' to check the result.</text:p>')
+
+
+def write_odf(source,styles,paragraphs):
+    ns = (' xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"'
+          ' xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"'
+          ' xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"'
+          ' xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"')
+    media = 'application/vnd.oasis.opendocument.text'
+    body = f'<office:body><office:text>{paragraphs}</office:text></office:body>'
     if source.suffix=='.fodt':
         source.write_text(f'<office:document{ns} office:mimetype="{media}">{styles}{body}</office:document>')
     else:
@@ -59,6 +64,50 @@ def odf_source(source):
             archive.writestr('mimetype',media)
             archive.writestr('content.xml',f'<office:document-content{ns}>{body}</office:document-content>')
             archive.writestr('styles.xml',f'<office:document-styles{ns}>{styles}</office:document-styles>')
+
+
+@pytest.mark.parametrize('suffix',['.odt','.fodt'])
+def test_odf_character_styles_use_effective_marks_on_the_exact_word(tmp_path,suffix):
+    source = tmp_path/('Marks'+suffix)
+    styles = ('''<office:styles>
+        <style:style style:name="Lean" style:family="text">
+            <style:text-properties fo:font-style="italic"/>
+        </style:style>
+        <style:style style:name="Upright" style:family="text">
+            <style:text-properties fo:font-style="normal"/>
+        </style:style>
+        <style:style style:name="Heavy" style:family="text">
+            <style:text-properties fo:font-weight="700"/>
+        </style:style>
+        <style:style style:name="Light" style:family="text">
+            <style:text-properties fo:font-weight="normal"/>
+        </style:style>
+        <style:style style:name="Alias" style:family="text" style:parent-style-name="Lean"/>
+        <style:style style:name="Green" style:family="text">
+            <style:text-properties fo:color="#008800"/>
+        </style:style>
+        </office:styles>''')
+    body = '''<text:p>“Did <text:span text:style-name="Alias">y<text:span text:style-name="Green">o</text:span>u</text:span> see who left?” the doctor asked.</text:p>
+        <text:p>“Can <text:span text:style-name="Lean"><text:span text:style-name="Upright">you</text:span></text:span> come here?” the doctor asked.</text:p>
+        <text:p>“Have <text:span text:style-name="Lean" text:class-names="Upright Heavy">you</text:span> read this?” the doctor asked.</text:p>
+        <text:p>“May <text:span text:style-name="Heavy"><text:span text:style-name="Light">I</text:span></text:span> take this?” the doctor asked.</text:p>
+        <text:p>“Will <text:span text:style-name="Lean">y<text:span text:style-name="Upright">o</text:span>u</text:span> go first?” the doctor asked.</text:p>'''
+    write_odf(source,styles,body)
+    document = inspect_source(source)
+    result = plan(document)
+    assert not result['issues']
+    assert result['performance']['candidates']==2
+    first,reset,bold,light,partial = document.blocks
+    mark, = first.locator['inline_semantics']
+    assert mark['source']=='you' and mark['style']=='italic'
+    assert mark['style_definition']['id']=='Lean'
+    assert mark['style_definition']['source_file']==('styles.xml' if suffix=='.odt' else source.name)
+    mark, = reset.locator['inline_semantics']
+    assert mark['source']=='you' and mark['style']=='normal'
+    assert [(m['kind'],m['source']) for m in bold.locator['inline_semantics']]==[
+        ('font_style','you'),('emphasis','you')]
+    assert not light.locator['inline_semantics']
+    assert [m['source'] for m in partial.locator['inline_semantics']]==['y','o','u']
 
 
 def test_prose_relations_guide_scientific_notation_but_not_citations(tmp_path):

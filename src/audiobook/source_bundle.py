@@ -495,7 +495,7 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
     if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar',*PALM_ROUTES):
         raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','org','asciidoc','latex','pml','wordstar',*PALM_ROUTES) and source.member_name is None:
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 

@@ -21,7 +21,7 @@ def literal_style(name):
 
 
 def literal_spans(spans):
-    return all(span['kind'] in ('literal','line_break','emphasis') for span in spans)
+    return all(span['kind'] in ('literal','line_break','emphasis','font_style') for span in spans)
 
 
 def literal_paragraph_location(node, member, definition, style_member, ident):

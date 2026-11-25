@@ -14,12 +14,15 @@ from .table_grid import Grid, count, join_passages
 
 OFFICE = '{urn:oasis:names:tc:opendocument:xmlns:office:1.0}'
 DRAW = '{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}'
+FO = '{urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0}'
 TEXT = '{urn:oasis:names:tc:opendocument:xmlns:text:1.0}'
 STYLE = '{urn:oasis:names:tc:opendocument:xmlns:style:1.0}'
 TABLE = '{urn:oasis:names:tc:opendocument:xmlns:table:1.0}'
 MANIFEST = '{urn:oasis:names:tc:opendocument:xmlns:manifest:1.0}'
 XLINK_HREF = '{http://www.w3.org/1999/xlink}href'
 MATH_ROOT = '{'+MATHML+'}math'
+TEXT_ATTRIBUTES = (STYLE+'text-position', FO+'font-style', FO+'font-weight')
+BOLD_WEIGHTS = frozenset(('bold','600','700','800','900'))
 TEXT_MEDIA = frozenset((
     'application/vnd.oasis.opendocument.text',
     'application/vnd.oasis.opendocument.text-template',
@@ -52,8 +55,12 @@ def table_content(node):
 
 
 class Styles:
-    def __init__(self,root,external=None):
+    def __init__(self,root,external=None,*,source_file='content.xml'):
         self.nodes = {}
+        self.sources = {root:source_file}
+        if external is not None:
+            self.sources[external] = 'styles.xml'
+        self.character_properties = {}
         for document in (external,root):
             if document is None:
                 continue
@@ -82,11 +89,44 @@ class Styles:
                 values = dict(node.attrib)|values
         return values
 
-    def position(self,label):
-        value = self.properties('text',label,'text-properties').get(STYLE+'text-position','')
-        if match:=re.fullmatch(r'(super|sub|[+\-]?\d+(?:\.\d+)?%)(?:\s+\d+(?:\.\d+)?%)?',value.strip()):
-            return match[1]
-        return None
+    def character(self,label):
+        if (STYLE+'style','text',label) not in self.nodes:
+            return {}
+        if label not in self.character_properties:
+            fields = {}
+            for style in self.inheritance('text',label):
+                properties = style.find(STYLE+'text-properties')
+                if properties is None:
+                    continue
+                tree = style.getroottree()
+                origin = {'id':style.get(STYLE+'name'),'source_file':self.sources[tree.getroot()],
+                          'xml_path':tree.getpath(style)}
+                for key in TEXT_ATTRIBUTES:
+                    if (value:=properties.get(key)) is not None:
+                        fields.setdefault(key,(value,origin))
+            self.character_properties[label] = fields
+        return self.character_properties[label]
+
+
+def script_position(value, inherited):
+    match = re.fullmatch(r'(super|sub|[+\-]?\d+(?:\.\d+)?%)(?:\s+\d+(?:\.\d+)?%)?',value.strip())
+    if not match:
+        return inherited
+    position = match[1]
+    if position=='super' or position!='sub' and float(position[:-1])>0:
+        return 'superscript'
+    if position=='sub' or float(position[:-1])<0:
+        return 'subscript'
+    return None
+
+
+def typography(fields):
+    style,origin = fields.get(FO+'font-style',('',None))
+    if style in ('italic','oblique','normal'):
+        yield {'kind':'font_style','style':style,'style_definition':origin}
+    weight,origin = fields.get(FO+'font-weight',('',None))
+    if weight in BOLD_WEIGHTS:
+        yield {'kind':'emphasis','style_definition':origin}
 
 
 class Content:
@@ -138,8 +178,9 @@ class Content:
         offset = 0
 
         scripts = []
+        marked = {'font_style':[], 'emphasis':[]}
 
-        def add(text,script=None):
+        def add(text,script=None,marks=()):
             nonlocal offset
             if text:
                 start = offset
@@ -151,8 +192,15 @@ class Content:
                     else:
                         scripts.append({'kind':script,'source_start':start,'source_end':offset,
                                         'origin':'OpenDocument text-position style'})
+                for mark in marks:
+                    previous = marked[mark['kind']]
+                    if (previous and previous[-1]['source_end']==start
+                            and all(previous[-1].get(k)==v for k,v in mark.items())):
+                        previous[-1]['source_end'] = offset
+                    else:
+                        previous.append({**mark,'source_start':start,'source_end':offset})
 
-        def walk(item,script=None):
+        def walk(item,script=None,fonts=None,marks=()):
             tag = name(item)
             if tag in ('tracked-changes','deletion','annotation'):
                 return
@@ -180,7 +228,7 @@ class Content:
                 if not 0<=count<=4096:
                     raise Error('source_structure_size','OpenDocument space repetition exceeds its reading bound.')
                 start = offset
-                add(' '*count if tag=='s' else '\t' if tag=='tab' else '\n')
+                add(' '*count if tag=='s' else '\t' if tag=='tab' else '\n',marks=marks)
                 if tag=='line-break':
                     spans.append({'kind':'line_break','source_start':start,'source_end':offset})
                 return
@@ -215,24 +263,28 @@ class Content:
                 else:
                     findings.append('OpenDocument image, text frame, or embedded object needs a verified reading.')
                 return
-            if item.tag==TEXT+'span' and self.styles and (label:=item.get(TEXT+'style-name')):
+            if item.tag==TEXT+'span' and self.styles:
+                primary = item.get(TEXT+'style-name')
+                labels = ([primary] if primary else [])+item.get(TEXT+'class-names','').split()
                 try:
-                    position = self.styles.position(label)
+                    fields = {}
+                    for label in labels:
+                        fields.update(self.styles.character(label))
                 except Error as error:
                     findings.append(error.message)
-                    position = None
-                if position is not None:
-                    if position in ('super','sub'):
-                        script = 'superscript' if position=='super' else 'subscript'
-                    else:
-                        rise = float(position[:-1])
-                        script = 'superscript' if rise>0 else 'subscript' if rise<0 else None
-            add(item.text,script)
+                    fields = {}
+                if position:=fields.pop(STYLE+'text-position',None):
+                    script = script_position(position[0],script)
+                if fields:
+                    fonts = {**(fonts or {}),**fields}
+                    marks = tuple(typography(fonts))
+            add(item.text,script,marks)
             for child in item:
-                walk(child,script)
-                add(child.tail,script)
+                walk(child,script,fonts,marks)
+                add(child.tail,script,marks)
         walk(node)
         spans.extend(scripts)
+        spans.extend(span for ranges in marked.values() for span in ranges)
         raw = ''.join(pieces)
         left = len(raw)-len(raw.lstrip())
         text = raw.strip()

@@ -107,7 +107,12 @@ class DocumentBuilder:
         location = {'format':self.doc.format,'ordinal':ordinal,'element':where,
                     'chapter_id':self.chapter_id,'location_id':key([self.doc.format,ordinal,where])[:20],
                     **(loc or {})}
-        item = block(text,location,role,self.chapter,issue=issue,links=links)
+        identity = location
+        if any('style_definition' in span for span in location.get('inline_semantics',())):
+            identity = {**location,'inline_semantics':[span for span in location['inline_semantics']
+                                                       if 'style_definition' not in span]}
+        item = block(text,identity,role,self.chapter,issue=issue,links=links)
+        item.locator = location
         self.doc.blocks.append(item)
         return item
 
@@ -713,7 +718,7 @@ def _odt_body(document,builder,content,metadata,styles=None):
         raise Error('source_xml','OpenDocument has no document body.')
     declarations = [('styles.xml',styles)] if styles is not None else []
     content.numbering = authored_marks(body,[*declarations,(content.source_file,document)])
-    content.styles = Styles(document,styles)
+    content.styles = Styles(document,styles,source_file=content.source_file)
     if any(name(n)=='changed-region' for n in body.iter()):
         builder.doc.warnings.append('Tracked change records are preserved in the original. The visible body is selected.')
 

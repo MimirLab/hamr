@@ -10,15 +10,13 @@ from .archive_intake import containers
 from .core import Error, key
 from .document_intake import DocumentBuilder, MAX_STRUCTURE, bounded_read, name, plain_xml_text, xml
 from .markdown_publication import local_path
-from .odf_content import DRAW, MANIFEST, OFFICE, TABLE, TEXT, XLINK_HREF
+from .odf_content import DRAW, FO, MANIFEST, OFFICE, STYLE, TABLE, TEXT, XLINK_HREF
 from .presentation_common import canonical, observe_picture, speaker_note, visual_label
 from .publication_package import bind_member_block, member_bytes, member_location
 
 
 PRESENT = '{urn:oasis:names:tc:opendocument:xmlns:presentation:1.0}'
-STYLE = '{urn:oasis:names:tc:opendocument:xmlns:style:1.0}'
 SVG = '{urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0}'
-FO = '{urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0}'
 MANIFEST_FILE = 'META-INF/manifest.xml'
 CONTENT_FILE = 'content.xml'
 MEDIA = frozenset((b'application/vnd.oasis.opendocument.presentation',
@@ -93,7 +91,7 @@ class SlideStyles(odf_content.Styles):
 
 
 class Presentation:
-    def __init__(self,sha,title,cache,*,archive=None,members=(),prefix='',flat=None):
+    def __init__(self,sha,title,cache,*,archive=None,members=(),prefix='',flat=None,source_file=CONTENT_FILE):
         from .pdf_visual import Observer
 
         self.archive = archive
@@ -111,13 +109,13 @@ class Presentation:
         self.main = self.member(CONTENT_FILE) if flat is None else None
         self.root = xml(self.read(CONTENT_FILE)) if flat is None else flat
         external = self.read('styles.xml',required=False)
-        self.styles = SlideStyles(self.root,xml(external) if external else None)
+        self.styles = SlideStyles(self.root,xml(external) if external else None,source_file=source_file)
         metadata = self.read('meta.xml',required=False)
         title_node = (xml(metadata) if metadata else self.root).find('.//{http://purl.org/dc/elements/1.1/}title')
         published_title = plain_xml_text(title_node) if title_node is not None else ''
         self.builder = DocumentBuilder('odp',published_title or title,sha)
         self.doc = self.builder.doc
-        self.text = odf_content.Content(self.read,styles=self.styles)
+        self.text = odf_content.Content(self.read,source_file,styles=self.styles)
         self.observer = Observer(cache/'presentation-observations' if cache else None)
 
     def member(self,path,required=True):
@@ -260,7 +258,7 @@ class Presentation:
             path = directory.rstrip('/')+'/'+CONTENT_FILE
             member = self.member(path)
             root = xml(self.read(path))
-            content = odf_content.Content(self.read,path,styles=odf_content.Styles(root))
+            content = odf_content.Content(self.read,path,styles=odf_content.Styles(root,source_file=path))
         place = loc|{'source_shape_path':loc['xml_path'],'xml_path':root.getroottree().getpath(root)}
         try:
             grid = chart_grid(root,content,place)
@@ -355,7 +353,7 @@ def read_odp(path,source,sha,title,cache):
         root = xml(bounded_read(path))
         if not flat_presentation(root):
             raise Error('source_presentation_part','The selected file is not a flat OpenDocument presentation.')
-        return Presentation(sha,title,cache,flat=root).read_deck()
+        return Presentation(sha,title,cache,flat=root,source_file=source.member_name or path.name).read_deck()
     with containers(path,source.kind) as archive:
         members = list(archive.members())
         editions,_ = archive_books(archive,members)

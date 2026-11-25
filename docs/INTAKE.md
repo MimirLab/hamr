@@ -9,6 +9,8 @@ A folder or ZIP of loose page images is one book. Hamr uses an enclosed page man
 
 Word, OpenDocument Writer, HTML and EPUB keep supported authored list labels. RTF uses its saved marker text and list type. For example, both `3.` and `III.` can read as “Number three.” The plan records the label value and source location. An unfamiliar explicit marker appears in source review.
 
+OpenDocument text and slides retain authored inline bold and italics, with the exact words and style definition in the companion. Explicit resets take effect inside nested spans. Eligible dialogue uses the ordinary emphasis guidance.
+
 `hamr agent capabilities` checks whether Linux converters can start their required Bubblewrap isolation. It distinguishes a missing worker, a missing Bubblewrap executable, and isolation that the host blocks.
 
 ## Source readers

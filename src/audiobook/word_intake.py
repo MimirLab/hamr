@@ -319,11 +319,8 @@ def read_word(path,builder):
                     builder.doc.inventory.append({'location':loc,'selected_edition':'visible final',
                                                   'excluded_runs':content.excluded})
                 spans = [span for span in content.spans if span['kind']!='line_break']
-                identity_spans = [span for span in spans if 'style_definition' not in span]
-                item = builder.add(content.text,role,loc,loc={**provenance,'inline_semantics':identity_spans},
+                item = builder.add(content.text,role,loc,loc={**provenance,'inline_semantics':spans},
                                    issue=content.issue)
-                if item:
-                    item.locator['inline_semantics'] = spans
                 if item and content.numbering:
                     value,marker = content.numbering
                     item.locator.update(ordered_item=value,ordered_marker=marker)

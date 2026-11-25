@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev72
+
+- Carry bold, italic and oblique character styles from OpenDocument text and presentations into the same narration planner as Word, EPUB and HTML. Hamr follows inherited and nested text styles, respects explicit resets and keeps the style definition linked to its exact source words.
+
 # hamr 0.4.9.dev71
 
 - Read simple text examples from the verified lshort LaTeX package. The generated result is read in order and its exact source stays linked beside the printed code. The code is quiet in listen mode and available to the procedure reading. Examples that need a separate compilation still appear in source review.
