@@ -44,11 +44,13 @@ NATIVE = {
     '.mif':'mif',
     '.pmd':'pagemaker', '.p65':'pagemaker', '.pm6':'pagemaker',
     '.pmt':'pagemaker', '.t65':'pagemaker', '.pt6':'pagemaker',
+    '.qxd':'quark', '.qxt':'quark', '.qxp':'quark', '.qx':'quark',
     '.ws':'wordstar', '.ws7':'wordstar', '.pages':'pages',
 }
 PALM_SUFFIXES = frozenset(('.pdb','.prc'))
 PALM_ROUTES = frozenset(('palmdoc','ereader','ztxt'))
 PAGEMAKER_SUFFIXES = frozenset(suffix for suffix,route in NATIVE.items() if route=='pagemaker')
+QUARK_SUFFIXES = frozenset(suffix for suffix,route in NATIVE.items() if route=='quark')
 PAGE_SCHEMAS = frozenset(('hamr.page-sequence.v1', 'hamr.page-sequence.design.v1'))
 OPF_FOLDERS = frozenset(('nimas','daisy3'))
 DESCRIPTOR_FOLDERS = OPF_FOLDERS | {'daisy202'}
@@ -97,6 +99,13 @@ def image_magic(prefix):
 
 def probe(prefix, name):
     suffix = source_suffix(name)
+    if prefix[4:7]==b'XPR' or suffix in QUARK_SUFFIXES:
+        from .quark_binary import byte_order
+
+        if byte_order(prefix):
+            return 'quark'
+        if suffix in QUARK_SUFFIXES:
+            return None
     if suffix in PAGEMAKER_SUFFIXES or prefix[6:8] in (b'\xff\x99',b'\x99\xff'):
         from .pagemaker_binary import COMPOUND, byte_order
 
@@ -330,7 +339,7 @@ def directory_members(root):
             suffix = source_suffix(path.name)
             if suffix in IMAGE_SUFFIXES:
                 pages.append(relative)
-            elif suffix in (*PALM_SUFFIXES,'.mif',*PAGEMAKER_SUFFIXES) and not path.is_symlink() and path.is_file():
+            elif suffix in (*PALM_SUFFIXES,'.mif',*PAGEMAKER_SUFFIXES,*QUARK_SUFFIXES) and not path.is_symlink() and path.is_file():
                 with path.open('rb') as stream:
                     if route:=probe(stream.read(512),path.name):
                         if route=='pagemaker' and not verified_pagemaker_candidate(stream):
@@ -350,7 +359,7 @@ def directory_members(root):
                         route = 'classic-mac'
                     elif route=='classic-mac':
                         route = None
-                    elif suffix=='.asc' or prefix[6:8] in (b'\xff\x99',b'\x99\xff'):
+                    elif suffix=='.asc' or prefix[6:8] in (b'\xff\x99',b'\x99\xff') or prefix[4:7]==b'XPR':
                         route = probe(prefix,path.name)
                 if route:
                     other.append((relative,route))
@@ -535,7 +544,7 @@ def archive_publications(archive,kind,entry,*,scan_only=False,textpack=False,pac
             with archive.open_member(item) as stream:
                 detected = xml_route(stream)
         elif (not name.name.startswith('.') and
-              (kind=='zip' and not detected or suffix in ('.asc','.cwk','.hqx','.lrf','.lit','.mif',*PALM_SUFFIXES,*PAGEMAKER_SUFFIXES))):
+              (kind=='zip' and not detected or suffix in ('.asc','.cwk','.hqx','.lrf','.lit','.mif',*PALM_SUFFIXES,*PAGEMAKER_SUFFIXES,*QUARK_SUFFIXES))):
             with archive.open_member(item) as stream:
                 prefix = stream.read(512)
             detected = probe(prefix,item.name)
@@ -589,7 +598,7 @@ def describe(path, *, entry=None, format=None, offline=False, encoding=None):
     source = _describe(path,entry,format,offline)
     if encoding and source.route not in ('text','chm','textbundle','rst','org','asciidoc','latex','pml','rocket','wordstar','textile',*PALM_ROUTES):
         raise Error('source_encoding','Use --encoding for plain text, AsciiDoc, reStructuredText, Org, LaTeX, Textile, TextBundle, Palm ebooks, Palm Markup Language, Rocket eBooks, WordStar or compiled HTML Help.')
-    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml','scribus','mif','pagemaker',*PALM_ROUTES) and source.member_name is None:
+    if source.kind=='file' and source.route in ('scan','djvu','abiword','odt','odp','org','asciidoc','latex','pml','wordstar','textile','icml','scribus','mif','pagemaker','quark',*PALM_ROUTES) and source.member_name is None:
         source = replace(source,member_name=path.name)
     return replace(source,encoding=encoding) if encoding else source
 
@@ -744,6 +753,9 @@ def _describe(path,entry,format,offline):
         if suffix in PAGEMAKER_SUFFIXES:
             raise Error('source_pagemaker_signature','The input does not identify an Adobe PageMaker publication.',
                         'Choose an original PageMaker file. Other formats also use the PMD extension.')
+        if suffix in QUARK_SUFFIXES:
+            raise Error('source_quark_signature','The input has no recognized binary QuarkXPress publication header.',
+                        'Choose the original QuarkXPress document or a readable PDF or EPUB export.')
         if suffix in WORDSTAR_SUFFIXES or prefix.startswith(b'\x1d\x7d\x00\x00'):
             raise Error('source_wordstar_version','The file does not identify a supported WordStar 7 document.',
                         'Open the original WordStar 7 document or use a readable text export.')

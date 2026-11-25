@@ -110,7 +110,7 @@ def parse(path,source,sha,cache,title):
             route = describe(member,format=source.route_override,offline=source.offline,encoding=source.encoding)
             if route.kind in ('zip-member','tar-member','libarchive-member','directory','manifest'):
                 raise Error('source_member_nested','Select an unpacked book for this nested archive.')
-            if route.kind=='file' and route.route in ('abiword','odt','odp','pml','wordstar','icml','pagemaker',*PALM_ROUTES):
+            if route.kind=='file' and route.route in ('abiword','odt','odp','pml','wordstar','icml','pagemaker','quark',*PALM_ROUTES):
                 route = replace(route,member_name=entry.name)
             doc = parse(member,route,filehash(member),cache,Path(entry.name).stem)
             doc.source_sha256 = sha
@@ -130,6 +130,10 @@ def parse(path,source,sha,cache,title):
         from .pagemaker_intake import read_pagemaker
 
         return read_pagemaker(path,source,sha,title)
+    if source.route=='quark':
+        from .quark_intake import read_quark
+
+        return read_quark(path,source,sha,title)
     if source.route=='icml':
         from .indesign_intake import read_icml
 

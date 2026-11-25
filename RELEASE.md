@@ -1,3 +1,7 @@
+# hamr 0.4.9.dev88
+
+- Read English QuarkXPress 3.1, 3.2 and 3.3 publications from files, folders and ZIPs. Follow saved story chains across pages, keep distinct repeats, and retain the original publication and source byte ranges.
+
 # hamr 0.4.9.dev87
 
 - Read Adobe PageMaker publications with the PageMaker 6 and 6.5–7 record layouts. Follow the stored byte ranges of threaded text across pages, keep independently authored repeats, and preserve the original publication in the finished book.

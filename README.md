@@ -127,7 +127,7 @@ Turn an Org manuscript into an audiobook with its chosen outline, footnotes, tab
 
 Read AsciiDoc books with their chapter includes, tables, footnotes, and callout explanations. The parser ships with Hamr and works offline. [AsciiDoc intake](docs/INTAKE.md#asciidoc)
 
-Turn page-layout manuscripts into audiobooks using InDesign IDML, InCopy ICML, Scribus SLA, FrameMaker MIF or Adobe PageMaker. Hamr follows linked stories in reading order and keeps the original layouts recoverable from the finished book. [Page-layout documents](docs/INTAKE.md#indesign-and-incopy)
+Turn page-layout manuscripts into audiobooks using InDesign IDML, InCopy ICML, Scribus SLA, FrameMaker MIF, Adobe PageMaker or QuarkXPress 3. Hamr follows linked stories in reading order and keeps the original layouts recoverable from the finished book. [Page-layout documents](docs/INTAKE.md#indesign-and-incopy)
 
 Open LaTeX manuscripts or ZIPs of their sources. Hamr follows local chapter includes, keeps sentences together across files, and reads supported notes and equations through the usual narration pipeline. [LaTeX intake](docs/INTAKE.md#latex)
 

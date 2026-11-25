@@ -38,6 +38,7 @@ Word follows tracked paragraph joins, deleted rows and cells, and supported vert
 | Scribus | Open the `.sla` or `.sla.gz` file, its folder, or a ZIP. Hamr follows saved text-frame links and keeps paragraph styles, notes, and table cells. [Scribus intake](#scribus) |
 | FrameMaker | Open a UTF-8 FrameMaker `.mif` export from a file, folder, or ZIP. Hamr reads body flows, anchored text, tables, and footnotes. [FrameMaker intake](#framemaker) |
 | PageMaker | Open a PageMaker `.pmd`, `.p65`, or `.pm6` publication from a file, folder, or ZIP. Hamr reads the saved ranges of threaded stories across pages. [PageMaker intake](#pagemaker) |
+| QuarkXPress | Open an English QuarkXPress 3.1, 3.2 or 3.3 publication, directly or in a folder or ZIP. Hamr joins each verified text chain and keeps the original byte ranges. [QuarkXPress intake](#quarkxpress) |
 | LaTeX | Open a `.tex` manuscript, a source folder, or an archive. The built-in reader follows local chapter includes and reads authored headings, prose, notes, lists, simple tables and supported equations. [LaTeX intake](#latex) |
 | WordStar 7 for DOS | Open an original `.ws` or `.ws7` manuscript, a folder containing one, or an archive. Hamr also recognizes the saved file header. [WordStar intake](#wordstar-7) |
 | Scrivener projects and backups | Open the `.scriv` folder, its root `.scrivx` file, or the backup ZIP. Hamr reads the manuscript’s RTF documents in Draft binder order, using the binder labels for chapter navigation. |
@@ -178,6 +179,12 @@ For binary FrameMaker files or earlier MIF encodings, save a current MIF export 
 Open a PageMaker 6, 6.5 or 7 publication directly, from its folder, or inside a ZIP. Hamr reads placed stories in their saved frame ranges and joins paragraphs that continue across frames. Its reader accepts flat publications and compound files containing a PageMaker stream.
 
 When an old font stores letters in custom glyph slots, the saved text appears in source review at its original location. A readable local export can supply the intended reading. For earlier PageMaker versions, open a readable PDF export.
+
+## QuarkXPress
+
+Open a binary English QuarkXPress 3.1, 3.2 or 3.3 publication directly, from its folder or inside a ZIP. Hamr follows linked boxes across pages, keeps master-page furniture and known crossword grids in the source companion, and locates unsupported illustrations and unresolved chains for source review.
+
+For other QuarkXPress layouts, open an EPUB or readable PDF export from a compatible application.
 
 ## LaTeX
 
